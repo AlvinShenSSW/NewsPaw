@@ -363,7 +363,7 @@ class Pipeline:
             )
         }
 
-    async def _collect(self, row, token, now):
+    async def _collect(self, row, token, now, effect_guard):
         job_id, partition = row["id"], row["partition"]
         scopes = row["payload"]["scopes"]
         attempts = self._collection_attempts(job_id, partition)
@@ -372,6 +372,8 @@ class Pipeline:
         def guard(scope, *, starting):
             self._leased(job_id, token, starting=starting, now=now)
             if starting:
+                if effect_guard is not None and effect_guard() is False:
+                    return False
                 self.db.execute(
                     f"""UPDATE feed_attempts SET status='interrupted',outcome_json=?,completed_at=?
                         WHERE {_COLLECTION}=? AND {_GROUP}=? AND status='running'""",
@@ -390,6 +392,8 @@ class Pipeline:
             collector = factory(evidence)
             try:
                 result = await collector.fetch_scope(scope, 24, now)
+                if result is None:
+                    return
                 attempts[pending] = result["id"]
             finally:
                 await collector.close()
@@ -412,9 +416,14 @@ class Pipeline:
             attempt_ids=ids,
         )
 
-    async def _edit(self, row, token, now):
+    async def _edit(self, row, token, now, effect_guard):
         job_id, payload = row["id"], row["payload"]
         edition_id = self._edition_id(job_id)
+
+        def before_dispatch():
+            self._leased(job_id, token, starting=True, now=now)
+            return effect_guard() if effect_guard is not None else None
+
         edition = self.editorial.prepare(
             edition_id,
             RouteSnapshot(**payload["route"]),
@@ -433,7 +442,7 @@ class Pipeline:
             edition = await self.editorial.advance(
                 edition_id,
                 now=now,
-                before_dispatch=lambda: self._leased(job_id, token, starting=True, now=now),
+                before_dispatch=before_dispatch,
             )
         state = edition["state"]
         if state in {"ready", "no_news"}:
@@ -446,13 +455,13 @@ class Pipeline:
         elif state in {"stale", "cancelled", "refused"}:
             self._transition(job_id, token, state, _time(now), error=edition["error_kind"])
 
-    async def _step(self, job_id, token, now):
+    async def _step(self, job_id, token, now, effect_guard):
         try:
             row = self._leased(job_id, token, starting=True, now=now)
             if row["stage"] == "collecting":
-                await self._collect(row, token, now)
+                await self._collect(row, token, now, effect_guard)
             elif row["stage"] == "editing":
-                await self._edit(row, token, now)
+                await self._edit(row, token, now, effect_guard)
             else:
                 style = RouteSnapshot(**row["payload"]["route"]).effective["style"]
                 edition_id = self._edition_id(job_id)
@@ -476,12 +485,12 @@ class Pipeline:
                 raise PipelineError("storage_failed") from None
             self._transition(job_id, token, "blocked", _time(now), error="preparation_failed")
 
-    async def advance(self, job_id, *, now=None):
+    async def advance(self, job_id, *, now=None, effect_guard=None):
         try:
             token = self._claim(job_id, _time(now))
             if token is None:
                 return self.get(job_id)
-            task = asyncio.create_task(self._step(job_id, token, now))
+            task = asyncio.create_task(self._step(job_id, token, now, effect_guard))
             self._active[job_id, token] = task
             try:
                 await task

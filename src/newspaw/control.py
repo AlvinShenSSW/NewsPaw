@@ -20,6 +20,7 @@ from .budget import BudgetError, BudgetLedger
 from .credentials import CredentialError
 from .pipeline import Pipeline
 from .providers import ProbeService, ProfileRegistry, ProviderError
+from .scheduler import Scheduler
 from .source_catalog import catalog
 from .source_manager import SourceError, SourceManager
 from .telegram.outbox import Outbox
@@ -28,6 +29,9 @@ from .telegram.targets import TargetManager
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
+    "schedule.status": (set(), {"limit"}),
+    "schedule.configure": ({"settings", "revision"}, set()),
+    "schedule.resolve": ({"occurrence_id", "action"}, set()),
     "delivery.status": ({"job_id"}, {"bot_id"}),
     "delivery.requeue_target": ({"job_id", "bot_id"}, set()),
     "delivery.resolve": (
@@ -124,6 +128,7 @@ class ControlServer:
         self.targets = TargetManager(credentials, self.bots)
         self.pipeline = Pipeline(credentials.store, credentials.backend)
         self.outbox = Outbox(self.pipeline, self.targets)
+        self.scheduler = Scheduler(self.pipeline, self.outbox)
         self._server = None
         self._lock_fd = None
         self._handlers = set()
@@ -156,6 +161,7 @@ class ControlServer:
             self.outbox.recover_interrupted()
             await self._server.start_serving()
             await self.bots.start()
+            self.scheduler.start()
         except BaseException:
             await self.close()
             raise
@@ -165,6 +171,7 @@ class ControlServer:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
+        await self.scheduler.close()
         if self._handlers:
             await asyncio.gather(*self._handlers, return_exceptions=True)
         await self.bots.close()
@@ -192,6 +199,12 @@ class ControlServer:
         if not required <= keys or keys - required - optional:
             raise CredentialError("invalid_request")
         manager, store = self.credentials, self.credentials.store
+        if op == "schedule.status":
+            return self.scheduler.status(limit=data.get("limit", 25))
+        if op == "schedule.configure":
+            return self.scheduler.configure(data["settings"], data["revision"])
+        if op == "schedule.resolve":
+            return self.scheduler.resolve(data["occurrence_id"], data["action"])
         if op == "delivery.status":
             return self.outbox.status(data["job_id"], bot_id=data.get("bot_id"))
         if op == "delivery.requeue_target":

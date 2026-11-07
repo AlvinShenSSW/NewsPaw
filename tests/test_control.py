@@ -305,3 +305,28 @@ async def test_bot_control_status_verify_and_pair_code_are_local_operations(cont
     assert paused["ok"] and paused["result"]["paused"]
     assert [m for m, p in api.calls] == ["getMe", "getWebhookInfo"]
     assert code["result"]["code"] not in "\n".join(store._db.iterdump())
+
+
+async def test_source_setup_rpc_catalog_import_and_routes(control):
+    server, store = control
+    catalog = await request(server, {"op": "sources.catalog"})
+    assert catalog["ok"] and any(s["id"] == "cnn" for s in catalog["result"])
+    content = '<opml><body><outline text="Feed" xmlUrl="https://example.com/feed"/></body></opml>'
+    imported = await request(
+        server,
+        {"op": "sources.import_opml", "content": content, "revision": store.config_revision()},
+    )
+    assert imported["ok"]
+    identity = imported["result"]["added"][0]
+    sources = await request(server, {"op": "sources.list"})
+    assert sources["result"][0]["source"]["partition"] is None
+    assert await request(server, {"op": "sources.preview", "source_id": identity}) == {
+        "ok": False,
+        "error": "unclassified_source",
+    }
+    assert (await request(server, {"op": "sources.routes", "source_id": identity}))["result"] == []
+    rejected = await request(
+        server, {"op": "sources.discover", "url": "https://example.com/?token=fixture-secret"}
+    )
+    assert rejected == {"ok": False, "error": "unsafe_url"}
+    assert store.config_revision() == 2

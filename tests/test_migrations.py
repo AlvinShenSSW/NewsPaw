@@ -585,3 +585,42 @@ def test_v9_bot_registry_migration_clears_legacy_claims_and_rolls_back(tmp_path,
     bot = reopened.load_config()[1]["bots"][0]
     assert not bot["verified"] and not bot["paired"] and bot["chat_id"] is None
     reopened.close()
+
+
+def test_v10_source_readiness_migration_rollback_and_old_history(tmp_path, monkeypatch):
+    from test_source_manager import source
+
+    import newspaw.source_manager as sources
+
+    path = tmp_path / "state.db"
+    store = Store(path)
+    revision, config = store.load_config()
+    config["sources"] = [source()]
+    store.save_config(config, expected_revision=revision)
+    original = store.load_config()
+    store.close()
+    with closing(sqlite3.connect(path)) as db:
+        db.execute("DROP TABLE source_readiness")
+        db.execute("PRAGMA user_version=10")
+        db.commit()
+    initialize = sources.initialize
+
+    def fail(db):
+        initialize(db)
+        raise RuntimeError("injected readiness migration failure")
+
+    monkeypatch.setattr(sources, "initialize", fail)
+    with pytest.raises(RuntimeError):
+        Store(path)
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 10
+        assert not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='source_readiness'"
+        ).fetchall()
+    monkeypatch.setattr(sources, "initialize", initialize)
+    reopened = Store(path)
+    assert reopened.load_config() == original
+    assert reopened._db.execute(
+        "SELECT epoch,attempt_id FROM source_readiness WHERE id=?", ("s",)
+    ).fetchone() == (1, None)
+    reopened.close()

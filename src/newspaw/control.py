@@ -25,6 +25,7 @@ from .providers import ProbeService, ProfileRegistry, ProviderError
 from .scheduler import Scheduler
 from .source_catalog import catalog
 from .source_manager import SourceError, SourceManager
+from .subscriptions import Subscriptions
 from .telegram.commands import Commands
 from .telegram.outbox import Outbox
 from .telegram.registry import BotRegistry, TelegramError
@@ -86,6 +87,8 @@ OPERATIONS = {
     "targets.adult_permission": ({"bot_id", "allowed", "revision"}, set()),
     "targets.bot_impact": ({"bot_id"}, set()),
     "targets.delete_bot": ({"bot_id", "revision"}, set()),
+    "subscriptions.preview": ({"draft", "revision"}, set()),
+    "subscriptions.save": ({"draft", "revision"}, {"enable"}),
     "sources.catalog": (set(), set()),
     "sources.list": (set(), set()),
     "sources.discover": ({"url"}, set()),
@@ -94,6 +97,7 @@ OPERATIONS = {
     "sources.delete": ({"source_id", "revision"}, set()),
     "sources.preview": ({"source_id"}, set()),
     "sources.routes": ({"source_id"}, set()),
+    "sources.impact": ({"source_id", "action"}, set()),
     "sources.import_opml": ({"content", "revision"}, set()),
     "sources.search.policy": (set(), set()),
     "sources.search.configure": ({"profile_id", "revision"}, set()),
@@ -163,6 +167,7 @@ class ControlServer:
         self.probes = ProbeService(credentials.store, credentials.backend)
         self.bots = BotRegistry(credentials.store, credentials.backend)
         self.sources = SourceManager(credentials)
+        self.subscriptions = Subscriptions(credentials, self.sources, self.bots)
         self.web_search = WebSearch(credentials.store, credentials.backend)
         self.targets = TargetManager(credentials, self.bots)
         self.x = XDirectory(credentials, self.targets)
@@ -377,6 +382,12 @@ class ControlServer:
             return self.targets.bot_impact(data["bot_id"])
         if op == "targets.delete_bot":
             return await self.targets.delete_bot(data["bot_id"], data["revision"])
+        if op == "subscriptions.preview":
+            return self.subscriptions.preview(data["draft"], data["revision"])
+        if op == "subscriptions.save":
+            return await self.subscriptions.save(
+                data["draft"], data["revision"], enable=data.get("enable", False)
+            )
         if op == "sources.catalog":
             return catalog()
         if op == "sources.list":
@@ -393,6 +404,8 @@ class ControlServer:
             return await self.sources.delete(data["source_id"], data["revision"])
         if op == "sources.preview":
             return await self.sources.preview(data["source_id"])
+        if op == "sources.impact":
+            return self.sources.impact(data["source_id"], data["action"])
         if op == "sources.routes":
             return self.sources.routes(data["source_id"])
         if op == "sources.import_opml":

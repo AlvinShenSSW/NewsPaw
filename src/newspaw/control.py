@@ -19,9 +19,16 @@ from pathlib import Path
 from .budget import BudgetError, BudgetLedger
 from .credentials import CredentialError
 from .providers import ProbeService, ProfileRegistry, ProviderError
+from .telegram.registry import BotRegistry, TelegramError
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
+    "bots.list": (set(), set()),
+    "bots.status": ({"bot_id"}, set()),
+    "bots.verify": ({"bot_id"}, set()),
+    "bots.pair_code": ({"bot_id"}, set()),
+    "bots.action": ({"bot_id", "action"}, set()),
+    "bots.delete": ({"bot_id", "revision"}, set()),
     "models.status": ({"profile_id"}, set()),
     "models.probe": ({"probe_id", "profile_id", "capability", "hold_units"}, set()),
     "budget.get": (set(), set()),
@@ -78,6 +85,7 @@ class ControlServer:
         self.path = self.directory / "control.sock"
         self.credentials = credentials
         self.probes = ProbeService(credentials.store, credentials.backend)
+        self.bots = BotRegistry(credentials.store, credentials.backend)
         self._server = None
         self._lock_fd = None
         self._handlers = set()
@@ -113,6 +121,7 @@ class ControlServer:
 
             EvidenceStore(self.credentials.store).recover_interrupted()
             await self._server.start_serving()
+            await self.bots.start()
         except BaseException:
             await self.close()
             raise
@@ -124,6 +133,7 @@ class ControlServer:
             self._server = None
         if self._handlers:
             await asyncio.gather(*self._handlers, return_exceptions=True)
+        await self.bots.close()
         await self.credentials.drain()
         if self._socket_identity is not None:
             try:
@@ -147,6 +157,18 @@ class ControlServer:
         if not required <= keys or keys - required - optional:
             raise CredentialError("invalid_request")
         manager, store = self.credentials, self.credentials.store
+        if op == "bots.list":
+            return self.bots.list()
+        if op == "bots.status":
+            return self.bots.status(data["bot_id"])
+        if op == "bots.verify":
+            return await self.bots.verify(data["bot_id"])
+        if op == "bots.pair_code":
+            return self.bots.pair_code(data["bot_id"])
+        if op == "bots.action":
+            return self.bots.action(data["bot_id"], data["action"])
+        if op == "bots.delete":
+            return await self.bots.delete(data["bot_id"], manager, data["revision"])
         if op == "models.status":
             return ProfileRegistry(store).status(data["profile_id"])
         if op == "models.probe":
@@ -201,7 +223,7 @@ class ControlServer:
                     raise CredentialError("invalid_request")
                 result = await self._dispatch(json.loads(raw))
                 response = {"ok": True, "result": result}
-            except (CredentialError, BudgetError, ProviderError) as exc:
+            except (CredentialError, BudgetError, ProviderError, TelegramError) as exc:
                 response = {"ok": False, "error": str(exc)}
             except Exception:
                 response = {"ok": False, "error": "invalid_request"}

@@ -153,7 +153,9 @@ def _json(value):
 def _unscoped_av(route, pool):
     effective = route.effective
     return effective["category_id"] != "av" and any(
-        known_av_origin(entry["url"]) for entry in [*effective["sources"], *pool]
+        known_av_origin(url)
+        for entry in [*effective["sources"], *pool]
+        for url in [entry["url"], *(source["url"] for source in entry.get("sources", []))]
     )
 
 

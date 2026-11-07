@@ -3,11 +3,14 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from test_evidence import NOW
+from test_outbox import system as outbox_system
 from test_routing import configured
 
 from newspaw.bot import NewsBot
 from newspaw.evidence import feed_scopes
 from newspaw.news import Article, NewsService
+
+legacy_edition = outbox_system
 
 
 def test_known_publisher_never_enters_the_generic_rss_scope():
@@ -280,3 +283,40 @@ def test_old_known_origin_article_is_excluded_from_non_av_adult_pool(tmp_path):
         editor, _ = service(store)
         pool, _, _ = editor._pool(store.preview_route(sub["id"]), [attempt], NOW)
         assert pool == []
+
+
+@pytest.mark.parametrize("legacy_edition", ["adult"], indirect=True)
+@pytest.mark.parametrize("path", ["model", "delivery"])
+async def test_old_deduplicated_alias_denies_both_model_submit_and_delivery(
+    legacy_edition, path, monkeypatch
+):
+    import json
+
+    from newspaw.editorial import EditorialError
+    from newspaw.pipeline import PipelineError
+
+    pipeline, _, job, model_calls, _ = legacy_edition
+    edition = pipeline._edition_id(job)
+    row = pipeline.editorial._row(edition)
+    anchor = row["payload"]["pool"][0]
+    assert not anchor["url"].startswith("https://fiu758.com")
+    anchor["sources"].append(
+        dict(source="AV研究所", url="https://fiu758.com/?p=123", published_at=NOW.isoformat())
+    )
+    with pipeline.store._write():
+        pipeline.db.execute(
+            "UPDATE editorial_editions SET payload=? WHERE id=?",
+            (json.dumps(row["payload"], ensure_ascii=False), edition),
+        )
+    if path == "model":
+        submits = []
+        monkeypatch.setattr(
+            pipeline.editorial.runner, "submit", lambda *args, **kwargs: submits.append(args)
+        )
+        with pytest.raises(EditorialError, match="av_edition_requires_rebuild"):
+            pipeline.editorial._submit(pipeline.editorial._row(edition))
+        assert not submits
+    else:
+        with pytest.raises(PipelineError, match="edition_changed"):
+            pipeline.delivery_scope(job)
+    assert len(model_calls) == 1

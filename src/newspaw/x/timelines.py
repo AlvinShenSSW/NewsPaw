@@ -99,6 +99,22 @@ def initialize(db):
             db.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
 
 
+def timeline_access_current(db, kind, scope):
+    access = db.execute(
+        """SELECT json_extract(progress,'$.reason') FROM x_timeline_scans
+           WHERE kind=? AND scope=? AND (
+             json_extract(progress,'$.pages')>0 OR json_extract(progress,'$.reason')
+             IN ('unavailable','permission_denied','authentication_failed')
+           ) ORDER BY updated_at DESC,rowid DESC LIMIT 1""",
+        (kind, scope),
+    ).fetchone()
+    return access is None or access[0] not in {
+        "unavailable",
+        "permission_denied",
+        "authentication_failed",
+    }
+
+
 class Timelines:
     def __init__(self, directory, *, clock=_utc):
         self.directory = directory
@@ -617,7 +633,7 @@ class Timelines:
                 self._save_scan(row, "incomplete", reason="stopped")
         return self.status(scan_id)
 
-    def posts(self, kind, scope, *, limit=50):
+    def posts(self, kind, scope, *, limit=50, frozen_scan=None, anchor=None):
         _id(scope)
         if type(limit) is not int or not 1 <= limit <= 200:
             raise TimelineError("invalid_limit")
@@ -625,16 +641,30 @@ class Timelines:
         last = self._last_scan(kind, scope)
         if last is None:
             return []
-        latest = self._scan(last[0])
-        access = self.db.execute(
-            """SELECT json_extract(progress,'$.reason') FROM x_timeline_scans
-               WHERE kind=? AND scope=? AND (
-                 json_extract(progress,'$.pages')>0 OR json_extract(progress,'$.reason')
-                 IN ('unavailable','permission_denied','authentication_failed')
-               ) ORDER BY updated_at DESC,rowid DESC LIMIT 1""",
-            (kind, scope),
-        ).fetchone()
-        if access and access[0] in {"unavailable", "permission_denied", "authentication_failed"}:
+        latest = self._scan(frozen_scan or last[0])
+        if frozen_scan is not None and (
+            latest["kind"] != kind
+            or latest["scope"] != scope
+            or any(
+                latest["binding"][key] != binding[key]
+                for key in ("ref", "remote", "partition", "authors", "stamp")
+            )
+        ):
+            raise TimelineError("configuration_changed")
+        lower = (self.clock() - _AGE).isoformat()
+        upper = self.clock().isoformat()
+        observed_limit = None
+        if frozen_scan is not None:
+            lower = (anchor - _AGE).isoformat(timespec="microseconds")
+            upper = min(anchor, datetime.fromisoformat(latest["progress"]["end"])).isoformat(
+                timespec="microseconds"
+            )
+            observed_limit = datetime.fromisoformat(latest["updated_at"]).isoformat(
+                timespec="microseconds"
+            )
+        if not timeline_access_current(self.db, kind, scope):
+            if frozen_scan is not None:
+                raise TimelineError("timeline_access_changed")
             return []
         owners = _json([[owner[0], remote] for remote, owner in binding["authors"].items()])
         types = _json(latest["args"]["types"])
@@ -643,6 +673,7 @@ class Timelines:
                JOIN x_post_observations o ON o.partition=p.partition AND o.post_id=p.id
                WHERE o.kind=? AND o.scope=? AND p.partition=? AND p.tombstone=0
                AND p.body IS NOT NULL AND p.published_at>=? AND p.published_at<=?
+               AND (? IS NULL OR o.observed_at IS NULL OR o.observed_at<=?)
                AND EXISTS(SELECT 1 FROM json_each(?) a
                           WHERE json_extract(a.value,'$[0]')=p.account_id
                           AND json_extract(a.value,'$[1]')=p.author_id)
@@ -657,8 +688,10 @@ class Timelines:
                 kind,
                 scope,
                 binding["partition"],
-                (self.clock() - _AGE).isoformat(),
-                self.clock().isoformat(),
+                lower,
+                upper,
+                observed_limit,
+                observed_limit,
                 owners,
                 types,
                 types,

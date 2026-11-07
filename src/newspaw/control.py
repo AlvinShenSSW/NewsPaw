@@ -30,6 +30,7 @@ from .telegram.outbox import Outbox
 from .telegram.registry import BotRegistry, TelegramError
 from .telegram.targets import TargetManager
 from .x.accounts import XDirectory
+from .x.digests import XDigests
 from .x.timelines import Timelines
 
 MAX_FRAME = 8 * 1024 * 1024
@@ -173,6 +174,7 @@ class ControlServer:
             credentials.store,
             credentials.backend,
             source_images=SourceImages(credentials.store, assets),
+            x_digests=XDigests(self.x_posts),
         )
         self.outbox = Outbox(self.pipeline, self.targets, asset_resolver=assets.read)
         self.scheduler = Scheduler(self.pipeline, self.outbox)

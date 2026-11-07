@@ -207,6 +207,9 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         from .x.timelines import initialize as initialize_x_timelines
 
         initialize_x_timelines(db)
+        from .x.digests import initialize as initialize_x_digests
+
+        initialize_x_digests(db)
         db.execute(f"PRAGMA user_version={DATABASE_VERSION}")
         db.commit()
     except BaseException:

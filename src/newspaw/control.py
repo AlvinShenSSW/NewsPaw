@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .budget import BudgetError, BudgetLedger
 from .credentials import CredentialError
+from .pipeline import Pipeline
 from .providers import ProbeService, ProfileRegistry, ProviderError
 from .source_catalog import catalog
 from .source_manager import SourceError, SourceManager
@@ -28,6 +29,12 @@ MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
     "service.status": (set(), set()),
     "service.stop": (set(), set()),
+    "jobs.list": (set(), {"limit"}),
+    "jobs.get": ({"job_id"}, set()),
+    "jobs.audit": ({"job_id"}, {"after", "limit"}),
+    "jobs.pause": ({"job_id"}, set()),
+    "jobs.resume": ({"job_id"}, {"acknowledge_duplicate_charge"}),
+    "jobs.cancel": ({"job_id"}, set()),
     "targets.preview": ({"subscription_id"}, {"account_id"}),
     "targets.set_subscription": ({"subscription_id", "bot_ids", "revision"}, set()),
     "targets.set_category": ({"category_id", "bot_ids", "revision"}, set()),
@@ -110,6 +117,7 @@ class ControlServer:
         self.bots = BotRegistry(credentials.store, credentials.backend)
         self.sources = SourceManager(credentials)
         self.targets = TargetManager(credentials, self.bots)
+        self.pipeline = Pipeline(credentials.store, credentials.backend)
         self._server = None
         self._lock_fd = None
         self._handlers = set()
@@ -140,12 +148,7 @@ class ControlServer:
             await self.credentials.cleanup()
             BudgetLedger(self.credentials.store).recover_inflight()
             ProfileRegistry(self.credentials.store).recover_interrupted()
-            from .model_runner import ModelRunner
-
-            ModelRunner(self.credentials.store, self.credentials.backend).recover_interrupted()
-            from .evidence import EvidenceStore
-
-            EvidenceStore(self.credentials.store).recover_interrupted()
+            self.pipeline.recover_interrupted()
             await self._server.start_serving()
             await self.bots.start()
         except BaseException:
@@ -160,6 +163,7 @@ class ControlServer:
         if self._handlers:
             await asyncio.gather(*self._handlers, return_exceptions=True)
         await self.bots.close()
+        await self.pipeline.close()
         await self.credentials.drain()
         if self._socket_identity is not None:
             try:
@@ -195,6 +199,23 @@ class ControlServer:
         if self._stop_requested.is_set():
             raise CredentialError("service_stopping")
         manager, store = self.credentials, self.credentials.store
+        if op == "jobs.list":
+            return self.pipeline.list(data.get("limit", 25))
+        if op == "jobs.get":
+            return self.pipeline.get(data["job_id"])
+        if op == "jobs.audit":
+            return self.pipeline.audit(
+                data["job_id"], after=data.get("after", 0), limit=data.get("limit", 50)
+            )
+        if op == "jobs.pause":
+            return self.pipeline.pause(data["job_id"])
+        if op == "jobs.resume":
+            return self.pipeline.resume(
+                data["job_id"],
+                acknowledge_duplicate_charge=data.get("acknowledge_duplicate_charge", False),
+            )
+        if op == "jobs.cancel":
+            return self.pipeline.cancel(data["job_id"])
         if op == "targets.preview":
             return self.targets.preview(data["subscription_id"], account_id=data.get("account_id"))
         if op == "targets.set_subscription":

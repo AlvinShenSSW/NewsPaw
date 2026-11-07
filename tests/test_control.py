@@ -391,3 +391,23 @@ async def test_explicit_service_stop_acknowledges_and_releases_private_endpoint(
             if not running.done():
                 running.cancel()
                 await asyncio.gather(running, return_exceptions=True)
+
+
+async def test_jobs_are_readable_and_controllable_through_private_socket(control):
+    from test_routing import configured
+
+    server, store = control
+    assert (await request(server, {"op": "jobs.list"}))["result"] == []
+    config, sub = configured()
+    store.save_config(config, expected_revision=store.config_revision())
+    created = server.pipeline.create(
+        sub["id"], "manual", holds={"normal_primary": 100, "normal_backup": 100}
+    )
+    job_id = created["job_id"]
+    assert (await request(server, {"op": "jobs.get", "job_id": job_id}))["result"] == created
+    assert (await request(server, {"op": "jobs.pause", "job_id": job_id}))["result"]["paused"]
+    assert not (await request(server, {"op": "jobs.resume", "job_id": job_id}))["result"]["paused"]
+    assert (await request(server, {"op": "jobs.cancel", "job_id": job_id}))["result"]["cancelled"]
+    audit = (await request(server, {"op": "jobs.audit", "job_id": job_id}))["result"]
+    assert [event["action"] for event in audit] == ["created", "pause", "resume", "cancel"]
+    assert (await request(server, {"op": "jobs.advance", "job_id": job_id}))["error"] == "unknown_operation"

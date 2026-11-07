@@ -525,6 +525,12 @@ class EditorialService:
             created_at=row["created_at"],
         )
 
+    def task_status(self, edition_id):
+        row = self.db.execute(
+            "SELECT model_task_id FROM editorial_editions WHERE id=?", (edition_id,)
+        ).fetchone()
+        return self.runner.progress(row[0]) if row else None
+
     def _validator(self, payload):
         route = RouteSnapshot(**payload["input"]["route"])
         return BriefValidator(
@@ -713,7 +719,7 @@ class EditorialService:
             )
         return result
 
-    async def advance(self, edition_id, *, now=None):
+    async def advance(self, edition_id, *, now=None, before_dispatch=None):
         execution_time = (
             now  # None preserves M02's fresh clock after an asynchronous credential read.
         )
@@ -738,7 +744,12 @@ class EditorialService:
         self._submit(row)
         validator = self._validator(payload)
         execution = await self.runner.advance(
-            row["task_id"], validator, operation="editorial", version="1", now=execution_time
+            row["task_id"],
+            validator,
+            operation="editorial",
+            version="1",
+            now=execution_time,
+            before_dispatch=before_dispatch,
         )
         result = None
         with self.store._write():

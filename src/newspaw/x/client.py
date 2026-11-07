@@ -66,7 +66,7 @@ def _user(value):
         or not _HANDLE.fullmatch(value["username"])
         or type(value.get("protected")) is not bool
     ):
-        raise XReadError("malformed_response")
+        raise XReadError("malformed_response", units=1)
     return dict(remote_id=value["id"], handle=value["username"], protected=value["protected"])
 
 
@@ -106,9 +106,7 @@ class XClient:
                 403: "permission_denied",
                 404: "unavailable",
                 429: "rate_limited",
-            }.get(code)
-            if kind is None:
-                raise XReadError("outcome_unknown")
+            }.get(code, "http_error")
             retry = response.headers.get("retry-after", "")
             seconds = int(retry) if re.fullmatch(r"[0-9]{1,6}", retry) else None
             raise XReadError(kind, units=1, retry_after=seconds if code == 429 else None)
@@ -117,9 +115,9 @@ class XClient:
                 raise ValueError()
             body = response.json()
         except (ValueError, RecursionError):
-            raise XReadError("malformed_response") from None
+            raise XReadError("malformed_response", units=1) from None
         if not isinstance(body, dict):
-            raise XReadError("malformed_response")
+            raise XReadError("malformed_response", units=1)
         return body
 
     @staticmethod
@@ -175,7 +173,7 @@ class XClient:
         body = await self._get("/2/lists/" + remote_id(identity) + "/members", params)
         meta = body.get("meta")
         data = body.get("data", [])
-        count = max(1, len(data)) if isinstance(data, list) else None
+        count = max(1, len(data)) if isinstance(data, list) else 1
         if (
             not isinstance(data, list)
             or body.get("errors")

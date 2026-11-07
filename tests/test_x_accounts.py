@@ -470,3 +470,74 @@ async def test_list_membership_cannot_authorize_new_identity_using_old_local_id(
     current = x.account_status(identity)
     assert current["remote_id"] == "56789" and current["state"] == "ready"
     assert not current["member_active"] and not current["can_collect"]
+
+
+async def test_verify_list_only_identity_never_promotes_direct_follow(system):
+    store, _, _ = system
+    members = [user("12345", "list_only")]
+
+    async def response(request, _):
+        if request.url.path == "/2/lists/456":
+            return httpx.Response(
+                200, json={"data": {"id": "456", "name": "Fixture", "private": False}}
+            )
+        if request.url.path == "/2/lists/456/members":
+            return httpx.Response(
+                200, json={"data": members, "meta": {"result_count": len(members)}}
+            )
+        assert request.url.path == "/2/users/12345"
+        return httpx.Response(200, json={"data": user("12345", "list_only")})
+
+    x, _ = directory(system, response)
+    x.add_list("456", "normal", store.config_revision())
+    await x.refresh_list("456", "list.initial", store.config_revision(), page_size=5)
+    revision, config = store.load_config()
+    identity = config["accounts"][0]["id"]
+    subscription = next(sub for sub in config["subscriptions"] if sub["category_id"] == "x")
+    subscription["enabled"] = True
+    store.save_config(config, expected_revision=revision)
+    await x.classify(identity, "normal", store.config_revision())
+    await x.set_route(identity, subscription["id"], "normal", store.config_revision())
+    assert x.account_status(identity)["can_collect"] is True
+    verified = await x.verify(identity, "verify.member", store.config_revision())
+    assert verified["state"] == "ready"
+    assert verified["account"]["direct"] is False
+    members.clear()
+    await x.refresh_list("456", "list.removed", store.config_revision(), page_size=5)
+    status = x.account_status(identity)
+    assert not status["member_active"] and not status["can_collect"]
+    explicitly_followed = await x.add_account("list_only", store.config_revision())
+    assert explicitly_followed["account"]["can_collect"] is True
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "reason"),
+    [
+        (500, b"{}", "http_error"),
+        (200, b"invalid json", "malformed_response"),
+        (200, b"[]", "malformed_response"),
+        (200, b'{"data":{},"meta":{"result_count":0}}', "partial_response"),
+    ],
+)
+async def test_received_x_page_error_settles_known_units(system, status, body, reason):
+    store, _, _ = system
+
+    async def response(request, _):
+        if request.url.path == "/2/lists/456":
+            return httpx.Response(
+                200, json={"data": {"id": "456", "name": "Fixture", "private": False}}
+            )
+        return httpx.Response(status, content=body)
+
+    x, requests = directory(system, response)
+    x.add_list("456", "normal", store.config_revision())
+    revision = store.config_revision()
+    operation = await x.refresh_list("456", "list.received", revision, page_size=100)
+
+    assert operation["state"] == reason
+    assert operation["attempts"][-1]["reads"] == 1
+    assert store._db.execute(
+        "SELECT state,reserved_units,settled_units FROM budget_attempts WHERE meter='x' AND reserved_units=100"
+    ).fetchall() == [("settled", 100, 1)]
+    assert await x.refresh_list("456", "list.received", revision, page_size=100) == operation
+    assert len(requests) == 2

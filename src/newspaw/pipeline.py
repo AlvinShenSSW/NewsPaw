@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from .connectors import AICollector, api_scopes
+from .connectors.web import WebCollector, web_scopes
 from .credentials import CredentialError
 from .editorial import EditorialError, EditorialService
 from .evidence import EvidenceError, EvidenceStore, FeedCollector, feed_scopes
@@ -89,12 +90,14 @@ class Pipeline:
         runner=None,
         feed_factory=FeedCollector,
         ai_factory=AICollector,
+        web_factory=WebCollector,
         source_images=None,
     ):
         self.store, self.db = store, store._db
         self.runner = runner if runner is not None else ModelRunner(store, backend)
         self.editorial = EditorialService(store, self.runner)
         self.feed_factory, self.ai_factory = feed_factory, ai_factory
+        self.web_factory = web_factory
         self.source_images = source_images
         self._active = {}
 
@@ -168,8 +171,10 @@ class Pipeline:
                 ):
                     raise PipelineError("invalid_job_budget")
                 config = self.store.load_config()[1]
-                scopes = feed_scopes(config, [subscription_id]) + api_scopes(
-                    config, [subscription_id]
+                scopes = (
+                    feed_scopes(config, [subscription_id])
+                    + api_scopes(config, [subscription_id])
+                    + web_scopes(config, [subscription_id])
                 )
                 covered = {item["source"]["id"] for scope in scopes for item in scope["selected"]}
                 payload = dict(
@@ -394,16 +399,29 @@ class Pipeline:
                     ),
                 )
 
+        def before_request():
+            with self.store._write():
+                self._leased(job_id, token, starting=True, now=now)
+                return effect_guard() if effect_guard is not None else None
+
         evidence = EvidenceStore(self.store, collection_guard=guard)
         outcomes = [evidence.attempt(key, partition=partition) for key in attempts.values()]
         if pending is not None and all(
             result["status"] != "configuration_changed" for result in outcomes
         ):
             scope = dict(scopes[pending], collection_id=job_id, collection_group=pending)
-            factory = self.ai_factory if "kinds" in scope else self.feed_factory
+            if scope.get("kinds") == ["web"]:
+                factory = self.web_factory
+            else:
+                factory = self.ai_factory if "kinds" in scope else self.feed_factory
             collector = factory(evidence)
             try:
-                result = await collector.fetch_scope(scope, 24, now)
+                if scope.get("kinds") == ["web"]:
+                    result = await collector.fetch_scope(
+                        scope, 24, now, before_request=before_request
+                    )
+                else:
+                    result = await collector.fetch_scope(scope, 24, now)
                 if result is None:
                     return
                 attempts[pending] = result["id"]
@@ -421,7 +439,11 @@ class Pipeline:
             return
         successful = any(
             result["status"] in _SUCCESSFUL_FETCH
-            and (result.get("coverage_complete", True) or result.get("accepted_count", 0) > 0)
+            and (
+                result.get("coverage_complete", True)
+                or result.get("accepted_count", 0) > 0
+                or (result["evidence_scope"] == "public_metadata" and not result.get("error_kind"))
+            )
             for result in outcomes
         )
         self._transition(
@@ -564,16 +586,29 @@ class Pipeline:
                 )
                 self._event(job_id, action, "cancelled", now)
             else:
-                paused = action == "pause"
-                if bool(row["paused"]) != paused:
-                    self.db.execute(
-                        "UPDATE pipeline_jobs SET paused=?,updated_at=? WHERE id=?",
-                        (int(paused), now.isoformat(), job_id),
-                    )
-                    self._event(job_id, action, row["stage"], now)
+                self.set_paused_tx(job_id, action == "pause", now)
+
+    def set_paused_tx(self, job_id, paused, now):
+        """Set the absolute pause bit inside the caller's existing write transaction."""
+        row = self._row(job_id)
+        if (
+            row["cancelled"]
+            or row["stage"] not in _ACTIVE | {"awaiting_delivery"}
+            or bool(row["paused"]) == paused
+        ):
+            return
+        self.db.execute(
+            "UPDATE pipeline_jobs SET paused=?,updated_at=? WHERE id=?",
+            (int(paused), now.isoformat(), job_id),
+        )
+        self._event(job_id, "pause" if paused else "resume", row["stage"], now)
 
     def pause(self, job_id):
         self._control(job_id, "pause")
+        return self.notify_paused(job_id)
+
+    def notify_paused(self, job_id):
+        """Nudge an unstarted model operation after its durable pause commits."""
         result = self.get(job_id)
         model = result["model"]
         if (

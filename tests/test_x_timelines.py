@@ -264,3 +264,33 @@ async def test_begin_does_not_unhide_cache_after_authoritative_denial(system):
     assert scans.posts("account", account) == []
     await scans.advance("three", "three.step")
     assert [post["id"] for post in scans.posts("account", account)] == ["130", "120"]
+
+
+async def test_version_17_upgrade_preserves_directory_and_commands(tmp_path):
+    from test_credentials import FakeKeychain
+
+    from newspaw.control import ControlServer
+    from newspaw.credentials import CredentialManager
+    from newspaw.migrations import DATABASE_VERSION
+
+    path = tmp_path / "state.db"
+    with closing(Store(path)) as store:
+        server = ControlServer(tmp_path, CredentialManager(store, FakeKeychain()))
+        server.x.add_list("456", "normal", store.config_revision())
+        with store._write():
+            for table in (
+                "x_post_observations",
+                "x_posts",
+                "x_timeline_steps",
+                "x_timeline_scans",
+                "x_timeline_cursors",
+            ):
+                store._db.execute(f"DROP TABLE {table}")
+            store._db.execute("PRAGMA user_version=17")
+
+    with closing(Store(path)) as store:
+        server = ControlServer(tmp_path, CredentialManager(store, FakeKeychain()))
+        assert store._db.execute("PRAGMA user_version").fetchone() == (DATABASE_VERSION,)
+        assert store._db.execute("SELECT count(*) FROM command_replies").fetchone() == (0,)
+        assert server.x.list_status("456")["id"] == "456"
+        assert await server._dispatch({"op": "x.posts.purge_expired"}) == {"purged": 0}

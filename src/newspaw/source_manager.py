@@ -19,6 +19,7 @@ import httpx
 
 from .app_config import _url, validate_config
 from .connectors import AICollector, APIError, source_url
+from .connectors.av import AV_ORIGIN, AVCollector, av_supported
 from .connectors.web import WEB_ALIASES, WEB_SITES, WebCollector, web_supported
 from .credentials import CredentialError
 from .evidence import EvidenceError, EvidenceStore, FeedCollector
@@ -26,6 +27,7 @@ from .news import (
     MAX_FEED_BYTES,
     NewsError,
     eligible_articles,
+    known_av_origin,
     parse_evidence,
     plain_text,
     public_url,
@@ -238,7 +240,9 @@ class SourceManager:
                     "atom",
                     "github",
                     "huggingface",
-                } or (s["kind"] == "web" and web_supported(s))
+                } or (s["kind"] == "web" and (web_supported(s) or av_supported(s)))
+                if s["kind"] in {"rss", "atom"} and known_av_origin(s["url"]):
+                    raise SourceError("adult_source_requires_adapter")
                 if not s["category_ids"] or not supported:
                     raise SourceError("unsupported_source")
                 if not self._ready(s):
@@ -318,12 +322,18 @@ class SourceManager:
         source = self._source(identity)
         if source["partition"] is None:
             raise SourceError("unclassified_source")
+        if source["kind"] in {"rss", "atom"} and known_av_origin(source["url"]):
+            raise SourceError("adult_source_requires_adapter")
         factory = {
             "rss": FeedCollector,
             "atom": FeedCollector,
             "github": AICollector,
             "huggingface": AICollector,
-            "web": WebCollector if web_supported(source) else None,
+            "web": AVCollector
+            if av_supported(source)
+            else WebCollector
+            if web_supported(source)
+            else None,
         }.get(source["kind"])
         if factory is None:
             raise SourceError("unsupported_source")
@@ -398,6 +408,20 @@ class SourceManager:
 
     async def discover(self, value):
         url = normalize_url(value)
+        if known_av_origin(url):
+            return dict(
+                kind="web",
+                choices=[
+                    dict(
+                        url=AV_ORIGIN,
+                        kind="web",
+                        name="AV研究所",
+                        partition="adult",
+                        category_ids=["av"],
+                        validation="preview_required",
+                    )
+                ],
+            )
         entry = WEB_ALIASES.get(url, url)
         if entry in WEB_SITES:
             return dict(

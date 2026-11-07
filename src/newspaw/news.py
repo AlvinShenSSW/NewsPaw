@@ -24,7 +24,18 @@ from .transport import SafeHTTPError, source_client
 
 MAX_FEED_BYTES = 2 * 1024 * 1024
 MAX_ITEMS = 200
+KNOWN_AV_FEED = "https://fiu758.com/?feed=rss2"
 TRACKING_PARAMETERS = {"fbclid", "gclid", "mc_cid", "mc_eid"}
+
+
+def known_av_origin(url):
+    if not isinstance(url, str):
+        return False
+    try:
+        host = (urlsplit(url).hostname or "").rstrip(".").lower()
+    except ValueError:
+        return False
+    return host == "fiu758.com" or host.endswith(".fiu758.com")
 
 
 class NewsError(RuntimeError):
@@ -318,7 +329,12 @@ def parse_evidence(
     data: bytes,
     feed_url: str,
     fetched_at: datetime,
+    *,
+    _dedicated_av=False,
 ) -> tuple[list[Article], dict[str, int]]:
+    adult_feed = _dedicated_av and feed_url == KNOWN_AV_FEED
+    if known_av_origin(feed_url) and not adult_feed:
+        raise NewsError("此来源需要成人产业采集适配器。", "adult_source_requires_adapter")
     check_news_xml(data)
     # feedparser treats even bytes as possible filenames; a stream is data only.
     parsed = feedparser.parse(io.BytesIO(data))
@@ -341,6 +357,9 @@ def parse_evidence(
         if not title or not entry.get("link") or not url:
             reject("invalid_title_or_url")
             continue
+        if known_av_origin(url) and not adult_feed:
+            reject("adult_source_requires_adapter")
+            continue
         published, published_raw, date_error = _published(entry)
         # feedparser aliases .get("updated") to published on RSS. Only real
         # raw fields can establish an independent update timestamp.
@@ -351,7 +370,9 @@ def parse_evidence(
         summary = full_excerpt[:1500]
         source_data = entry.get("source", {})
         source = plain_text(source_data.get("title", ""), 200) or fallback_source
-        image_url = _image(entry)
+        image_url = None if adult_feed else _image(entry)
+        if known_av_origin(image_url):
+            image_url = None
         articles.append(
             Article(
                 title=title,
@@ -394,8 +415,8 @@ def eligible_articles(articles, now, max_age_hours=24):
     return accepted, rejected
 
 
-def _parse_feed(data, feed_url, max_age_hours, now, fetched_at):
-    articles, rejected = parse_evidence(data, feed_url, fetched_at)
+def _parse_feed(data, feed_url, max_age_hours, now, fetched_at, *, _dedicated_av=False):
+    articles, rejected = parse_evidence(data, feed_url, fetched_at, _dedicated_av=_dedicated_av)
     accepted, date_rejections = eligible_articles(articles, now, max_age_hours)
     for reason, count in date_rejections.items():
         rejected[reason] = rejected.get(reason, 0) + count
@@ -430,6 +451,8 @@ class NewsService:
         region: str = "US",
         max_age_hours: int = 24,
         topic_feeds: dict[str, list[str]] | None = None,
+        *,
+        _dedicated_av=False,
     ) -> None:
         if not 1 <= max_age_hours <= 720:
             raise ValueError("max_age_hours must be between 1 and 720")
@@ -440,6 +463,7 @@ class NewsService:
         if any(not public_url(url, https_only=True) for url in all_feeds):
             raise ValueError("RSS feeds must use public HTTPS URLs")
         self.feeds = list(dict.fromkeys(feeds))
+        self._dedicated_av = _dedicated_av
         self.topic_feeds = {
             topic.strip().casefold(): list(dict.fromkeys(urls))
             for topic, urls in mapped_feeds.items()
@@ -470,6 +494,11 @@ class NewsService:
         try:
             async with self._semaphore, asyncio.timeout(30):
                 for _ in range(4):
+                    adult_feed = self._dedicated_av and url == KNOWN_AV_FEED
+                    if known_av_origin(url) and not adult_feed:
+                        raise NewsError(
+                            "此来源需要成人产业采集适配器。", "adult_source_requires_adapter"
+                        )
                     async with self._client.stream("GET", url) as response:
                         http_status = response.status_code
                         if response.is_redirect:
@@ -493,7 +522,13 @@ class NewsService:
                                 raise NewsError("新闻源内容过大。", "oversized_feed")
                         fetched_at = datetime.now(UTC)
                         articles, rejected = await asyncio.to_thread(
-                            _parse_feed, bytes(data), url, self.max_age_hours, now, fetched_at
+                            _parse_feed,
+                            bytes(data),
+                            url,
+                            self.max_age_hours,
+                            now,
+                            fetched_at,
+                            _dedicated_av=adult_feed,
                         )
                         return articles, SourceAttempt(
                             original_url,

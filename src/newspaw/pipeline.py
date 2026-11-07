@@ -11,7 +11,9 @@ from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from .av_rules import AV_CONTRACT
 from .connectors import AICollector, api_scopes
+from .connectors.av import AVCollector, av_scopes
 from .connectors.web import WebCollector, web_scopes
 from .credentials import CredentialError
 from .editorial import EditorialError, EditorialService
@@ -91,13 +93,14 @@ class Pipeline:
         feed_factory=FeedCollector,
         ai_factory=AICollector,
         web_factory=WebCollector,
+        av_factory=AVCollector,
         source_images=None,
     ):
         self.store, self.db = store, store._db
         self.runner = runner if runner is not None else ModelRunner(store, backend)
         self.editorial = EditorialService(store, self.runner)
         self.feed_factory, self.ai_factory = feed_factory, ai_factory
-        self.web_factory = web_factory
+        self.web_factory, self.av_factory = web_factory, av_factory
         self.source_images = source_images
         self._active = {}
 
@@ -175,6 +178,7 @@ class Pipeline:
                     feed_scopes(config, [subscription_id])
                     + api_scopes(config, [subscription_id])
                     + web_scopes(config, [subscription_id])
+                    + av_scopes(config, [subscription_id])
                 )
                 covered = {item["source"]["id"] for scope in scopes for item in scope["selected"]}
                 payload = dict(
@@ -308,6 +312,13 @@ class Pipeline:
             self._check_profile_generations(payload)
         except (ProviderError, RouteStale):
             raise PipelineError("edition_changed") from None
+        if current.effective["category_id"] == "av":
+            try:
+                result = self.editorial.get(self._edition_id(job_id))["result"]
+            except EditorialError:
+                raise PipelineError("edition_changed") from None
+            if not result or result.get("av_contract") != AV_CONTRACT:
+                raise PipelineError("edition_changed")
         return route
 
     def delivery_input(self, job_id):
@@ -411,7 +422,7 @@ class Pipeline:
         ):
             scope = dict(scopes[pending], collection_id=job_id, collection_group=pending)
             if scope.get("kinds") == ["web"]:
-                factory = self.web_factory
+                factory = self.av_factory if scope["partition"] == "adult" else self.web_factory
             else:
                 factory = self.ai_factory if "kinds" in scope else self.feed_factory
             collector = factory(evidence)
@@ -442,7 +453,10 @@ class Pipeline:
             and (
                 result.get("coverage_complete", True)
                 or result.get("accepted_count", 0) > 0
-                or (result["evidence_scope"] == "public_metadata" and not result.get("error_kind"))
+                or (
+                    result["evidence_scope"] in {"public_metadata", "av_industry"}
+                    and not result.get("error_kind")
+                )
             )
             for result in outcomes
         )

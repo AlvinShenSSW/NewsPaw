@@ -126,7 +126,7 @@ def _prepare_logs(log_dir: Path) -> None:
         )
         try:
             info = os.fstat(descriptor)
-            if info.st_uid != os.getuid() or not stat.S_ISREG(info.st_mode):
+            if info.st_uid != os.geteuid() or not stat.S_ISREG(info.st_mode):
                 raise OSError("unsafe_service_log")
             os.fchmod(descriptor, 0o600)
         finally:

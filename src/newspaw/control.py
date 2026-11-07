@@ -18,9 +18,12 @@ from pathlib import Path
 
 from .budget import BudgetError, BudgetLedger
 from .credentials import CredentialError
+from .providers import ProbeService, ProfileRegistry, ProviderError
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
+    "models.status": ({"profile_id"}, set()),
+    "models.probe": ({"probe_id", "profile_id", "capability", "hold_units"}, set()),
     "budget.get": (set(), set()),
     "budget.save": ({"document", "revision"}, set()),
     "config.get": (set(), set()),
@@ -74,6 +77,7 @@ class ControlServer:
         self.directory = Path(directory).expanduser().absolute()
         self.path = self.directory / "control.sock"
         self.credentials = credentials
+        self.probes = ProbeService(credentials.store, credentials.backend)
         self._server = None
         self._lock_fd = None
         self._handlers = set()
@@ -101,6 +105,7 @@ class ControlServer:
             self._socket_identity = self.path.stat().st_ino
             await self.credentials.cleanup()
             BudgetLedger(self.credentials.store).recover_inflight()
+            ProfileRegistry(self.credentials.store).recover_interrupted()
             from .evidence import EvidenceStore
 
             EvidenceStore(self.credentials.store).recover_interrupted()
@@ -139,6 +144,12 @@ class ControlServer:
         if not required <= keys or keys - required - optional:
             raise CredentialError("invalid_request")
         manager, store = self.credentials, self.credentials.store
+        if op == "models.status":
+            return ProfileRegistry(store).status(data["profile_id"])
+        if op == "models.probe":
+            return await self.probes.probe(
+                data["probe_id"], data["profile_id"], data["capability"], data["hold_units"]
+            )
         if op in {"budget.get", "budget.save"}:
             ledger = BudgetLedger(store)
             if op == "budget.get":
@@ -187,7 +198,7 @@ class ControlServer:
                     raise CredentialError("invalid_request")
                 result = await self._dispatch(json.loads(raw))
                 response = {"ok": True, "result": result}
-            except (CredentialError, BudgetError) as exc:
+            except (CredentialError, BudgetError, ProviderError) as exc:
                 response = {"ok": False, "error": str(exc)}
             except Exception:
                 response = {"ok": False, "error": "invalid_request"}

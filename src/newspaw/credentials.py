@@ -253,11 +253,17 @@ class CredentialManager:
             for kind in ("model_profiles", "bots"):
                 old = {e["id"]: e for e in current[kind]}
                 fields = ["credential_ref"] + (
-                    ["verified", "paired", "telegram_id", "chat_id"] if kind == "bots" else []
+                    ["verified", "paired", "telegram_id", "chat_id"]
+                    if kind == "bots"
+                    else ["capabilities"]
                 )
                 for entry in document[kind]:
                     for field in fields:
-                        default = False if field in {"verified", "paired"} else None
+                        default = (
+                            []
+                            if field == "capabilities"
+                            else (False if field in {"verified", "paired"} else None)
+                        )
                         if entry[field] != old.get(entry["id"], {}).get(field, default):
                             raise CredentialError("protected_configuration_field")
             return await self._commit(document, revision)

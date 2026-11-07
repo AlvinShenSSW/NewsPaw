@@ -400,3 +400,38 @@ def test_v4_evidence_upgrade_failure_rolls_back_and_retries(tmp_path, monkeypatc
     assert reopened.load_config() == original
     assert reopened._db.execute("SELECT COUNT(*) FROM feed_attempts").fetchone()[0] == 0
     reopened.close()
+
+
+def test_v5_provider_upgrade_failure_rolls_back_and_retries(tmp_path, monkeypatch):
+    import newspaw.providers as providers
+
+    path = tmp_path / "state.db"
+    store = Store(path)
+    original = store.load_config()
+    store.close()
+    with closing(sqlite3.connect(path)) as db:
+        db.execute("DROP TABLE model_probes")
+        db.execute("DROP TABLE profile_epochs")
+        db.execute("PRAGMA user_version=5")
+        db.commit()
+    initialize = providers.initialize
+
+    def fail(db):
+        initialize(db)
+        raise RuntimeError("injected provider migration failure")
+
+    monkeypatch.setattr(providers, "initialize", fail)
+    with pytest.raises(RuntimeError):
+        Store(path)
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert not db.execute(
+            "SELECT name FROM sqlite_master WHERE name='profile_epochs'"
+        ).fetchall()
+    monkeypatch.setattr(providers, "initialize", initialize)
+    reopened = Store(path)
+    assert reopened.load_config() == original
+    assert (
+        providers.ProfileRegistry(reopened).status("normal_primary")["text"]["state"] == "untested"
+    )
+    reopened.close()

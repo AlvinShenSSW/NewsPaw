@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "newspaw"
+version = "0.1.0"
+description = "A personal news agent for Telegram, running on your Mac."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "feedparser>=6.0.11,<7",
+  "httpx>=0.28,<0.29",
+  "openai>=2,<3",
+  "python-dotenv>=1.1,<2",
+  "python-telegram-bot[job-queue,rate-limiter]>=22.5,<23",
+]
+
+[project.scripts]
+newspaw = "newspaw.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.14,<1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]

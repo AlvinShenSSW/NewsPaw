@@ -1,0 +1,21 @@
+# Publisher adapters, independently configurable from summaries and delivery.
+# Aliases select these sources; e.g. NEWS_TOPICS=Apple;国际;日本;澳洲
+# Other topics use explicitly recorded Google News RSS discovery.
+
+[topics.apple]
+aliases = ["Apple", "苹果"]
+feeds = ["https://9to5mac.com/feed/", "https://feeds.macrumors.com/MacRumors-Front"]
+
+[topics.world]
+aliases = ["国际", "国际新闻", "world"]
+feeds = ["https://feeds.bbci.co.uk/news/world/rss.xml", "https://www.aljazeera.com/xml/rss/all.xml"]
+
+[topics.japan]
+aliases = ["日本", "日本新闻", "japan"]
+# This legacy feed returned only stale entries in the 2026-11-07 probe.
+# Retained as an explicit source with freshness checks, never as guaranteed live news.
+feeds = ["https://www3.nhk.or.jp/rss/news/cat0.xml"]
+
+[topics.australia]
+aliases = ["澳洲", "澳大利亚", "australia"]
+feeds = ["https://www.abc.net.au/news/feed/51120/rss.xml", "https://www.theguardian.com/australia-news/rss"]

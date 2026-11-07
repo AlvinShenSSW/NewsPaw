@@ -294,3 +294,67 @@ async def test_version_17_upgrade_preserves_directory_and_commands(tmp_path):
         assert store._db.execute("SELECT count(*) FROM command_replies").fetchone() == (0,)
         assert server.x.list_status("456")["id"] == "456"
         assert await server._dispatch({"op": "x.posts.purge_expired"}) == {"purged": 0}
+
+
+@pytest.mark.parametrize("field", ["id", "author_id", "reference"])
+async def test_malformed_remote_ids_settle_all_returned_rows(system, field):
+    async def responses(request, _):
+        bad = post(110, minutes=2)
+        if field == "reference":
+            bad["referenced_posts"] = [{"type": "quoted", "id": "0"}]
+        else:
+            bad[field] = "0"
+        return page([post(120), bad])
+
+    store, _, _ = system
+    scans, _, account, _ = await setup(system, responses)
+    scans.begin("malformed", "account", account, store.config_revision())
+    result = await scans.advance("malformed", "malformed.step")
+    assert result["state"] == "incomplete" and result["reason"] == "partial_response"
+    assert store._db.execute(
+        "SELECT settled_units FROM budget_attempts WHERE task_id LIKE 'xtimeline.%'"
+    ).fetchone() == (2,)
+
+
+async def test_same_remote_sensitive_revocation_survives_local_account_replacement(system):
+    reads = []
+
+    async def responses(request, _):
+        reads.append(request)
+        return page([post(125, sensitive=len(reads) > 1)])
+
+    store, _, _ = system
+    scans, x, original, _ = await setup(system, responses)
+    scans.begin("old.owner", "account", original, store.config_revision())
+    await scans.advance("old.owner", "old.step")
+    assert scans.posts("account", original)
+
+    old = store.load_config()[1]
+    await x.remove_account(original, store.config_revision())
+    replacement = (await x.add_account("fixture", store.config_revision()))["account"]["id"]
+    assert replacement != original
+    await x.verify(replacement, "verify.replacement", store.config_revision())
+    await x.classify(replacement, "normal", store.config_revision())
+    await x.set_route(replacement, "sub_x", "normal", store.config_revision())
+    scans.begin("new.owner", "account", replacement, store.config_revision())
+    await scans.advance("new.owner", "new.step")
+    assert store._db.execute(
+        "SELECT body,tombstone FROM x_posts WHERE partition='normal' AND id='125'"
+    ).fetchone() == (None, 1)
+
+    store.save_config(old, expected_revision=store.config_revision())
+    await x.verify(original, "verify.original", store.config_revision())
+    assert scans.posts("account", original) == []
+
+
+async def test_fractional_publication_after_window_floor_is_eligible(system):
+    async def responses(request, _):
+        timestamp = NOW - timedelta(hours=24) + timedelta(milliseconds=500)
+        return page([dict(post(120), created_at=timestamp.isoformat())])
+
+    store, _, _ = system
+    scans, _, account, _ = await setup(system, responses)
+    scans.begin("fractional", "account", account, store.config_revision())
+    status = await scans.advance("fractional", "fractional.step")
+    assert status["state"] == "complete" and status["complete_cursor"] == "120"
+    assert [post["id"] for post in scans.posts("account", account)] == ["120"]

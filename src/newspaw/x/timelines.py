@@ -481,8 +481,18 @@ class Timelines:
             "SELECT account_id,author_id,tombstone FROM x_posts WHERE partition=? AND id=?",
             identity,
         ).fetchone()
-        if prior is not None and (prior[:2] != (owner[0], post["author_id"]) or prior[2]):
-            return 0
+        if prior is not None:
+            prior_owner, prior_author, already_hidden = prior
+            if prior_author != post["author_id"] or already_hidden:
+                return 0
+            if tombstone:
+                self.db.execute(
+                    "UPDATE x_posts SET body=NULL,refs='[]',tombstone=1 WHERE partition=? AND id=?",
+                    identity,
+                )
+                return 0
+            if prior_owner != owner[0]:
+                return 0
         self.db.execute(
             """INSERT INTO x_posts VALUES (?,?,?,?,?,?,?,?)
                ON CONFLICT(partition,id) DO UPDATE SET

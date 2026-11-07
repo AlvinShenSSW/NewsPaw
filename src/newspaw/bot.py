@@ -24,7 +24,7 @@ from telegram.ext import (
 
 from .ai import AIError, AIService
 from .config import ConfigError, Settings, parse_times, parse_topics
-from .news import Article, NewsError, NewsService
+from .news import Article, NewsError, NewsService, known_av_origin
 from .schedule import due_slot
 from .store import Store
 from .telegram.text import split_text
@@ -186,6 +186,13 @@ class NewsBot:
         query: str = "",
         track: bool = False,
     ) -> None:
+        articles = [
+            article
+            for article in articles
+            if not known_av_origin(article.url) and not known_av_origin(article.feed_url)
+        ]
+        if not articles:
+            return
         summary = ""
         if self.ai.enabled:
             try:
@@ -198,7 +205,11 @@ class NewsBot:
         for index, article in enumerate(articles, 1):
             text = article_text(article, index, self.settings.timezone)
             sent = False
-            if article.image_url and len(text.encode("utf-16-le")) // 2 <= 1000:
+            if (
+                article.image_url
+                and not known_av_origin(article.image_url)
+                and len(text.encode("utf-16-le")) // 2 <= 1000
+            ):
                 try:
                     await bot.send_photo(chat_id, article.image_url, caption=text)
                     sent = True

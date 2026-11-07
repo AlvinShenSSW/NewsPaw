@@ -234,6 +234,7 @@ async def test_mixed_bot_prompts_for_media_scope_without_model_or_file_fetch(sys
 async def test_command_migration_keeps_existing_inbox_and_delivery(system):
     from contextlib import closing
 
+    from newspaw.migrations import DATABASE_VERSION
     from newspaw.store import Store
 
     pipeline, targets, job, _, path = system
@@ -249,7 +250,7 @@ async def test_command_migration_keeps_existing_inbox_and_delivery(system):
         pipeline.db.execute("PRAGMA user_version=16")
 
     with closing(Store(path)) as upgraded:
-        assert upgraded._db.execute("PRAGMA user_version").fetchone() == (17,)
+        assert upgraded._db.execute("PRAGMA user_version").fetchone() == (DATABASE_VERSION,)
         assert upgraded._db.execute("SELECT count(*) FROM command_replies").fetchone() == (0,)
         assert upgraded._db.execute(
             "SELECT state FROM bot_inbox WHERE bot_id=? AND generation=? AND update_id=2",

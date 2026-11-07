@@ -32,6 +32,11 @@ async def system(tmp_path, request):
     path = tmp_path / "state.db"
     store = Store(path)
     config, sub = configured(partition)
+    if partition == "adult":
+        # This fixture exercises general adult delivery, not the AV industry adapter.
+        fixture = next(row for row in config["categories"] if row["id"] == "av")
+        fixture["id"] = sub["category_id"] = "adult_fixture"
+        config["sources"][0]["category_ids"] = ["adult_fixture"]
     config["bots"].append(dict(config["bots"][0], id="bot2", credential_ref=REF2))
     sub["bot_ids"] = ["bot1", "bot2"]
     store.save_config(config, expected_revision=1)

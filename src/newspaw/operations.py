@@ -168,11 +168,14 @@ def _scrub_settings(document):
 
 
 class Operations:
-    def __init__(self, store, directory, *, process_status=lambda: "stopped", clock=_now):
+    def __init__(
+        self, store, directory, *, process_status=lambda: "stopped", clock=_now, purge_x=None
+    ):
         self.store, self.db = store, store._db
         self.directory = Path(directory)
         self.database_name = Path(self.db.execute("PRAGMA database_list").fetchone()[2]).name
         self.process_status, self.clock = process_status, clock
+        self.purge_x = purge_x
 
     def export_settings(self):
         config, omitted = _scrub_settings(self.store.load_config()[1])
@@ -620,8 +623,10 @@ class Operations:
         log_bytes, log_candidates, log_removed = self._log_usage(
             cutoff=cutoff.timestamp(), apply=apply
         )
+        x = self.purge_x(limit=limit, apply=apply) if self.purge_x is not None else {}
         return {
             "apply": apply,
+            "x": x,
             "log_bytes": log_bytes,
             "log_candidates": log_candidates,
             "log_removed": log_removed,

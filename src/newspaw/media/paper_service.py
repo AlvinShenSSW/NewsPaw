@@ -324,6 +324,8 @@ class Newspapers:
         data, usage = await adapter.generate(prompt)
         try:
             clean, width, height = await asyncio.to_thread(normalize_photo, data, "image/jpeg")
+            if height <= width:
+                raise ImageError("invalid_generated_image")
             identity = self.assets.put(clean, kind="paper")
         except (ImageError, OSError):
             raise ProviderError("invalid_generated_image", outcome="known", usage=usage) from None

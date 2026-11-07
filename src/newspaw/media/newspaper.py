@@ -12,7 +12,7 @@ from ..credentials import CredentialError
 from ..news import public_url
 
 _LOCALES = {
-    "zh-Hans": ("NewsPaw 简报", "AI 生成示意", "第 {page}/{total} 页", "zh-Hans"),
+    "zh-Hans": ("NewsPaw 简报", "AI 生成示意", "第{page}/{total}页", "zh-Hans"),
     "en": ("NewsPaw Brief", "AI-generated illustration", "Page {page}/{total}", "en-US"),
     "ja": ("NewsPaw ニュース", "AI によるイメージ", "{page}/{total} ページ", "ja-JP"),
 }
@@ -82,9 +82,15 @@ def make_plan(edition, *, page_count, item_number=None):
 
 
 def _ocr_text(lines):
-    return "".join(
-        char for char in unicodedata.normalize("NFKC", "\n".join(lines)) if not char.isspace()
-    )
+    characters = []
+    for char in " ".join(lines):
+        decomposition = unicodedata.decomposition(char).split()
+        if decomposition and decomposition[0] in {"<wide>", "<narrow>"}:
+            characters.extend(chr(int(code, 16)) for code in decomposition[1:])
+        else:
+            characters.append(char)
+    normalized = unicodedata.normalize("NFC", "".join(characters))
+    return " ".join(normalized.split())
 
 
 def validate_ocr(page, observed):

@@ -66,6 +66,23 @@ def test_frozen_page_plan_accepts_exact_ocr_and_rejects_changed_number(locale):
     assert plan["citations"][0]["url"] == "https://example.com/a"
 
 
+@pytest.mark.parametrize(
+    ("planned", "observed"),
+    [
+        ("The score was 1 2.", "The score was 12."),
+        ("The score was 12.", "The score was ①②."),
+        ("Source S1", "Source S 1"),
+    ],
+)
+def test_ocr_never_changes_token_boundaries_or_compatibility_characters(planned, observed):
+    with pytest.raises(PaperError, match="ocr_mismatch"):
+        validate_ocr({"lines": [planned]}, [observed])
+
+
+def test_ocr_allows_width_and_existing_space_changes():
+    assert validate_ocr({"lines": ["Page 1/2", "Source S1"]}, ["Ｐａｇｅ　１／２", "Source   Ｓ１"])
+
+
 async def test_absolute_media_deadline_cancels_stalled_producer():
     started, cancelled = asyncio.Event(), asyncio.Event()
 
@@ -237,6 +254,32 @@ async def test_newspaper_rechecks_scope_after_last_provider_returns(prepared_pap
     assert service.db.execute("SELECT state,result FROM newspapers").fetchall() == [
         ("building", None)
     ]
+
+
+async def test_landscape_page_never_reaches_ocr_or_vision(prepared_papers):
+    from io import BytesIO
+
+    from PIL import Image
+
+    service, _, ocr, calls = prepared_papers
+    buffer = BytesIO()
+    Image.new("RGB", (60, 40), "white").save(buffer, "JPEG")
+
+    class Landscape:
+        async def generate(self, prompt):
+            calls.append("generation")
+            return buffer.getvalue(), {"images": 1}
+
+        async def close(self):
+            pass
+
+    service.images = lambda *args: Landscape()
+    frozen = edition()
+    ocr.lines = [make_plan(frozen, page_count=1)["pages"][0]["lines"]]
+    future = datetime.now(UTC) + timedelta(seconds=5)
+    with pytest.raises(PaperError, match="invalid_generated_image"):
+        await service.prepare("brief.landscape", frozen, "normal", future, lambda: True)
+    assert calls == ["generation"] and ocr.calls == 0
 
 
 async def test_second_page_ocr_failure_does_not_publish_first_page(prepared_papers):

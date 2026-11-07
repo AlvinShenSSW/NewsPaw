@@ -517,3 +517,30 @@ def test_v7_editorial_upgrade_failure_rolls_back_and_retries(tmp_path,monkeypatc
     reopened=Store(path)
     assert reopened.load_config()==original
     reopened.close()
+
+
+def test_v8_connector_identity_upgrade_rollback_and_retry(tmp_path, monkeypatch):
+    import newspaw.migrations as migrations
+    path = tmp_path / 'state.db'
+    store = Store(path)
+    original = store.load_config()
+    store.close()
+    with closing(sqlite3.connect(path)) as db:
+        db.execute('DROP TABLE connector_identity')
+        db.execute('PRAGMA user_version=8')
+        db.commit()
+    backup = migrations._backup
+    def fail(path):
+        backup(path)
+        raise RuntimeError('injected upgrade failure')
+    monkeypatch.setattr(migrations,'_backup',fail)
+    with pytest.raises(RuntimeError):
+        Store(path)
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute('PRAGMA user_version').fetchone()[0] == 8
+        assert not db.execute("SELECT 1 FROM sqlite_master WHERE name='connector_identity'").fetchall()
+    monkeypatch.setattr(migrations,'_backup',backup)
+    reopened = Store(path)
+    assert reopened.load_config() == original
+    assert reopened._db.execute("SELECT 1 FROM sqlite_master WHERE name='connector_identity'").fetchone()
+    reopened.close()

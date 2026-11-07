@@ -9,7 +9,7 @@ import ipaddress
 import json
 import re
 import socket
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
@@ -50,11 +50,16 @@ class Article:
     updated_raw: str = ""
     language: str = ""
     published_error: str = ""
+    evidence_scope: str = "rss_excerpt"
+    metadata: dict = field(default_factory=dict)
 
     @property
     def content_sha256(self) -> str:
         """Hash the retained title/excerpt snapshot, not a proof of truth."""
-        payload = json.dumps([self.title, self.summary], ensure_ascii=False, separators=(",", ":"))
+        values = [self.title, self.summary]
+        if self.metadata:
+            values.append(self.metadata)
+        payload = json.dumps(values, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -250,7 +255,9 @@ def _image(entry: dict) -> str | None:
 
 
 def parse_evidence(
-    data: bytes, feed_url: str, fetched_at: datetime,
+    data: bytes,
+    feed_url: str,
+    fetched_at: datetime,
 ) -> tuple[list[Article], dict[str, int]]:
     if not isinstance(data, bytes) or len(data) > MAX_FEED_BYTES:
         raise NewsError("新闻源内容过大或格式无效。", "oversized_feed")

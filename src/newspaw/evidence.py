@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import suppress
 from dataclasses import asdict
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -45,18 +46,18 @@ def initialize(db):
         db.execute(statement)
 
 
-def _source(config, identity):
+def _source(config, identity, kinds=frozenset({"rss", "atom"})):
     source = next((s for s in config["sources"] if s["id"] == identity), None)
     if source is None:
         raise EvidenceError("missing_source")
     if source["partition"] not in {"normal", "adult"}:
         raise EvidenceError("unclassified_source")
-    if source["kind"] not in {"rss", "atom"}:
+    if source["kind"] not in kinds:
         raise EvidenceError("unsupported_source")
     return source
 
 
-def _selection(config, subscriptions, source_id):
+def _selection(config, subscriptions, source_id, kinds=frozenset({"rss", "atom"})):
     selected = []
 
     def append(source, subscription="", category=""):
@@ -72,7 +73,8 @@ def _selection(config, subscriptions, source_id):
         )
 
     if source_id is not None:
-        append(_source(config, source_id))
+        source = _source(config, source_id, kinds)
+        append(source)
     else:
         if not isinstance(subscriptions, list) or not 1 <= len(subscriptions) <= 200:
             raise EvidenceError("invalid_subscriptions")
@@ -87,9 +89,9 @@ def _selection(config, subscriptions, source_id):
                     if sub["source_ids"]
                     else category["id"] in source["category_ids"]
                 ):
-                    if not source["enabled"]:
+                    if not source["enabled"] or source["kind"] not in kinds:
                         continue
-                    source = _source(config, source["id"])
+                    source = _source(config, source["id"], kinds)
                     if (
                         source["partition"] != category["partition"]
                         or category["id"] not in source["category_ids"]
@@ -146,7 +148,12 @@ class EvidenceStore:
     def current(self, scope):
         _, config = self.store.load_config()
         try:
-            selected = _selection(config, scope["subscriptions"], scope["source_id"])
+            selected = _selection(
+                config,
+                scope["subscriptions"],
+                scope["source_id"],
+                scope.get("kinds", {"rss", "atom"}),
+            )
         except EvidenceError:
             return False
         matching = [
@@ -207,6 +214,8 @@ class EvidenceStore:
         rejected=None,
         validators=None,
         snapshot_id=None,
+        cache=True,
+        connector_identity=None,
     ):
         with self.store._write():
             if articles is not None:
@@ -222,16 +231,34 @@ class EvidenceStore:
                         _json(rejected),
                     ),
                 )
-                self.db.execute(
-                    "INSERT INTO feed_cache VALUES (?,?,?,?,?,?) ON CONFLICT(partition,url) DO UPDATE SET snapshot_id=excluded.snapshot_id,final_url=excluded.final_url,etag=excluded.etag,modified=excluded.modified",
-                    (scope["partition"], scope["url"], snapshot_id, *validators),
-                )
+                if cache:
+                    self.db.execute(
+                        "INSERT INTO feed_cache VALUES (?,?,?,?,?,?) ON CONFLICT(partition,url) DO UPDATE SET snapshot_id=excluded.snapshot_id,final_url=excluded.final_url,etag=excluded.etag,modified=excluded.modified",
+                        (scope["partition"], scope["url"], snapshot_id, *validators),
+                    )
             if not self.current(scope):
                 outcome = {
                     **outcome,
                     "status": "configuration_changed",
                     "error_kind": "configuration_changed",
                 }
+            elif connector_identity is not None:
+                kind, remote_id, canonical = connector_identity
+                prior = self.db.execute(
+                    "SELECT remote_id FROM connector_identity WHERE partition=? AND kind=? AND url=?",
+                    (scope["partition"], kind, scope["url"]),
+                ).fetchone()
+                if prior and prior[0] != remote_id:
+                    outcome = {
+                        **outcome,
+                        "status": "identity_changed",
+                        "error_kind": "identity_changed",
+                    }
+                else:
+                    self.db.execute(
+                        "INSERT INTO connector_identity VALUES (?,?,?,?,?) ON CONFLICT(partition,kind,url) DO UPDATE SET canonical=excluded.canonical",
+                        (scope["partition"], kind, scope["url"], remote_id, canonical),
+                    )
             changed = self.db.execute(
                 "UPDATE feed_attempts SET completed_at=?,status=?,outcome_json=?,snapshot_id=? WHERE id=? AND status='running'",
                 (now.isoformat(), outcome["status"], _json(outcome), snapshot_id, identity),
@@ -267,7 +294,7 @@ class EvidenceStore:
             "status": row[2],
             "snapshot_id": row[4],
             "associations": [r["association"] for r in json.loads(row[5])["selected"]],
-            "evidence_scope": "rss_excerpt",
+            "evidence_scope": json.loads(row[5]).get("evidence_scope", "rss_excerpt"),
         }
 
     def articles(
@@ -305,7 +332,9 @@ class EvidenceStore:
         return eligible_articles(articles, _time(now), max_age_hours)[0] if fresh_only else articles
 
     def _configured_source(self, identity):
-        return _source(self.store.load_config()[1], identity)
+        return _source(
+            self.store.load_config()[1], identity, {"rss", "atom", "github", "huggingface"}
+        )
 
     def set_health_threshold(self, source_id, hours):
         if type(hours) is not int or not 1 <= hours <= 8760:
@@ -337,6 +366,24 @@ class EvidenceStore:
         hours = row[0] if row else 72
         cache = self.cache(source["partition"], source["url"])
         articles = self.snapshot(cache["snapshot_id"], source["partition"])[0] if cache else []
+        if source["kind"] in {"github", "huggingface"}:
+            articles = []
+            for attempt in reversed(self.history(source_id)):
+                if attempt["snapshot_id"] and attempt["status"] in {
+                    "fresh",
+                    "stale",
+                    "empty",
+                    "no_eligible",
+                }:
+                    with suppress(EvidenceError):
+                        articles = self.articles(
+                            attempt["id"],
+                            partition=source["partition"],
+                            source_id=source_id,
+                            now=now,
+                            fresh_only=False,
+                        )
+                    break
         dates = [
             a.published_at
             for a in articles

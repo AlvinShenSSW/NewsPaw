@@ -139,6 +139,7 @@ class BoundedTransport(httpx.AsyncBaseTransport):
                 "if-modified-since",
                 "range",
                 "cache-control",
+                "x-github-api-version",
             }
             if any(key.lower() not in allowed_headers for key in request.headers):
                 raise SafeHTTPError("source_credentials_rejected")

@@ -203,3 +203,65 @@ async def test_web_cannot_be_previewed_after_adult_reclassification(tmp_path):
         await manager.save(source(partition="adult", categories=("av",)), store.config_revision())
         with pytest.raises(SourceError, match="unsupported_source"):
             await manager.preview("website", now=NOW)
+
+
+@pytest.mark.parametrize("hold_before_landing", [True, False])
+async def test_schedule_hold_stops_next_public_web_request(tmp_path, hold_before_landing):
+    from test_routing import configured
+
+    from newspaw.pipeline import Pipeline
+
+    requests = []
+
+    def handler(request):
+        requests.append(str(request.url))
+        assert str(request.url) == ZAOBAO
+        return httpx.Response(200, headers=HTML_HEADERS, text=f'<a href="{STORY}">story</a>')
+
+    with closing(Store(tmp_path / "state.db")) as store:
+        config, sub = configured()
+        config["sources"] = [{**source(categories=("world",)), "enabled": True}]
+        store.save_config(config, expected_revision=1)
+        pipeline = Pipeline(
+            store,
+            FakeKeychain(),
+            web_factory=lambda evidence: WebCollector(evidence, client=mock_client(handler)),
+        )
+        job = pipeline.create(
+            sub["id"], "web", holds={"normal_primary": 100, "normal_backup": 100}, now=NOW
+        )
+
+        result = await pipeline.advance(
+            job["job_id"],
+            now=NOW,
+            effect_guard=lambda: False if hold_before_landing or requests else None,
+        )
+
+        assert result["stage"] == "collecting" and not result["attempt_ids"]
+        rows = store._db.execute("SELECT status,snapshot_id FROM feed_attempts").fetchall()
+        assert rows == ([] if hold_before_landing else [("interrupted", None)])
+        assert requests == ([] if hold_before_landing else [ZAOBAO])
+
+
+def test_web_discovery_upgrade_preserves_x_directory_and_schedule(tmp_path):
+    from newspaw.control import ControlServer
+
+    path = tmp_path / "state.db"
+    keys = FakeKeychain()
+    with closing(Store(path)) as store:
+        server = ControlServer(tmp_path, CredentialManager(store, keys))
+        server.x.add_list("456", "normal", store.config_revision())
+        policy = server.scheduler.policy()
+        policy["settings"].update(enabled=True, holds={"normal": 100, "adult": None})
+        expected = server.scheduler.configure(policy["settings"], policy["revision"], now=NOW)
+        with store._write():
+            store._db.execute("DROP TABLE web_search_requests")
+            store._db.execute("DROP TABLE web_search_policy")
+            store._db.execute("PRAGMA user_version=15")
+
+    with closing(Store(path)) as store:
+        server = ControlServer(tmp_path, CredentialManager(store, keys))
+        assert store._db.execute("PRAGMA user_version").fetchone() == (16,)
+        assert server.x.list_status("456")["id"] == "456"
+        assert server.scheduler.policy() == expected
+        assert server.web_search.policy()["profile_id"] is None

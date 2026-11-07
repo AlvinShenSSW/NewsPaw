@@ -8,6 +8,9 @@ from dataclasses import dataclass
 
 from .app_config import STYLES, validate_config
 
+# Version of the effective route contract, independent of additive config fields.
+ROUTE_SCHEMA_VERSION = 2
+
 
 class RouteBlocked(ValueError):
     pass
@@ -62,7 +65,7 @@ def resolve_route(config, revision, subscription_id, *, account_id=None, style=N
         "execution": "preflight only; revalidate before every side effect",
     }
     payload = {
-        "schema_version": config["schema_version"],
+        "schema_version": ROUTE_SCHEMA_VERSION,
         "subscription_id": subscription_id,
         "owner_id": config["owner_id"],
         "locale": config["news_output_locale"],

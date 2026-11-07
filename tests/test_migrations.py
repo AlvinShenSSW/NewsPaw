@@ -224,6 +224,7 @@ def version1_database(path, *, revision=1):
     store.close()
     config["schema_version"] = 1
     del config["group_styles"]
+    del config["x_api"]
     for kind in ("categories", "accounts"):
         for entry in config[kind]:
             del entry["style"]
@@ -244,7 +245,7 @@ def test_v1_upgrade_preserves_import_eligibility_and_preferences(tmp_path, revis
     store = Store(path)
     new_revision, config = store.load_config()
     assert new_revision == revision + 1
-    assert config["schema_version"] == 2
+    assert config["schema_version"] == 3
     assert config["model_profiles"] == original["model_profiles"]
     assert store.get("last_slot") == "historic"
     env = tmp_path / "legacy.env"

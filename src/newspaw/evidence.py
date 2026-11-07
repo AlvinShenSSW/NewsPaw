@@ -185,8 +185,11 @@ class EvidenceStore:
     def begin(self, scope, now):
         identity = "fetch_" + uuid4().hex
         with self.store._write():
-            if self.collection_guard is not None:
-                self.collection_guard(scope, starting=True)
+            if (
+                self.collection_guard is not None
+                and self.collection_guard(scope, starting=True) is False
+            ):
+                return None
             if not self.current(scope):
                 raise EvidenceError("configuration_changed")
             self.db.execute(
@@ -481,6 +484,8 @@ class FeedCollector:
 
         repo = self.evidence
         identity = repo.begin(scope, clock())
+        if identity is None:
+            return None
         cache = repo.cache(scope["partition"], scope["url"])
         url = scope["url"]
         status_code = None

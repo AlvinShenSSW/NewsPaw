@@ -27,6 +27,7 @@ from .config import ConfigError, Settings, parse_times, parse_topics
 from .news import Article, NewsError, NewsService
 from .schedule import due_slot
 from .store import Store
+from .telegram.text import split_text
 
 log = logging.getLogger(__name__)
 MAX_MEDIA_BYTES = 19 * 1024 * 1024
@@ -43,21 +44,6 @@ HELP = """🐾 NewsPaw 已连接
 也可以直接发文字、图片或 3 分钟内的语音来找新闻。
 图片理解、语音识别和智能摘要需要配置模型 API。
 图片不会被当作已证实的新闻；结果以来源链接为准。"""
-
-
-def split_text(text: str, limit: int = 3500) -> list[str]:
-    """Keep Telegram's UTF-16 length limit, including emoji and astral glyphs."""
-    chunks, chunk, size = [], [], 0
-    for char in text:
-        width = len(char.encode("utf-16-le")) // 2
-        if size + width > limit:
-            chunks.append("".join(chunk))
-            chunk, size = [], 0
-        chunk.append(char)
-        size += width
-    if chunk:
-        chunks.append("".join(chunk))
-    return chunks
 
 
 async def send_text(bot: Bot, chat_id: int, text: str) -> None:

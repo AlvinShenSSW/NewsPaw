@@ -248,6 +248,10 @@ def web_scopes(config, subscriptions, source_id=None):
     ]
 
 
+class _CollectionHeld(RuntimeError):
+    pass
+
+
 class WebCollector:
     def __init__(self, evidence, *, client=None):
         self.evidence = evidence
@@ -262,9 +266,11 @@ class WebCollector:
             raise EvidenceError("unsupported_source")
         return [await self.fetch_scope(scopes[0], max_age_hours, now)]
 
-    async def _get(self, scope, target, *, article=False):
+    async def _get(self, scope, target, *, article=False, before_request=None):
         site, origin = WEB_SITES[scope["url"]], urlsplit(scope["url"]).netloc
         for hop in range(3):
+            if before_request is not None and before_request() is False:
+                raise _CollectionHeld
             if not self.evidence.current(scope):
                 raise WebError("configuration_changed")
             request = self.client.build_request("GET", target)
@@ -300,13 +306,15 @@ class WebCollector:
             return response
         raise WebError("redirect_rejected")
 
-    async def fetch_scope(self, scope, hours, fixed):
+    async def fetch_scope(self, scope, hours, fixed, *, before_request=None):
         url = scope["url"]
         site = WEB_SITES.get(url)
         if scope["partition"] != "normal" or site is None:
             raise EvidenceError("unsupported_source")
         start = _time(fixed)
         identity = self.evidence.begin(scope, start)
+        if identity is None:
+            return None
         articles = []
         gaps = {"sitemap_metadata_only" if site.sitemap else "bounded_metadata_sample"}
         error = None
@@ -316,7 +324,7 @@ class WebCollector:
 
         try:
             async with asyncio.timeout(60):
-                landing = await self._get(scope, url)
+                landing = await self._get(scope, url, before_request=before_request)
                 if site.sitemap:
                     if "xml" not in landing.headers.get("content-type", "").lower():
                         raise WebError("layout_changed")
@@ -330,7 +338,9 @@ class WebCollector:
                         raise WebError("layout_changed")
                     for target in links.links:
                         try:
-                            detail = await self._get(scope, target, article=True)
+                            detail = await self._get(
+                                scope, target, article=True, before_request=before_request
+                            )
                             if "text/html" not in detail.headers.get("content-type", "").lower():
                                 raise WebError("layout_changed")
                             page = _Page(str(detail.url), site)
@@ -341,6 +351,14 @@ class WebCollector:
                             gaps.add(error)
                             if error == "configuration_changed":
                                 break
+        except _CollectionHeld:
+            self.evidence.finish(
+                identity,
+                scope,
+                dict(status="interrupted", error_kind="collection_held"),
+                _time(fixed),
+            )
+            return None
         except asyncio.CancelledError:
             self.evidence.finish(
                 identity, scope, dict(status="interrupted", error_kind="interrupted"), _time(fixed)

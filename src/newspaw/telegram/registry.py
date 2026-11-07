@@ -325,10 +325,17 @@ class BotRegistry:
         self._current(row["id"], row["generation"])
         return self.client_factory(token)
 
-    async def verify(self, identity, *, now=None):
+    def _expect_generation(self, identity, generation):
+        if generation is not None and (
+            type(generation) is not int or self.status(identity)["generation"] != generation
+        ):
+            raise TelegramError("binding_changed")
+
+    async def verify(self, identity, *, now=None, generation=None):
         _now(now)
         async with self._locks.setdefault(identity, asyncio.Lock()):
             with self.store._write():
+                self._expect_generation(identity, generation)
                 row = self._ensure(identity)
                 prior = deepcopy(row)
                 row["generation"] += 1
@@ -395,11 +402,12 @@ class BotRegistry:
                 self._save(row)
             return self.status(identity)
 
-    def pair_code(self, identity, *, now=None):
+    def pair_code(self, identity, *, now=None, generation=None):
         when = _now(now)
         code = secrets.token_urlsafe(24)
         salt = secrets.token_hex(16)
         with self.store._write():
+            self._expect_generation(identity, generation)
             row = self._row(identity)
             self._current(identity, row["generation"])
             state = row["state"]
@@ -423,11 +431,12 @@ class BotRegistry:
             self._save(row)
         return dict(code=code, expires_at=when + 600, max_attempts=5)
 
-    def action(self, identity, action, *, now=None):
+    def action(self, identity, action, *, now=None, generation=None):
         if action not in {"pause", "resume", "unbind"}:
             raise TelegramError("invalid_bot_action")
         when = _now(now)
         with self.store._write():
+            self._expect_generation(identity, generation)
             row = self._row(identity)
             self._current(identity, row["generation"])
             state = row["state"]

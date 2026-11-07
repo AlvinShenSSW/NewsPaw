@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from ..app_config import source_in_subscription
 from ..budget import BudgetError, BudgetLedger
 from ..credentials import CredentialError
 from ..providers import ProfileRegistry, ProviderAdapter, ProviderError, SearchRequest
@@ -78,7 +79,7 @@ def _domains(config, subscription_id):
             not source["enabled"]
             or source["partition"] != "normal"
             or category not in source["category_ids"]
-            or (sub["source_ids"] and source["id"] not in sub["source_ids"])
+            or not source_in_subscription(source, sub)
         ):
             continue
         row = authorized.get((source["url"], source["kind"]))

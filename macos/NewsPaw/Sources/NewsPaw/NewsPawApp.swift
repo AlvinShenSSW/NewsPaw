@@ -74,6 +74,7 @@ private struct ServiceMenu: View {
 
 struct SettingsWindow: View {
     @Bindable var model: AppModel
+    @State private var subscriptionEditor: SubscriptionSelection?
 
     var body: some View {
         NavigationSplitView {
@@ -136,6 +137,9 @@ struct SettingsWindow: View {
                 }
             }
         }
+        .sheet(item: $subscriptionEditor) { selection in
+            SubscriptionEditor(model: model, selection: selection)
+        }
     }
 
     @ViewBuilder private func pageContent(_ page: SettingsPage) -> some View {
@@ -187,6 +191,20 @@ struct SettingsWindow: View {
                         Text(model.text(enabled ? .enabled : .disabled))
                             .font(.caption)
                             .foregroundStyle(enabled ? Color.accentColor : Color.secondary)
+                        Menu {
+                            ForEach(config.subscriptions.filter { $0.categoryId == category.id }) { subscription in
+                                Button(subscription.name ?? categoryTitle(category)) {
+                                    subscriptionEditor = SubscriptionSelection(category: category, subscription: subscription)
+                                }
+                            }
+                            Button(SubscriptionCopy.new.text(model.uiLanguage)) {
+                                subscriptionEditor = SubscriptionSelection(category: category, subscription: nil)
+                            }
+                        } label: {
+                            Image(systemName: "slider.horizontal.3")
+                        }
+                        .accessibilityLabel(SubscriptionCopy.edit.text(model.uiLanguage))
+                        .fixedSize()
                     }
                     .padding(13)
                     .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
@@ -198,17 +216,7 @@ struct SettingsWindow: View {
                     .accessibilityElement(children: .combine)
                 }
             }
-            sectionTitle(.sources)
-            if config.sources.isEmpty {
-                statusCard(model.text(.noSources))
-            } else {
-                VStack(spacing: 1) {
-                    ForEach(config.sources) { source in
-                        line(source.name, note: source.kind, status: source.enabled ? .enabled : .disabled)
-                    }
-                }
-                .background(cardBackground)
-            }
+            SourceWorkspace(model: model, sources: config.sources)
         }
     }
 
@@ -238,35 +246,13 @@ struct SettingsWindow: View {
     }
 
     private func models(_ config: AppConfig) -> some View {
-        VStack(alignment: .leading, spacing: 15) {
-            ForEach(["normal", "adult"], id: \.self) { partition in
-                sectionTitle(partition == "adult" ? .adult : .ordinary)
-                VStack(spacing: 1) {
-                    ForEach(config.modelProfiles.filter { $0.partition == partition }) { profile in
-                        line(
-                            model.text(profile.role == "primary" ? .primary : .backup) + " · " + profile.model,
-                            note: profile.provider,
-                            status: profile.capabilities.contains("text") ? .verified : .unverified
-                        )
-                    }
-                }
-                .background(cardBackground)
-            }
-        }
+        ModelWorkspace(model: model, config: config)
     }
 
     private var delivery: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if model.bots.isEmpty {
-                statusCard(model.text(.noBots))
-            } else {
-                VStack(spacing: 1) {
-                    ForEach(model.bots) { bot in
-                        line(bot.name, status: bot.label)
-                    }
-                }
-                .background(cardBackground)
-            }
+            BotWorkspace(model: model)
+            RuntimePolicyWorkspace(model: model)
             VStack(alignment: .leading, spacing: 11) {
                 ConnectionBadge(model: model)
                 Text(model.text(.lifecycleNote)).foregroundStyle(.secondary)

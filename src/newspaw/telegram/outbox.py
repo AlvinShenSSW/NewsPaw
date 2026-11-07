@@ -92,8 +92,11 @@ def send_lane_blocked(db, remote, now):
            AND (inflight_part IS NOT NULL OR backoff_until>?)
            UNION ALL
            SELECT 1 FROM command_replies WHERE telegram_id=?
-           AND (inflight_part IS NOT NULL OR backoff_until>?) LIMIT 1""",
-            (remote, clock, remote, clock),
+           AND (inflight_part IS NOT NULL OR backoff_until>?)
+           UNION ALL
+           SELECT 1 FROM bot_test_sends WHERE telegram_id=?
+           AND (state='inflight' OR backoff_until>?) LIMIT 1""",
+            (remote, clock, remote, clock, remote, clock),
         ).fetchone()
         is not None
     )
@@ -134,7 +137,9 @@ def _manifest(route, text, media):
         raise OutboxError("invalid_photo")
     for item in photos:
         photo = _photo(item)
-        if route.effective["partition"] != "normal" and photo["asset_id"].startswith("source_"):
+        if route.effective["partition"] != "normal" and photo["asset_id"].startswith(
+            ("source_", "paper_")
+        ):
             raise OutboxError("incompatible_photo_partition")
         parts.append(photo)
     if not parts or len(parts) > _MAX_PARTS or len(_json(parts).encode()) > 512 * 1024:

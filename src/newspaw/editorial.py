@@ -416,6 +416,69 @@ class BriefValidator:
         )
 
 
+def _focus_order(pool, weights):
+    if not weights:
+        return pool
+    buckets = {}
+    for index, evidence in enumerate(pool):
+        focus = evidence.get("coverage_focus")
+        weight = weights.get(focus, max(weights.values()))
+        bucket = buckets.setdefault(focus, [])
+        # Rational priority within each evidence-backed bucket. Newest wins a tie.
+        bucket.append(((len(bucket) + 1) / weight, index, evidence))
+    return [entry for _, _, entry in sorted(item for bucket in buckets.values() for item in bucket)]
+
+
+_X_COPY = {
+    "en": dict(
+        attributed="Posted on X by {authors}: ",
+        title="X posts by {authors}: ",
+        complete="Complete",
+        partial="Partial",
+        unavailable="Unavailable",
+        empty="No eligible new posts",
+        unknown="Outcome unknown",
+        through="Through",
+        start="From",
+        reused="Reused coverage",
+    ),
+    "zh-Hans": dict(
+        attributed="{authors} 在 X 上发文：",
+        title="{authors} 的 X 帖文：",
+        complete="覆盖完整",
+        partial="覆盖不完整",
+        unavailable="采集失败",
+        empty="没有符合条件的新帖",
+        unknown="结果不明",
+        through="截至",
+        start="起始",
+        reused="复用已有覆盖",
+    ),
+    "ja": dict(
+        attributed="{authors} が X に投稿：",
+        title="{authors} の X 投稿：",
+        complete="取得完了",
+        partial="一部取得",
+        unavailable="取得不可",
+        empty="対象となる新規投稿なし",
+        unknown="結果不明",
+        through="終了",
+        start="開始",
+        reused="取得済みの範囲を再利用",
+    ),
+}
+
+
+def _x_authors(sources):
+    return sorted(
+        {
+            source["metadata"]["x_post"]["author"]
+            for source in sources
+            if "x_post" in source.get("metadata", {})
+        }
+    )
+
+
 def initialize(db):
     db.execute(
         "CREATE TABLE IF NOT EXISTS editorial_editions (id TEXT PRIMARY KEY, subscription_id TEXT NOT NULL, partition TEXT NOT NULL, created_at TEXT NOT NULL, payload TEXT NOT NULL, model_task_id TEXT NOT NULL UNIQUE, state TEXT NOT NULL, result_json TEXT, error_kind TEXT)"
@@ -433,12 +496,15 @@ class EditorialService:
     def _pool(self, route, attempt_ids, now):
         effective = route.effective
         entries, coverage = [], []
+        focus_weights = effective.get("focus_weights")
+        source_focus = {item["id"]: item.get("focus") for item in effective["sources"]}
         for key in attempt_ids:
             attempt = self.evidence.attempt(key, partition=effective["partition"])
             articles = self.evidence.articles(
                 key,
                 partition=effective["partition"],
                 subscription_id=route.subscription_id,
+                account_id=route.account_id,
                 now=now,
             )
             if effective["category_id"] != "av":
@@ -476,6 +542,10 @@ class EditorialService:
                     coverage_complete=attempt["coverage_complete"],
                     coverage_gaps=attempt.get("coverage_gaps", []),
                 )
+            topics = {source_focus.get(identity) for identity in coverage[-1]["source_ids"]}
+            topic = next(iter(topics)) if len(topics) == 1 else None
+            if "x_coverage" in attempt:
+                coverage[-1]["x_coverage"] = attempt["x_coverage"]
             for article in articles:
                 entries.append(
                     dict(
@@ -501,6 +571,8 @@ class EditorialService:
                 )
                 if article.metadata:
                     entries[-1]["metadata"] = article.metadata
+                if focus_weights and topic:
+                    entries[-1]["coverage_focus"] = topic
         covered = {key for row in coverage for key in row["source_ids"]}
         for source in effective["sources"]:
             if source["id"] not in covered:
@@ -536,7 +608,7 @@ class EditorialService:
             )
             by_hash[entry["content_hash"]] = entry
             pool.append(entry)
-        return pool[:200], coverage, max(0, len(pool) - 200)
+        return _focus_order(pool, focus_weights)[:200], coverage, max(0, len(pool) - 200)
 
     def _row(self, edition_id):
         self.store.load_config()
@@ -554,6 +626,19 @@ class EditorialService:
             error_kind=row[4],
             created_at=row[5],
         )
+
+    def x_evidence_current(self, edition_id, route):
+        row = self._row(edition_id)
+        payload = row["payload"]
+        if not any("x_post" in entry.get("metadata", {}) for entry in payload["pool"]):
+            return True
+        try:
+            current, _, _ = self._pool(
+                route, payload["input"]["attempt_ids"], datetime.fromisoformat(row["created_at"])
+            )
+        except EvidenceError:
+            return False
+        return _hash(current) == _hash(payload["pool"])
 
     def get(self, edition_id):
         row = self._row(edition_id)
@@ -625,6 +710,11 @@ class EditorialService:
             "No URLs, embedded citation numbers, markdown, extra fields or raw-source fallback. Return only the specified JSON object."
         )
         evidence = payload["pool"]
+        if route.effective.get("focus_weights"):
+            instructions += (
+                " Evidence order reflects the subscription’s relative domestic and entertainment "
+                "preferences. Prefer earlier equally relevant evidence. Do not fill missing topics."
+            )
         if validator.av_industry:
             if any(
                 not industry_copy(
@@ -648,6 +738,12 @@ class EditorialService:
                 }
                 for entry in evidence
             ]
+        elif route.effective["category_id"] in {"x", "x_adult"}:
+            instructions += (
+                " These are attributed X posts. Present each author’s claims or opinions as "
+                "their statements. A quoted post reference is not evidence of what the "
+                "referenced author said. Do not present posts as independently verified."
+            )
         request = ModelRequest(
             route.effective["partition"],
             instructions,
@@ -781,10 +877,15 @@ class EditorialService:
                 for source in candidate["sources"]:
                     if source not in sources:
                         sources.append(source)
+            authors = ", ".join(_x_authors(sources))
+            title, body = item["title"], item["body"]
+            if authors:
+                title = _X_COPY[locale]["title"].format(authors=authors) + title
+                body = _X_COPY[locale]["attributed"].format(authors=authors) + body
             result["items"].append(
                 dict(
-                    title=item["title"],
-                    body=item["body"],
+                    title=title,
+                    body=body,
                     kind=labels[item["kind"]],
                     stage=_STAGE_LABELS[locale][list(STAGES).index(item["stage"])],
                     evidence_ids=item["evidence_ids"],
@@ -807,8 +908,12 @@ class EditorialService:
                 for source in pool[key]["sources"]:
                     if source not in sources:
                         sources.append(source)
+            authors = ", ".join(_x_authors(sources))
+            note = conflict["note"]
+            if authors:
+                note = _X_COPY[locale]["title"].format(authors=authors) + note
             result["conflicts"].append(
-                dict(note=conflict["note"], evidence_ids=conflict["evidence_ids"], sources=sources)
+                dict(note=note, evidence_ids=conflict["evidence_ids"], sources=sources)
             )
         return result
 
@@ -926,18 +1031,41 @@ class EditorialService:
                         + " · "
                         + note
                     )
-        if not result["items"]:
+        x_coverage = [row for row in result["coverage"] if "x_coverage" in row]
+        if not result["items"] and not (
+            x_coverage and all(row["status"] == "empty" for row in x_coverage)
+        ):
             parts.append(result["empty_note"])
+        if x_coverage:
+            copy = _X_COPY[result["locale"]]
+            for row in x_coverage:
+                coverage = row["x_coverage"]
+                if row["status"] == "outcome_unknown":
+                    status = "unknown"
+                elif row["coverage_complete"]:
+                    status = "empty" if row["status"] == "empty" else "complete"
+                else:
+                    status = "partial" if coverage["through_time"] else "unavailable"
+                stamps = [
+                    f"{copy[label]} {coverage[key]}"
+                    for label, key in (("start", "from_time"), ("through", "through_time"))
+                    if coverage[key]
+                ]
+                notes = [coverage["author"], copy[status]]
+                if "reused_through_prior_time" in row["coverage_gaps"]:
+                    notes.append(copy["reused"])
+                parts.append(" · ".join([*notes, *stamps]))
         for conflict in result["conflicts"]:
             parts.append(labels["conflict"] + "\n" + conflict["note"])
             parts.extend(f"{s['source']}\n{s['url']}" for s in conflict["sources"])
+        generic_coverage = [row for row in result["coverage"] if "x_coverage" not in row]
         covered = {
             key
-            for c in result["coverage"]
+            for c in generic_coverage
             if c["eligible_count"] and c.get("coverage_complete", True)
             for key in c["source_ids"]
         }
-        gaps = len({key for c in result["coverage"] for key in c["source_ids"]} - covered)
+        gaps = len({key for c in generic_coverage for key in c["source_ids"]} - covered)
         if gaps:
             parts.append(f"{labels['coverage']}: {gaps}")
         if result["omitted_count"]:

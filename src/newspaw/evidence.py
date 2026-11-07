@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import httpx
 
+from .app_config import source_in_subscription
 from .migrations import check_version
 from .news import (
     MAX_FEED_BYTES,
@@ -23,6 +24,7 @@ from .news import (
     parse_evidence,
 )
 from .transport import SafeHTTPError, source_client
+from .x.digests import x_post_available, x_scope
 
 
 class EvidenceError(ValueError):
@@ -93,11 +95,7 @@ def _selection(config, subscriptions, source_id, kinds=frozenset({"rss", "atom"}
                 raise EvidenceError("missing_subscription")
             category = next(c for c in config["categories"] if c["id"] == sub["category_id"])
             for source in config["sources"]:
-                if (
-                    source["id"] in sub["source_ids"]
-                    if sub["source_ids"]
-                    else category["id"] in source["category_ids"]
-                ):
+                if source_in_subscription(source, sub):
                     if (
                         not source["enabled"]
                         or source["kind"] not in kinds
@@ -178,6 +176,13 @@ class EvidenceStore:
 
     def current(self, scope):
         _, config = self.store.load_config()
+        if digest := scope.get("x_digest"):
+            expected = x_scope(
+                config, scope["subscriptions"][0], digest["account"], digest["special"]
+            )
+            return expected is not None and all(
+                scope.get(key) == value for key, value in expected.items()
+            )
         try:
             selected = _selection(
                 config,
@@ -342,6 +347,7 @@ class EvidenceStore:
         partition,
         subscription_id=None,
         source_id=None,
+        account_id=None,
         now=None,
         max_age_hours=24,
         fresh_only=True,
@@ -359,7 +365,12 @@ class EvidenceStore:
             if subscription_id is not None
             else ("source_id", source_id)
         )
-        if not any(a[key] == value for a in result["associations"]) or not self.current(scope):
+        digest = scope.get("x_digest")
+        if (
+            not any(a[key] == value for a in result["associations"])
+            or not self.current(scope)
+            or (digest is not None and digest["special"] != account_id)
+        ):
             raise EvidenceError("evidence_scope_changed")
         if (
             result["status"] not in {"fresh", "stale", "empty", "no_eligible", "not_modified"}
@@ -367,6 +378,13 @@ class EvidenceStore:
         ):
             return []
         articles, _ = self.snapshot(result["snapshot_id"], partition)
+        if digest is not None:
+            ref = self.store.load_config()[1]["x_api"]["credential_ref"]
+            articles = [
+                article
+                for article in articles
+                if x_post_available(self.db, partition, article.metadata["x_post"], ref)
+            ]
         return eligible_articles(articles, _time(now), max_age_hours)[0] if fresh_only else articles
 
     def _configured_source(self, identity):

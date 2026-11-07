@@ -51,7 +51,7 @@ struct BackendRPC {
         if !ok.boolValue {
             switch object["error"] as? String {
             case "unknown_operation": throw BackendFailure.incompatible
-            case "config_conflict": throw BackendFailure.conflict
+            case "config_conflict", "binding_changed": throw BackendFailure.conflict
             default: throw BackendFailure.rejected
             }
         }
@@ -79,25 +79,45 @@ struct ConfigSnapshot: Decodable {
 struct AppConfig: Decodable {
     let uiLocale: AppLanguage
     let newsOutputLocale: AppLanguage
+    let timezone: String?
     let categories: [Category]
     let subscriptions: [Subscription]
     let sources: [Source]
     let accounts: [Account]
     let modelProfiles: [Profile]
+    let bots: [ConfiguredBot]?
+    let groupStyles: [String: String]?
+
+    struct ConfiguredBot: Decodable { let id: String; let adultAllowed: Bool }
 
     struct Category: Decodable, Identifiable {
         let id, name, partition: String
+        let primaryProfileId, backupProfileId: String?
+
+        init(id: String, name: String, partition: String, primaryProfileId: String? = nil, backupProfileId: String? = nil) {
+            self.id = id
+            self.name = name
+            self.partition = partition
+            self.primaryProfileId = primaryProfileId
+            self.backupProfileId = backupProfileId
+        }
     }
 
     struct Subscription: Decodable, Identifiable {
         let id, categoryId, timezone: String
         let enabled: Bool
         let times: [String]
+        let name, sourceMode, style: String?
+        let sourceIds, botIds: [String]?
+        let maxItems: Int?
+        let focusWeights: [String: Int]?
     }
 
     struct Source: Decodable, Identifiable {
         let id, name, kind: String
         let enabled: Bool
+        let url, partition, focus: String?
+        let categoryIds: [String]?
     }
 
     struct Account: Decodable, Identifiable {
@@ -107,6 +127,7 @@ struct AppConfig: Decodable {
 
     struct Profile: Decodable, Identifiable {
         let id, partition, role, provider, model: String
+        let baseUrl: String?
         let capabilities: [String]
     }
 }
@@ -114,6 +135,8 @@ struct AppConfig: Decodable {
 struct BotStatus: Decodable, Identifiable {
     let id, name: String
     let verified, paired, paused: Bool
+    let generation: Int?
+    let status, username: String?
 
     var label: Phrase {
         if paused { return .paused }
@@ -152,6 +175,7 @@ final class AppModel {
 
     private(set) var connection: ConnectionState = .connecting
     private(set) var config: AppConfig?
+    private(set) var configRevision = 0
     private(set) var bots: [BotStatus] = []
     private(set) var uiLanguage: AppLanguage
     private(set) var busy = false
@@ -204,6 +228,7 @@ final class AppModel {
             let currentBots: [BotStatus] = try BackendRPC.decode(await rpc.get("bots.list"))
             guard started == generation else { return }
             config = current.document
+            configRevision = current.revision
             bots = currentBots
             connection = .connected
             if !hasLocalLanguage {
@@ -218,6 +243,7 @@ final class AppModel {
     private func clear(_ state: ConnectionState) {
         connection = state
         config = nil
+        configRevision = 0
         bots = []
     }
 
@@ -250,6 +276,16 @@ final class AppModel {
         }
         busy = false
         await refresh()
+    }
+
+    func request(_ operation: String, fields: [String: Any] = [:]) async throws -> Data {
+        guard connection == .connected else { throw SocketFailure.disconnected }
+        var body = fields
+        body["op"] = operation
+        let data = try JSONSerialization.data(withJSONObject: body)
+        let extended = ["sources.discover", "sources.preview", "models.probe", "bots.verify", "bots.test_send"].contains(operation)
+        let socket = extended ? LocalSocket(path: rpc.socket.path, timeoutMilliseconds: 35_000) : rpc.socket
+        return try await BackendRPC(socket: socket).send(data)
     }
 
     func stopBackend() async {

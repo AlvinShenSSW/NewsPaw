@@ -473,5 +473,6 @@ def catalog():
                 "web": "public_metadata",
             }.get(kind, kind)
         )
+        row["focus"] = {"国内": "domestic", "娱乐": "entertainment"}.get(row["scope"])
         row["dated_observation"] = _OBSERVATIONS.get(row["id"])
     return rows

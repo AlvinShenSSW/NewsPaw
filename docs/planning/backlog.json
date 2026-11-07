@@ -63,15 +63,18 @@
         "R04",
         "R10"
       ],
-      "scope": "定义 source/category/subscription/account/model_profile/bot 的稳定 ID、schema 版本和配置版本；从 .env 与旧 SQLite 提供显式迁移。",
+      "scope": "定义 source/category/subscription/account/model_profile/bot 的稳定 ID、schema 和配置版本；仅迁移旧 .env/SQLite 的非秘密配置，定义凭据引用格式。实际秘密迁移由后续 F04 完成。",
       "acceptance": [
         "迁移前备份且失败回滚；重复迁移无重复数据",
-        "秘密只保留引用；私人来源不写仓库",
+        "秘密不写数据库；未迁入 Keychain 的凭据保持缺失/待配置，不生成已就绪的悬空引用",
         "旧版本不能写新 schema；默认值保留用户已确认型号与两种语言"
       ],
       "validation": "旧库、空库、损坏库、并发写入和升级中断 fixture；不触碰真实 data/。",
       "paths": "config.py, store.py, new migrations/",
-      "non_goals": "不实现 UI 或自动启动服务。"
+      "non_goals": "不迁移真实秘密、不实现 Keychain/UI、不自动启动服务；秘密迁移属于 F04。",
+      "review_notes": [
+        "IR-04 P2 Deferred：实现设计时明确旧 chat_id/scope/article_key 回执及 last_slot 到新订阅/期次的迁移；验证升级后不自动补发历史。"
+      ]
     },
     {
       "id": "F02",
@@ -133,13 +136,14 @@
         "R08",
         "R10"
       ],
-      "scope": "后台唯一写配置；SwiftUI 通过用户私有 Unix socket 请求读写、校验和控制；Keychain 存秘密。",
+      "scope": "后台唯一写配置；SwiftUI 通过用户私有 Unix socket 请求读写、校验和控制；Keychain 存秘密。 Keychain 就绪后提供显式旧 .env 秘密导入：验证写入成功再原子提交引用，失败回滚并保留旧配置。",
       "acceptance": [
         "socket 目录/peer 权限限制当前用户；请求带配置版本，冲突不覆盖",
         "Keychain 写失败不留下半配置；锁定/撤销可诊断",
-        "配置、日志、错误和导出无明文 Key/Token；不开放公网端口"
+        "配置、日志、错误和导出无明文 Key/Token；不开放公网端口",
+        "实际秘密导入只在 Keychain 实现后执行；中途失败不启用半配置、不删除旧 .env、不自动启动服务"
       ],
-      "validation": "Keychain fake 与 macOS 测试凭据隔离；非法 peer、陈旧版本、断线和日志脱敏测试。",
+      "validation": "Keychain fake 与 macOS 测试凭据隔离；非法 peer、陈旧版本、断线和日志脱敏测试。 加入秘密写入后配置提交前失败、孤立项清理和重复导入 fixture。",
       "paths": "new control/, new secrets/, config.py",
       "non_goals": "不使用真实用户秘密做自动测试，不提供远程控制。"
     },
@@ -250,7 +254,9 @@
         "S01",
         "M02",
         "M04",
-        "Q01"
+        "Q01",
+        "Q03",
+        "T02"
       ],
       "requirements": [
         "R02",
@@ -310,9 +316,10 @@
       "acceptance": [
         "网络/429/5xx、401/模型错误、内容拒绝、无新闻分别处理",
         "不跨分区、不重复抓 X、不因 Telegram 错误重新调用模型",
-        "格式修复后重校验引用；主备都失败保留任务，不发原文"
+        "格式修复后重校验引用；主备都失败保留任务，不发原文",
+        "请求可能已执行但响应丢失时持久化 outcome_unknown 并保留预留；没有经验证的幂等/结果查询能力则不自动重试或切备用"
       ],
-      "validation": "故障矩阵、超时结果未知、冷却恢复、取消、拒绝不切换、预算不足。",
+      "validation": "故障矩阵、超时结果未知、冷却恢复、取消、拒绝不切换、预算不足。 模拟服务端已计费而响应丢失，断言零自动二次调用；分别验证支持/不支持幂等查询的适配器。",
       "paths": "new model_runner.py, providers/",
       "non_goals": "不实现跨组兜底或无界自修复。"
     },
@@ -338,7 +345,10 @@
       ],
       "validation": "并发超额、预留崩溃恢复、跨月/账期、未知usage、费用表更新、多个 Bot 复用不多记。",
       "paths": "new budget.py, store.py",
-      "non_goals": "不保存计费后台凭据，不自动充值，不承诺估算等于官方账单。"
+      "non_goals": "不保存计费后台凭据，不自动充值，不承诺估算等于官方账单。",
+      "review_notes": [
+        "IR-07 P2 Deferred：实现设计需固定 X 每日预算的账期时区、持久化 period key 和修改时区时的既有用量处理；与模型费用账期分开。"
+      ]
     },
     {
       "id": "M04",
@@ -362,7 +372,10 @@
       ],
       "validation": "中英日 gold fixtures、数字/专名/无证据断言、错误引用、重复事件/实质更新、只读标题。",
       "paths": "ai.py, new editorial/, store.py",
-      "non_goals": "不把语义校验宣称为绝对真实性保证，不引入向量数据库。"
+      "non_goals": "不把语义校验宣称为绝对真实性保证，不引入向量数据库。",
+      "review_notes": [
+        "IR-05 P2 Deferred：实现设计需定义错误/混合语言输出的判定和失败转换，加入负例；来源名/账号/产品编号允许保留原文，不能宣称绝对检测。"
+      ]
     },
     {
       "id": "X01",
@@ -410,7 +423,10 @@
       ],
       "validation": "中途崩溃、429、删帖、空页、重复页、倒序边界、预算截断和 List 重叠读取。",
       "paths": "new x/collector.py, budget.py, store.py",
-      "non_goals": "不使用抓网页或 Grok 搜索假装完整官方 timeline。"
+      "non_goals": "不使用抓网页或 Grok 搜索假装完整官方 timeline。",
+      "review_notes": [
+        "IR-07 P2 Deferred：实现设计需固定 X 每日预算的账期时区、持久化 period key 和修改时区时的既有用量处理；与模型费用账期分开。"
+      ]
     },
     {
       "id": "X03",
@@ -421,7 +437,9 @@
       "depends_on": [
         "X02",
         "M04",
-        "Q01"
+        "Q01",
+        "Q03",
+        "T02"
       ],
       "requirements": [
         "R05",
@@ -479,13 +497,16 @@
       ],
       "scope": "采集、编辑、媒体准备、待投递分别持久化，建立 lease/唯一约束和阶段幂等。",
       "acceptance": [
-        "阶段重启恢复不重做已成功付费调用；冻结证据/语言/模型版本",
+        "阶段重启不重做已持久化确认成功的付费调用；结果未知按 R04 保留等待处理；冻结证据/语言/模型版本",
         "采集失败和零结果有不同终态；取消/暂停不阻塞其他订阅",
         "期次贯通 collection/brief/job 与审计记录"
       ],
       "validation": "进程在每阶段边界退出、并发抢占、过期 lease、数据库忙、磁盘写失败。",
       "paths": "new pipeline/, store.py, bot.py",
-      "non_goals": "不以单内存锁或 last_slot 代替队列。"
+      "non_goals": "不以单内存锁或 last_slot 代替队列。",
+      "review_notes": [
+        "IR-04 P2 Deferred：实现设计时明确旧 chat_id/scope/article_key 回执及 last_slot 到新订阅/期次的迁移；验证升级后不自动补发历史。"
+      ]
     },
     {
       "id": "Q02",
@@ -535,7 +556,10 @@
       ],
       "validation": "Tokyo/Sydney DST、跨日、长睡眠、暂停恢复、调时、语言在两块之间改变、未发/部分发路由变化。",
       "paths": "schedule.py, pipeline/, delivery/",
-      "non_goals": "不保证睡眠中按点送达，不增加常开云服务器。"
+      "non_goals": "不保证睡眠中按点送达，不增加常开云服务器。",
+      "review_notes": [
+        "IR-06 P2 Deferred：实现设计需定义 preparation lead time、准备截止与超时晚点状态，并用慢源/慢模型验证，不到点才开始采集。"
+      ]
     },
     {
       "id": "T01",
@@ -557,7 +581,10 @@
       ],
       "validation": "假 getMe、重复Bot、错误/过期/重放配对、主人不一致、撤销Token、webhook存在。",
       "paths": "bot.py, new telegram/registry.py, control/",
-      "non_goals": "不向群组或其他用户发送，不自动删除别的应用 webhook。"
+      "non_goals": "不向群组或其他用户发送，不自动删除别的应用 webhook。",
+      "review_notes": [
+        "IR-08 P2 Deferred：Telegram 不能枚举外部长轮询消费者；实现只保证本机重复 Bot ID/webhook 检查，接入提示 Token 独占，409/更新中断提示可能冲突。"
+      ]
     },
     {
       "id": "T02",

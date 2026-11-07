@@ -31,12 +31,16 @@ def _value(value):
 
 
 def references(document):
-    return {
+    refs = {
         entry["credential_ref"]
         for kind in ("model_profiles", "bots")
         for entry in document[kind]
         if entry["credential_ref"] is not None
     }
+    x_ref = document["x_api"]["credential_ref"]
+    if x_ref is not None:
+        refs.add(x_ref)
+    return refs
 
 
 class MacKeychain:
@@ -209,6 +213,8 @@ class CredentialManager:
 
     @staticmethod
     def _entry(document, kind, identity):
+        if kind == "x_api" and identity == "x":
+            return document["x_api"]
         if kind not in {"model_profiles", "bots"}:
             raise CredentialError("invalid_credential_entity")
         entry = next((e for e in document[kind] if e["id"] == identity), None)
@@ -220,7 +226,7 @@ class CredentialManager:
     def _reset(entry, kind):
         if kind == "bots":
             entry.update(verified=False, paired=False, telegram_id=None, chat_id=None)
-        else:
+        elif kind == "model_profiles":
             entry["capabilities"] = []
 
     async def set(self, kind, identity, value, revision):
@@ -250,6 +256,8 @@ class CredentialManager:
         async def operation():
             validate_config(document)
             current = self._current(revision)
+            if document["x_api"] != current["x_api"]:
+                raise CredentialError("protected_configuration_field")
             for kind in ("model_profiles", "bots"):
                 old = {e["id"]: e for e in current[kind]}
                 fields = ["credential_ref"] + (

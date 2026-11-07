@@ -406,3 +406,20 @@ async def test_schedule_policy_defaults_disabled_and_updates_independently(contr
     )
     assert edited["ok"] and edited["result"]["revision"] == current["revision"] + 1
     assert store.config_revision() == config_revision
+
+
+async def test_x_control_creates_local_draft_without_network_or_credentials(control):
+    server, store = control
+    listed = await request(server, {"op": "x.accounts.list"})
+    assert listed["result"]["accounts"] == [] and not listed["result"]["credential_configured"]
+    result = await request(
+        server, {"op": "x.accounts.add", "handle": "@fixture", "revision": store.config_revision()}
+    )
+    account = result["result"]["account"]
+    assert account["handle"] == "fixture" and not account["can_collect"]
+    outcome = await request(
+        server,
+        {"op": "x.accounts.verify", "account_id": account["id"], "request_id": "ui.verify.1", "revision": store.config_revision()},
+    )
+    assert outcome["result"]["state"] == "credential_missing"
+    assert outcome["result"]["attempts"] == []

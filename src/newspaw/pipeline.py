@@ -81,12 +81,20 @@ def initialize(db):
 
 class Pipeline:
     def __init__(
-        self, store, backend, *, runner=None, feed_factory=FeedCollector, ai_factory=AICollector
+        self,
+        store,
+        backend,
+        *,
+        runner=None,
+        feed_factory=FeedCollector,
+        ai_factory=AICollector,
+        source_images=None,
     ):
         self.store, self.db = store, store._db
         self.runner = runner if runner is not None else ModelRunner(store, backend)
         self.editorial = EditorialService(store, self.runner)
         self.feed_factory, self.ai_factory = feed_factory, ai_factory
+        self.source_images = source_images
         self._active = {}
 
     def _row(self, job_id):
@@ -446,6 +454,38 @@ class Pipeline:
         elif state in {"stale", "cancelled", "refused"}:
             self._transition(job_id, token, state, _time(now), error=edition["error_kind"])
 
+    async def _media(self, row, token, now):
+        job_id = row["id"]
+        route = RouteSnapshot(**row["payload"]["route"])
+        style = route.effective["style"]
+        edition_id = self._edition_id(job_id)
+        if self.editorial.get(edition_id)["state"] != "ready":
+            raise EditorialError("edition_not_ready")
+        media = dict(
+            style="text", fallback_reason=None if style == "text" else "media_not_available"
+        )
+        if style == "source_image" and route.effective["partition"] == "adult":
+            media["fallback_reason"] = "adult_source_media_disabled"
+        elif style == "source_image" and self.source_images is not None:
+
+            def authorize():
+                with self.store._write():
+                    self._leased(job_id, token, starting=True, now=now)
+                    if self.editorial.get(edition_id)["state"] != "ready":
+                        raise EditorialError("edition_not_ready")
+
+            media = await self.source_images.prepare(
+                route,
+                row["payload"]["attempt_ids"],
+                self.editorial.image_anchors(edition_id),
+                authorize,
+            )
+            if media is None or authorize() is False:
+                return
+        self._transition(
+            job_id, token, "awaiting_delivery", _time(now), media=dict(media, edition_id=edition_id)
+        )
+
     async def _step(self, job_id, token, now):
         try:
             row = self._leased(job_id, token, starting=True, now=now)
@@ -454,21 +494,7 @@ class Pipeline:
             elif row["stage"] == "editing":
                 await self._edit(row, token, now)
             else:
-                style = RouteSnapshot(**row["payload"]["route"]).effective["style"]
-                edition_id = self._edition_id(job_id)
-                if self.editorial.get(edition_id)["state"] != "ready":
-                    raise EditorialError("edition_not_ready")
-                self._transition(
-                    job_id,
-                    token,
-                    "awaiting_delivery",
-                    _time(now),
-                    media=dict(
-                        style="text",
-                        edition_id=edition_id,
-                        fallback_reason=None if style == "text" else "media_not_available",
-                    ),
-                )
+                await self._media(row, token, now)
         except (RouteBlocked, RouteStale):
             self._transition(job_id, token, "stale", _time(now), error="configuration_changed")
         except (EvidenceError, EditorialError, ProviderError, RunnerError) as exc:

@@ -1,0 +1,121 @@
+"""Transactional schema upgrades for the one local NewsPaw database."""
+
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+from contextlib import closing
+from datetime import UTC, datetime
+from pathlib import Path
+from uuid import uuid4
+
+from .app_config import default_config
+
+DATABASE_VERSION = 1
+_LEGACY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS deliveries (
+    chat_id INTEGER NOT NULL,
+    article_key TEXT NOT NULL,
+    sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (chat_id, article_key)
+);
+CREATE TABLE IF NOT EXISTS deliveries_v2 (
+    chat_id INTEGER NOT NULL,
+    scope TEXT NOT NULL,
+    article_key TEXT NOT NULL,
+    sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (chat_id, scope, article_key)
+);
+INSERT OR IGNORE INTO deliveries_v2 (chat_id, scope, article_key, sent_at)
+    SELECT chat_id, 'news', article_key, sent_at FROM deliveries;
+CREATE TABLE IF NOT EXISTS collections (
+    id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    report_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS briefs (
+    id TEXT PRIMARY KEY,
+    collection_id TEXT NOT NULL REFERENCES collections(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    articles_json TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('prepared', 'delivered', 'partial', 'failed')),
+    error_kind TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS briefs_collection_created
+    ON briefs(collection_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS collections_created
+    ON collections(created_at DESC);
+"""
+
+
+def check_version(db: sqlite3.Connection) -> int:
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    if version < 0 or version > DATABASE_VERSION:
+        raise ValueError(
+            "Database was created by a newer NewsPaw; restore a matching backup to downgrade"
+        )
+    return version
+
+
+def _backup(path: Path) -> Path:
+    target = path.with_name(f"{path.name}.backup-{uuid4().hex}")
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    os.close(fd)
+    try:
+        with (
+            closing(sqlite3.connect(path, timeout=10)) as reader,
+            closing(sqlite3.connect(target)) as destination,
+        ):
+
+            def progress(status, remaining, total):
+                if status in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+                    raise RuntimeError("Database backup is busy; upgrade not applied")
+
+            reader.backup(destination, pages=128, progress=progress, sleep=0.01)
+        return target
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+
+
+def _initialize(db: sqlite3.Connection) -> None:
+    for statement in _LEGACY_SCHEMA.split(";"):
+        if statement.strip():
+            db.execute(statement)
+    db.execute(
+        "CREATE TABLE app_configuration (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, document TEXT NOT NULL)"
+    )
+    db.execute("CREATE TABLE migration_info (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    db.execute(
+        "INSERT INTO app_configuration VALUES (1, 1, ?)",
+        (json.dumps(default_config(), ensure_ascii=False),),
+    )
+    db.execute("INSERT INTO migration_info VALUES ('cutover', ?)", (datetime.now(UTC).isoformat(),))
+
+
+def migrate(db: sqlite3.Connection, path: Path) -> None:
+    if check_version(db) == DATABASE_VERSION:
+        return
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        # Another initializer may have completed while this one waited.
+        if check_version(db) == DATABASE_VERSION:
+            db.commit()
+            return
+        populated = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' LIMIT 1").fetchone()
+        if populated:
+            _backup(path)
+        _initialize(db)
+        db.execute(f"PRAGMA user_version={DATABASE_VERSION}")
+        db.commit()
+    except BaseException:
+        db.rollback()
+        raise

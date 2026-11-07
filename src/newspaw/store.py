@@ -6,12 +6,15 @@ import hashlib
 import json
 import re
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 
+from newspaw.app_config import import_preferences, validate_config
+from newspaw.migrations import check_version, migrate
 from newspaw.news import Article, canonical_url
 
 # Retrieval can contain 30 sources x 200 eligible entries before ranking. Keep
@@ -126,60 +129,83 @@ class Store:
         path.touch(mode=0o600, exist_ok=True)
         path.chmod(0o600)
         self._db = sqlite3.connect(path, timeout=10)
-        self._db.execute("PRAGMA foreign_keys=ON")
-        self._db.execute("PRAGMA journal_mode=WAL")
-        self._db.execute("PRAGMA busy_timeout=10000")
-        self._db.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS deliveries (
-                chat_id INTEGER NOT NULL,
-                article_key TEXT NOT NULL,
-                sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (chat_id, article_key)
-            );
-            CREATE TABLE IF NOT EXISTS deliveries_v2 (
-                chat_id INTEGER NOT NULL,
-                scope TEXT NOT NULL,
-                article_key TEXT NOT NULL,
-                sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (chat_id, scope, article_key)
-            );
-            INSERT OR IGNORE INTO deliveries_v2 (chat_id, scope, article_key, sent_at)
-                SELECT chat_id, 'news', article_key, sent_at FROM deliveries;
-            CREATE TABLE IF NOT EXISTS collections (
-                id TEXT PRIMARY KEY,
-                created_at TEXT NOT NULL,
-                report_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS briefs (
-                id TEXT PRIMARY KEY,
-                collection_id TEXT NOT NULL REFERENCES collections(id),
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                articles_json TEXT NOT NULL,
-                summary TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                status TEXT NOT NULL CHECK (status IN ('prepared', 'delivered', 'partial', 'failed')),
-                error_kind TEXT NOT NULL DEFAULT ''
-            );
-            CREATE INDEX IF NOT EXISTS briefs_collection_created
-                ON briefs(collection_id, created_at DESC);
-            CREATE INDEX IF NOT EXISTS collections_created
-                ON collections(created_at DESC);
-            """
-        )
-        self._db.commit()
+        try:
+            check_version(self._db)
+            self._db.execute("PRAGMA foreign_keys=ON")
+            self._db.execute("PRAGMA busy_timeout=10000")
+            migrate(self._db, path)
+            self._db.execute("PRAGMA journal_mode=WAL")
+        except BaseException:
+            self._db.close()
+            raise
+
+    @contextmanager
+    def _write(self):
+        self._db.execute("BEGIN IMMEDIATE")
+        try:
+            check_version(self._db)
+            yield
+            self._db.commit()
+        except BaseException:
+            self._db.rollback()
+            raise
+
+    def load_config(self) -> tuple[int, dict]:
+        check_version(self._db)
+        row = self._db.execute(
+            "SELECT revision, document FROM app_configuration WHERE id=1"
+        ).fetchone()
+        if row is None:
+            raise ValueError("Missing application configuration")
+        document = json.loads(row[1])
+        validate_config(document)
+        return row[0], document
+
+    def save_config(self, document: dict, *, expected_revision: int) -> int:
+        validate_config(document)
+        if type(expected_revision) is not int or expected_revision < 1:
+            raise ValueError("Invalid expected configuration revision")
+        payload = json.dumps(document, ensure_ascii=False, allow_nan=False)
+        with self._write():
+            changed = self._db.execute(
+                "UPDATE app_configuration SET document=?, revision=revision+1 WHERE id=1 AND revision=?",
+                (payload, expected_revision),
+            ).rowcount
+            if changed != 1:
+                raise ValueError("Configuration changed; reload before saving")
+        return expected_revision + 1
+
+    def migration_cutover(self) -> str:
+        check_version(self._db)
+        return self._db.execute("SELECT value FROM migration_info WHERE key='cutover'").fetchone()[
+            0
+        ]
+
+    def import_legacy_config(self, env_path: Path | None = None) -> None:
+        """Explicit, once-only preference import. Never starts jobs or imports keys."""
+        with self._write():
+            if self._db.execute(
+                "SELECT 1 FROM migration_info WHERE key='legacy_imported'"
+            ).fetchone():
+                return
+            revision, current = self.load_config()
+            if revision != 1 or any(s["enabled"] for s in current["subscriptions"]):
+                raise ValueError("Legacy import requires untouched disabled configuration")
+            legacy = dict(self._db.execute("SELECT key, value FROM settings"))
+            document = import_preferences(env_path, legacy)
+            self._db.execute(
+                "UPDATE app_configuration SET revision=revision+1, document=? WHERE id=1",
+                (json.dumps(document, ensure_ascii=False),),
+            )
+            self._db.execute("INSERT INTO migration_info VALUES ('legacy_imported', ?)", (_now(),))
 
     def get(self, key: str, default: str | None = None) -> str | None:
+        check_version(self._db)
         row = self._db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
         return row[0] if row else default
 
     def set(self, key: str, value: str) -> None:
-        with self._db:
+        with self._write():
             self._db.execute(
                 "INSERT INTO settings (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -187,6 +213,7 @@ class Store:
             )
 
     def unseen(self, chat_id: int, articles: list[Article], scope: str = "news") -> list[Article]:
+        check_version(self._db)
         self._validate_scope(scope)
         seen: set[str] = set()
         result = []
@@ -210,7 +237,7 @@ class Store:
 
     def mark_sent(self, chat_id: int, article: Article, scope: str = "news") -> None:
         self._validate_scope(scope)
-        with self._db:
+        with self._write():
             self._db.execute(
                 "INSERT OR IGNORE INTO deliveries_v2 (chat_id, scope, article_key) VALUES (?, ?, ?)",
                 (chat_id, scope, _article_key(article)),
@@ -222,7 +249,7 @@ class Store:
             raise ValueError("A collection report must be an object.")
         payload = _audit_json(report)
         collection_id = f"collection_{uuid4().hex}"
-        with self._db:
+        with self._write():
             self._db.execute(
                 "INSERT INTO collections (id, created_at, report_json) VALUES (?, ?, ?)",
                 (collection_id, _now(), payload),
@@ -245,7 +272,7 @@ class Store:
         """
         if not isinstance(keep, int) or isinstance(keep, bool) or keep < 0:
             raise ValueError("Audit retention must be a non-negative integer.")
-        with self._db:
+        with self._write():
             return self._prune_audit(keep)
 
     def save_brief(
@@ -264,7 +291,7 @@ class Store:
         safe_summary = _safe_audit_value(summary)
         brief_id = f"brief_{uuid4().hex}"
         timestamp = _now()
-        with self._db:
+        with self._write():
             if (
                 self._db.execute(
                     "SELECT 1 FROM collections WHERE id = ?", (collection_id,)
@@ -288,7 +315,7 @@ class Store:
             raise ValueError("error_kind must be an exception identifier, not an error message.")
         if status in {"prepared", "delivered"} and error_kind:
             raise ValueError("Prepared or delivered briefs cannot have an error kind.")
-        with self._db:
+        with self._write():
             row = self._db.execute("SELECT status FROM briefs WHERE id = ?", (brief_id,)).fetchone()
             if row is None:
                 raise ValueError("Brief does not exist.")
@@ -300,6 +327,7 @@ class Store:
             )
 
     def get_collection(self, collection_id: str) -> dict | None:
+        check_version(self._db)
         row = self._db.execute(
             "SELECT id, created_at, report_json FROM collections WHERE id = ?", (collection_id,)
         ).fetchone()
@@ -315,6 +343,7 @@ class Store:
         Failed/empty collections remain visible even when no brief was created.
         Reads are capped at 100 collections; each payload is bounded on write.
         """
+        check_version(self._db)
         if not isinstance(limit, int) or isinstance(limit, bool):
             raise ValueError("Audit limit must be an integer.")
         rows = self._db.execute(

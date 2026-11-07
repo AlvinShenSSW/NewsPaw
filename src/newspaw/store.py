@@ -175,6 +175,63 @@ class Store:
                 raise ValueError("Configuration changed; reload before saving")
         return expected_revision + 1
 
+    def pending_credentials(self) -> list[str]:
+        check_version(self._db)
+        return [
+            row[0] for row in self._db.execute("SELECT ref FROM credential_intents ORDER BY ref")
+        ]
+
+    def reserve_credentials(self, refs) -> None:
+        from .app_config import _CREDENTIAL
+
+        refs = list(refs)
+        if any(not isinstance(ref, str) or not _CREDENTIAL.fullmatch(ref) for ref in refs):
+            raise ValueError("Invalid credential reference")
+        with self._write():
+            self._db.executemany(
+                "INSERT OR IGNORE INTO credential_intents VALUES (?)", [(ref,) for ref in refs]
+            )
+
+    def finish_credential(self, ref) -> None:
+        with self._write():
+            self._db.execute("DELETE FROM credential_intents WHERE ref=?", (ref,))
+
+    def legacy_secrets_imported(self) -> bool:
+        check_version(self._db)
+        return bool(
+            self._db.execute(
+                "SELECT 1 FROM migration_info WHERE key='legacy_secrets_imported'"
+            ).fetchone()
+        )
+
+    def commit_credentials(self, document, expected_revision, *, retired=(), imported=False) -> int:
+        validate_config(document)
+        if type(expected_revision) is not int or expected_revision < 1:
+            raise ValueError("Invalid expected revision")
+        with self._write():
+            eligible = self._db.execute(
+                "SELECT value FROM migration_info WHERE key='untouched_import_revision'"
+            ).fetchone()
+            changed = self._db.execute(
+                "UPDATE app_configuration SET document=?, revision=revision+1 WHERE id=1 AND revision=?",
+                (json.dumps(document, ensure_ascii=False), expected_revision),
+            ).rowcount
+            if changed != 1:
+                raise ValueError("Configuration changed; reload before saving")
+            self._db.executemany(
+                "INSERT OR IGNORE INTO credential_intents VALUES (?)", [(ref,) for ref in retired]
+            )
+            if imported:
+                self._db.execute(
+                    "INSERT INTO migration_info VALUES ('legacy_secrets_imported', ?)", (_now(),)
+                )
+                if expected_revision == (int(eligible[0]) if eligible else 1):
+                    self._db.execute(
+                        "INSERT OR REPLACE INTO migration_info VALUES ('untouched_import_revision', ?)",
+                        (str(expected_revision + 1),),
+                    )
+        return expected_revision + 1
+
     def config_revision(self) -> int:
         """Durable invalidation signal, shared by all local consumers."""
         check_version(self._db)
@@ -204,7 +261,7 @@ class Store:
             0
         ]
 
-    def import_legacy_config(self, env_path: Path | None = None) -> None:
+    def import_legacy_config(self, env_path: Path | None = None, *, values=None) -> None:
         """Explicit, once-only preference import. Never starts jobs or imports keys."""
         with self._write():
             if self._db.execute(
@@ -220,7 +277,14 @@ class Store:
             ):
                 raise ValueError("Legacy import requires untouched disabled configuration")
             legacy = dict(self._db.execute("SELECT key, value FROM settings"))
-            document = import_preferences(env_path, legacy)
+            document = import_preferences(env_path, legacy, values=values)
+            # A successful secrets-only import may precede untouched preference import.
+            old_profiles = {p["id"]: p for p in current["model_profiles"]}
+            for profile in document["model_profiles"]:
+                if profile["id"] in old_profiles:
+                    profile["credential_ref"] = old_profiles[profile["id"]]["credential_ref"]
+            document["bots"] = current["bots"]
+            validate_config(document)
             self._db.execute(
                 "UPDATE app_configuration SET revision=revision+1, document=? WHERE id=1",
                 (json.dumps(document, ensure_ascii=False),),

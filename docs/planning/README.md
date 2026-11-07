@@ -1,8 +1,9 @@
 # NewsPaw 开发路线图
 
-状态：审计与需求拆分已准备，Kimi K3.1 Pro 独立设计终审待完成；功能开发未开始。9 个 epic、33 个子 issue，全部保留当前 mockup。
+状态：审计与需求拆分完成，Kimi K3.1 Pro 独立设计终审为 **SOUND WITH CONCERNS**；三个阻断项已关闭，五项 P2 与一项 minor 留作实施注意事项。此次未开始功能开发。9 个 epic、33 个子 issue，全部保留当前 mockup。
 
 - [需求基线](requirements.md)：R01–R11 与需要补齐的边界决策。
+- [Kimi 终审报告](review-kimi.md)：精确送审版本、修复与保留事项。
 - [全盘审计](audit-2026-11-07.md)：16 项差距、已有实现证据和未决外部依赖。
 - [结构化 backlog](backlog.json)：范围、依赖、验收、验证、实现入口与非目标。
 - [AFK 交接](afk-handoff.md)：Codex 主导 / Kimi K3.1 Pro 单一外门 / leave-open。

@@ -553,7 +553,7 @@ class ProfileRegistry:
         ).fetchone()
         return json.loads(row[0]) if row else None
 
-    def begin(self, probe_id, profile_id, capability, hold):
+    def begin(self, probe_id, profile_id, capability, hold, *, revision=None):
         if (
             not isinstance(probe_id, str)
             or not _ID.fullmatch(probe_id)
@@ -563,6 +563,10 @@ class ProfileRegistry:
         ):
             raise ProviderError("invalid_probe")
         with self.store._write():
+            if revision is not None and (
+                type(revision) is not int or revision != self.store.config_revision()
+            ):
+                raise ProviderError("config_conflict")
             existing = self.db.execute(
                 "SELECT profile_id,capability,hold_units,result_json FROM model_probes WHERE probe_id=?",
                 (probe_id,),
@@ -695,8 +699,10 @@ class ProbeService:
         self.budget = BudgetLedger(store)
         self.adapter_factory = adapter_factory
 
-    async def probe(self, probe_id, profile_id, capability, hold):
-        entry, generation, existing = self.registry.begin(probe_id, profile_id, capability, hold)
+    async def probe(self, probe_id, profile_id, capability, hold, *, revision=None):
+        entry, generation, existing = self.registry.begin(
+            probe_id, profile_id, capability, hold, revision=revision
+        )
         if entry is None:
             return existing
         if capability not in {"text", "vision"}:

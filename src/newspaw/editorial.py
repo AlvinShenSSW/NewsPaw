@@ -466,6 +466,19 @@ def _x_authors(sources):
     )
 
 
+def _focus_order(pool, weights):
+    if not weights:
+        return pool
+    buckets = {}
+    for index, evidence in enumerate(pool):
+        focus = evidence.get("coverage_focus")
+        weight = weights.get(focus, max(weights.values()))
+        bucket = buckets.setdefault(focus, [])
+        # Rational priority within each evidence-backed bucket. Newest wins a tie.
+        bucket.append(((len(bucket) + 1) / weight, index, evidence))
+    return [entry for _, _, entry in sorted(item for bucket in buckets.values() for item in bucket)]
+
+
 def initialize(db):
     db.execute(
         "CREATE TABLE IF NOT EXISTS editorial_editions (id TEXT PRIMARY KEY, subscription_id TEXT NOT NULL, partition TEXT NOT NULL, created_at TEXT NOT NULL, payload TEXT NOT NULL, model_task_id TEXT NOT NULL UNIQUE, state TEXT NOT NULL, result_json TEXT, error_kind TEXT)"
@@ -483,6 +496,8 @@ class EditorialService:
     def _pool(self, route, attempt_ids, now):
         effective = route.effective
         entries, coverage = [], []
+        focus_weights = effective.get("focus_weights")
+        source_focus = {item["id"]: item.get("focus") for item in effective["sources"]}
         for key in attempt_ids:
             attempt = self.evidence.attempt(key, partition=effective["partition"])
             articles = self.evidence.articles(
@@ -529,6 +544,8 @@ class EditorialService:
                 )
             if "x_coverage" in attempt:
                 coverage[-1]["x_coverage"] = attempt["x_coverage"]
+            topics = {source_focus.get(identity) for identity in coverage[-1]["source_ids"]}
+            topic = next(iter(topics)) if len(topics) == 1 else None
             for article in articles:
                 entries.append(
                     dict(
@@ -554,6 +571,8 @@ class EditorialService:
                 )
                 if article.metadata:
                     entries[-1]["metadata"] = article.metadata
+                if focus_weights and topic:
+                    entries[-1]["coverage_focus"] = topic
         covered = {key for row in coverage for key in row["source_ids"]}
         for source in effective["sources"]:
             if source["id"] not in covered:
@@ -589,7 +608,7 @@ class EditorialService:
             )
             by_hash[entry["content_hash"]] = entry
             pool.append(entry)
-        return pool[:200], coverage, max(0, len(pool) - 200)
+        return _focus_order(pool, focus_weights)[:200], coverage, max(0, len(pool) - 200)
 
     def _row(self, edition_id):
         self.store.load_config()
@@ -691,6 +710,11 @@ class EditorialService:
             "No URLs, embedded citation numbers, markdown, extra fields or raw-source fallback. Return only the specified JSON object."
         )
         evidence = payload["pool"]
+        if route.effective.get("focus_weights"):
+            instructions += (
+                " Evidence order reflects the subscription’s relative domestic and entertainment "
+                "preferences. Prefer earlier equally relevant evidence. Do not fill missing topics."
+            )
         if validator.av_industry:
             if any(
                 not industry_copy(

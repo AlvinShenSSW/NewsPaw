@@ -92,8 +92,11 @@ def send_lane_blocked(db, remote, now):
            AND (inflight_part IS NOT NULL OR backoff_until>?)
            UNION ALL
            SELECT 1 FROM command_replies WHERE telegram_id=?
-           AND (inflight_part IS NOT NULL OR backoff_until>?) LIMIT 1""",
-            (remote, clock, remote, clock),
+           AND (inflight_part IS NOT NULL OR backoff_until>?)
+           UNION ALL
+           SELECT 1 FROM bot_test_sends WHERE telegram_id=?
+           AND (state='inflight' OR backoff_until>?) LIMIT 1""",
+            (remote, clock, remote, clock, remote, clock),
         ).fetchone()
         is not None
     )

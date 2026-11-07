@@ -6,7 +6,15 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from .app_config import STYLES, X_DEFAULT_POST_TYPES, in_x_aggregate, validate_config, x_post_types
+from .app_config import (
+    STYLES,
+    X_DEFAULT_POST_TYPES,
+    in_x_aggregate,
+    source_in_subscription,
+    uses_category_sources,
+    validate_config,
+    x_post_types,
+)
 
 # Version of the effective route contract, independent of additive config fields.
 ROUTE_SCHEMA_VERSION = 2
@@ -168,19 +176,22 @@ def resolve_route(config, revision, subscription_id, *, account_id=None, style=N
             payload[role] = None
         elif profile["credential_ref"] is None:
             blockers.append(f"missing_{role}_credential")
-    if subscription["source_ids"]:
-        sources = [index["sources"][key] for key in subscription["source_ids"]]
-        explanation["sources"] = "explicit subscription selection"
-    else:
-        sources = [
-            source
-            for source in config["sources"]
-            if category["id"] in source["category_ids"] and source["enabled"]
-        ]
-        explanation["sources"] = "enabled category sources"
+    inherited = uses_category_sources(subscription)
+    sources = [
+        source
+        for source in config["sources"]
+        if source_in_subscription(source, subscription) and (source["enabled"] or not inherited)
+    ]
+    explanation["sources"] = (
+        "enabled category sources" if inherited else "explicit subscription selection"
+    )
     payload["sources"] = [
         _fields(s, "id kind url partition enabled") for s in sorted(sources, key=lambda s: s["id"])
     ]
+    if weights := subscription.get("focus_weights"):
+        payload["focus_weights"] = weights
+        for selected in payload["sources"]:
+            selected["focus"] = index["sources"][selected["id"]].get("focus")
     if any(not s["enabled"] for s in sources):
         blockers.append("source_disabled")
     if any(s["kind"] == "draft" for s in sources):

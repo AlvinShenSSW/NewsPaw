@@ -252,3 +252,35 @@ async def test_control_restart_recovers_interrupted_feed_attempt(control):
     await server.close()
     await server.start()
     assert repo.attempt(identity, partition="normal")["status"] == "interrupted"
+
+
+async def test_model_status_is_read_only_and_probe_requires_explicit_shape(control):
+    server, store = control
+    before = store.load_config()
+    status = await request(server, {"op": "models.status", "profile_id": "normal_primary"})
+    assert status["ok"] and status["result"]["text"]["state"] == "untested"
+    assert store.load_config() == before
+    invalid = await request(server, {"op": "models.probe", "profile_id": "normal_primary"})
+    assert invalid == {"ok": False, "error": "invalid_request"}
+    missing = await request(
+        server,
+        {
+            "op": "models.probe",
+            "profile_id": "normal_primary",
+            "probe_id": "test",
+            "capability": "text",
+            "hold_units": 100,
+        },
+    )
+    assert missing["ok"] and missing["result"]["error_kind"] == "credential_missing"
+
+
+async def test_control_recovers_unfinished_model_probe(control):
+    from newspaw.providers import ProfileRegistry
+
+    server, store = control
+    records = ProfileRegistry(store)
+    records.begin("unfinished", "normal_primary", "text", 100)
+    await server.close()
+    await server.start()
+    assert records.get("unfinished")["status"] == "outcome_unknown"

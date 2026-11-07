@@ -508,21 +508,27 @@ class BudgetLedger:
         usage = {} if usage is None else usage
         self._usage(usage)
         with self.store._write():
-            record = self.get(attempt_id)
-            if (
-                record["state"] == "settled"
-                and record["settled_units"] == units
-                and record["usage"] == usage
-                and record["cost_source"] == cost_source
-            ):
-                return record
-            if record["state"] != "inflight":
-                raise BudgetError("cannot_settle_attempt")
-            self.db.execute(
-                "UPDATE budget_attempts SET state='settled',settled_units=?,usage_json=?,cost_source=? WHERE id=?",
-                (units, _json(usage), cost_source, attempt_id),
-            )
-            return self._get(attempt_id)
+            return self._settle(attempt_id, units=units, usage=usage, cost_source=cost_source)
+
+    def _settle(self, attempt_id, *, units, usage, cost_source):
+        """Validated internal settlement in the caller's existing transaction."""
+        _units(units, optional=True)
+        self._usage(usage)
+        record = self.get(attempt_id)
+        if (
+            record["state"] == "settled"
+            and record["settled_units"] == units
+            and record["usage"] == usage
+            and record["cost_source"] == cost_source
+        ):
+            return record
+        if record["state"] != "inflight":
+            raise BudgetError("cannot_settle_attempt")
+        self.db.execute(
+            "UPDATE budget_attempts SET state='settled',settled_units=?,usage_json=?,cost_source=? WHERE id=?",
+            (units, _json(usage), cost_source, attempt_id),
+        )
+        return self._get(attempt_id)
 
     def reconcile(self, attempt_id, *, units, reason):
         _units(units, optional=True)

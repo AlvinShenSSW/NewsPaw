@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from .app_config import default_config, upgrade_v1
 
-DATABASE_VERSION = 5
+DATABASE_VERSION = 6
 _LEGACY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -144,6 +144,9 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         from .evidence import initialize as initialize_evidence
 
         initialize_evidence(db)
+        from .providers import initialize as initialize_providers
+
+        initialize_providers(db)
         db.execute(f"PRAGMA user_version={DATABASE_VERSION}")
         db.commit()
     except BaseException:

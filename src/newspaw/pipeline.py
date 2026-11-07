@@ -259,10 +259,49 @@ class Pipeline:
         payload = row["payload"]
         route = RouteSnapshot(**payload["route"])
         self.store.revalidate_route(route)
+        self._check_profile_generations(payload)
+        return route
+
+    def _check_profile_generations(self, payload):
         for key, generation in payload["generations"].items():
             if self.runner.registry.profile(key)[1] != generation:
                 raise RouteStale("profile_changed")
+
+    def delivery_scope(self, job_id):
+        """Revalidate frozen content while leaving Bot authorization to TargetManager."""
+        row = self._row(job_id)
+        if row["cancelled"]:
+            raise PipelineError("job_cancelled")
+        if row["paused"]:
+            raise PipelineError("job_paused")
+        if row["stage"] != "awaiting_delivery":
+            raise PipelineError("edition_not_ready")
+        payload = row["payload"]
+        route = RouteSnapshot(**payload["route"])
+        current = self.store.preview_route(
+            route.subscription_id, account_id=route.account_id, style=route.request_style
+        )
+        current_content, frozen_content = current.effective, route.effective
+        for field in ("targets", "bots", "target_diagnostics"):
+            current_content.pop(field, None)
+            frozen_content.pop(field, None)
+        if (
+            set(current.blockers) - {"no_target", "target_unpaired"}
+            or current_content != frozen_content
+        ):
+            raise PipelineError("edition_changed")
+        try:
+            self._check_profile_generations(payload)
+        except (ProviderError, RouteStale):
+            raise PipelineError("edition_changed") from None
         return route
+
+    def delivery_input(self, job_id):
+        route = self.delivery_scope(job_id)
+        edition_id = self._edition_id(job_id)
+        if self.editorial.get(edition_id)["state"] != "ready":
+            raise PipelineError("edition_changed")
+        return route, self.editorial.render(edition_id), self._row(job_id)["payload"]["media"]
 
     def _claim(self, job_id, now):
         with self.store._write():

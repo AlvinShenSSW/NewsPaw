@@ -141,13 +141,21 @@ struct SettingsWindow: View {
     @ViewBuilder private func pageContent(_ page: SettingsPage) -> some View {
         if page == .language {
             languagePage
+        } else if page == .delivery {
+            VStack(alignment: .leading, spacing: 16) {
+                ResidentControls(model: model)
+                if model.config != nil {
+                    delivery
+                } else {
+                    statusCard(model.text(model.connection.phrase), note: model.text(.offlineNote))
+                }
+            }
         } else if let config = model.config {
             switch page {
             case .subscriptions: subscriptions(config)
             case .accounts: accounts(config)
             case .models: models(config)
-            case .delivery: delivery
-            case .language: EmptyView()
+            case .delivery, .language: EmptyView()
             }
         } else {
             statusCard(model.text(model.connection.phrase), note: model.text(.offlineNote))

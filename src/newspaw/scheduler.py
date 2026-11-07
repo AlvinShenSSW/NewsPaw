@@ -438,7 +438,7 @@ class Scheduler:
                    AND COALESCE(reason,'')!='job_paused'
                    AND NOT EXISTS(SELECT 1 FROM pipeline_jobs j
                                   WHERE j.id=schedule_occurrences.job_id
-                                  AND j.stage NOT IN ('collecting','editing','preparing_media'))""",
+                                  AND (j.paused=1 OR j.stage NOT IN ('collecting','editing','preparing_media')))""",
                 (now.isoformat(), now.isoformat(), now.isoformat()),
             )
             return self._rows(

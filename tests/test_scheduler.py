@@ -482,3 +482,18 @@ def test_planned_occurrence_without_worker_is_late_at_target(planner):
     (due,) = scheduler.plan(moment(0))
     assert due["id"] == original["id"] and due["status"] == "late"
     assert due["reason"] == "preparation_late"
+
+
+async def test_paused_pipeline_job_is_not_marked_late_before_status_sync(system):
+    pipeline, targets, _, _, _ = system
+    outbox, calls = sender(pipeline, targets)
+    scheduler, clock, target = scheduled(pipeline, outbox, NOW)
+    row = await prepare_scheduled(scheduler, clock, steps=1)
+    assert row["status"] == "preparing" and row["reason"] is None
+    pipeline.pause(row["job_id"])
+    clock[0] = target
+    (paused,) = scheduler.plan(clock[0])
+    assert paused["status"] != "late"
+    await scheduler.step(paused)
+    assert scheduler.status()["occurrences"][0]["reason"] == "job_paused"
+    assert not calls

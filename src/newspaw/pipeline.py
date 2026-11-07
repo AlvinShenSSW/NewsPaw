@@ -386,7 +386,8 @@ class Pipeline:
                 )
 
         evidence = EvidenceStore(self.store, collection_guard=guard)
-        if pending is not None:
+        outcomes = [evidence.attempt(key, partition=partition) for key in attempts.values()]
+        if pending is not None and all(result["status"] != "configuration_changed" for result in outcomes):
             scope = dict(scopes[pending], collection_id=job_id, collection_group=pending)
             factory = self.ai_factory if "kinds" in scope else self.feed_factory
             collector = factory(evidence)
@@ -395,13 +396,18 @@ class Pipeline:
                 if result is None:
                     return
                 attempts[pending] = result["id"]
+                outcomes.append(result)
             finally:
                 await collector.close()
         ids = [attempts[index] for index in sorted(attempts)]
+        if any(result["status"] == "configuration_changed" for result in outcomes):
+            self._transition(
+                job_id, token, "stale", _time(now), error="configuration_changed", attempt_ids=ids
+            )
+            return
         if len(attempts) != len(scopes):
             self._transition(job_id, token, "collecting", _time(now), attempt_ids=ids)
             return
-        outcomes = [evidence.attempt(key, partition=partition) for key in ids]
         successful = any(
             result["status"] in _SUCCESSFUL_FETCH
             and (result.get("coverage_complete", True) or result.get("accepted_count", 0) > 0)

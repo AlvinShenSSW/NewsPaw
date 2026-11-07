@@ -433,11 +433,12 @@ class Scheduler:
             self.db.execute("UPDATE schedule_policy SET last_scan=? WHERE id=1", (now.isoformat(),))
             self.db.execute(
                 """UPDATE schedule_occurrences
-                   SET status='late',reason='preparation_late',updated_at=?
-                   WHERE status='preparing' AND target_at<=? AND cutoff_at>=?
+                   SET status='late',reason=COALESCE(reason,'preparation_late'),updated_at=?
+                   WHERE status IN ('planned','preparing','waiting') AND target_at<=? AND cutoff_at>=?
+                   AND COALESCE(reason,'')!='job_paused'
                    AND NOT EXISTS(SELECT 1 FROM pipeline_jobs j
                                   WHERE j.id=schedule_occurrences.job_id
-                                  AND j.stage='awaiting_delivery')""",
+                                  AND j.stage NOT IN ('collecting','editing','preparing_media'))""",
                 (now.isoformat(), now.isoformat(), now.isoformat()),
             )
             return self._rows(
@@ -465,7 +466,11 @@ class Scheduler:
             "SELECT subscription_id,account_id FROM schedule_scopes WHERE id=?", (row["scope_id"],)
         ).fetchone()
         preview = self.outbox.targets.preview(scope[0], account_id=scope[1])
-        return set(preview["target_status"]), {bot["id"] for bot in config["bots"]}
+        adult = preview["effective"]["partition"] == "adult"
+        # Deleting a Bot or revoking its adult permission is a scoped lifecycle
+        # change. An explicit edit to a still-authorized target remains a hold.
+        eligible = {bot["id"] for bot in config["bots"] if not adult or bot["adult_allowed"]}
+        return set(preview["target_status"]) & eligible, eligible
 
     def _assignment_allowed(self, row, config, now, *, claim=False):
         current, existing = self._assigned(row, config)
@@ -697,7 +702,7 @@ class Scheduler:
         elif stage in {"refused", "collection_failed", "blocked"}:
             self._state(row, "blocked", job["error_kind"] or stage, now)
         elif job["status"] in {"inflight", "outcome_unknown"}:
-            self._state(row, "waiting", "model_outcome_unknown", now)
+            self._state(row, "late" if now >= target else "waiting", "model_outcome_unknown", now)
         else:
             hold = settings["holds"][job["partition"]]
             old = self.pipeline._row(job["job_id"])["payload"]["holds"]
@@ -707,7 +712,8 @@ class Scheduler:
                 self._rebuild(row, job, now, "schedule_budget_changed")
             else:
                 if job["status"] in {"blocked", "waiting"}:
-                    self._state(row, job["status"], job["model"]["error_kind"], now)
+                    status = "late" if job["status"] == "waiting" and now >= target else job["status"]
+                    self._state(row, status, job["model"]["error_kind"], now)
                 else:
                     self._state(row, "late" if now >= target else "preparing", None, now)
                 result = await self.pipeline.advance(

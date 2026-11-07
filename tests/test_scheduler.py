@@ -81,7 +81,7 @@ def test_long_sleep_newest_elapsed_and_future_lead_are_independent(planner):
     assert len(ready) == 1
     assert {row["target_at"][11:16]: row["status"] for row in rows} == {
         "00:00": "superseded",
-        "03:00": "planned",
+        "03:00": "late",
     }
 
 
@@ -103,9 +103,9 @@ def test_expired_missed_slots_are_not_queued(planner):
     assert {row["status"] for row in scheduler.status()["occurrences"]} == {"skipped"}
 
 
-def scheduled(pipeline, outbox, now, *, catchup=360):
+def scheduled(pipeline, outbox, now, *, catchup=360, subscription="sub_world"):
     revision, config = pipeline.store.load_config()
-    sub = next(row for row in config["subscriptions"] if row["id"] == "sub_world")
+    sub = next(row for row in config["subscriptions"] if row["id"] == subscription)
     target = now + timedelta(minutes=10)
     sub.update(times=[target.strftime("%H:%M")], timezone="UTC")
     pipeline.store.save_config(config, expected_revision=revision)
@@ -113,7 +113,7 @@ def scheduled(pipeline, outbox, now, *, catchup=360):
     scheduler = Scheduler(pipeline, outbox, clock=lambda: clock[0])
     policy = scheduler.policy()
     settings = policy["settings"]
-    settings.update(enabled=True, catchup_minutes=catchup, holds={"normal": 100, "adult": None})
+    settings.update(enabled=True, catchup_minutes=catchup, holds={"normal": 100, "adult": 100})
     scheduler.configure(settings, policy["revision"], now=now)
     return scheduler, clock, target
 
@@ -421,3 +421,64 @@ async def test_known_inflight_send_settles_after_cutoff_without_extra_request(sy
     assert len(calls) == 2
     assert scheduler.status()["occurrences"][0]["status"] == "delivered"
     assert scheduler.plan(clock[0]) == []
+
+
+@pytest.mark.parametrize("system", ["adult"], indirect=True)
+async def test_adult_opt_out_does_not_pause_authorized_peer(system):
+    from test_outbox import with_photos
+
+    pipeline, targets, _, _, _ = system
+    outbox, calls = sender(pipeline, targets)
+    scheduler, clock, target = scheduled(pipeline, outbox, NOW, subscription="sub_av")
+    row = await prepare_scheduled(scheduler, clock)
+    asset = with_photos(pipeline, row["job_id"])
+    outbox.asset_resolver = lambda _: asset
+    clock[0] = target
+    await scheduler.step(row)
+    assert len(calls) == 2
+    await targets.adult_permission("bot1", False, pipeline.store.config_revision())
+    await scheduler.step(scheduler.plan(clock[0])[0])
+    assert len(calls) == 3 and "/bot1000:" in calls[-1].url.path
+    assert scheduler.status()["occurrences"][0]["status"] != "held"
+
+
+async def test_changed_source_during_only_fetch_rebuilds_unspent_job(system):
+    pipeline, targets, _, model_calls, _ = system
+    outbox, sends = sender(pipeline, targets)
+    scheduler, clock, _ = scheduled(pipeline, outbox, NOW)
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def fetch(_):
+        entered.set()
+        await release.wait()
+        return httpx.Response(200, content=FRESH)
+
+    pipeline.feed_factory = lambda evidence: FeedCollector(
+        evidence, client=httpx.AsyncClient(transport=httpx.MockTransport(fetch))
+    )
+    (row,) = scheduler.plan(clock[0])
+    before = len(model_calls)
+    task = asyncio.create_task(scheduler.step(row))
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        revision, config = pipeline.store.load_config()
+        config["sources"][0]["url"] = "https://example.com/replacement"
+        pipeline.store.save_config(config, expected_revision=revision)
+    finally:
+        release.set()
+        await task
+    (old,) = scheduler.plan(clock[0])
+    assert pipeline.get(old["job_id"])["stage"] == "stale"
+    await scheduler.step(old)
+    (rebuilt,) = scheduler.plan(clock[0])
+    assert rebuilt["generation"] == 2 and rebuilt["job_id"] is None
+    assert not sends and len(model_calls) == before
+
+
+def test_planned_occurrence_without_worker_is_late_at_target(planner):
+    scheduler, _ = planner
+    activate(scheduler)
+    (original,) = scheduler.plan(moment(23, 50, day=7))
+    (due,) = scheduler.plan(moment(0))
+    assert due["id"] == original["id"] and due["status"] == "late"
+    assert due["reason"] == "preparation_late"

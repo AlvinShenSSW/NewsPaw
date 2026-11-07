@@ -6,7 +6,13 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from .app_config import STYLES, source_in_subscription, uses_category_sources, validate_config
+from .app_config import (
+    STYLES,
+    in_x_aggregate,
+    source_in_subscription,
+    uses_category_sources,
+    validate_config,
+)
 
 # Version of the effective route contract, independent of additive config fields.
 ROUTE_SCHEMA_VERSION = 2
@@ -115,11 +121,7 @@ def resolve_route(config, revision, subscription_id, *, account_id=None, style=N
             blockers.append("account_identity_unverified")
     elif category["id"] in {"x", "x_adult"}:
         members = sorted(
-            (
-                a
-                for a in config["accounts"]
-                if a["subscription_id"] == subscription_id and a["priority"] == "normal"
-            ),
+            (account for account in config["accounts"] if in_x_aggregate(account, subscription)),
             key=lambda a: a["id"],
         )
         payload["accounts"] = [
@@ -129,7 +131,7 @@ def resolve_route(config, revision, subscription_id, *, account_id=None, style=N
             blockers.append("no_accounts")
         if any(a["remote_id"] is None for a in members):
             blockers.append("account_identity_unverified")
-        explanation["accounts"] = "ordinary members; special daily accounts excluded"
+        explanation["accounts"] = "ordinary members and explicitly opted-in special accounts"
     if not subscription["enabled"]:
         blockers.append("subscription_disabled")
     if config["owner_id"] is None:

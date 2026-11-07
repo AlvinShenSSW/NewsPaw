@@ -101,6 +101,9 @@ class ControlServer:
             self._socket_identity = self.path.stat().st_ino
             await self.credentials.cleanup()
             BudgetLedger(self.credentials.store).recover_inflight()
+            from .evidence import EvidenceStore
+
+            EvidenceStore(self.credentials.store).recover_interrupted()
             await self._server.start_serving()
         except BaseException:
             await self.close()

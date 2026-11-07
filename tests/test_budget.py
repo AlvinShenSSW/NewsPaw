@@ -309,3 +309,50 @@ def test_reservation_write_failure_rolls_back_period_and_task(budget):
     assert not store._db.execute("SELECT * FROM budget_tasks").fetchall()
     assert not ledger.report()["periods"]
     assert reserve(ledger)["state"] == "reserved"
+
+
+def test_begin_rechecks_lowered_budget_and_keeps_reservation(budget):
+    ledger, _ = budget
+    reserve(ledger)
+    revision, policy = ledger.policy()
+    policy["model"]["monthly_limit"] = 20
+    ledger.configure(policy, revision)
+    with pytest.raises(BudgetError, match="model_limit"):
+        ledger.begin_attempt("attempt1", now=NOW)
+    assert ledger.get("attempt1")["state"] == "reserved"
+
+
+def test_begin_rechecks_overrun_before_another_pending_dispatch(budget):
+    ledger, _ = budget
+    revision, policy = ledger.policy()
+    policy["model"]["monthly_limit"] = 100
+    ledger.configure(policy, revision)
+    reserve(ledger)
+    reserve(ledger, "pending", task="another", amount=30)
+    ledger.begin_attempt("attempt1", now=NOW)
+    ledger.settle("attempt1", units=90)
+    with pytest.raises(BudgetError, match="model_limit"):
+        ledger.begin_attempt("pending", now=NOW)
+
+
+def test_begin_refuses_superseded_configured_price(budget):
+    ledger, _ = budget
+    revision, policy = ledger.policy()
+    policy["prices"] = [
+        dict(
+            id="v1",
+            provider="openai",
+            model="fixture",
+            input_per_million=100,
+            output_per_million=100,
+            updated_at=NOW.isoformat(),
+        )
+    ]
+    ledger.configure(policy, revision)
+    quote = ledger.quote("openai", "fixture", input_max=1000000, output_max=0)
+    ledger.reserve("price", "task", max_units=100, quote=quote, now=NOW)
+    revision, policy = ledger.policy()
+    policy["prices"][0].update(id="v2", input_per_million=200)
+    ledger.configure(policy, revision)
+    with pytest.raises(BudgetError, match="price_changed"):
+        ledger.begin_attempt("price", now=NOW)

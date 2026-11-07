@@ -336,47 +336,8 @@ class BudgetLedger:
             ).fetchone()
             if task and task[0] != task_limit:
                 raise BudgetError("task_policy_changed")
-            self._cap(
-                task_limit,
-                self._sum("meter=? AND task_id=?", (meter, task_id)),
-                max_units,
-                "task_limit",
-            )
-            policy_meter = policy[meter]
-            self._cap(
-                policy_meter["monthly_limit" if meter == "model" else "daily_limit"],
-                self._sum("period_id=?", (period,)),
-                max_units,
-                f"{meter}_limit",
-            )
-            if meter == "model":
-                if image:
-                    self._cap(
-                        policy_meter["image_limit"],
-                        self._sum("period_id=? AND image=1", (period,)),
-                        max_units,
-                        "image_limit",
-                    )
-                self._cap(
-                    policy_meter["provider_limits"].get(provider),
-                    self._sum("period_id=? AND provider=?", (period, provider)),
-                    max_units,
-                    "provider_limit",
-                )
-            else:
-                self._cap(
-                    policy_meter["partition_limits"][partition],
-                    self._sum("period_id=? AND partition=?", (period, partition)),
-                    max_units,
-                    "partition_limit",
-                )
-                if account_id is not None:
-                    self._cap(
-                        policy_meter["account_limits"].get(account_id),
-                        self._sum("period_id=? AND account_id=?", (period, account_id)),
-                        max_units,
-                        "account_limit",
-                    )
+            frozen["period_id"] = period
+            self._admit(policy, frozen, max_units, task_limit)
             self.db.execute(
                 "INSERT OR IGNORE INTO budget_tasks VALUES (?,?,?)", (meter, task_id, task_limit)
             )
@@ -397,6 +358,61 @@ class BudgetLedger:
                 ),
             )
             return self._get(attempt_id)
+
+    def _admit(self, policy, record, max_units, task_limit):
+        meter, task_id, period, provider, partition, account_id, image = (
+            record[key]
+            for key in (
+                "meter",
+                "task_id",
+                "period_id",
+                "provider",
+                "partition",
+                "account_id",
+                "image",
+            )
+        )
+        self._cap(
+            task_limit,
+            self._sum("meter=? AND task_id=?", (meter, task_id)),
+            max_units,
+            "task_limit",
+        )
+        policy_meter = policy[meter]
+        self._cap(
+            policy_meter["monthly_limit" if meter == "model" else "daily_limit"],
+            self._sum("period_id=?", (period,)),
+            max_units,
+            f"{meter}_limit",
+        )
+        if meter == "model":
+            if image:
+                self._cap(
+                    policy_meter["image_limit"],
+                    self._sum("period_id=? AND image=1", (period,)),
+                    max_units,
+                    "image_limit",
+                )
+            self._cap(
+                policy_meter["provider_limits"].get(provider),
+                self._sum("period_id=? AND provider=?", (period, provider)),
+                max_units,
+                "provider_limit",
+            )
+        else:
+            self._cap(
+                policy_meter["partition_limits"][partition],
+                self._sum("period_id=? AND partition=?", (period, partition)),
+                max_units,
+                "partition_limit",
+            )
+            if account_id is not None:
+                self._cap(
+                    policy_meter["account_limits"].get(account_id),
+                    self._sum("period_id=? AND account_id=?", (period, account_id)),
+                    max_units,
+                    "account_limit",
+                )
 
     def _task_limit(self, meter, task_id):
         return self.db.execute(
@@ -431,6 +447,13 @@ class BudgetLedger:
             ).fetchone()
             if not datetime.fromisoformat(start) <= now < datetime.fromisoformat(end):
                 raise BudgetError("reservation_expired")
+            _, policy = self.policy()
+            if (
+                record["quote"]["source"] == "configured"
+                and record["quote"]["rate"] not in policy["prices"]
+            ):
+                raise BudgetError("price_changed")
+            self._admit(policy, record, 0, self._task_limit(record["meter"], record["task_id"]))
             self.db.execute("UPDATE budget_attempts SET state='inflight' WHERE id=?", (attempt_id,))
             return self._get(attempt_id)
 

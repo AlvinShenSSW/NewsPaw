@@ -76,6 +76,9 @@ async def test_unsafe_urls_never_dial(monkeypatch, url):
         ["::ffff:127.0.0.1"],
         ["fe80::1"],
         ["224.0.0.1"],
+        ["192.0.0.8"],
+        ["64:ff9b:1::1"],
+        ["2002:a00:1::1"],
     ],
 )
 async def test_dns_answers_checked_at_connection(monkeypatch, addresses):

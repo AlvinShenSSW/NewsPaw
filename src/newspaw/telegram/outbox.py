@@ -465,7 +465,7 @@ class Outbox:
             raise OutboxError("media_unavailable")
         return data
 
-    async def advance(self, job_id, bot_id, *, now=None):
+    async def advance(self, job_id, bot_id, *, now=None, effect_guard=None):
         _id(bot_id)
         client = None
         try:
@@ -496,6 +496,8 @@ class Outbox:
                 if pre_dispatch_error:
                     current[0]["parts"][ordinal].update(state="failed", reason=pre_dispatch_error)
                     self._save(current[0])
+                    return self.status(job_id, bot_id=bot_id)
+                if effect_guard is not None and effect_guard() is False:
                     return self.status(job_id, bot_id=bot_id)
                 attempt = self._begin(current[0], ordinal, _clock(now))
             try:

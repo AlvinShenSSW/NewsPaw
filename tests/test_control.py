@@ -392,3 +392,17 @@ async def test_outbox_rpc_exposes_status_and_resolution_without_dispatch(control
         server, {"op": "delivery.requeue_target", "job_id": "job.missing", "bot_id": "bot1"}
     ) == {"ok": False, "error": "missing_delivery"}
     assert (await request(server, {"op": "delivery.advance", "job_id": "job.missing"}))["error"] == "unknown_operation"
+
+
+async def test_schedule_policy_defaults_disabled_and_updates_independently(control):
+    server, store = control
+    config_revision = store.config_revision()
+    current = (await request(server, {"op": "schedule.status"}))["result"]
+    assert not current["settings"]["enabled"] and current["occurrences"] == []
+    assert current["settings"]["catchup_minutes"] == 360
+    edited = await request(
+        server, {"op": "schedule.configure", "settings": {**current["settings"], "catchup_minutes": 0},
+                 "revision": current["revision"]},
+    )
+    assert edited["ok"] and edited["result"]["revision"] == current["revision"] + 1
+    assert store.config_revision() == config_revision

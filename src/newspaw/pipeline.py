@@ -33,6 +33,7 @@ class PipelineError(CredentialError):
 
 class _WorkStopped(RuntimeError):
     """An old or paused worker must exit without mutating the shared model task."""
+
     pass
 
 
@@ -387,7 +388,9 @@ class Pipeline:
 
         evidence = EvidenceStore(self.store, collection_guard=guard)
         outcomes = [evidence.attempt(key, partition=partition) for key in attempts.values()]
-        if pending is not None and all(result["status"] != "configuration_changed" for result in outcomes):
+        if pending is not None and all(
+            result["status"] != "configuration_changed" for result in outcomes
+        ):
             scope = dict(scopes[pending], collection_id=job_id, collection_group=pending)
             factory = self.ai_factory if "kinds" in scope else self.feed_factory
             collector = factory(evidence)
@@ -529,16 +532,29 @@ class Pipeline:
                 )
                 self._event(job_id, action, "cancelled", now)
             else:
-                paused = action == "pause"
-                if bool(row["paused"]) != paused:
-                    self.db.execute(
-                        "UPDATE pipeline_jobs SET paused=?,updated_at=? WHERE id=?",
-                        (int(paused), now.isoformat(), job_id),
-                    )
-                    self._event(job_id, action, row["stage"], now)
+                self.set_paused_tx(job_id, action == "pause", now)
+
+    def set_paused_tx(self, job_id, paused, now):
+        """Set the absolute pause bit inside the caller's existing write transaction."""
+        row = self._row(job_id)
+        if (
+            row["cancelled"]
+            or row["stage"] not in _ACTIVE | {"awaiting_delivery"}
+            or bool(row["paused"]) == paused
+        ):
+            return
+        self.db.execute(
+            "UPDATE pipeline_jobs SET paused=?,updated_at=? WHERE id=?",
+            (int(paused), now.isoformat(), job_id),
+        )
+        self._event(job_id, "pause" if paused else "resume", row["stage"], now)
 
     def pause(self, job_id):
         self._control(job_id, "pause")
+        return self.notify_paused(job_id)
+
+    def notify_paused(self, job_id):
+        """Nudge an unstarted model operation after its durable pause commits."""
         result = self.get(job_id)
         model = result["model"]
         if (

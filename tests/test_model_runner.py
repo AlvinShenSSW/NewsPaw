@@ -767,3 +767,126 @@ async def test_profile_away_and_back_during_request_cannot_revive_old_result(set
     spec = submit(executor, sub)
     result = await executor.advance("task", spec.validator, now=NOW)
     assert result["state"] == "stale" and result["result"] is None
+
+
+async def test_vision_call_obeys_image_budget_before_dispatch(setup):
+    from dataclasses import replace
+
+    from newspaw.providers import _probe_image
+
+    store, sub = setup
+    registry = ProfileRegistry(store)
+    registry.begin("vision", "normal_primary", "vision", 1)
+    registry.finish("vision", {"status": "verified"})
+    ledger = BudgetLedger(store)
+    revision, policy = ledger.policy()
+    policy["model"]["image_limit"] = 99
+    ledger.configure(policy, revision)
+    calls = []
+    executor = runner(store, lambda req: calls.append(req) or httpx.Response(200, json=response()))
+    spec = replace(
+        ModelRequest("normal", "instruction", "evidence", validator=lambda text: text == "valid"),
+        image=_probe_image(),
+        image_mime="image/png",
+    )
+    executor.submit(
+        "vision",
+        store.preview_route(sub),
+        spec,
+        operation="brief",
+        version="1",
+        evidence_hash="a" * 64,
+        evidence_count=1,
+        holds={"normal_primary": 100, "normal_backup": 100},
+    )
+    result = await executor.advance("vision", spec.validator, now=NOW)
+    assert result["state"] == "blocked" and result["error_kind"] == "image_limit"
+    assert not calls
+
+
+async def test_lookup_completed_cost_uses_frozen_quote(setup):
+    store, sub = setup
+
+    class Recoverable(ProviderAdapter):
+        verified_nonbillable_lookup = True
+
+        async def lookup(self, identity):
+            return dict(state="completed", response=response())
+
+    def handler(req):
+        raise httpx.ReadTimeout("lost")
+
+    def factory(p, k):
+        return Recoverable(p, k, client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+
+    ledger = BudgetLedger(store)
+    revision, policy = ledger.policy()
+    policy["prices"] = [
+        dict(
+            id="v1",
+            provider="openai",
+            model="gpt-6-luna",
+            input_per_million=1,
+            output_per_million=2,
+            updated_at=NOW.isoformat(),
+        )
+    ]
+    ledger.configure(policy, revision)
+    executor = ModelRunner(store, Keys(), adapter_factory=factory)
+    spec = submit(executor, sub)
+    await executor.advance("task", spec.validator, now=NOW)
+    result = await executor.recover_result("task", spec.validator, now=NOW)
+    record = ledger.get(result["attempts"][0]["budget_id"])
+    assert record["settled_units"] == 1 and record["cost_source"] == "usage_derived"
+
+
+async def test_primary_cooldown_remains_waiting_when_backup_exhausts(setup):
+    store, sub = setup
+    phase = "seed"
+    calls = []
+
+    def handler(req):
+        model = json.loads(req.content)["model"]
+        calls.append(model)
+        return (
+            httpx.Response(503)
+            if model == "gpt-6-luna" or phase == "target"
+            else httpx.Response(200, json=response())
+        )
+
+    executor = runner(store, handler)
+    for index in range(3):
+        spec = submit(executor, sub, f"seed{index}", attempts_per_profile=1)
+        await executor.advance(f"seed{index}", spec.validator, now=NOW)
+        await executor.advance(f"seed{index}", spec.validator, now=NOW + timedelta(seconds=10))
+    phase = "target"
+    spec = submit(executor, sub, "target")
+    await executor.advance("target", spec.validator, now=NOW + timedelta(seconds=20))
+    await executor.advance("target", spec.validator, now=NOW + timedelta(seconds=30))
+    result = await executor.advance("target", spec.validator, now=NOW + timedelta(seconds=40))
+    assert result["state"] == "waiting" and result["error_kind"] == "profile_cooldown"
+    assert len(calls) == 8
+
+
+async def test_identical_submission_returns_saved_result_after_route_changes(setup):
+    store, sub = setup
+    calls = []
+    executor = runner(store, lambda req: calls.append(req) or httpx.Response(200, json=response()))
+    route = store.preview_route(sub)
+    spec = submit(executor, sub)
+    saved = await executor.advance("task", spec.validator, now=NOW)
+    revision, config = store.load_config()
+    config["news_output_locale"] = "ja"
+    store.save_config(config, expected_revision=revision)
+    again = executor.submit(
+        "task",
+        route,
+        spec,
+        operation="brief",
+        version="1",
+        evidence_hash="a" * 64,
+        evidence_count=1,
+        holds={"normal_primary": 100, "normal_backup": 100},
+        task_limit=500,
+    )
+    assert again["result"] == saved["result"] and len(calls) == 1

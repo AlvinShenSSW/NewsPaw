@@ -100,7 +100,8 @@ class ModelRunner:
             )
         ):
             raise RunnerError("invalid_task_policy")
-        self.store.revalidate_route(route)
+        if not self.db.execute("SELECT 1 FROM model_tasks WHERE id=?", (task_id,)).fetchone():
+            self.store.revalidate_route(route)
         effective = route.effective
         if request.partition != effective["partition"]:
             raise RunnerError("partition_mismatch")
@@ -129,7 +130,6 @@ class ModelRunner:
             holds=holds,
             task_limit=task_limit,
             attempts_per_profile=attempts_per_profile,
-            generations={p["id"]: self.registry.profile(p["id"])[1] for p in profiles},
         )
         serialized = _json(payload)
         if len(serialized.encode()) > 16 * 1024 * 1024:
@@ -139,9 +139,16 @@ class ModelRunner:
                 "SELECT payload FROM model_tasks WHERE id=?", (task_id,)
             ).fetchone()
             if old:
-                if old[0] != serialized:
+                frozen = json.loads(old[0])
+                frozen.pop("generations")
+                if _json(frozen) != serialized:
                     raise RunnerError("task_id_conflict")
             else:
+                self.store.revalidate_route(route)
+                payload["generations"] = {
+                    p["id"]: self.registry.profile(p["id"])[1] for p in profiles
+                }
+                serialized = _json(payload)
                 self.db.execute(
                     "INSERT INTO model_tasks VALUES (?,?,?,NULL,NULL,NULL)",
                     (task_id, serialized, "pending" if evidence_count else "no_news"),
@@ -256,7 +263,10 @@ class ModelRunner:
                 reasons.append(blocked)
                 continue
             return profile, bool(last and last["error_kind"] in FORMAT), None
-        return None, False, reasons[-1] if reasons else "profiles_exhausted"
+        waiting = next(
+            (r for r in reasons if r in {"profile_cooldown", "profile_half_open_busy"}), None
+        )
+        return None, False, waiting or (reasons[-1] if reasons else "profiles_exhausted")
 
     def _state(self, task_id, state, error=None, next_at=None, result=None):
         self.db.execute(
@@ -382,6 +392,7 @@ class ModelRunner:
                         quote=quote,
                         provider=profile["provider"],
                         partition=request.partition,
+                        image=request.image is not None,
                         task_limit=payload["task_limit"],
                         now=now,
                     )
@@ -457,6 +468,20 @@ class ModelRunner:
         )
         self._state(task_id, "outcome_unknown", code)
 
+    @staticmethod
+    def _cost(record, usage):
+        quote = record["quote"]
+        if quote["source"] != "configured" or not all(
+            k in usage for k in ("input_tokens", "output_tokens")
+        ):
+            return None
+        rate = quote["rate"]
+        return (
+            usage["input_tokens"] * rate["input_per_million"]
+            + usage["output_tokens"] * rate["output_per_million"]
+            + 999999
+        ) // 1000000
+
     def _complete(self, task_id, attempt_id, payload, result, error, now):
         with self.store._write():
             if error and error.outcome == "unknown":
@@ -468,17 +493,7 @@ class ModelRunner:
                 self.budget._mark_unknown(attempt_id)
                 self.budget._reconcile(attempt_id, units=0, reason="provider_confirmation")
             else:
-                units = None
-                quote = record["quote"]
-                if quote["source"] == "configured" and all(
-                    k in usage for k in ("input_tokens", "output_tokens")
-                ):
-                    rate = quote["rate"]
-                    units = (
-                        usage["input_tokens"] * rate["input_per_million"]
-                        + usage["output_tokens"] * rate["output_per_million"]
-                        + 999999
-                    ) // 1000000
+                units = self._cost(record, usage)
                 self.budget._settle(
                     attempt_id,
                     units=units,
@@ -617,15 +632,22 @@ class ModelRunner:
                     if self._task(task_id)["state"] != "outcome_unknown":
                         return self.status(task_id)
                     self._preflight(payload, profile)
+                    units = (
+                        self._cost(self.budget.get(attempt["budget_id"]), result["usage"])
+                        if result
+                        else 0
+                    )
                     self.budget._reconcile(
-                        attempt["budget_id"],
-                        units=0 if result is None else None,
-                        reason="provider_confirmation",
+                        attempt["budget_id"], units=units, reason="provider_confirmation"
                     )
                     if result is not None:
                         self.db.execute(
-                            "UPDATE budget_attempts SET usage_json=? WHERE id=?",
-                            (_json(result["usage"]), attempt["budget_id"]),
+                            "UPDATE budget_attempts SET usage_json=?,cost_source=? WHERE id=?",
+                            (
+                                _json(result["usage"]),
+                                "usage_derived" if units is not None else "unknown",
+                                attempt["budget_id"],
+                            ),
                         )
                     self.db.execute(
                         "UPDATE model_attempts SET state=?,result_json=?,error_kind=NULL,finished_at=? WHERE id=?",

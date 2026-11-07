@@ -10,9 +10,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from .app_config import default_config
+from .app_config import default_config, upgrade_v1
 
-DATABASE_VERSION = 1
+DATABASE_VERSION = 2
 _LEGACY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -101,6 +101,25 @@ def _initialize(db: sqlite3.Connection) -> None:
     db.execute("INSERT INTO migration_info VALUES ('cutover', ?)", (datetime.now(UTC).isoformat(),))
 
 
+def _upgrade_v2(db: sqlite3.Connection) -> None:
+    revision, document = db.execute(
+        "SELECT revision, document FROM app_configuration WHERE id=1"
+    ).fetchone()
+    updated = upgrade_v1(json.loads(document))
+    if (
+        revision == 1
+        and not db.execute("SELECT 1 FROM migration_info WHERE key='legacy_imported'").fetchone()
+    ):
+        db.execute(
+            "INSERT INTO migration_info VALUES ('untouched_import_revision', ?)",
+            (str(revision + 1),),
+        )
+    db.execute(
+        "UPDATE app_configuration SET revision=revision+1, document=? WHERE id=1",
+        (json.dumps(updated, ensure_ascii=False),),
+    )
+
+
 def migrate(db: sqlite3.Connection, path: Path) -> None:
     if check_version(db) == DATABASE_VERSION:
         return
@@ -113,7 +132,11 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         populated = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' LIMIT 1").fetchone()
         if populated:
             _backup(path)
-        _initialize(db)
+        version = check_version(db)
+        if version == 0:
+            _initialize(db)
+        elif version == 1:
+            _upgrade_v2(db)
         db.execute(f"PRAGMA user_version={DATABASE_VERSION}")
         db.commit()
     except BaseException:

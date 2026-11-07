@@ -169,6 +169,9 @@ class Store:
             from .providers import invalidate_profiles
 
             document = invalidate_profiles(self._db, self.load_config()[1], document)
+            from .telegram.registry import invalidate_bots
+
+            document = invalidate_bots(self._db, self.load_config()[1], document)
             payload = json.dumps(document, ensure_ascii=False, allow_nan=False)
             changed = self._db.execute(
                 "UPDATE app_configuration SET document=?, revision=revision+1 WHERE id=1 AND revision=?",
@@ -215,6 +218,9 @@ class Store:
             from .providers import invalidate_profiles
 
             document = invalidate_profiles(self._db, self.load_config()[1], document)
+            from .telegram.registry import invalidate_bots
+
+            document = invalidate_bots(self._db, self.load_config()[1], document)
             eligible = self._db.execute(
                 "SELECT value FROM migration_info WHERE key='untouched_import_revision'"
             ).fetchone()
@@ -294,6 +300,9 @@ class Store:
             from .providers import invalidate_profiles
 
             document = invalidate_profiles(self._db, current, document)
+            from .telegram.registry import invalidate_bots
+
+            document = invalidate_bots(self._db, current, document)
             self._db.execute(
                 "UPDATE app_configuration SET revision=revision+1, document=? WHERE id=1",
                 (json.dumps(document, ensure_ascii=False),),

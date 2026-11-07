@@ -544,3 +544,44 @@ def test_v8_connector_identity_upgrade_rollback_and_retry(tmp_path, monkeypatch)
     assert reopened.load_config() == original
     assert reopened._db.execute("SELECT 1 FROM sqlite_master WHERE name='connector_identity'").fetchone()
     reopened.close()
+
+
+def test_v9_bot_registry_migration_clears_legacy_claims_and_rolls_back(tmp_path, monkeypatch):
+    from test_routing import configured
+
+    import newspaw.telegram.registry as registry
+
+    path = tmp_path / "state.db"
+    store = Store(path)
+    config, _ = configured()
+    store.save_config(config, expected_revision=1)
+    original = store.load_config()
+    store.close()
+    with closing(sqlite3.connect(path)) as db:
+        db.execute("DROP TABLE bot_inbox")
+        db.execute("DROP TABLE bot_registrations")
+        db.execute("PRAGMA user_version=9")
+        db.commit()
+    initialize = registry.initialize
+
+    def fail(db):
+        initialize(db)
+        raise RuntimeError("injected bot migration failure")
+
+    monkeypatch.setattr(registry, "initialize", fail)
+    with pytest.raises(RuntimeError):
+        Store(path)
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 9
+        assert (
+            json.loads(db.execute("SELECT document FROM app_configuration").fetchone()[0])
+            == original[1]
+        )
+        assert not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='bot_registrations'"
+        ).fetchall()
+    monkeypatch.setattr(registry, "initialize", initialize)
+    reopened = Store(path)
+    bot = reopened.load_config()[1]["bots"][0]
+    assert not bot["verified"] and not bot["paired"] and bot["chat_id"] is None
+    reopened.close()

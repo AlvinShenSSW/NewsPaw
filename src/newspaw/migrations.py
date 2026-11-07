@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from .app_config import default_config, upgrade_v1
 
-DATABASE_VERSION = 9
+DATABASE_VERSION = 10
 _LEGACY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -156,6 +156,9 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         db.execute(
             "CREATE TABLE IF NOT EXISTS connector_identity (partition TEXT NOT NULL,kind TEXT NOT NULL,url TEXT NOT NULL,remote_id TEXT NOT NULL,canonical TEXT NOT NULL,PRIMARY KEY(partition,kind,url))"
         )
+        from .telegram.registry import initialize as initialize_bots
+
+        initialize_bots(db)
         db.execute(f"PRAGMA user_version={DATABASE_VERSION}")
         db.commit()
     except BaseException:

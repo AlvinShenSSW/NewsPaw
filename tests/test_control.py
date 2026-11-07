@@ -284,3 +284,24 @@ async def test_control_recovers_unfinished_model_probe(control):
     await server.close()
     await server.start()
     assert records.get("unfinished")["status"] == "outcome_unknown"
+
+
+async def test_bot_control_status_verify_and_pair_code_are_local_operations(control):
+    from test_routing import configured
+    from test_telegram_registry import API
+
+    server, store = control
+    config, _ = configured()
+    store.save_config(config, expected_revision=1)
+    api = API()
+    server.bots.client_factory = lambda token: api
+    before = await request(server, {"op": "bots.status", "bot_id": "bot1"})
+    assert before["ok"] and not before["result"]["verified"]
+    verified = await request(server, {"op": "bots.verify", "bot_id": "bot1"})
+    assert verified["ok"] and verified["result"]["verified"]
+    code = await request(server, {"op": "bots.pair_code", "bot_id": "bot1"})
+    assert code["ok"] and len(code["result"]["code"]) >= 24
+    paused = await request(server, {"op": "bots.action", "bot_id": "bot1", "action": "pause"})
+    assert paused["ok"] and paused["result"]["paused"]
+    assert [m for m, p in api.calls] == ["getMe", "getWebhookInfo"]
+    assert code["result"]["code"] not in "\n".join(store._db.iterdump())

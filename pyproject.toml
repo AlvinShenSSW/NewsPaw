@@ -14,6 +14,7 @@ dependencies = [
   "httpx>=0.28,<0.29",
   "keyring>=25.7,<26; sys_platform == 'darwin'",
   "openai>=2,<3",
+  "pillow>=12.2,<14",
   "python-dotenv>=1.1,<2",
   "python-telegram-bot[job-queue,rate-limiter]>=22.5,<23",
 ]

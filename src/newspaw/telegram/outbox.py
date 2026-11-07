@@ -117,7 +117,11 @@ def _manifest(route, text, media):
     photos = media.get("photos", []) if media else []
     if not isinstance(photos, list) or len(photos) > 2:
         raise OutboxError("invalid_photo")
-    parts.extend(_photo(item) for item in photos)
+    for item in photos:
+        photo = _photo(item)
+        if route.effective["partition"] != "normal" and photo["asset_id"].startswith("source_"):
+            raise OutboxError("incompatible_photo_partition")
+        parts.append(photo)
     if not parts or len(parts) > _MAX_PARTS or len(_json(parts).encode()) > 512 * 1024:
         raise OutboxError("invalid_manifest_size")
     return dict(

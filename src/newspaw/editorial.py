@@ -525,6 +525,24 @@ class EditorialService:
             created_at=row["created_at"],
         )
 
+    def image_anchors(self, edition_id):
+        """Resolve validated event anchors against their immutable evidence pool."""
+        row = self._row(edition_id)
+        if row["state"] != "ready":
+            raise EditorialError("edition_not_ready")
+        pool = {entry["id"]: entry for entry in row["payload"]["pool"]}
+        partition = RouteSnapshot(**row["payload"]["input"]["route"]).effective["partition"]
+        result = []
+        for item in row["result"]["items"]:
+            candidates = [
+                pool[key]
+                for key in item["evidence_ids"]
+                if _hash([partition, pool[key]["url"]]) == item["event_key"]
+            ]
+            if len(candidates) == 1:
+                result.append(candidates[0])
+        return result
+
     def task_status(self, edition_id):
         row = self.db.execute(
             "SELECT model_task_id FROM editorial_editions WHERE id=?", (edition_id,)

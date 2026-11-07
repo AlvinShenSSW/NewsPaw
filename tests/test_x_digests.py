@@ -2,10 +2,13 @@ from copy import deepcopy
 
 import pytest
 from test_routing import account, configured
+from test_x_timelines import system as timeline_fixture
 
 from newspaw.app_config import validate_config
 from newspaw.routing import resolve_route
 from newspaw.telegram.targets import _scopes
+
+timeline_system = timeline_fixture
 
 
 @pytest.mark.parametrize("partition", ["normal", "adult"])
@@ -51,3 +54,47 @@ def test_special_digest_requires_explicit_opt_in_and_preserves_its_own_overrides
     ordinary["include_in_aggregate"] = True
     with pytest.raises(ValueError, match="aggregate"):
         validate_config(config)
+
+
+async def test_managed_timeline_uses_one_paid_read_per_page_and_keeps_prior_complete_cursor(
+    timeline_system,
+):
+    from test_x_timelines import page, post, setup
+
+    from newspaw.x.timelines import TimelineError
+
+    reads = []
+
+    async def reply(request, _):
+        reads.append(request)
+        if len(reads) == 1:
+            return page([post(110)])
+        if len(reads) == 2:
+            return page([post(150)], "continuation1")
+        return page([post(135, minutes=2)], "continuation2")
+
+    scans, directory, account, _ = await setup(timeline_system, reply)
+    revision = directory.store.config_revision()
+    scans.begin("scan.previous", "account", account, revision)
+    assert (await scans.advance("scan.previous", "step.previous"))["complete_cursor"] == "110"
+    scans.begin("scan.managed", "account", account, revision, max_pages=2)
+    with pytest.raises(TimelineError, match="digest_scope_required"):
+        await scans.advance("scan.managed", "manual.unscoped")
+
+    async def advance(step):
+        return await scans.advance("scan.managed", step, before_intent=lambda: True)
+
+    denied = await scans.advance("scan.managed", "step.managed1", before_intent=lambda: False)
+    assert denied["state"] == "pending" and len(reads) == 1
+    first = await advance("step.managed1")
+    assert first["completed_pages"] == 1
+    assert (await advance("step.managed1")) == first
+    second = await advance("step.managed2")
+    assert second["state"] == "incomplete" and second["reason"] == "page_limit"
+    assert second["complete_cursor"] == "110" and second["completed_pages"] == 2
+    assert await advance("step.managed3") == second
+    assert len(reads) == 3
+    assert reads[1].url.params["since_id"] == "110"
+    assert {row["observed_at"] for row in scans.posts("account", account)} == {
+        scans.clock().isoformat(timespec="microseconds")
+    }

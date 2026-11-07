@@ -70,7 +70,7 @@ def initialize(db):
     db.execute(
         """CREATE TABLE IF NOT EXISTS x_timeline_cursors (
            scope TEXT NOT NULL,identity TEXT NOT NULL,partition TEXT NOT NULL,
-           high TEXT,types TEXT NOT NULL,covered_end TEXT NOT NULL,
+           high TEXT,types TEXT NOT NULL,covered_end TEXT NOT NULL,covered_start TEXT,
            PRIMARY KEY(scope,identity,partition))"""
     )
     db.execute(
@@ -82,9 +82,21 @@ def initialize(db):
     db.execute(
         """CREATE TABLE IF NOT EXISTS x_post_observations (
            kind TEXT NOT NULL,scope TEXT NOT NULL,partition TEXT NOT NULL,post_id TEXT NOT NULL,
-           PRIMARY KEY(kind,scope,partition,post_id),
+           observed_at TEXT,PRIMARY KEY(kind,scope,partition,post_id),
            FOREIGN KEY(partition,post_id) REFERENCES x_posts(partition,id))"""
     )
+
+    for table, column in (
+        ("x_timeline_cursors", "covered_start"),
+        ("x_post_observations", "observed_at"),
+    ):
+        if (
+            db.execute(
+                "SELECT 1 FROM pragma_table_info(?) WHERE name=?", (table, column)
+            ).fetchone()
+            is None
+        ):
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
 
 
 class Timelines:
@@ -142,13 +154,13 @@ class Timelines:
 
     def _cursor(self, scope, binding):
         row = self.db.execute(
-            """SELECT high,types,covered_end FROM x_timeline_cursors
+            """SELECT high,types,covered_end,covered_start FROM x_timeline_cursors
                WHERE scope=? AND identity=? AND partition=?""",
             (scope, binding["remote"], binding["partition"]),
         ).fetchone()
         if row is None:
             return None
-        return dict(high=row[0], types=json.loads(row[1]), end=row[2])
+        return dict(high=row[0], types=json.loads(row[1]), end=row[2], start=row[3])
 
     def _scan(self, identity):
         cursor = self.db.execute("SELECT * FROM x_timeline_scans WHERE id=?", (_id(identity),))
@@ -208,6 +220,7 @@ class Timelines:
         include_replies=False,
         include_reposts=False,
         fresh=False,
+        max_pages=None,
     ):
         _id(scan_id)
         _id(scope)
@@ -219,10 +232,16 @@ class Timelines:
             or type(revision) is not int
             or not all(type(value) is bool for value in (*switches, fresh))
             or not any(switches)
+            or (
+                max_pages is not None
+                and (type(max_pages) is not int or not 1 <= max_pages <= _MAX_PAGES)
+            )
         ):
             raise TimelineError("invalid_timeline_arguments")
         types = [name for name, enabled in zip(_TYPES, switches, strict=True) if enabled]
         args = dict(revision=revision, page_size=page_size, types=types, fresh=fresh)
+        if max_pages is not None:
+            args["max_pages"] = max_pages
         with self.store._write():
             prior = self.db.execute(
                 "SELECT kind,scope,args FROM x_timeline_scans WHERE id=?", (scan_id,)
@@ -246,12 +265,16 @@ class Timelines:
                 raise TimelineError("fresh_window_required")
             floor = now - _AGE
             since = None
+            covered_start = floor.isoformat()
             if cursor and not fresh:
                 since = cursor["high"]
                 # An older complete cursor is retained even after a long offline period.
                 floor = min(floor, datetime.fromisoformat(cursor["end"]))
+                if since is not None:
+                    covered_start = cursor["start"] or cursor["end"]
             progress = dict(
                 since=since,
+                covered_start=covered_start,
                 floor=floor.isoformat(),
                 end=now.isoformat(),
                 pages=0,
@@ -317,8 +340,10 @@ class Timelines:
             return False
         return True
 
-    def _intent(self, row, step):
+    def _intent(self, row, step, before_intent):
         if not self._available(row, step):
+            return None
+        if before_intent is not None and before_intent() is False:
             return None
         binding = row["binding"]
         _, policy = self.budget.policy()
@@ -343,16 +368,22 @@ class Timelines:
             )
         except BudgetError as exc:
             self._record(row, step, "blocked", reason=str(exc))
-            self._save_scan(row, "budget_blocked", reason=str(exc))
+            self._save_scan(
+                row,
+                "incomplete" if "max_pages" in row["args"] else "budget_blocked",
+                reason=str(exc),
+            )
             return None
         self.budget._begin_attempt(budget_id)
         self._record(row, step, "inflight", budget_id=budget_id)
         return budget_id
 
-    async def advance(self, scan_id, step_id):
+    async def advance(self, scan_id, step_id, *, before_intent=None):
         step_id = _id(step_id)
         with self.store._write():
             row = self._scan(scan_id)
+            if row["args"].get("max_pages") is not None and before_intent is None:
+                raise TimelineError("digest_scope_required")
             if not self._available(row, step_id):
                 return self.status(scan_id)
             ref = row["binding"]["ref"]
@@ -370,7 +401,7 @@ class Timelines:
                 return self.status(scan_id)
             with self.store._write():
                 row = self._scan(scan_id)
-                if self._intent(row, step_id) is None:
+                if self._intent(row, step_id, before_intent) is None:
                     return self.status(scan_id)
             progress = row["progress"]
             params = {"token": progress["token"]}
@@ -429,7 +460,9 @@ class Timelines:
                 self._save_scan(row, "incomplete", reason="configuration_changed")
                 return
             if error:
-                if reason == "rate_limited":
+                if "max_pages" in row["args"]:
+                    self._save_scan(row, "incomplete", reason=reason, retry_at=None)
+                elif reason == "rate_limited":
                     retry = self.clock() + timedelta(seconds=max(1, error.retry_after or 60))
                     self._save_scan(row, "rate_limited", reason=reason, retry_at=retry.isoformat())
                 else:
@@ -509,8 +542,15 @@ class Timelines:
         )
         if not tombstone:
             self.db.execute(
-                "INSERT OR IGNORE INTO x_post_observations VALUES (?,?,?,?)",
-                (row["kind"], row["scope"], *identity),
+                """INSERT INTO x_post_observations VALUES (?,?,?,?,?)
+                   ON CONFLICT(kind,scope,partition,post_id) DO UPDATE SET
+                     observed_at=excluded.observed_at""",
+                (
+                    row["kind"],
+                    row["scope"],
+                    *identity,
+                    self.clock().isoformat(timespec="microseconds"),
+                ),
             )
         return int(not tombstone)
 
@@ -538,7 +578,7 @@ class Timelines:
             floor_reached = row["kind"] == "list" and any(
                 post["published_at"] < progress["floor"] for post in posts
             )
-            if floor_reached or updates["pages"] >= _MAX_PAGES:
+            if floor_reached or updates["pages"] >= row["args"].get("max_pages", _MAX_PAGES):
                 updates["reason"] = "bounded_window" if floor_reached else "page_limit"
                 self._save_scan(row, "incomplete", **updates)
             else:
@@ -550,9 +590,10 @@ class Timelines:
             previous_high = previous["high"] if previous else None
             complete_high = max(filter(None, (high, previous_high)), key=int, default=None)
             self.db.execute(
-                """INSERT INTO x_timeline_cursors VALUES (?,?,?,?,?,?)
+                """INSERT INTO x_timeline_cursors VALUES (?,?,?,?,?,?,?)
                    ON CONFLICT(scope,identity,partition) DO UPDATE SET
-                     high=excluded.high,types=excluded.types,covered_end=excluded.covered_end""",
+                     high=excluded.high,types=excluded.types,covered_end=excluded.covered_end,
+                     covered_start=excluded.covered_start""",
                 (
                     row["scope"],
                     binding["remote"],
@@ -560,6 +601,7 @@ class Timelines:
                     complete_high,
                     _json(row["args"]["types"]),
                     progress["end"],
+                    progress.get("covered_start"),
                 ),
             )
         self._save_scan(row, "complete", **updates)
@@ -597,7 +639,7 @@ class Timelines:
         owners = _json([[owner[0], remote] for remote, owner in binding["authors"].items()])
         types = _json(latest["args"]["types"])
         rows = self.db.execute(
-            """SELECT p.id,p.author_id,p.published_at,p.body,p.refs,p.account_id FROM x_posts p
+            """SELECT p.id,p.author_id,p.published_at,p.body,p.refs,p.account_id,o.observed_at FROM x_posts p
                JOIN x_post_observations o ON o.partition=p.partition AND o.post_id=p.id
                WHERE o.kind=? AND o.scope=? AND p.partition=? AND p.tombstone=0
                AND p.body IS NOT NULL AND p.published_at>=? AND p.published_at<=?
@@ -631,10 +673,11 @@ class Timelines:
                 published_at=published,
                 text=text,
                 references=json.loads(refs),
+                observed_at=observed,
                 partition=binding["partition"],
                 url=f"https://x.com/i/web/status/{identity}",
             )
-            for identity, remote, published, text, refs, account in rows
+            for identity, remote, published, text, refs, account, observed in rows
         ]
 
     def purge_expired(self, *, limit=100):

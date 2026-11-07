@@ -585,6 +585,7 @@ class XDirectory:
                     "UPDATE x_identities SET remote_id=NULL WHERE account_id=?", (owner,)
                 )
             observed = self._identity(account["id"])
+            alias = self._identity(requested["id"]) if bare_duplicate else None
             if not observed or not observed["observed_at"] or observed["observed_at"] <= when:
                 account.update(handle=item["handle"], remote_id=item["remote_id"])
                 if bare_duplicate:
@@ -600,6 +601,10 @@ class XDirectory:
                 if _json(config["accounts"]) != original_accounts:
                     saved_revision = self.store._save_config_tx(config, saved_revision)
                 self._observe(account, item, context["ref"], when, direct=True)
+                if alias and alias["direct"]:
+                    self.db.execute(
+                        "UPDATE x_identities SET direct=1 WHERE account_id=?", (account["id"],)
+                    )
             else:
                 saved_revision = context["revision"]
             status = self.account_status(account["id"])

@@ -1,5 +1,6 @@
 """Fixed-origin Telegram requests with bounded responses and safe diagnostics."""
 
+import asyncio
 import json
 import logging
 import re
@@ -42,6 +43,7 @@ class TelegramClient:
             if _TOKEN_FILTER not in logger.filters:
                 logger.addFilter(_TOKEN_FILTER)
         self._token = token
+        self._custom_client = client is not None
         self.client = (
             client
             if client is not None
@@ -52,7 +54,7 @@ class TelegramClient:
         await self.client.aclose()
 
     async def call(self, method, params=None):
-        if method not in {"getMe", "getWebhookInfo", "getUpdates"}:
+        if method not in {"getMe", "getWebhookInfo", "getUpdates", "getFile"}:
             raise TelegramError("method_not_allowed")
         try:
             response = await self.client.get(
@@ -90,6 +92,85 @@ class TelegramClient:
             raise TelegramError("malformed_response") from None
         except httpx.HTTPError:
             raise TelegramError("transport_error") from None
+
+    async def download_file(self, file_id, limit, guard):
+        if (
+            not isinstance(file_id, str)
+            or not re.fullmatch(r"[A-Za-z0-9_-]{1,512}", file_id)
+            or type(limit) is not int
+            or not 1 <= limit <= 12 * 1024 * 1024
+        ):
+            raise TelegramError("invalid_media")
+        if guard() is False:
+            raise TelegramError("media_scope_changed")
+        metadata = await self.call("getFile", {"file_id": file_id})
+        path = metadata.get("file_path") if isinstance(metadata, dict) else None
+        if (
+            not isinstance(path, str)
+            or len(path) > 300
+            or not re.fullmatch(
+                r"(?:[A-Za-z0-9_-]{1,80}/){1,5}[A-Za-z0-9_-]{1,100}(?:\.[A-Za-z0-9]{1,12})?", path
+            )
+        ):
+            raise TelegramError("invalid_file_path")
+        expected = metadata.get("file_size")
+        if expected is not None and (type(expected) is not int or not 1 <= expected <= limit):
+            raise TelegramError("media_too_large")
+        if guard() is False:
+            raise TelegramError("media_scope_changed")
+
+        client = (
+            self.client
+            if self._custom_client
+            else provider_client("https://api.telegram.org", max_bytes=limit, deadline=20)
+        )
+        try:
+            data = bytearray()
+            async with (
+                asyncio.timeout(20),
+                client.stream(
+                    "GET",
+                    f"https://api.telegram.org/file/bot{self._token}/{path}",
+                    follow_redirects=False,
+                    headers={"Accept-Encoding": "identity"},
+                ) as response,
+            ):
+                if (
+                    response.status_code != 200
+                    or response.headers.get("content-encoding", "identity") != "identity"
+                ):
+                    raise TelegramError("media_download_failed")
+                size = response.headers.get("content-length")
+                if size is not None and (
+                    not size.isdecimal() or len(size) > 9 or not 1 <= int(size) <= limit
+                ):
+                    raise TelegramError("media_too_large")
+                async for chunk in response.aiter_bytes():
+                    if len(data) + len(chunk) > limit:
+                        raise TelegramError("media_too_large")
+                    data.extend(chunk)
+                if (
+                    not data
+                    or (size is not None and int(size) != len(data))
+                    or (expected is not None and expected != len(data))
+                ):
+                    raise TelegramError("media_download_failed")
+            if guard() is False:
+                raise TelegramError("media_scope_changed")
+            return bytes(data)
+        except (httpx.HTTPError, TimeoutError):
+            raise TelegramError("media_download_failed") from None
+        finally:
+            if client is not self.client:
+                await client.aclose()
+
+    async def send_audio(self, binding, data):
+        return await self._send(
+            "sendAudio",
+            binding,
+            data={"chat_id": str(binding.chat_id), "title": "NewsPaw"},
+            files={"audio": ("newspaw.mp3", data, "audio/mpeg")},
+        )
 
     async def send_message(self, binding, text):
         return await self._send(

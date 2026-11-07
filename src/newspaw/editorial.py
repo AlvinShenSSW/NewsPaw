@@ -416,6 +416,19 @@ class BriefValidator:
         )
 
 
+def _focus_order(pool, weights):
+    if not weights:
+        return pool
+    buckets = {}
+    for index, evidence in enumerate(pool):
+        focus = evidence.get("coverage_focus")
+        weight = weights.get(focus, max(weights.values()))
+        bucket = buckets.setdefault(focus, [])
+        # Rational priority within each evidence-backed bucket. Newest wins a tie.
+        bucket.append(((len(bucket) + 1) / weight, index, evidence))
+    return [entry for _, _, entry in sorted(item for bucket in buckets.values() for item in bucket)]
+
+
 _X_COPY = {
     "en": dict(
         attributed="Posted on X by {authors}: ",
@@ -464,19 +477,6 @@ def _x_authors(sources):
             if "x_post" in source.get("metadata", {})
         }
     )
-
-
-def _focus_order(pool, weights):
-    if not weights:
-        return pool
-    buckets = {}
-    for index, evidence in enumerate(pool):
-        focus = evidence.get("coverage_focus")
-        weight = weights.get(focus, max(weights.values()))
-        bucket = buckets.setdefault(focus, [])
-        # Rational priority within each evidence-backed bucket. Newest wins a tie.
-        bucket.append(((len(bucket) + 1) / weight, index, evidence))
-    return [entry for _, _, entry in sorted(item for bucket in buckets.values() for item in bucket)]
 
 
 def initialize(db):
@@ -542,10 +542,10 @@ class EditorialService:
                     coverage_complete=attempt["coverage_complete"],
                     coverage_gaps=attempt.get("coverage_gaps", []),
                 )
-            if "x_coverage" in attempt:
-                coverage[-1]["x_coverage"] = attempt["x_coverage"]
             topics = {source_focus.get(identity) for identity in coverage[-1]["source_ids"]}
             topic = next(iter(topics)) if len(topics) == 1 else None
+            if "x_coverage" in attempt:
+                coverage[-1]["x_coverage"] = attempt["x_coverage"]
             for article in articles:
                 entries.append(
                     dict(

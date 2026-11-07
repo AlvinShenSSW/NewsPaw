@@ -89,6 +89,22 @@ _TOP_FIELDS = {
 }
 
 
+def uses_category_sources(subscription):
+    return (
+        subscription.get("source_mode", "explicit" if subscription["source_ids"] else "category")
+        == "category"
+    )
+
+
+def source_in_subscription(source, subscription, *, include_muted=False):
+    if uses_category_sources(subscription):
+        selected = subscription["category_id"] in source["category_ids"]
+    else:
+        selected = source["id"] in subscription["source_ids"]
+    weights = subscription.get("focus_weights", {})
+    return selected and (include_muted or weights.get(source.get("focus"), 1) > 0)
+
+
 def in_x_aggregate(account, subscription):
     return (
         account["subscription_id"] == subscription["id"]
@@ -107,22 +123,6 @@ def x_post_types(values):
     ):
         raise ValueError("Invalid X post types")
     return [kind for kind in X_POST_TYPES if kind in values]
-
-
-def uses_category_sources(subscription):
-    return (
-        subscription.get("source_mode", "explicit" if subscription["source_ids"] else "category")
-        == "category"
-    )
-
-
-def source_in_subscription(source, subscription, *, include_muted=False):
-    if uses_category_sources(subscription):
-        selected = subscription["category_id"] in source["category_ids"]
-    else:
-        selected = source["id"] in subscription["source_ids"]
-    weights = subscription.get("focus_weights", {})
-    return selected and (include_muted or weights.get(source.get("focus"), 1) > 0)
 
 
 def new_id(kind: str) -> str:

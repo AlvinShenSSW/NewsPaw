@@ -52,6 +52,9 @@ def identity(profile):
 
 
 def initialize(db):
+    legacy = not db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='model_probes'"
+    ).fetchone()
     db.execute(
         "CREATE TABLE IF NOT EXISTS profile_epochs (profile_id TEXT PRIMARY KEY, generation INTEGER NOT NULL)"
     )
@@ -66,6 +69,13 @@ def initialize(db):
     )
     for profile in config["model_profiles"]:
         db.execute("INSERT OR IGNORE INTO profile_epochs VALUES (?,1)", (profile["id"],))
+    if legacy and any(p["capabilities"] for p in config["model_profiles"]):
+        for profile in config["model_profiles"]:
+            profile["capabilities"] = []
+        db.execute(
+            "UPDATE app_configuration SET revision=revision+1,document=? WHERE id=1",
+            (_json(config),),
+        )
 
 
 def invalidate_profiles(db, current, document):
@@ -394,7 +404,7 @@ class ProfileRegistry:
         result = {}
         for capability in CAPABILITIES:
             row = self.db.execute(
-                "SELECT generation,identity_hash,result_json FROM model_probes WHERE profile_id=? AND capability=? ORDER BY rowid DESC LIMIT 1",
+                "SELECT generation,identity_hash,result_json FROM model_probes WHERE profile_id=? AND capability=? AND finished_at IS NOT NULL ORDER BY rowid DESC LIMIT 1",
                 (profile_id, capability),
             ).fetchone()
             if row is None:
@@ -489,27 +499,35 @@ class ProfileRegistry:
                     "probe." + probe_id, units=None, usage=usage or {}, cost_source="unknown"
                 )
             if current:
-                revision, config = self.store.load_config()
-                profile = next(p for p in config["model_profiles"] if p["id"] == row[0])
-                capabilities = [
-                    cap
-                    for cap, state in self.status(row[0]).items()
-                    if state["state"] == "verified"
-                ]
-                if profile["capabilities"] != capabilities:
-                    profile["capabilities"] = capabilities
-                    self.db.execute(
-                        "UPDATE app_configuration SET revision=?,document=? WHERE id=1",
-                        (revision + 1, _json(config)),
-                    )
+                self._sync_capabilities({row[0]})
         return result
+
+    def _sync_capabilities(self, profile_ids):
+        # Caller owns the transaction that changes verification records.
+        revision, config = self.store.load_config()
+        changed = False
+        for profile in config["model_profiles"]:
+            if profile["id"] not in profile_ids:
+                continue
+            capabilities = [
+                cap for cap, state in self.status(profile["id"]).items()
+                if state["state"] == "verified"
+            ]
+            if profile["capabilities"] != capabilities:
+                profile["capabilities"] = capabilities
+                changed = True
+        if changed:
+            self.db.execute(
+                "UPDATE app_configuration SET revision=?,document=? WHERE id=1",
+                (revision + 1, _json(config)),
+            )
 
     def recover_interrupted(self):
         with self.store._write():
             rows = self.db.execute(
-                "SELECT probe_id,result_json FROM model_probes WHERE finished_at IS NULL"
+                "SELECT probe_id,profile_id,result_json FROM model_probes WHERE finished_at IS NULL"
             ).fetchall()
-            for probe_id, payload in rows:
+            for probe_id, _profile_id, payload in rows:
                 result = {
                     **json.loads(payload),
                     "status": "outcome_unknown",
@@ -520,6 +538,7 @@ class ProfileRegistry:
                     "UPDATE model_probes SET finished_at=?,result_json=? WHERE probe_id=?",
                     (result["checked_at"], _json(result), probe_id),
                 )
+            self._sync_capabilities({row[1] for row in rows})
             return len(rows)
 
 

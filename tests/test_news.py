@@ -13,7 +13,7 @@ from newspaw.news import MAX_FEED_BYTES, Article, NewsError, NewsService, parse_
 def rss(items: list[dict]) -> bytes:
     entries = []
     for item in items:
-        date = item.get("date", datetime.now(UTC))
+        date = item.get("date", datetime.now(UTC) - timedelta(minutes=1))
         published_raw = item.get("published_raw", format_datetime(date) if date else "")
         date_element = f"<pubDate>{escape(published_raw)}</pubDate>" if published_raw else ""
         entries.append(
@@ -424,3 +424,23 @@ def test_feed_parser_rejects_doctype_in_utf16_and_excessive_nesting():
         parse_feed(payload.encode("utf-16"), "https://example.com/rss")
     with pytest.raises(NewsError):
         parse_feed(b"<rss>" + b"<x>" * 70 + b"</x>" * 70 + b"</rss>", "https://example.com/rss")
+
+
+def test_fixture_publication_precedes_batch_across_clock_boundary(monkeypatch):
+    import newspaw.news as news
+
+    batch = datetime(2026, 11, 7, 14, 0, 0, 900000, tzinfo=UTC)
+
+    class BatchClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return batch
+
+    class LaterFeedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return batch + timedelta(seconds=1)
+
+    monkeypatch.setattr(news, "datetime", BatchClock)
+    monkeypatch.setitem(rss.__globals__, "datetime", LaterFeedClock)
+    test_unmapped_topic_uses_labelled_google_rss_and_generic_feed_stays_explicit(monkeypatch)

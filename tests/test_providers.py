@@ -516,3 +516,37 @@ async def test_malformed_provider_error_code_finishes_known_failure(registry, er
     assert result["status"] == "failed" and result["error_kind"] == "rate_limited"
     assert records.get("bad-code")["status"] == "failed"
     assert BudgetLedger(store).get("probe.bad-code")["state"] == "settled"
+
+
+async def test_pending_reverification_keeps_last_completed_capability(registry):
+    store, records = registry
+    await probes(store, echo).probe("passed", "normal_primary", "text", 100)
+    records.begin("pending", "normal_primary", "text", 100)
+    assert records.get("pending")["status"] == "pending"
+    assert records.status("normal_primary")["text"]["state"] == "verified"
+    assert store.load_config()[1]["model_profiles"][0]["capabilities"] == ["text"]
+
+
+async def test_interrupted_reverification_removes_derived_capability_atomically(registry):
+    import sqlite3
+
+    store, records = registry
+    await probes(store, echo).probe("passed", "normal_primary", "text", 100)
+    records.begin("pending", "normal_primary", "text", 100)
+    revision = store.config_revision()
+    store._db.set_authorizer(
+        lambda action, table, *args: sqlite3.SQLITE_DENY
+        if action == sqlite3.SQLITE_UPDATE and table == "app_configuration"
+        else sqlite3.SQLITE_OK
+    )
+    try:
+        with pytest.raises(sqlite3.DatabaseError):
+            records.recover_interrupted()
+    finally:
+        store._db.set_authorizer(None)
+    assert records.get("pending")["status"] == "pending"
+    assert store.config_revision() == revision
+    assert records.recover_interrupted() == 1
+    assert records.status("normal_primary")["text"]["state"] == "outcome_unknown"
+    assert store.load_config()[1]["model_profiles"][0]["capabilities"] == []
+    assert store.config_revision() == revision + 1

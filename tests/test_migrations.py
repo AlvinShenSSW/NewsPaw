@@ -435,3 +435,31 @@ def test_v5_provider_upgrade_failure_rolls_back_and_retries(tmp_path, monkeypatc
         providers.ProfileRegistry(reopened).status("normal_primary")["text"]["state"] == "untested"
     )
     reopened.close()
+
+
+def test_v5_upgrade_removes_unverified_legacy_capabilities(tmp_path):
+    from newspaw.providers import ProfileRegistry, initialize
+
+    path = tmp_path / "state.db"
+    store = Store(path)
+    revision, config = store.load_config()
+    store.close()
+    config["model_profiles"][0]["capabilities"] = ["text", "image"]
+    with closing(sqlite3.connect(path)) as db:
+        db.execute("DROP TABLE model_probes")
+        db.execute("DROP TABLE profile_epochs")
+        db.execute("PRAGMA user_version=5")
+        db.execute("UPDATE app_configuration SET document=?", (json.dumps(config),))
+        db.commit()
+    reopened = Store(path)
+    registry = ProfileRegistry(reopened)
+    assert registry.status("normal_primary")["text"]["state"] == "untested"
+    assert reopened.load_config()[1]["model_profiles"][0]["capabilities"] == []
+    assert reopened.config_revision() == revision + 1
+    registry.begin("pass", "normal_primary", "text", 100)
+    registry.finish("pass", {"status": "verified"})
+    current = reopened.load_config()
+    with reopened._write():
+        initialize(reopened._db)
+    assert reopened.load_config() == current  # Later schema upgrades do not clear evidence.
+    reopened.close()

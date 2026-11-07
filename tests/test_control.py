@@ -219,3 +219,36 @@ async def test_control_restart_recovers_durable_inflight_budget(control):
     await server.start()
     assert ledger.get("pending")["state"] == "outcome_unknown"
     assert ledger.get("pending")["reserved_units"] == 5
+
+
+async def test_control_restart_recovers_interrupted_feed_attempt(control):
+    from datetime import UTC, datetime
+
+    from newspaw.evidence import EvidenceStore, _selection
+
+    server, store = control
+    revision, config = store.load_config()
+    config["sources"] = [
+        dict(
+            id="feed",
+            name="Feed",
+            url="https://example.com/rss",
+            kind="rss",
+            partition="normal",
+            category_ids=["world"],
+            enabled=True,
+        )
+    ]
+    store.save_config(config, expected_revision=revision)
+    repo = EvidenceStore(store)
+    scope = dict(
+        partition="normal",
+        url="https://example.com/rss",
+        selected=_selection(config, None, "feed"),
+        subscriptions=None,
+        source_id="feed",
+    )
+    identity = repo.begin(scope, datetime.now(UTC))
+    await server.close()
+    await server.start()
+    assert repo.attempt(identity, partition="normal")["status"] == "interrupted"

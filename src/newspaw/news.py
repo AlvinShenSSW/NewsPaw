@@ -46,6 +46,10 @@ class Article:
     feed_url: str = ""
     published_raw: str = ""
     excerpt_truncated: bool = False
+    updated_at: datetime | None = None
+    updated_raw: str = ""
+    language: str = ""
+    published_error: str = ""
 
     @property
     def content_sha256(self) -> str:
@@ -245,12 +249,8 @@ def _image(entry: dict) -> str | None:
     return next((safe for item in candidates if (safe := public_url(item, https_only=True))), None)
 
 
-def _parse_feed(
-    data: bytes,
-    feed_url: str,
-    max_age_hours: int,
-    now: datetime,
-    fetched_at: datetime,
+def parse_evidence(
+    data: bytes, feed_url: str, fetched_at: datetime,
 ) -> tuple[list[Article], dict[str, int]]:
     if not isinstance(data, bytes) or len(data) > MAX_FEED_BYTES:
         raise NewsError("新闻源内容过大或格式无效。", "oversized_feed")
@@ -283,7 +283,6 @@ def _parse_feed(
     parsed = feedparser.parse(io.BytesIO(data))
     if not parsed.get("version"):
         raise NewsError("新闻源没有返回有效的 RSS 或 Atom 内容。", "invalid_feed")
-    oldest = now - timedelta(hours=max_age_hours)
     fallback_source = plain_text(parsed.feed.get("title", ""), 200) or urlsplit(feed_url).hostname
     articles = []
     rejected: dict[str, int] = {}
@@ -300,16 +299,10 @@ def _parse_feed(
             reject("invalid_title_or_url")
             continue
         published, published_raw, date_error = _published(entry)
-        if date_error:
-            reject(date_error)
-            continue
-        assert published is not None
-        if published < oldest:
-            reject("outside_time_window")
-            continue
-        if published > now:
-            reject("future_publication_date")
-            continue
+        # feedparser aliases .get("updated") to published on RSS. Only real
+        # raw fields can establish an independent update timestamp.
+        updated_raw = str(dict.get(entry, "updated", ""))[:200]
+        updated, _, _ = _published({"published": updated_raw})
         raw_summary = str(entry.get("summary", ""))
         full_excerpt = plain_text(raw_summary, 20000)
         summary = full_excerpt[:1500]
@@ -327,9 +320,41 @@ def _parse_feed(
                 feed_url=feed_url,
                 published_raw=published_raw,
                 excerpt_truncated=len(raw_summary) > 20000 or len(full_excerpt) > len(summary),
+                updated_at=updated,
+                updated_raw=updated_raw,
+                language=plain_text(entry.get("language") or parsed.feed.get("language", ""), 80),
+                published_error=date_error or "",
             )
         )
     return articles, rejected
+
+
+def eligible_articles(articles, now, max_age_hours=24):
+    if type(max_age_hours) is not int or not 1 <= max_age_hours <= 720:
+        raise ValueError("Invalid news time window")
+    oldest = now - timedelta(hours=max_age_hours)
+    accepted, rejected = [], {}
+    for article in articles:
+        reason = article.published_error
+        if article.published_at is None:
+            reason = reason or "missing_publication_date"
+        elif article.published_at < oldest:
+            reason = "outside_time_window"
+        elif article.published_at > now:
+            reason = "future_publication_date"
+        if reason:
+            rejected[reason] = rejected.get(reason, 0) + 1
+        else:
+            accepted.append(article)
+    return accepted, rejected
+
+
+def _parse_feed(data, feed_url, max_age_hours, now, fetched_at):
+    articles, rejected = parse_evidence(data, feed_url, fetched_at)
+    accepted, date_rejections = eligible_articles(articles, now, max_age_hours)
+    for reason, count in date_rejections.items():
+        rejected[reason] = rejected.get(reason, 0) + count
+    return accepted, rejected
 
 
 def parse_feed(data: bytes, feed_url: str, max_age_hours: int = 24) -> list[Article]:

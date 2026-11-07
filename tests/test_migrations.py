@@ -361,3 +361,42 @@ def test_v3_budget_upgrade_failure_rolls_back_and_retries(tmp_path, monkeypatch)
     assert reopened.load_config() == original
     assert budget.BudgetLedger(reopened).policy()[0] == 1
     reopened.close()
+
+
+def test_v4_evidence_upgrade_failure_rolls_back_and_retries(tmp_path, monkeypatch):
+    import newspaw.evidence as evidence
+
+    path = tmp_path / "state.db"
+    store = Store(path)
+    original = store.load_config()
+    store.close()
+    with closing(sqlite3.connect(path)) as db:
+        for table in (
+            "feed_associations",
+            "feed_attempts",
+            "feed_cache",
+            "feed_snapshots",
+            "feed_health_policy",
+        ):
+            db.execute(f"DROP TABLE {table}")
+        db.execute("PRAGMA user_version=4")
+        db.commit()
+    initialize = evidence.initialize
+
+    def fail(db):
+        initialize(db)
+        raise RuntimeError("injected evidence migration failure")
+
+    monkeypatch.setattr(evidence, "initialize", fail)
+    with pytest.raises(RuntimeError):
+        Store(path)
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert not db.execute(
+            "SELECT name FROM sqlite_master WHERE name='feed_snapshots'"
+        ).fetchall()
+    monkeypatch.setattr(evidence, "initialize", initialize)
+    reopened = Store(path)
+    assert reopened.load_config() == original
+    assert reopened._db.execute("SELECT COUNT(*) FROM feed_attempts").fetchone()[0] == 0
+    reopened.close()

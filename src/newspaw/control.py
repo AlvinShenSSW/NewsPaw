@@ -33,6 +33,7 @@ from .telegram.outbox import Outbox
 from .telegram.registry import BotRegistry, TelegramError
 from .telegram.targets import TargetManager
 from .x.accounts import XDirectory
+from .x.digests import XDigests
 from .x.timelines import Timelines
 
 MAX_FRAME = 8 * 1024 * 1024
@@ -53,7 +54,10 @@ OPERATIONS = {
     "x.accounts.status": ({"account_id"}, set()),
     "x.accounts.verify": ({"account_id", "request_id", "revision"}, set()),
     "x.accounts.classify": ({"account_id", "partition", "revision"}, set()),
-    "x.accounts.route": ({"account_id", "subscription_id", "priority", "revision"}, set()),
+    "x.accounts.route": (
+        {"account_id", "subscription_id", "priority", "revision"},
+        {"include_in_aggregate"},
+    ),
     "x.accounts.remove": ({"account_id", "revision"}, set()),
     "x.lists.list": (set(), set()),
     "x.lists.add": ({"value", "partition", "revision"}, {"default_adult"}),
@@ -180,6 +184,7 @@ class ControlServer:
             credentials.backend,
             source_images=SourceImages(credentials.store, assets),
             newspapers=self.newspapers,
+            x_digests=XDigests(self.x_posts),
         )
         self.outbox = Outbox(self.pipeline, self.targets, asset_resolver=assets.read)
         self.scheduler = Scheduler(self.pipeline, self.outbox)
@@ -298,7 +303,11 @@ class ControlServer:
             return await self.x.classify(data["account_id"], data["partition"], data["revision"])
         if op == "x.accounts.route":
             return await self.x.set_route(
-                data["account_id"], data["subscription_id"], data["priority"], data["revision"]
+                data["account_id"],
+                data["subscription_id"],
+                data["priority"],
+                data["revision"],
+                include_in_aggregate=data.get("include_in_aggregate"),
             )
         if op == "x.accounts.remove":
             return await self.x.remove_account(data["account_id"], data["revision"])

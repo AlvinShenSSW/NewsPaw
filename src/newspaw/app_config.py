@@ -80,6 +80,14 @@ _TOP_FIELDS = {
 }
 
 
+def in_x_aggregate(account, subscription):
+    return (
+        account["subscription_id"] == subscription["id"]
+        and subscription["category_id"] in {"x", "x_adult"}
+        and (account["priority"] == "normal" or account.get("include_in_aggregate", False))
+    )
+
+
 def new_id(kind: str) -> str:
     if kind not in _FIELDS:
         raise ValueError("Unknown configuration entity kind")
@@ -342,8 +350,9 @@ def _validate_config(config: dict) -> None:
         entries = config[kind]
         _list(entries)
         indexed[kind] = {}
+        allowed = fields | {"include_in_aggregate"} if kind == "accounts" else fields
         for entry in entries:
-            if not isinstance(entry, dict) or set(entry) != fields:
+            if not isinstance(entry, dict) or not fields <= entry.keys() <= allowed:
                 raise ValueError(f"Unknown or missing {kind} fields; secrets are not accepted")
             _id(entry["id"])
             if entry["id"] in indexed[kind]:
@@ -453,6 +462,14 @@ def _validate_config(config: dict) -> None:
             raise ValueError("Invalid stable X account ID")
         if account["priority"] not in {"normal", "special"}:
             raise ValueError("Invalid account priority")
+        aggregate = account.get("include_in_aggregate", False)
+        _boolean(aggregate)
+        if aggregate and (
+            account["priority"] != "special"
+            or indexed["subscriptions"].get(account["subscription_id"], {}).get("category_id")
+            not in {"x", "x_adult"}
+        ):
+            raise ValueError("Invalid special account aggregate opt-in")
         if account["subscription_id"] is not None:
             references([account["subscription_id"]], "subscriptions")
             sub = indexed["subscriptions"][account["subscription_id"]]

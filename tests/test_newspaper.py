@@ -12,6 +12,7 @@ telegram_delivery = telegram_system
 def test_newspaper_tables_upgrade_x_timeline_database(tmp_path):
     from contextlib import closing
 
+    from newspaw.migrations import DATABASE_VERSION
     from newspaw.store import Store
 
     path = tmp_path / "state.db"
@@ -19,9 +20,9 @@ def test_newspaper_tables_upgrade_x_timeline_database(tmp_path):
         previous._db.execute("DROP TABLE newspaper_effects")
         previous._db.execute("DROP TABLE newspapers")
         previous._db.execute("DROP TABLE newspaper_policy")
-        previous._db.execute("PRAGMA user_version=18")
+        previous._db.execute("PRAGMA user_version=19")
     with closing(Store(path)) as upgraded:
-        assert upgraded._db.execute("PRAGMA user_version").fetchone() == (19,)
+        assert upgraded._db.execute("PRAGMA user_version").fetchone() == (DATABASE_VERSION,)
         for table in ("newspaper_policy", "newspapers", "newspaper_effects", "x_timeline_scans"):
             assert upgraded._db.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)

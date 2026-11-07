@@ -74,6 +74,7 @@ private struct ServiceMenu: View {
 
 struct SettingsWindow: View {
     @Bindable var model: AppModel
+    @State private var subscriptionEditor: SubscriptionSelection?
 
     var body: some View {
         NavigationSplitView {
@@ -136,6 +137,9 @@ struct SettingsWindow: View {
                 }
             }
         }
+        .sheet(item: $subscriptionEditor) { selection in
+            SubscriptionEditor(model: model, selection: selection)
+        }
     }
 
     @ViewBuilder private func pageContent(_ page: SettingsPage) -> some View {
@@ -179,6 +183,20 @@ struct SettingsWindow: View {
                         Text(model.text(enabled ? .enabled : .disabled))
                             .font(.caption)
                             .foregroundStyle(enabled ? Color.accentColor : Color.secondary)
+                        Menu {
+                            ForEach(config.subscriptions.filter { $0.categoryId == category.id }) { subscription in
+                                Button(subscription.name ?? categoryTitle(category)) {
+                                    subscriptionEditor = SubscriptionSelection(category: category, subscription: subscription)
+                                }
+                            }
+                            Button(SubscriptionCopy.new.text(model.uiLanguage)) {
+                                subscriptionEditor = SubscriptionSelection(category: category, subscription: nil)
+                            }
+                        } label: {
+                            Image(systemName: "slider.horizontal.3")
+                        }
+                        .accessibilityLabel(SubscriptionCopy.edit.text(model.uiLanguage))
+                        .fixedSize()
                     }
                     .padding(13)
                     .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
@@ -190,17 +208,7 @@ struct SettingsWindow: View {
                     .accessibilityElement(children: .combine)
                 }
             }
-            sectionTitle(.sources)
-            if config.sources.isEmpty {
-                statusCard(model.text(.noSources))
-            } else {
-                VStack(spacing: 1) {
-                    ForEach(config.sources) { source in
-                        line(source.name, note: source.kind, status: source.enabled ? .enabled : .disabled)
-                    }
-                }
-                .background(cardBackground)
-            }
+            SourceWorkspace(model: model, sources: config.sources)
         }
     }
 

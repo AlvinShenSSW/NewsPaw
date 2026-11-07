@@ -79,6 +79,7 @@ struct ConfigSnapshot: Decodable {
 struct AppConfig: Decodable {
     let uiLocale: AppLanguage
     let newsOutputLocale: AppLanguage
+    let timezone: String?
     let categories: [Category]
     let subscriptions: [Subscription]
     let sources: [Source]
@@ -93,11 +94,17 @@ struct AppConfig: Decodable {
         let id, categoryId, timezone: String
         let enabled: Bool
         let times: [String]
+        let name, sourceMode, style: String?
+        let sourceIds, botIds: [String]?
+        let maxItems: Int?
+        let focusWeights: [String: Int]?
     }
 
     struct Source: Decodable, Identifiable {
         let id, name, kind: String
         let enabled: Bool
+        let url, partition, focus: String?
+        let categoryIds: [String]?
     }
 
     struct Account: Decodable, Identifiable {
@@ -152,6 +159,7 @@ final class AppModel {
 
     private(set) var connection: ConnectionState = .connecting
     private(set) var config: AppConfig?
+    private(set) var configRevision = 0
     private(set) var bots: [BotStatus] = []
     private(set) var uiLanguage: AppLanguage
     private(set) var busy = false
@@ -204,6 +212,7 @@ final class AppModel {
             let currentBots: [BotStatus] = try BackendRPC.decode(await rpc.get("bots.list"))
             guard started == generation else { return }
             config = current.document
+            configRevision = current.revision
             bots = currentBots
             connection = .connected
             if !hasLocalLanguage {
@@ -218,6 +227,7 @@ final class AppModel {
     private func clear(_ state: ConnectionState) {
         connection = state
         config = nil
+        configRevision = 0
         bots = []
     }
 
@@ -250,6 +260,16 @@ final class AppModel {
         }
         busy = false
         await refresh()
+    }
+
+    func request(_ operation: String, fields: [String: Any] = [:]) async throws -> Data {
+        guard connection == .connected else { throw SocketFailure.disconnected }
+        var body = fields
+        body["op"] = operation
+        let data = try JSONSerialization.data(withJSONObject: body)
+        let extended = ["sources.discover", "sources.preview"].contains(operation)
+        let socket = extended ? LocalSocket(path: rpc.socket.path, timeoutMilliseconds: 35_000) : rpc.socket
+        return try await BackendRPC(socket: socket).send(data)
     }
 
     func stopBackend() async {

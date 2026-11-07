@@ -329,3 +329,35 @@ def test_v2_upgrade_adds_only_credential_journal(tmp_path):
         assert not db.execute(
             "SELECT name FROM sqlite_master WHERE name='credential_intents'"
         ).fetchall()
+
+
+def test_v3_budget_upgrade_failure_rolls_back_and_retries(tmp_path, monkeypatch):
+    import newspaw.budget as budget
+
+    path = tmp_path / "state.db"
+    store = Store(path)
+    original = store.load_config()
+    store.close()
+    with sqlite3.connect(path) as db:
+        for table in ("budget_attempts", "budget_tasks", "budget_periods", "budget_policy"):
+            db.execute(f"DROP TABLE {table}")
+        db.execute("PRAGMA user_version=3")
+    initialize = budget.initialize
+
+    def fail(db):
+        initialize(db)
+        raise RuntimeError("injected budget migration failure")
+
+    monkeypatch.setattr(budget, "initialize", fail)
+    with pytest.raises(RuntimeError):
+        Store(path)
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert not db.execute(
+            "SELECT name FROM sqlite_master WHERE name='budget_policy'"
+        ).fetchall()
+    monkeypatch.setattr(budget, "initialize", initialize)
+    reopened = Store(path)
+    assert reopened.load_config() == original
+    assert budget.BudgetLedger(reopened).policy()[0] == 1
+    reopened.close()

@@ -190,3 +190,32 @@ def test_control_cli_does_not_load_legacy_settings(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "load_settings", forbidden)
     assert cli.main(["control", "--data-dir", str(tmp_path)]) == 0
     assert calls == [tmp_path]
+
+
+async def test_budget_policy_uses_separate_cas_without_changing_news_config(control):
+    server, store = control
+    response = await request(server, {"op": "budget.get"})
+    document = response["result"]["document"]
+    document["model"]["monthly_limit"] = 100
+    assert (await request(server, {"op": "budget.save", "document": document, "revision": 1}))["ok"]
+    stale = await request(server, {"op": "budget.save", "document": document, "revision": 1})
+    assert stale == {"ok": False, "error": "budget_policy_conflict"}
+    assert store.config_revision() == 1
+
+
+async def test_control_restart_recovers_durable_inflight_budget(control):
+    from datetime import UTC, datetime
+
+    from newspaw.budget import BudgetLedger
+
+    server, store = control
+    ledger = BudgetLedger(store)
+    now = datetime.now(UTC)
+    ledger.reserve(
+        "pending", "task", max_units=5, quote={"known": False, "source": "manual_hold"}, now=now
+    )
+    ledger.begin_attempt("pending", now=now)
+    await server.close()
+    await server.start()
+    assert ledger.get("pending")["state"] == "outcome_unknown"
+    assert ledger.get("pending")["reserved_units"] == 5

@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from .app_config import STYLES, in_x_aggregate, validate_config
+from .app_config import STYLES, X_DEFAULT_POST_TYPES, in_x_aggregate, validate_config, x_post_types
 
 # Version of the effective route contract, independent of additive config fields.
 ROUTE_SCHEMA_VERSION = 2
@@ -26,6 +26,15 @@ def _json(value):
 
 def _fields(entry, names):
     return {key: entry[key] for key in names.split()}
+
+
+def _x_account(account):
+    result = _fields(account, "id remote_id handle partition priority")
+    if "post_types" in account:
+        types = x_post_types(account["post_types"])
+        if tuple(types) != X_DEFAULT_POST_TYPES:
+            result["post_types"] = types
+    return result
 
 
 @dataclass(frozen=True)
@@ -110,7 +119,7 @@ def resolve_route(config, revision, subscription_id, *, account_id=None, style=N
         if selected_account["subscription_id"] != subscription_id:
             blockers.append("account_subscription_mismatch")
             return snapshot()
-        payload["account"] = _fields(selected_account, "id remote_id handle partition priority")
+        payload["account"] = _x_account(selected_account)
         if selected_account["remote_id"] is None:
             blockers.append("account_identity_unverified")
     elif category["id"] in {"x", "x_adult"}:
@@ -118,9 +127,7 @@ def resolve_route(config, revision, subscription_id, *, account_id=None, style=N
             (account for account in config["accounts"] if in_x_aggregate(account, subscription)),
             key=lambda a: a["id"],
         )
-        payload["accounts"] = [
-            _fields(a, "id remote_id handle partition priority") for a in members
-        ]
+        payload["accounts"] = [_x_account(a) for a in members]
         if not members:
             blockers.append("no_accounts")
         if any(a["remote_id"] is None for a in members):

@@ -46,12 +46,13 @@ OPERATIONS = {
     ),
     "x.accounts.list": (set(), set()),
     "x.accounts.add": ({"handle", "revision"}, {"partition"}),
+    "x.accounts.partition_impact": ({"account_id"}, set()),
     "x.accounts.status": ({"account_id"}, set()),
     "x.accounts.verify": ({"account_id", "request_id", "revision"}, set()),
     "x.accounts.classify": ({"account_id", "partition", "revision"}, set()),
     "x.accounts.route": (
         {"account_id", "subscription_id", "priority", "revision"},
-        {"include_in_aggregate"},
+        {"include_in_aggregate", "post_types"},
     ),
     "x.accounts.remove": ({"account_id", "revision"}, set()),
     "x.lists.list": (set(), set()),
@@ -70,6 +71,7 @@ OPERATIONS = {
         },
     ),
     "x.posts.advance": ({"scan_id", "step_id"}, set()),
+    "x.posts.coverage": ({"kind", "scope"}, set()),
     "x.posts.status": ({"scan_id"}, set()),
     "x.posts.stop": ({"scan_id"}, set()),
     "x.posts.list": ({"kind", "scope"}, {"limit"}),
@@ -280,6 +282,8 @@ class ControlServer:
             return await self.x.add_account(
                 data["handle"], data["revision"], partition=data.get("partition")
             )
+        if op == "x.accounts.partition_impact":
+            return self.x.partition_impact(data["account_id"])
         if op == "x.accounts.status":
             return self.x.account_status(data["account_id"])
         if op == "x.accounts.verify":
@@ -293,6 +297,7 @@ class ControlServer:
                 data["priority"],
                 data["revision"],
                 include_in_aggregate=data.get("include_in_aggregate"),
+                post_types=data.get("post_types"),
             )
         if op == "x.accounts.remove":
             return await self.x.remove_account(data["account_id"], data["revision"])
@@ -319,6 +324,8 @@ class ControlServer:
             return self.x_posts.begin(**{key: value for key, value in data.items() if key != "op"})
         if op == "x.posts.advance":
             return await self.x_posts.advance(data["scan_id"], data["step_id"])
+        if op == "x.posts.coverage":
+            return self.x_posts.coverage(data["kind"], data["scope"])
         if op == "x.posts.status":
             return self.x_posts.status(data["scan_id"])
         if op == "x.posts.stop":

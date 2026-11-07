@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 import httpx
+import pytest
 from test_outbox import REF2, TOKEN2, bot_status, ready_response, sender
 from test_routing import REF
 from test_telegram_registry import API, TOKEN, bind, update
@@ -13,8 +14,10 @@ assert timeline_system is not None
 
 
 async def alert_system(system, responder):
+    post_number = [190]
+
     async def reply(request, _):
-        return page([dict(post(190), text="OpenAI released GPT-6.")])
+        return page([dict(post(post_number[0]), text="OpenAI released GPT-6.")])
 
     build, scans, sub, identity, holds, model_calls = await _digest_fixture(system, reply)
     pipeline = build()
@@ -36,6 +39,7 @@ async def alert_system(system, responder):
     await registry.poll_once("bot2", now=NOW)
     outbox, calls = sender(pipeline, targets, responder)
     clock = [NOW]
+    scans.clock = lambda: clock[0]
     alerts = Alerts(pipeline, outbox, clock=lambda: clock[0])
     outbox.alert_guard = alerts.guard
 
@@ -58,7 +62,7 @@ async def alert_system(system, responder):
             dict(subscription_id=sub, account_id=None, phrase="OpenAI"),
         ],
     )
-    return alerts, clock, outbox, calls, model_calls, edition, settings
+    return alerts, clock, outbox, calls, model_calls, edition, settings, post_number
 
 
 async def test_quiet_hours_recheck_each_bot_after_credentials_and_preserve_single_count(
@@ -67,7 +71,7 @@ async def test_quiet_hours_recheck_each_bot_after_credentials_and_preserve_singl
     async def response(_):
         return ready_response()
 
-    alerts, clock, outbox, calls, model_calls, edition, settings = await alert_system(
+    alerts, clock, outbox, calls, model_calls, edition, settings, _ = await alert_system(
         timeline_system, response
     )
     await alerts.tick()
@@ -113,7 +117,9 @@ async def test_unknown_alert_delivery_does_not_automatically_repeat(timeline_sys
     async def response(_):
         raise httpx.ReadTimeout("fixture")
 
-    alerts, _, outbox, calls, _, edition, settings = await alert_system(timeline_system, response)
+    alerts, _, outbox, calls, _, edition, settings, _ = await alert_system(
+        timeline_system, response
+    )
     alerts.configure(settings, alerts.status()["revision"])
     await edition("prepared")
     await alerts.tick()
@@ -122,3 +128,36 @@ async def test_unknown_alert_delivery_does_not_automatically_repeat(timeline_sys
     await alerts.tick()
     await outbox.advance(entry["job_id"], "bot1", now=NOW)
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize(
+    ("daily", "minutes", "reason"),
+    [
+        (1, 125, "alert_daily_limit"),
+        (2, 65, "alert_cooldown"),
+    ],
+)
+async def test_alert_daily_limit_and_topic_cooldown_keep_later_intent_unclaimed(
+    timeline_system,
+    daily,
+    minutes,
+    reason,
+):
+    async def response(_):
+        return ready_response()
+
+    alerts, clock, _, calls, _, edition, settings, post_number = await alert_system(
+        timeline_system, response
+    )
+    settings.update(daily_limit=daily, quiet_start=None, quiet_end=None)
+    alerts.configure(settings, alerts.status()["revision"])
+    await edition("first")
+    await alerts.tick()
+    assert len(calls) == 2
+    clock[0] = NOW + timedelta(minutes=minutes)
+    post_number[0] += 1
+    await edition("later")
+    await alerts.tick()
+    recent, first = alerts.status()["occurrences"]
+    assert recent["reason"] == reason and recent["claimed_at"] is None
+    assert first["state"] == "delivered" and len(calls) == 2

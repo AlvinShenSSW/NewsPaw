@@ -165,7 +165,7 @@ class Videos:
         return account, author, reference, route.effective["locale"], route.fingerprint
 
     def candidates(self):
-        candidates = []
+        candidates, seen = [], set()
         for (job,) in self.db.execute(
             """SELECT id FROM pipeline_jobs
                WHERE partition='normal' AND stage='awaiting_delivery' AND cancelled=0 AND paused=0
@@ -183,8 +183,13 @@ class Videos:
                 for source in item["sources"]:
                     proof = source.get("metadata", {}).get("x_post", {})
                     post = proof.get("id")
-                    if not isinstance(post, str) or not _POST.fullmatch(post):
+                    if (
+                        not isinstance(post, str)
+                        or not _POST.fullmatch(post)
+                        or (job, post) in seen
+                    ):
                         continue
+                    seen.add((job, post))
                     prior = self.db.execute(
                         "SELECT id FROM x_video_receipts WHERE job_id=? AND post_id=?", (job, post)
                     ).fetchone()

@@ -20,7 +20,18 @@ MAX_BYTES = 8 * 1024 * 1024
 MAX_SECONDS = 60
 _MAX_PIXELS = 8_000_000
 _VIDEO_PATH = re.compile(r"/(?:ext_tw_video|amplify_video|tweet_video)/[A-Za-z0-9_./-]+\.mp4")
-_PIPE_INPUT = ("-protocol_whitelist", "pipe", "-format_whitelist", "mov", "-i", "pipe:0")
+_PIPE_INPUT = (
+    "-protocol_whitelist",
+    "pipe",
+    "-format_whitelist",
+    "mov",
+    "-max_streams",
+    "2",
+    "-max_pixels",
+    str(_MAX_PIXELS),
+    "-i",
+    "pipe:0",
+)
 
 
 def variant(metadata):

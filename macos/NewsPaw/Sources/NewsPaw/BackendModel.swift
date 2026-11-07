@@ -51,7 +51,8 @@ struct BackendRPC {
         if !ok.boolValue {
             switch object["error"] as? String {
             case "unknown_operation": throw BackendFailure.incompatible
-            case "config_conflict", "binding_changed": throw BackendFailure.conflict
+            case "config_conflict", "binding_changed", "alert_policy_changed", "video_policy_changed":
+                throw BackendFailure.conflict
             default: throw BackendFailure.rejected
             }
         }
@@ -122,7 +123,7 @@ struct AppConfig: Decodable {
 
     struct Account: Decodable, Identifiable {
         let id, handle, priority: String
-        let partition: String?
+        let partition, subscriptionId: String?
     }
 
     struct Profile: Decodable, Identifiable {
@@ -284,7 +285,8 @@ final class AppModel {
         body["op"] = operation
         let data = try JSONSerialization.data(withJSONObject: body)
         let extended = ["sources.discover", "sources.preview", "models.probe", "bots.verify", "bots.test_send", "x.accounts.verify", "x.lists.refresh"].contains(operation)
-        let socket = extended ? LocalSocket(path: rpc.socket.path, timeoutMilliseconds: 35_000) : rpc.socket
+        let timeout = operation == "x.video.inspect" ? 155_000 : extended ? 35_000 : nil
+        let socket = timeout.map { LocalSocket(path: rpc.socket.path, timeoutMilliseconds: $0) } ?? rpc.socket
         return try await BackendRPC(socket: socket).send(data)
     }
 

@@ -7,6 +7,7 @@
 - [产品与系统设计](docs/system-design.md)：六类主题、每类独立时间、X 账号单独日更与费用控制、原生 Mac 界面、模型路由、实施顺序。
 - [主备模型与语言设置](docs/model-routing.md)：每个槽位独立 URL/Key/模型、分类覆盖、失败切换、界面与新闻输出的独立三语设置。
 - [推送样式与 AI 报纸](docs/delivery-formats.md)：默认文字链接、按需来源配图、指定内容生成为 1–2 张报纸图，附可点击来源。
+- [多 Bot 绑定与新闻分配](docs/telegram-routing.md)：分别绑定多个 Telegram Bot，按分类和特别关注账号选择一个或多个接收目标。
 - [后台原型与证据规则](docs/architecture.md)：已经实现的模块和仍待集成的边界。
 
 目标模型路由：普通新闻和普通 X 使用 GPT-6 Luna 主用、MiMo Flash 备用；AV 产业与 X 成人博主分别订阅，默认继承 DeepSeek Flash 主用、Grok 4.3 备用的成人模型组。每个分类可覆盖本组的主备 URL、Key 与模型。两类 X 分区都支持特别关注账号的独立日更，分区读取上限受同一个 X 总预算约束。App 显示语言与所有简报的输出语言分别选择简体中文、English 或日本語。新闻来源、时间校验和投递记录由 NewsPaw 管理。
@@ -43,7 +44,7 @@ uv run newspaw run
 
 在 bot 私聊发送 `/pair <本机 .env 中的 PAIRING_CODE>` 配对唯一主人；或先填写 `TELEGRAM_OWNER_ID`。凭据不要提交到 GitHub。首次配对前不向任何聊天推送。
 
-当前 bot 支持 `/news`、`/search`、`/topics`、`/schedule`、`/voice on|off`、`/pause`、`/resume` 和 `/status`，以及普通新闻的文字、图片和语音请求。**它目前仍采用全局推送时间；目标的分主题时间、X 日更、AV 模型路由、完整投递队列与 AI 报纸尚未接入 bot。** 独立采集/模型适配模块的存在不代表这些产品功能已经完成。
+当前 bot 支持 `/news`、`/search`、`/topics`、`/schedule`、`/voice on|off`、`/pause`、`/resume` 和 `/status`，以及普通新闻的文字、图片和语音请求。**它目前仍采用单 Bot 和全局推送时间；目标的多 Bot 分类分配、分主题时间、X 日更、AV 模型路由、完整投递队列与 AI 报纸尚未接入 bot。** 独立采集/模型适配模块的存在不代表这些产品功能已经完成。
 
 开发者可使用 `newspaw service install|start|stop|status|uninstall` 管理原型 LaunchAgent。`install` 会实际启动服务；配置正确并完成前台验证后再使用。正式版本将改用原生设置界面、Keychain 与应用内的后台服务管理。
 

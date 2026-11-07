@@ -379,6 +379,35 @@ async def test_jobs_are_readable_and_controllable_through_private_socket(control
     assert (await request(server, {"op": "jobs.advance", "job_id": job_id}))["error"] == "unknown_operation"
 
 
+async def test_outbox_rpc_exposes_status_and_resolution_without_dispatch(control):
+    server, _ = control
+    reply = await request(server, {"op": "delivery.status", "job_id": "job.missing"})
+    assert reply == {"ok": False, "error": "missing_delivery"}
+    bad = await request(
+        server,
+        {"op": "delivery.resolve", "job_id": "job.missing", "bot_id": "bot1", "ordinal": -1, "action": "retry"},
+    )
+    assert bad == {"ok": False, "error": "invalid_resolution"}
+    assert await request(
+        server, {"op": "delivery.requeue_target", "job_id": "job.missing", "bot_id": "bot1"}
+    ) == {"ok": False, "error": "missing_delivery"}
+    assert (await request(server, {"op": "delivery.advance", "job_id": "job.missing"}))["error"] == "unknown_operation"
+
+
+async def test_schedule_policy_defaults_disabled_and_updates_independently(control):
+    server, store = control
+    config_revision = store.config_revision()
+    current = (await request(server, {"op": "schedule.status"}))["result"]
+    assert not current["settings"]["enabled"] and current["occurrences"] == []
+    assert current["settings"]["catchup_minutes"] == 360
+    edited = await request(
+        server, {"op": "schedule.configure", "settings": {**current["settings"], "catchup_minutes": 0},
+                 "revision": current["revision"]},
+    )
+    assert edited["ok"] and edited["result"]["revision"] == current["revision"] + 1
+    assert store.config_revision() == config_revision
+
+
 async def test_x_control_creates_local_draft_without_network_or_credentials(control):
     server, store = control
     listed = await request(server, {"op": "x.accounts.list"})

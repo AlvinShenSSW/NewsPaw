@@ -273,6 +273,8 @@ class AICollector:
         repo = self.evidence
         now = fixed or datetime.now(UTC)
         identity = repo.begin(scope, now)
+        if identity is None:
+            return None
         api = PublicAPI(self.client, kind, now)
         error = None
         retry = None

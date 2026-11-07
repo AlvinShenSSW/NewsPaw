@@ -1,4 +1,4 @@
-"""Fixed-origin Telegram reads with bounded responses and safe diagnostics."""
+"""Fixed-origin Telegram requests with bounded responses and safe diagnostics."""
 
 import json
 import logging
@@ -14,6 +14,10 @@ class TelegramError(ValueError):
         super().__init__(kind)
         self.kind = kind
         self.retry_after = retry_after
+
+
+class TelegramSendError(TelegramError):
+    pass
 
 
 class _TokenFilter(logging.Filter):
@@ -86,3 +90,82 @@ class TelegramClient:
             raise TelegramError("malformed_response") from None
         except httpx.HTTPError:
             raise TelegramError("transport_error") from None
+
+    async def send_message(self, binding, text):
+        return await self._send(
+            "sendMessage",
+            binding,
+            json={
+                "chat_id": binding.chat_id,
+                "text": text,
+                "link_preview_options": {"is_disabled": True},
+            },
+        )
+
+    async def send_photo(self, binding, data, mime, caption, *, spoiler=False):
+        filename = {"image/jpeg": "news.jpg", "image/png": "news.png"}[mime]
+        return await self._send(
+            "sendPhoto",
+            binding,
+            data={
+                "chat_id": str(binding.chat_id),
+                "caption": caption,
+                "has_spoiler": "true" if spoiler else "false",
+            },
+            files={"photo": (filename, data, mime)},
+        )
+
+    async def _send(self, method, binding, **body):
+        try:
+            response = await self.client.post(
+                f"https://api.telegram.org/bot{self._token}/{method}",
+                follow_redirects=False,
+                **body,
+            )
+            if len(response.content) > 2 * 1024 * 1024:
+                raise ValueError()
+            data = response.json()
+        except (httpx.HTTPError, ValueError, RecursionError, OSError):
+            raise TelegramSendError("outcome_unknown") from None
+        if isinstance(data, dict):
+            code = response.status_code
+            result = data.get("result")
+            if code == 200 and data.get("ok") is True and isinstance(result, dict):
+                chat = result.get("chat")
+                author = result.get("from")
+                message_id = result.get("message_id")
+                if (
+                    type(message_id) is int
+                    and 0 < message_id <= 2**63 - 1
+                    and isinstance(chat, dict)
+                    and type(chat.get("id")) is int
+                    and chat["id"] == binding.chat_id
+                    and chat.get("type") == "private"
+                    and (
+                        "from" not in result
+                        or (
+                            isinstance(author, dict)
+                            and type(author.get("id")) is int
+                            and author["id"] == binding.telegram_id
+                            and author.get("is_bot") is True
+                        )
+                    )
+                ):
+                    return message_id
+            if (
+                data.get("ok") is False
+                and type(data.get("error_code")) is int
+                and data["error_code"] == code
+            ):
+                if code == 429:
+                    parameters = data.get("parameters", {})
+                    retry = (
+                        parameters.get("retry_after", 60) if isinstance(parameters, dict) else None
+                    )
+                    if type(retry) is not int or not 0 <= retry <= 2**31 - 1:
+                        raise TelegramSendError("rate_limit_invalid")
+                    raise TelegramSendError("rate_limited", max(1, retry))
+                kind = {400: "payload_rejected", 401: "token_revoked", 403: "forbidden"}.get(code)
+                if kind:
+                    raise TelegramSendError(kind)
+        raise TelegramSendError("outcome_unknown")

@@ -20,14 +20,25 @@ from .budget import BudgetError, BudgetLedger
 from .credentials import CredentialError
 from .pipeline import Pipeline
 from .providers import ProbeService, ProfileRegistry, ProviderError
+from .scheduler import Scheduler
 from .source_catalog import catalog
 from .source_manager import SourceError, SourceManager
+from .telegram.outbox import Outbox
 from .telegram.registry import BotRegistry, TelegramError
 from .telegram.targets import TargetManager
 from .x.accounts import XDirectory
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
+    "schedule.status": (set(), {"limit"}),
+    "schedule.configure": ({"settings", "revision"}, set()),
+    "schedule.resolve": ({"occurrence_id", "action"}, set()),
+    "delivery.status": ({"job_id"}, {"bot_id"}),
+    "delivery.requeue_target": ({"job_id", "bot_id"}, set()),
+    "delivery.resolve": (
+        {"job_id", "bot_id", "ordinal", "action"},
+        {"acknowledge_duplicate_send", "message_id"},
+    ),
     "x.accounts.list": (set(), set()),
     "x.accounts.add": ({"handle", "revision"}, {"partition"}),
     "x.accounts.status": ({"account_id"}, set()),
@@ -129,6 +140,8 @@ class ControlServer:
         self.targets = TargetManager(credentials, self.bots)
         self.x = XDirectory(credentials, self.targets)
         self.pipeline = Pipeline(credentials.store, credentials.backend)
+        self.outbox = Outbox(self.pipeline, self.targets)
+        self.scheduler = Scheduler(self.pipeline, self.outbox)
         self._server = None
         self._lock_fd = None
         self._handlers = set()
@@ -158,9 +171,11 @@ class ControlServer:
             BudgetLedger(self.credentials.store).recover_inflight()
             ProfileRegistry(self.credentials.store).recover_interrupted()
             self.pipeline.recover_interrupted()
+            self.outbox.recover_interrupted()
             self.x.recover_interrupted()
             await self._server.start_serving()
             await self.bots.start()
+            self.scheduler.start()
         except BaseException:
             await self.close()
             raise
@@ -170,6 +185,7 @@ class ControlServer:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
+        await self.scheduler.close()
         if self._handlers:
             await asyncio.gather(*self._handlers, return_exceptions=True)
         await self.bots.close()
@@ -197,6 +213,25 @@ class ControlServer:
         if not required <= keys or keys - required - optional:
             raise CredentialError("invalid_request")
         manager, store = self.credentials, self.credentials.store
+        if op == "schedule.status":
+            return self.scheduler.status(limit=data.get("limit", 25))
+        if op == "schedule.configure":
+            return self.scheduler.configure(data["settings"], data["revision"])
+        if op == "schedule.resolve":
+            return self.scheduler.resolve(data["occurrence_id"], data["action"])
+        if op == "delivery.status":
+            return self.outbox.status(data["job_id"], bot_id=data.get("bot_id"))
+        if op == "delivery.requeue_target":
+            return self.outbox.requeue_target(data["job_id"], data["bot_id"])
+        if op == "delivery.resolve":
+            return self.outbox.resolve(
+                data["job_id"],
+                data["bot_id"],
+                data["ordinal"],
+                data["action"],
+                acknowledge_duplicate_send=data.get("acknowledge_duplicate_send", False),
+                message_id=data.get("message_id"),
+            )
         if op == "x.accounts.list":
             return self.x.accounts()
         if op == "x.accounts.add":

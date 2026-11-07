@@ -277,12 +277,17 @@ class ProviderAdapter:
             if response.status_code == 429:
                 try:
                     error = response.json().get("error", {})
-                    if isinstance(error, dict) and error.get("code") in {
-                        "insufficient_quota",
-                        "billing_hard_limit_reached",
-                        "credit_exhausted",
-                        "quota_exceeded",
-                    }:
+                    if (
+                        isinstance(error, dict)
+                        and isinstance(error.get("code"), str)
+                        and error["code"]
+                        in {
+                            "insufficient_quota",
+                            "billing_hard_limit_reached",
+                            "credit_exhausted",
+                            "quota_exceeded",
+                        }
+                    ):
                         code = "quota_exhausted"
                 except (ValueError, AttributeError):
                     pass

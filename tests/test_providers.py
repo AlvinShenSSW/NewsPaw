@@ -505,3 +505,14 @@ async def test_failed_config_cas_does_not_invalidate_existing_capability(registr
     with pytest.raises(ValueError, match="changed"):
         store.save_config(config, expected_revision=revision - 1)
     assert records.status("normal_primary")["text"]["state"] == "verified"
+
+
+@pytest.mark.parametrize("error_code", [[], {"unexpected": "object"}])
+async def test_malformed_provider_error_code_finishes_known_failure(registry, error_code):
+    store, records = registry
+    result = await probes(
+        store, lambda _: httpx.Response(429, json={"error": {"code": error_code}})
+    ).probe("bad-code", "normal_primary", "text", 100)
+    assert result["status"] == "failed" and result["error_kind"] == "rate_limited"
+    assert records.get("bad-code")["status"] == "failed"
+    assert BudgetLedger(store).get("probe.bad-code")["state"] == "settled"

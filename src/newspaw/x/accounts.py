@@ -293,7 +293,7 @@ class XDirectory:
             special=special,
             aggregate_bot_ids=sorted(sub["bot_ids"]) if aggregate else [],
             special_bot_ids=sorted(special_bots) if special else [],
-            clears_special_overrides=special
+            clears_special_overrides=account["priority"] == "special"
             and any(account[name] is not None for name in ("bot_ids", "times", "style")),
             clears_post_types="post_types" in account,
             cached_posts=bodies,

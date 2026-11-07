@@ -4,7 +4,7 @@ import SwiftUI
 enum XCopy: CaseIterable {
     case addAccount, addList, credential, configured, missing, handle, listURL, verify, refreshList
     case paidAction, confirm, routing, subscription, unassigned, include, postTypes, original, quote, reply, repost
-    case overrideTimes, overrideBots, changePartition, impact, cached, waiting, oldRoutes, policyReset
+    case overrideTimes, emptyTimes, overrideBots, changePartition, impact, cached, waiting, oldRoutes, policyReset
     case coverage, latest, completeRange, historical, pages, listMembers, listCurrent, listPending
     case caps, daily, normalCap, adultCap, accountCap, noUsage, failed, noLimit
 
@@ -31,6 +31,7 @@ enum XCopy: CaseIterable {
         case .reply: ("回复", "Replies", "返信")
         case .repost: ("转发", "Reposts", "リポスト")
         case .overrideTimes: ("自定义时间", "Override schedule", "配信時刻を個別設定")
+        case .emptyTimes: ("留空将暂停该账号的单独定时简报。", "Leave empty to pause this account’s scheduled digest.", "空欄にすると、このアカウントの個別配信を一時停止します。")
         case .overrideBots: ("自定义 Bot", "Override Bots", "Bot を個別設定")
         case .changePartition: ("更改分类", "Change partition", "区分を変更")
         case .impact: ("确认改分类", "Confirm partition change", "区分変更を確認")
@@ -518,6 +519,7 @@ private struct XAccountEditor: View {
                     Toggle(text(.overrideTimes), isOn: $overrideTimes)
                     if overrideTimes {
                         TextField(subscriptionText(.times), text: $times, prompt: Text("07:00, 20:30"))
+                        Text(text(.emptyTimes)).font(.caption).foregroundStyle(.secondary)
                     }
                     Toggle(text(.overrideBots), isOn: $overrideBots)
                     if overrideBots {
@@ -559,7 +561,7 @@ private struct XAccountEditor: View {
                 Button(subscriptionText(.dismiss)) { dismiss() }
                 Spacer()
                 Button(ConnectionCopy.save.text(model.uiLanguage)) { Task { await save() } }
-                    .disabled(busy || stale || types.isEmpty || (isSpecial && overrideTimes && times.isEmpty))
+                    .disabled(busy || stale || types.isEmpty)
             }
         }
         .formStyle(.grouped)

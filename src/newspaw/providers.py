@@ -14,6 +14,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from uuid import uuid4
 
 import httpx
@@ -307,6 +308,13 @@ class ProviderAdapter:
                 if retry_after.isascii() and retry_after.isdigit() and len(retry_after) <= 12
                 else None
             )
+            if seconds is None and len(retry_after) <= 128:
+                try:
+                    date = parsedate_to_datetime(retry_after)
+                    if date.tzinfo is not None:
+                        seconds = max(0, min(604800, (date - datetime.now(UTC)).total_seconds()))
+                except (ValueError, TypeError, OverflowError):
+                    pass
             raise ProviderError(code, outcome="known", retry_after_seconds=seconds)
         try:
             if len(response.content) > 2 * 1024 * 1024:
@@ -315,6 +323,14 @@ class ProviderAdapter:
             if not isinstance(data, dict):
                 raise ValueError()
         except (ValueError, UnicodeError):
+            raise ProviderError("invalid_output", outcome="known") from None
+        return self.normalize(data, spec)
+
+    def normalize(self, data, spec):
+        try:
+            if not isinstance(data, dict) or len(_json(data)) > 2 * 1024 * 1024:
+                raise ValueError()
+        except (ValueError, TypeError):
             raise ProviderError("invalid_output", outcome="known") from None
         usage = _usage(data.get("usage"))
 

@@ -355,7 +355,7 @@ class EvidenceStore:
 
     def _configured_source(self, identity):
         return _source(
-            self.store.load_config()[1], identity, {"rss", "atom", "github", "huggingface"}
+            self.store.load_config()[1], identity, {"rss", "atom", "github", "huggingface", "web"}
         )
 
     def set_health_threshold(self, source_id, hours):
@@ -388,7 +388,7 @@ class EvidenceStore:
         hours = row[0] if row else 72
         cache = self.cache(source["partition"], source["url"])
         articles = self.snapshot(cache["snapshot_id"], source["partition"])[0] if cache else []
-        if source["kind"] in {"github", "huggingface"}:
+        if source["kind"] in {"github", "huggingface", "web"}:
             articles = []
             for attempt in reversed(self.history(source_id)):
                 if attempt["snapshot_id"] and attempt["status"] in {

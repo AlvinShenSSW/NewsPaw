@@ -332,6 +332,21 @@ async def test_source_setup_rpc_catalog_import_and_routes(control):
     assert store.config_revision() == 2
 
 
+async def test_public_search_is_independently_disabled_by_default(control):
+    server, store = control
+    original = store.config_revision()
+    assert (await request(server, {"op": "sources.search.policy"}))["result"] == {
+        "revision": 1, "profile_id": None, "state": "disabled"
+    }
+    assert await request(
+        server, {
+            "op": "sources.search.run", "subscription_id": "sub_world",
+            "request_id": "lookup", "revision": 1, "hold_units": 100_000,
+        },
+    ) == {"ok": False, "error": "search_not_configured"}
+    assert store.config_revision() == original
+
+
 async def test_target_rpc_no_fake_readiness_and_explicit_empty_assignment(control):
     server, store = control
     result = await request(server, {"op": "targets.preview", "subscription_id": "sub_world"})

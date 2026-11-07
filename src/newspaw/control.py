@@ -17,6 +17,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .budget import BudgetError, BudgetLedger
+from .connectors.web_search import WebSearch
 from .credentials import CredentialError
 from .pipeline import Pipeline
 from .providers import ProbeService, ProfileRegistry, ProviderError
@@ -50,6 +51,10 @@ OPERATIONS = {
     "sources.preview": ({"source_id"}, set()),
     "sources.routes": ({"source_id"}, set()),
     "sources.import_opml": ({"content", "revision"}, set()),
+    "sources.search.policy": (set(), set()),
+    "sources.search.configure": ({"profile_id", "revision"}, set()),
+    "sources.search.run": ({"subscription_id", "request_id", "revision", "hold_units"}, set()),
+    "sources.search.status": ({"request_id"}, set()),
     "bots.list": (set(), set()),
     "bots.status": ({"bot_id"}, set()),
     "bots.verify": ({"bot_id"}, set()),
@@ -114,6 +119,7 @@ class ControlServer:
         self.probes = ProbeService(credentials.store, credentials.backend)
         self.bots = BotRegistry(credentials.store, credentials.backend)
         self.sources = SourceManager(credentials)
+        self.web_search = WebSearch(credentials.store, credentials.backend)
         self.targets = TargetManager(credentials, self.bots)
         self.pipeline = Pipeline(credentials.store, credentials.backend)
         self._server = None
@@ -143,6 +149,7 @@ class ControlServer:
             self._socket_identity = self.path.stat().st_ino
             await self.credentials.cleanup()
             BudgetLedger(self.credentials.store).recover_inflight()
+            self.web_search.recover_interrupted()
             ProfileRegistry(self.credentials.store).recover_interrupted()
             self.pipeline.recover_interrupted()
             await self._server.start_serving()
@@ -246,6 +253,16 @@ class ControlServer:
             return self.sources.routes(data["source_id"])
         if op == "sources.import_opml":
             return await self.sources.import_opml(data["content"], data["revision"])
+        if op == "sources.search.policy":
+            return self.web_search.policy()
+        if op == "sources.search.configure":
+            return self.web_search.configure(data["profile_id"], data["revision"])
+        if op == "sources.search.run":
+            return await self.web_search.run(
+                data["subscription_id"], data["request_id"], data["revision"], data["hold_units"]
+            )
+        if op == "sources.search.status":
+            return self.web_search.status(data["request_id"])
         if op == "bots.list":
             return self.bots.list()
         if op == "bots.status":

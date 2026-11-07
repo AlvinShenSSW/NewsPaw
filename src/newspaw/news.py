@@ -254,11 +254,7 @@ def _image(entry: dict) -> str | None:
     return next((safe for item in candidates if (safe := public_url(item, https_only=True))), None)
 
 
-def parse_evidence(
-    data: bytes,
-    feed_url: str,
-    fetched_at: datetime,
-) -> tuple[list[Article], dict[str, int]]:
+def check_news_xml(data: bytes) -> None:
     if not isinstance(data, bytes) or len(data) > MAX_FEED_BYTES:
         raise NewsError("新闻源内容过大或格式无效。", "oversized_feed")
     parser = expat.ParserCreate()
@@ -286,6 +282,14 @@ def parse_evidence(
         parser.Parse(data, True)
     except expat.ExpatError:
         raise NewsError("新闻源没有返回有效的 XML。", "invalid_feed") from None
+
+
+def parse_evidence(
+    data: bytes,
+    feed_url: str,
+    fetched_at: datetime,
+) -> tuple[list[Article], dict[str, int]]:
+    check_news_xml(data)
     # feedparser treats even bytes as possible filenames; a stream is data only.
     parsed = feedparser.parse(io.BytesIO(data))
     if not parsed.get("version"):

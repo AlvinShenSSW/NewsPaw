@@ -22,7 +22,7 @@ from .text import split_delivery_text
 _SELECTOR = re.compile(r"[sa]:[A-Za-z][A-Za-z0-9_-]{0,79}")
 _COMMAND = re.compile(r"/([a-z]+)(?:@([A-Za-z0-9_]{1,32}))?")
 _COMMANDS = {"news", "search", "schedule", "pause", "resume", "status", "why", "x", "av", "paper"}
-_ACTIVE_JOBS = {"collecting", "editing", "preparing_media", "awaiting_delivery"}
+_ACTIVE_JOBS = ("collecting", "editing", "preparing_media", "awaiting_delivery")
 _BATCH = 8
 _LOG = logging.getLogger(__name__)
 
@@ -273,14 +273,14 @@ class Commands:
             return command, first, remaining.strip()
         return command, None, value
 
-    def _jobs(self, scope, *, latest=False):
+    def _jobs(self, scope):
         return (
             row[0]
             for row in self.db.execute(
                 """SELECT id FROM pipeline_jobs WHERE subscription_id=? AND account_key=?
-                   AND partition=? AND cancelled=0 AND (? OR stage='awaiting_delivery')
+                   AND partition=? AND cancelled=0 AND stage='awaiting_delivery'
                    ORDER BY created_at DESC,rowid DESC LIMIT 12""",
-                (scope.subscription, scope.account or "", scope.partition, latest),
+                (scope.subscription, scope.account or "", scope.partition),
             )
         )
 
@@ -365,14 +365,14 @@ class Commands:
 
     def _management(self, command, scope, job, ui, context, now):
         if job is None:
-            job = next(
-                (
-                    j
-                    for j in self._jobs(scope, latest=True)
-                    if self.pipeline.get(j)["stage"] in _ACTIVE_JOBS
-                ),
-                None,
-            )
+            stages = ",".join("?" for _ in _ACTIVE_JOBS)
+            row = self.db.execute(
+                f"""SELECT id FROM pipeline_jobs WHERE subscription_id=? AND account_key=?
+                   AND partition=? AND cancelled=0 AND stage IN ({stages})
+                   ORDER BY created_at DESC,rowid DESC LIMIT 1""",
+                (scope.subscription, scope.account or "", scope.partition, *_ACTIVE_JOBS),
+            ).fetchone()
+            job = row[0] if row else None
         view = self.pipeline.get(job) if job is not None else None
         if view and (view["subscription_id"], view["account_id"], view["partition"]) != (
             scope.subscription,

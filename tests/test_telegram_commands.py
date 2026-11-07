@@ -259,3 +259,53 @@ async def test_command_migration_keeps_existing_inbox_and_delivery(system):
             "SELECT telegram_id FROM delivery_targets WHERE job_id=? AND bot_id=?",
             (job, binding.bot_id),
         ).fetchone() == (binding.telegram_id,)
+
+
+async def test_unanchored_commands_find_current_collecting_job(system):
+    commands, _, sent = command_service(system)
+    pipeline, _, _, _, _ = system
+    job = pipeline.create(
+        "sub_world",
+        "active",
+        holds={"normal_primary": 100, "normal_backup": 100},
+        now=NOW + timedelta(seconds=1),
+    )["job_id"]
+    assert pipeline.get(job)["stage"] == "collecting"
+    await inbox(system, "/status", 2)
+    await commands.tick()
+    assert "采集中" in bodies(sent)[-1]
+    await inbox(system, "/pause", 3)
+    await commands.tick()
+    assert pipeline.get(job)["paused"]
+    await inbox(system, "/resume", 4)
+    await commands.tick()
+    assert not pipeline.get(job)["paused"]
+
+
+async def test_terminal_history_cannot_hide_an_older_current_active_job(system):
+    commands, _, _ = command_service(system)
+    pipeline, _, _, _, _ = system
+    job = pipeline.create(
+        "sub_world",
+        "active",
+        holds={"normal_primary": 100, "normal_backup": 100},
+        now=NOW + timedelta(seconds=1),
+    )["job_id"]
+    terminal = [
+        pipeline.create(
+            "sub_world",
+            f"failed.{index}",
+            holds={"normal_primary": 100, "normal_backup": 100},
+            now=NOW + timedelta(seconds=index + 2),
+        )["job_id"]
+        for index in range(12)
+    ]
+    with pipeline.store._write():
+        pipeline.db.executemany(
+            "UPDATE pipeline_jobs SET stage='collection_failed' WHERE id=?",
+            [(identity,) for identity in terminal],
+        )
+
+    await inbox(system, "/pause", 2)
+    await commands.tick()
+    assert pipeline.get(job)["paused"]

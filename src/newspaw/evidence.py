@@ -103,6 +103,23 @@ def _selection(config, subscriptions, source_id, kinds=frozenset({"rss", "atom"}
     )
 
 
+def feed_scopes(config, subscriptions, source_id=None):
+    groups = {}
+    for row in _selection(config, subscriptions, source_id):
+        source = row["source"]
+        groups.setdefault((source["partition"], source["url"]), []).append(row)
+    return [
+        dict(
+            partition=partition,
+            url=url,
+            selected=rows,
+            subscriptions=subscriptions,
+            source_id=source_id,
+        )
+        for (partition, url), rows in groups.items()
+    ]
+
+
 def _encode_articles(articles):
     result = []
     for article in articles:
@@ -141,9 +158,10 @@ def _content_status(articles, rejected, now, hours):
 
 
 class EvidenceStore:
-    def __init__(self, store):
+    def __init__(self, store, *, collection_guard=None):
         self.store = store
         self.db = store._db
+        self.collection_guard = collection_guard
 
     def current(self, scope):
         _, config = self.store.load_config()
@@ -167,6 +185,8 @@ class EvidenceStore:
     def begin(self, scope, now):
         identity = "fetch_" + uuid4().hex
         with self.store._write():
+            if self.collection_guard is not None:
+                self.collection_guard(scope, starting=True)
             if not self.current(scope):
                 raise EvidenceError("configuration_changed")
             self.db.execute(
@@ -218,6 +238,8 @@ class EvidenceStore:
         connector_identity=None,
     ):
         with self.store._write():
+            if self.collection_guard is not None:
+                self.collection_guard(scope, starting=False)
             if articles is not None:
                 snapshot_id = "evidence_" + uuid4().hex
                 self.db.execute(
@@ -448,26 +470,12 @@ class FeedCollector:
         fixed_now = _time(now) if now is not None else None
         eligible_articles([], _time(now), hours)
         async with self._lock:
-            selected = _selection(self.evidence.store.load_config()[1], subscriptions, source_id)
-            if not selected:
+            scopes = feed_scopes(self.evidence.store.load_config()[1], subscriptions, source_id)
+            if not scopes:
                 raise EvidenceError("no_sources")
-            groups = {}
-            for row in selected:
-                source = row["source"]
-                groups.setdefault((source["partition"], source["url"]), []).append(row)
-            results = []
-            for (partition, url), rows in groups.items():
-                scope = dict(
-                    partition=partition,
-                    url=url,
-                    selected=rows,
-                    subscriptions=subscriptions,
-                    source_id=source_id,
-                )
-                results.append(await self._fetch(scope, hours, fixed_now))
-            return results
+            return [await self.fetch_scope(scope, hours, fixed_now) for scope in scopes]
 
-    async def _fetch(self, scope, hours, fixed_now):
+    async def fetch_scope(self, scope, hours, fixed_now):
         def clock():
             return fixed_now if fixed_now is not None else datetime.now(UTC)
 

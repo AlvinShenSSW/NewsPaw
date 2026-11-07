@@ -191,6 +191,20 @@ class ModelRunner:
             attempts=self._attempts(task_id),
         )
 
+    def progress(self, task_id):
+        row = self.db.execute(
+            "SELECT state,next_at,error_kind FROM model_tasks WHERE id=?", (task_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return dict(
+            task_id=task_id,
+            state=row[0],
+            next_at=row[1],
+            error_kind=row[2],
+            attempts=self._attempts(task_id),
+        )
+
     def health(self):
         cur = self.db.execute("SELECT * FROM model_health ORDER BY profile_id,generation")
         return [
@@ -312,15 +326,27 @@ class ModelRunner:
             raise BudgetError("authorized_hold_insufficient")
         return quote
 
-    async def advance(self, task_id, validator, *, operation="brief", version="1", now=None):
+    async def advance(
+        self, task_id, validator, *, operation="brief", version="1", now=None, before_dispatch=None
+    ):
         try:
             return await self._advance(
-                task_id, validator, operation=operation, version=version, now=now
+                task_id,
+                validator,
+                operation=operation,
+                version=version,
+                now=now,
+                before_dispatch=before_dispatch,
             )
         except (sqlite3.Error, OSError):
             raise RunnerError("storage_failed") from None
 
-    async def _advance(self, task_id, validator, *, operation, version, now):
+    async def _advance(self, task_id, validator, *, operation, version, now, before_dispatch):
+        def check_work():
+            # A superseded worker may neither dispatch nor change pending task state.
+            if before_dispatch is not None:
+                before_dispatch()
+
         realtime = now is None
         now = _time(now)
         async with self._lock:
@@ -343,6 +369,7 @@ class ModelRunner:
                 profile, repair, blocked = self._select(task_id, payload, now)
                 if profile is None:
                     with self.store._write():
+                        check_work()
                         if blocked in {"profile_cooldown", "profile_half_open_busy"}:
                             dates = [
                                 datetime.fromisoformat(h["cooldown_until"])
@@ -376,6 +403,7 @@ class ModelRunner:
                     if current["next_at"] and now < datetime.fromisoformat(current["next_at"]):
                         return self.status(task_id)
                     self._preflight(payload, profile)
+                    check_work()
                     chosen, chosen_repair, reason = self._select(task_id, payload, now)
                     if chosen is None or chosen["id"] != profile["id"] or chosen_repair != repair:
                         self._state(task_id, "waiting", reason or "selection_changed", now)
@@ -430,10 +458,12 @@ class ModelRunner:
                 else:
                     with self.store._write():
                         if self._task(task_id)["state"] in {"pending", "waiting"}:
+                            check_work()
                             self._state(task_id, "stale", "configuration_changed")
             except (BudgetError, CredentialError, RunnerError) as exc:
                 with self.store._write():
                     if self._task(task_id)["state"] in {"pending", "waiting"}:
+                        check_work()
                         self._state(task_id, "blocked", str(exc))
             except ProviderError as exc:
                 if realtime:
@@ -443,15 +473,19 @@ class ModelRunner:
                 else:
                     with self.store._write():
                         if self._task(task_id)["state"] in {"pending", "waiting"}:
+                            check_work()
                             self._state(task_id, "blocked", exc.code)
             except asyncio.CancelledError:
                 if realtime:
                     now = _time()
-                with self.store._write():
-                    if dispatched:
-                        self._unknown(task_id, attempt_id, "cancelled", now)
-                    elif self._task(task_id)["state"] in {"pending", "waiting"}:
-                        self._state(task_id, "cancelled", "cancelled")
+                # A leased job owns cancellation before dispatch. Its pending task
+                # can be resumed after pause, shutdown or a lease takeover.
+                if dispatched or before_dispatch is None:
+                    with self.store._write():
+                        if dispatched:
+                            self._unknown(task_id, attempt_id, "cancelled", now)
+                        elif self._task(task_id)["state"] in {"pending", "waiting"}:
+                            self._state(task_id, "cancelled", "cancelled")
                 raise
             except (sqlite3.Error, OSError):
                 raise RunnerError("storage_failed") from None

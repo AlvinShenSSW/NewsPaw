@@ -222,6 +222,25 @@ class PublicAPI:
         )
 
 
+def api_scopes(config, subscriptions, source_id=None):
+    groups = {}
+    for row in _selection(config, subscriptions, source_id, KINDS):
+        source = row["source"]
+        groups.setdefault((source["partition"], source["url"], source["kind"]), []).append(row)
+    return [
+        dict(
+            partition=partition,
+            url=url,
+            selected=rows,
+            subscriptions=subscriptions,
+            source_id=source_id,
+            kinds=[kind],
+            evidence_scope="api_metadata_excerpt",
+        )
+        for (partition, url, kind), rows in groups.items()
+    ]
+
+
 class AICollector:
     def __init__(self, evidence, *, client=None):
         self.evidence = evidence
@@ -243,31 +262,14 @@ class AICollector:
         fixed = _time(now) if now is not None else None
         eligible_articles([], _time(now), hours)
         async with self._lock:
-            selected = _selection(
-                self.evidence.store.load_config()[1], subscriptions, source_id, KINDS
-            )
-            groups = {}
-            for row in selected:
-                s = row["source"]
-                groups.setdefault((s["partition"], s["url"], s["kind"]), []).append(row)
-            results = []
-            for (part, url, kind), rows in groups.items():
-                scope = dict(
-                    partition=part,
-                    url=url,
-                    selected=rows,
-                    subscriptions=subscriptions,
-                    source_id=source_id,
-                    kinds=[kind],
-                    evidence_scope="api_metadata_excerpt",
-                )
-                results.append(await self._fetch(scope, kind, fixed, hours))
-            return results
+            scopes = api_scopes(self.evidence.store.load_config()[1], subscriptions, source_id)
+            return [await self.fetch_scope(scope, hours, fixed) for scope in scopes]
 
-    async def _fetch(self, scope, kind, fixed, hours):
+    async def fetch_scope(self, scope, hours, fixed):
         from .github import fetch as github
         from .huggingface import fetch as huggingface
 
+        kind = scope["kinds"][0]
         repo = self.evidence
         now = fixed or datetime.now(UTC)
         identity = repo.begin(scope, now)

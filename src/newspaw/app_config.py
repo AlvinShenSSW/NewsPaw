@@ -15,13 +15,14 @@ from dotenv import dotenv_values
 
 from .config import parse_times, parse_topics
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+STYLES = {"text", "source_image", "newspaper"}
 LOCALES = {"zh-Hans", "en", "ja"}
 PARTITIONS = {"normal", "adult"}
 _ID = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,79}")
 _CREDENTIAL = re.compile(r"keychain:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 _FIELDS = {
-    "categories": {"id", "name", "partition", "primary_profile_id", "backup_profile_id"},
+    "categories": {"id", "name", "partition", "primary_profile_id", "backup_profile_id", "style"},
     "sources": {"id", "name", "url", "kind", "partition", "category_ids", "enabled"},
     "subscriptions": {
         "id",
@@ -44,6 +45,7 @@ _FIELDS = {
         "subscription_id",
         "bot_ids",
         "times",
+        "style",
     },
     "model_profiles": {
         "id",
@@ -72,6 +74,7 @@ _TOP_FIELDS = {
     "news_output_locale",
     "timezone",
     "owner_id",
+    "group_styles",
     *_FIELDS,
 }
 
@@ -127,6 +130,7 @@ def default_config() -> dict:
         "news_output_locale": "zh-Hans",
         "timezone": "Asia/Tokyo",
         "owner_id": None,
+        "group_styles": {"normal": "text", "adult": "text"},
         "categories": [
             dict(
                 id=key,
@@ -134,6 +138,7 @@ def default_config() -> dict:
                 partition="adult" if key in {"av", "x_adult"} else "normal",
                 primary_profile_id=None,
                 backup_profile_id=None,
+                style=None,
             )
             for key, name, _ in categories
         ],
@@ -266,8 +271,31 @@ def _times(value, *, optional=False):
     if value is None and optional:
         return
     _list(value, 12)
+    if optional and not value:
+        return
     if not all(isinstance(item, str) for item in value) or parse_times(",".join(value)) != value:
         raise ValueError("Times must be unique and sorted HH:MM")
+
+
+def _style(value, *, optional=False):
+    if value is None and optional:
+        return
+    if value not in STYLES:
+        raise ValueError("Invalid delivery style")
+
+
+def upgrade_v1(config: dict) -> dict:
+    """Explicit document transformation, never mutate the stored source."""
+    result = deepcopy(config)
+    if type(result.get("schema_version")) is not int or result["schema_version"] != 1:
+        raise ValueError("Expected version1 configuration")
+    result["schema_version"] = 2
+    result["group_styles"] = {"normal": "text", "adult": "text"}
+    for kind in ("categories", "accounts"):
+        for entry in result[kind]:
+            entry["style"] = None
+    validate_config(result)
+    return result
 
 
 def validate_config(config: dict) -> None:
@@ -285,6 +313,10 @@ def _validate_config(config: dict) -> None:
     for key in ("ui_locale", "news_output_locale"):
         if config[key] not in LOCALES:
             raise ValueError("Unsupported locale")
+    if not isinstance(config["group_styles"], dict) or set(config["group_styles"]) != PARTITIONS:
+        raise ValueError("Invalid group styles")
+    for style in config["group_styles"].values():
+        _style(style)
     _timezone(config["timezone"])
     _integer(config["owner_id"], 1, 2**52, optional=True)
     indexed = {}
@@ -301,7 +333,11 @@ def _validate_config(config: dict) -> None:
             indexed[kind][entry["id"]] = entry
             if "name" in entry:
                 _text(entry["name"], 150)
-            if "partition" in entry and entry["partition"] not in PARTITIONS:
+            if (
+                "partition" in entry
+                and entry["partition"] not in PARTITIONS
+                and not (kind in {"sources", "accounts"} and entry["partition"] is None)
+            ):
                 raise ValueError("Explicit content partition required")
             if "credential_ref" in entry:
                 ref = entry["credential_ref"]
@@ -316,17 +352,27 @@ def _validate_config(config: dict) -> None:
             raise ValueError("Missing or duplicate referenced entity")
 
     for category in config["categories"]:
+        _style(category["style"], optional=True)
         for key in ("primary_profile_id", "backup_profile_id"):
             if category[key] is not None:
                 references([category[key]], "model_profiles")
-                if indexed["model_profiles"][category[key]]["partition"] != category["partition"]:
+            role = key.split("_")[0]
+            profile = indexed["model_profiles"].get(
+                category[key] or f"{category['partition']}_{role}"
+            )
+            if profile is not None:
+                if profile["partition"] != category["partition"]:
                     raise ValueError("Cross-partition model reference")
+                if profile["role"] != role:
+                    raise ValueError("Wrong model slot role")
     for source in config["sources"]:
         _url(source["url"])
         if source["kind"] not in {"rss", "atom", "web", "github", "huggingface", "draft"}:
             raise ValueError("Unknown source kind")
         _boolean(source["enabled"])
         references(source["category_ids"], "categories")
+        if source["partition"] is None and (source["enabled"] or source["category_ids"]):
+            raise ValueError("Unclassified source must remain an unassigned disabled draft")
         if any(
             indexed["categories"][key]["partition"] != source["partition"]
             for key in source["category_ids"]
@@ -362,14 +408,23 @@ def _validate_config(config: dict) -> None:
         _timezone(subscription["timezone"])
         _boolean(subscription["enabled"])
         _integer(subscription["max_items"], 1, 20)
-        if subscription["style"] not in {"text", "source_image", "newspaper"}:
-            raise ValueError("Invalid delivery style")
+        _style(subscription["style"], optional=True)
         partition = indexed["categories"][subscription["category_id"]]["partition"]
         if any(
             indexed["sources"][key]["partition"] != partition for key in subscription["source_ids"]
         ):
             raise ValueError("Cross-partition subscription source")
+        if any(
+            subscription["category_id"] not in indexed["sources"][key]["category_ids"]
+            for key in subscription["source_ids"]
+        ):
+            raise ValueError("Source is not assigned to subscription category")
+        if partition == "adult" and any(
+            not indexed["bots"][key]["adult_allowed"] for key in subscription["bot_ids"]
+        ):
+            raise ValueError("Adult target requires explicit opt-in")
     for account in config["accounts"]:
+        _style(account["style"], optional=True)
         _text(account["handle"], 30)
         if not re.fullmatch(r"[A-Za-z0-9_]{1,15}", account["handle"]):
             raise ValueError("Invalid X handle")
@@ -382,8 +437,15 @@ def _validate_config(config: dict) -> None:
             raise ValueError("Invalid account priority")
         if account["subscription_id"] is not None:
             references([account["subscription_id"]], "subscriptions")
+            sub = indexed["subscriptions"][account["subscription_id"]]
+            if indexed["categories"][sub["category_id"]]["partition"] != account["partition"]:
+                raise ValueError("Cross-partition account subscription")
         if account["bot_ids"] is not None:
             references(account["bot_ids"], "bots")
+            if account["partition"] == "adult" and any(
+                not indexed["bots"][key]["adult_allowed"] for key in account["bot_ids"]
+            ):
+                raise ValueError("Adult account target requires explicit opt-in")
         _times(account["times"], optional=True)
     try:
         payload = json.dumps(config, ensure_ascii=False, allow_nan=False)
@@ -447,6 +509,7 @@ def import_preferences(env_path: Path | None, legacy: dict[str, str]) -> dict:
                     partition="normal",
                     primary_profile_id=None,
                     backup_profile_id=None,
+                    style=None,
                 )
             )
         if any(sub["category_id"] == key for sub in subscriptions):

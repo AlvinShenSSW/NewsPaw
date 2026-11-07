@@ -175,6 +175,29 @@ class Store:
                 raise ValueError("Configuration changed; reload before saving")
         return expected_revision + 1
 
+    def config_revision(self) -> int:
+        """Durable invalidation signal, shared by all local consumers."""
+        check_version(self._db)
+        return self._db.execute("SELECT revision FROM app_configuration WHERE id=1").fetchone()[0]
+
+    def preview_route(self, subscription_id, *, account_id=None, style=None):
+        from .routing import resolve_route
+
+        revision, config = self.load_config()
+        return resolve_route(config, revision, subscription_id, account_id=account_id, style=style)
+
+    def revalidate_route(self, snapshot):
+        from .routing import RouteBlocked, RouteStale
+
+        current = self.preview_route(
+            snapshot.subscription_id, account_id=snapshot.account_id, style=snapshot.request_style
+        )
+        if current.blockers:
+            raise RouteBlocked(current.blockers)
+        if current.fingerprint != snapshot.fingerprint:
+            raise RouteStale("Effective route changed; rebuild pending work")
+        return current
+
     def migration_cutover(self) -> str:
         check_version(self._db)
         return self._db.execute("SELECT value FROM migration_info WHERE key='cutover'").fetchone()[
@@ -189,7 +212,12 @@ class Store:
             ).fetchone():
                 return
             revision, current = self.load_config()
-            if revision != 1 or any(s["enabled"] for s in current["subscriptions"]):
+            eligible = self._db.execute(
+                "SELECT value FROM migration_info WHERE key='untouched_import_revision'"
+            ).fetchone()
+            if revision != (int(eligible[0]) if eligible else 1) or any(
+                s["enabled"] for s in current["subscriptions"]
+            ):
                 raise ValueError("Legacy import requires untouched disabled configuration")
             legacy = dict(self._db.execute("SELECT key, value FROM settings"))
             document = import_preferences(env_path, legacy)

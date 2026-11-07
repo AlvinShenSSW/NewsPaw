@@ -1,6 +1,7 @@
 import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from threading import Barrier
 
 import pytest
@@ -214,4 +215,96 @@ Store(Path(sys.argv[1]))
         ).fetchall()
     store = Store(path)
     assert store.load_config()[0] == 1
+    store.close()
+
+
+def version1_database(path, *, revision=1):
+    store = Store(path)
+    _, config = store.load_config()
+    store.close()
+    config["schema_version"] = 1
+    del config["group_styles"]
+    for kind in ("categories", "accounts"):
+        for entry in config[kind]:
+            del entry["style"]
+    with sqlite3.connect(path) as db:
+        db.execute("PRAGMA user_version=1")
+        db.execute(
+            "UPDATE app_configuration SET revision=?, document=?", (revision, json.dumps(config))
+        )
+    return config
+
+
+@pytest.mark.parametrize("revision", [1, 2])
+def test_v1_upgrade_preserves_import_eligibility_and_preferences(tmp_path, revision):
+    path = tmp_path / "state.db"
+    original = version1_database(path, revision=revision)
+    with sqlite3.connect(path) as db:
+        db.execute("INSERT INTO settings VALUES ('last_slot', 'historic')")
+    store = Store(path)
+    new_revision, config = store.load_config()
+    assert new_revision == revision + 1
+    assert config["schema_version"] == 2
+    assert config["model_profiles"] == original["model_profiles"]
+    assert store.get("last_slot") == "historic"
+    env = tmp_path / "legacy.env"
+    env.write_text("NEWS_LANGUAGE=English\n")
+    if revision == 1:
+        store.import_legacy_config(env)
+        assert store.load_config()[1]["news_output_locale"] == "en"
+    else:
+        with pytest.raises(ValueError, match="untouched"):
+            store.import_legacy_config(env)
+    final = store.load_config()
+    store.close()
+    backup = list(tmp_path.glob("state.db.backup-*"))
+    assert len(backup) == 1
+    with closing(sqlite3.connect(backup[0])) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert (
+            json.loads(db.execute("SELECT document FROM app_configuration").fetchone()[0])
+            == original
+        )
+    reopened = Store(path)
+    assert reopened.load_config() == final
+    assert len(list(tmp_path.glob("state.db.backup-*"))) == 1
+    reopened.close()
+
+
+def test_v2_upgrade_failure_rolls_back_document_and_eligibility(tmp_path, monkeypatch):
+    import newspaw.migrations as migrations
+
+    path = tmp_path / "state.db"
+    original = version1_database(path)
+    upgrade = migrations._upgrade_v2
+
+    def fail(db):
+        upgrade(db)
+        raise RuntimeError("injected after config write")
+
+    monkeypatch.setattr(migrations, "_upgrade_v2", fail)
+    with pytest.raises(RuntimeError):
+        Store(path)
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+        revision, doc = db.execute("SELECT revision, document FROM app_configuration").fetchone()
+        assert revision == 1 and json.loads(doc) == original
+        assert not db.execute(
+            "SELECT value FROM migration_info WHERE key='untouched_import_revision'"
+        ).fetchone()
+    monkeypatch.setattr(migrations, "_upgrade_v2", upgrade)
+    store = Store(path)
+    assert store.load_config()[0] == 2
+    store.close()
+
+
+def test_save_after_upgrade_revokes_legacy_import_eligibility(tmp_path):
+    path = tmp_path / "state.db"
+    version1_database(path)
+    store = Store(path)
+    revision, config = store.load_config()
+    config["ui_locale"] = "en"
+    store.save_config(config, expected_revision=revision)
+    with pytest.raises(ValueError, match="untouched"):
+        store.import_legacy_config()
     store.close()

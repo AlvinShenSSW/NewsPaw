@@ -1,6 +1,6 @@
 # 新闻来源与添加流程
 
-状态：2026-11-07 推荐与目标设计。交互 mockup 已加入中国、AI 分类、来源目录、粘贴链接向导、OPML 草稿导入和有效路由预览；所有识别、试采集和启用均为本地演示。运行后台尚未接入这些功能，网页适配器尚待实现。本次仅探测公开来源，没有启用真实订阅或发送新闻。
+2026-11-07 更新。下方目录区分 RSS、Atom、官方 API、已适配的网页元数据和待适配入口。后台可按已配置的来源做公开预览。现有 mockup 仍是界面设计参考。下方连通性来自隔离的公开探测，未启用用户的订阅或发送新闻。
 
 ## 用户关注与推荐组合
 
@@ -23,19 +23,28 @@
 
 Yahoo 等聚合站用于发现报道，尽量保留原出版商与原文链接；多个站点转载同一篇通讯稿不算多个独立证据。只有标题/摘要可读时标记证据范围，不声称读过全文。网页或搜索入口不一定覆盖全部条目，应显示覆盖限制。
 
-### 本次公开源探测
+### 公开入口与覆盖
 
-以下是一次请求结果，不能当作长期可用保证。仅检查 RSS 元数据，未核实其中每篇报道。
+下表为 2026-11-07 UTC 的手动探测。连通性与发布时间分开判断，结果随来源及网络变化。
 
-| 来源 | 结果 |
-| --- | --- |
-| BBC World | HTTP 200，22 条，前部条目含 2026-11-07 的明确发布时间 |
-| Guardian Australia RSS | HTTP 200，20 条，前部条目含当天发布时间 |
-| NHK 新入口 | `https://www.nhk.or.jp/rss/news/cat0.xml` 重定向到 `https://news.web.nhk/n-data/conf/na/rss/cat0.xml`；HTTP 200，7 条，含当天条目。先前旧地址过期不代表新入口失效 |
-| Yahoo! JAPAN 国内/娱乐 Topics RSS | 分别 HTTP 200、8 条，含当天条目；属于精选入口，不能宣称覆盖全部新闻 |
-| 中新网国内/文娱 RSS | 分别 HTTP 200、30 条，含当天条目 |
-| CNN 旧 World RSS | HTTP 版本返回 200 和 29 条，但抽查前两条为 2023-04-14；HTTPS 连接失败。不能将此入口列为健康的新鲜新闻源，需检查全部日期、选择新适配方式 |
-| ABC 公开 RSS | 官方帮助页说明不再更新；推荐媒体本身，采集改用已适配网页或正式内容服务 |
+| 分类 | 入口 | 观察与限制 |
+| --- | --- | --- |
+| 国际 | [BBC World RSS](https://feeds.bbci.co.uk/news/world/rss.xml) | HTTP 200。21 条中 14 条在近 24 小时内发布。 |
+| 国际 | [CNN 新闻 sitemap](https://edition.cnn.com/sitemap/news.xml) | HTTP 200。适配器识别 World 和明确地区板块的标题、链接、发布时间。栏目网页超过抓取大小上限，旧 World RSS 过期。sitemap 只覆盖发布者列出的条目。 |
+| 国际 | [AP World](https://apnews.com/world-news) | 公开栏目向采集客户端返回 HTTP 403，保留为待适配候选。 |
+| 日本 | [NHK RSS](https://news.web.nhk/n-data/conf/na/rss/cat0.xml)、Yahoo! JAPAN [国内 RSS](https://news.yahoo.co.jp/rss/topics/domestic.xml)及[娱乐 RSS](https://news.yahoo.co.jp/rss/topics/entertainment.xml) | 各返回 HTTP 200。NHK 有 7 条、两个 Yahoo Topics 入口各 8 条近 24 小时条目。Yahoo 是精选入口，尽可能沿用原出版商归因。ORICON 的网页尚待适配。 |
+| 澳洲 | [Guardian Australia RSS](https://www.theguardian.com/australia-news/rss)、[ABC 娱乐](https://www.abc.net.au/news/entertainment) | Guardian 20 条中 4 条在近 24 小时内发布。ABC 娱乐页提供带时区的文章元数据。ABC 综合栏目及 SBS 仍为候选，ABC 原 RSS 已停更。 |
+| 中国 | 中新网[国内 RSS](https://www.chinanews.com.cn/rss/china.xml)及[文娱 RSS](https://www.chinanews.com.cn/rss/culture.xml)、联合早报[中国](https://www.zaobao.com.sg/news/china)及[娱乐](https://www.zaobao.com.sg/entertainment) | 中新网两个入口各 30 条，近 24 小时分别 30 条和 7 条。联合早报栏目和样本详情页可读，抽样保留公开结构化元数据，遇付费标记则跳过该条。 |
+| 科技数码 | [MacRumors Front RSS](https://feeds.macrumors.com/MacRumors-Front)、[Apple Newsroom Atom](https://www.apple.com/newsroom/rss-feed.rss) | MacRumors 20 条中 8 条符合近 24 小时。Apple 20 条只有更新时间，未进入近期新闻。IEEE Spectrum 网页仍待适配。 |
+| AI | [OpenAI News RSS](https://openai.com/news/rss.xml)、[Hugging Face Blog RSS](https://huggingface.co/blog/feed.xml)、GitHub／Hugging Face 官方 API | 两个 RSS 入口 HTTP 200，采样近 24 小时未见新条目。官方 API 入口需逐来源预览。 |
+
+网页预览最多取一个栏目和六篇详情。采集只保留标题、链接、明确发布时间和标为公开的页面描述。权限限制、跳转和结构变化会显示在结果里。带明确时间的历史条目可以留作背景。只要日期缺失、没有时区或晚于采集时间，就不会进入近期简报。
+
+### OpenAI 定向搜索
+
+搜索在普通来源的本机控制接口独立配置。默认关闭。选择一个通过文字探测、使用官方 API 地址的普通 OpenAI 配置后，可按已启用的普通订阅发起一次搜索。只把公开类别词和已启用的目录来源域名交给 OpenAI；固定使用一次工具调用，并在发出前检查模型单价和本次授权额度。当前开发验收用模拟响应，真实账户权限与扣费需另行验证。
+
+搜索记录保存请求词、供应商、返回的引用链接及证据范围。只保留授权来源的引用标题作为线索。使用来源本身可核验的发布时间和公开摘要作为新闻证据。重复请求编号只查原记录，无法确认结果时保留预算占用。模型和工具调用的计费口径见 [OpenAI Web Search](https://developers.openai.com/api/docs/guides/tools-web-search) 与 [OpenAI API 价格](https://developers.openai.com/api/docs/pricing)。
 
 ## AI 选稿
 

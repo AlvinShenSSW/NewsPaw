@@ -195,6 +195,8 @@ async def test_av_brief_dispatch_uses_only_adult_provider_and_controlled_copy(tm
         assert result["stage"] == "awaiting_delivery" and len(calls) == 1, result
         _, text, media = pipeline.delivery_input(job)
         assert detail in text and excerpt not in text and media["style"] == "text"
+        if locale == "en":
+            assert "API and downloads" not in text
 
         edition = pipeline.editorial.get(result["edition_id"])["result"]
         edition.pop("av_contract")
@@ -238,3 +240,43 @@ def test_av_validator_rejects_non_template_even_when_the_quote_is_grounded():
     )
     with pytest.raises(EditorialError, match="av_industry_template_required"):
         BriefValidator(evidence, "en", 5, av_industry=True).validate(invalid)
+
+
+def test_old_known_origin_article_is_excluded_from_non_av_adult_pool(tmp_path):
+    from contextlib import closing
+
+    from test_editorial import service
+
+    from newspaw.evidence import EvidenceStore
+    from newspaw.store import Store
+
+    with closing(Store(tmp_path / "state.db")) as store:
+        config, sub = configured("adult")
+        category = next(row for row in config["categories"] if row["id"] == "av")
+        category["id"] = sub["category_id"] = "adult_fixture"
+        config["sources"][0]["category_ids"] = ["adult_fixture"]
+        store.save_config(config, expected_revision=1)
+        scope = feed_scopes(config, [sub["id"]])[0]
+        evidence = EvidenceStore(store)
+        attempt = evidence.begin(scope, NOW)
+        article = Article(
+            "Synthetic old AV title",
+            "https://fiu758.com/?p=123",
+            "AV研究所",
+            NOW,
+            "Synthetic original",
+            fetched_at=NOW,
+            feed_url="https://fiu758.com/?feed=rss2",
+        )
+        evidence.finish(
+            attempt,
+            scope,
+            {"status": "fresh", "accepted_count": 1},
+            NOW,
+            articles=[article],
+            rejected={},
+            cache=False,
+        )
+        editor, _ = service(store)
+        pool, _, _ = editor._pool(store.preview_route(sub["id"]), [attempt], NOW)
+        assert pool == []

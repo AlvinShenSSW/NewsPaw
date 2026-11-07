@@ -11,7 +11,6 @@ from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from .av_rules import AV_CONTRACT
 from .connectors import AICollector, api_scopes
 from .connectors.av import AVCollector, av_scopes
 from .connectors.web import WebCollector, web_scopes
@@ -312,13 +311,12 @@ class Pipeline:
             self._check_profile_generations(payload)
         except (ProviderError, RouteStale):
             raise PipelineError("edition_changed") from None
-        if current.effective["category_id"] == "av":
-            try:
-                result = self.editorial.get(self._edition_id(job_id))["result"]
-            except EditorialError:
-                raise PipelineError("edition_changed") from None
-            if not result or result.get("av_contract") != AV_CONTRACT:
-                raise PipelineError("edition_changed")
+        try:
+            delivery_allowed = self.editorial.delivery_allowed(self._edition_id(job_id), route)
+        except EditorialError:
+            raise PipelineError("edition_changed") from None
+        if not delivery_allowed:
+            raise PipelineError("edition_changed")
         return route
 
     def delivery_input(self, job_id):

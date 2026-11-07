@@ -26,6 +26,7 @@ from .scheduler import Scheduler
 from .source_catalog import catalog
 from .source_manager import SourceError, SourceManager
 from .subscriptions import Subscriptions
+from .telegram.check_send import TestSends
 from .telegram.commands import Commands
 from .telegram.outbox import Outbox
 from .telegram.registry import BotRegistry, TelegramError
@@ -104,10 +105,12 @@ OPERATIONS = {
     "sources.search.run": ({"subscription_id", "request_id", "revision", "hold_units"}, set()),
     "sources.search.status": ({"request_id"}, set()),
     "bots.list": (set(), set()),
+    "bots.test_send": ({"bot_id", "generation", "request_id"}, set()),
+    "bots.test_status": ({"bot_id", "generation", "request_id"}, set()),
     "bots.status": ({"bot_id"}, set()),
-    "bots.verify": ({"bot_id"}, set()),
-    "bots.pair_code": ({"bot_id"}, set()),
-    "bots.action": ({"bot_id", "action"}, set()),
+    "bots.verify": ({"bot_id"}, {"generation"}),
+    "bots.pair_code": ({"bot_id"}, {"generation"}),
+    "bots.action": ({"bot_id", "action"}, {"generation"}),
     "bots.delete": ({"bot_id", "revision"}, set()),
     "models.status": ({"profile_id"}, set()),
     "models.probe": ({"probe_id", "profile_id", "capability", "hold_units"}, set()),
@@ -166,6 +169,7 @@ class ControlServer:
         self.credentials = credentials
         self.probes = ProbeService(credentials.store, credentials.backend)
         self.bots = BotRegistry(credentials.store, credentials.backend)
+        self.bot_tests = TestSends(self.bots)
         self.sources = SourceManager(credentials)
         self.subscriptions = Subscriptions(credentials, self.sources, self.bots)
         self.web_search = WebSearch(credentials.store, credentials.backend)
@@ -215,6 +219,7 @@ class ControlServer:
             self.pipeline.recover_interrupted()
             self.outbox.recover_interrupted()
             self.commands.recover_interrupted()
+            self.bot_tests.recover_interrupted()
             self.x.recover_interrupted()
             self.x_posts.recover_interrupted()
             await self._server.start_serving()
@@ -424,12 +429,18 @@ class ControlServer:
             return self.bots.list()
         if op == "bots.status":
             return self.bots.status(data["bot_id"])
+        if op == "bots.test_status":
+            return self.bot_tests.status(data["bot_id"], data["generation"], data["request_id"])
+        if op == "bots.test_send":
+            return await self.bot_tests.send(data["bot_id"], data["generation"], data["request_id"])
         if op == "bots.verify":
-            return await self.bots.verify(data["bot_id"])
+            return await self.bots.verify(data["bot_id"], generation=data.get("generation"))
         if op == "bots.pair_code":
-            return self.bots.pair_code(data["bot_id"])
+            return self.bots.pair_code(data["bot_id"], generation=data.get("generation"))
         if op == "bots.action":
-            return self.bots.action(data["bot_id"], data["action"])
+            return self.bots.action(
+                data["bot_id"], data["action"], generation=data.get("generation")
+            )
         if op == "bots.delete":
             return await self.bots.delete(data["bot_id"], manager, data["revision"])
         if op == "models.status":

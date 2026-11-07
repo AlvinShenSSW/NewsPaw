@@ -372,3 +372,31 @@ def test_dispatch_rejects_regressed_clock_after_new_period_exists(budget, meter)
     assert ledger.get("old")["state"] == "reserved"
     assert ledger.begin_attempt("fresh", now=new_time)["state"] == "inflight"
     ledger.release("old")
+
+
+def test_operation_breakdown_separates_search_images_text_and_x_reads(budget):
+    ledger, store = budget
+    reserve(ledger, "text.fixture", task="text", amount=12)
+    ledger.begin_attempt("text.fixture", now=NOW)
+    ledger.settle("text.fixture", units=7, cost_source="reported")
+    reserve(ledger, "search.fixture", task="search", amount=10)
+    ledger.begin_attempt("search.fixture", now=NOW)
+    ledger.settle("search.fixture", units=4, cost_source="usage_derived")
+    reserve(ledger, "image.fixture", task="image", amount=15, image=True)
+    ledger.begin_attempt("image.fixture", now=NOW)
+    ledger.mark_unknown("image.fixture")
+    ledger.reserve(
+        "x.fixture", "x", max_units=3, meter="x", provider="x",
+        quote={"known": True, "source": "x_read_cap"}, now=NOW,
+    )
+    with store._write():
+        store._db.execute(
+            "INSERT INTO web_search_requests VALUES ('request','{}','search.fixture','completed',?,NULL,NULL)",
+            (NOW.isoformat(),),
+        )
+    periods = {row["meter"]: row for row in ledger.report()["periods"]}
+    split = periods["model"]["operations"]
+    assert split["text"] == {"known_settled": 7, "held": 0, "known_by_source": {"reported": 7}}
+    assert split["search"] == {"known_settled": 4, "held": 0, "known_by_source": {"usage_derived": 4}}
+    assert split["image"]["held"] == 15 and split["image"]["known_settled"] == 0
+    assert periods["x"]["operations"]["x"]["held"] == 3

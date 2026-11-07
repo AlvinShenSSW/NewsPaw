@@ -606,14 +606,28 @@ class BudgetLedger:
                     SUM(state='outcome_unknown'),
                     SUM(state='settled' AND settled_units IS NULL),
                     SUM(json_extract(quote_json,'$.known')=0),
-                    COALESCE(SUM(MAX(0,COALESCE(settled_units,0)-reserved_units)),0),cost_source
+                    COALESCE(SUM(MAX(0,COALESCE(settled_units,0)-reserved_units)),0),cost_source,
+                    CASE WHEN meter='x' THEN 'x'
+                         WHEN image=1 THEN 'image'
+                         WHEN EXISTS(SELECT 1 FROM web_search_requests w WHERE w.budget_id=budget_attempts.id)
+                              THEN 'search'
+                         ELSE 'text' END AS operation
                 FROM budget_attempts WHERE period_id=? AND state!='released'
-                GROUP BY provider,partition,account_id,image,cost_source
+                GROUP BY provider,partition,account_id,image,cost_source,operation
                 """,
                 (identity,),
             ).fetchall()
             known = sum(g[4] for g in groups)
             held = sum(g[5] for g in groups)
+            operations = {}
+            for group in groups:
+                split = operations.setdefault(
+                    group[11], dict(known_settled=0, held=0, known_by_source={})
+                )
+                split["known_settled"] += group[4]
+                split["held"] += group[5]
+                sources = split["known_by_source"]
+                sources[group[10]] = sources.get(group[10], 0) + group[4]
             limits = policy[meter]
             total = scope(
                 limits["monthly_limit" if meter == "model" else "daily_limit"], known + held
@@ -663,6 +677,7 @@ class BudgetLedger:
                     timezone=zone,
                     cycle_day=cycle,
                     known_settled=known,
+                    operations=operations,
                     known_by_source={
                         source: sum(g[4] for g in groups if g[10] == source)
                         for source in sorted({g[10] for g in groups})

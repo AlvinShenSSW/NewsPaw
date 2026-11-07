@@ -25,9 +25,9 @@ def offline_network(monkeypatch, tmp_path):
 
         return call
 
-    for name in ("connect", "connect_ex", "sendto"):
+    for name in ("connect", "connect_ex", "sendto", "sendmsg"):
         monkeypatch.setattr(socket.socket, name, guarded(getattr(socket.socket, name)))
-    for name in ("getaddrinfo", "gethostbyname", "gethostbyname_ex", "gethostbyaddr"):
+    for name in ("getaddrinfo", "gethostbyname", "gethostbyname_ex", "gethostbyaddr", "getnameinfo"):
         monkeypatch.setattr(socket, name, deny)
 
     prefixes = ("TELEGRAM_", "OPENAI_", "DEEPSEEK_", "GROK_", "XAI_", "MIMO_", "X_")

@@ -17,16 +17,50 @@ from tempfile import TemporaryDirectory
 from urllib.parse import unquote, urlsplit
 
 from .app_config import default_config, upgrade_v2, validate_config
+from .budget import BudgetLedger, default_policy
 from .credentials import CredentialError
 from .evidence import EvidenceError, EvidenceStore
 from .media.source_images import AssetStore, ImageError
 from .migrations import DATABASE_VERSION
 from .providers import ProfileRegistry
+from .scheduler import _LEASE_STATES, _TERMINAL
 from .store import AUDIT_RETENTION
 
 _FORMAT = 1
 _MAX_PORTABLE = 512 * 1024
 _MAX_BACKUP = 64 * 1024 * 1024
+# Each release adds these tables to the previous on-disk schema.
+_BACKUP_TABLES = {
+    0: "settings deliveries",
+    1: "app_configuration migration_info deliveries_v2 collections briefs",
+    3: "credential_intents",
+    4: "budget_policy budget_periods budget_tasks budget_attempts",
+    5: "feed_associations feed_attempts feed_cache feed_health_policy feed_snapshots",
+    6: "profile_epochs model_probes",
+    7: "model_attempts model_health model_tasks",
+    8: "editorial_editions",
+    9: "connector_identity",
+    10: "bot_inbox bot_registrations",
+    11: "source_readiness",
+    12: "pipeline_jobs pipeline_events",
+    13: "delivery_manifests delivery_targets",
+    14: "schedule_policy schedule_scopes schedule_occurrences",
+    15: "x_identities x_lists x_operations",
+    16: "web_search_policy web_search_requests",
+    17: "command_replies",
+    18: "x_posts x_post_observations x_timeline_cursors x_timeline_scans x_timeline_steps",
+}
+_INITIAL_TABLES = {
+    "app_configuration",
+    "migration_info",
+    "budget_policy",
+    "schedule_policy",
+    "web_search_policy",
+    "source_readiness",
+    "profile_epochs",
+}
+_SCHEDULE_STATES = _LEASE_STATES | _TERMINAL | {"rescheduled"}
+
 _SOURCE_FILE = re.compile(r"source_[a-f0-9]{64}\.jpg")
 _GENERATED_ID = re.compile(
     r"(?:categories|subscriptions|sources|bots|accounts|model_profiles)_[a-f0-9]{32}"
@@ -137,8 +171,12 @@ def _scrub_settings(document):
         sub["source_ids"] = [
             identity for identity in sub["source_ids"] if identity in available_sources
         ]
+    profiles = []
     for profile in config["model_profiles"]:
-        official = defaults[profile["provider"]]
+        official = defaults.get(profile["provider"])
+        if official is None:
+            omitted["model_profiles"] += 1
+            continue
         if profile["base_url"] != official["base_url"]:
             profile["base_url"] = official["base_url"]
             omitted["model_urls"] += 1
@@ -146,6 +184,13 @@ def _scrub_settings(document):
             profile["model"] = official["model"]
             omitted["model_names"] += 1
         profile.update(credential_ref=None, capabilities=[])
+        profiles.append(profile)
+    config["model_profiles"] = profiles
+    available_profiles = {profile["id"] for profile in profiles}
+    for category in config["categories"]:
+        for key in ("primary_profile_id", "backup_profile_id"):
+            if category[key] not in available_profiles:
+                category[key] = None
     for bot in config["bots"]:
         bot.update(
             credential_ref=None, telegram_id=None, chat_id=None, paired=False, verified=False
@@ -169,17 +214,38 @@ def _scrub_settings(document):
 
 class Operations:
     def __init__(
-        self, store, directory, *, process_status=lambda: "stopped", clock=_now, purge_x=None
+        self,
+        store,
+        directory,
+        *,
+        process_status=lambda: "stopped",
+        clock=_now,
+        purge_x=None,
+        log_directory=None,
     ):
         self.store, self.db = store, store._db
         self.directory = Path(directory)
         self.database_name = Path(self.db.execute("PRAGMA database_list").fetchone()[2]).name
         self.process_status, self.clock = process_status, clock
         self.purge_x = purge_x
+        self.log_directory = Path(log_directory) if log_directory is not None else None
+        self.backup_tables = {
+            name: self._columns(self.db, name)
+            for (name,) in self.db.execute(
+                "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+
+    @staticmethod
+    def _columns(db, name):
+        return {row[0] for row in db.execute("SELECT name FROM pragma_table_info(?)", (name,))}
 
     def export_settings(self):
         config, omitted = _scrub_settings(self.store.load_config()[1])
-        return dict(format=_FORMAT, settings=config, omitted=omitted)
+        portable = dict(format=_FORMAT, settings=config, omitted=omitted)
+        if len(_json(portable).encode()) > _MAX_PORTABLE:
+            raise OperationsError("settings_not_portable")
+        return portable
 
     def _fresh(self):
         revision, config = self.store.load_config()
@@ -191,19 +257,10 @@ class Operations:
             revision != eligible_revision
             or config != default_config()
             or any(
-                self.db.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
-                for table in (
-                    "credential_intents",
-                    "bot_registrations",
-                    "pipeline_jobs",
-                    "delivery_targets",
-                    "editorial_editions",
-                    "collections",
-                    "budget_attempts",
-                    "feed_attempts",
-                    "x_lists",
-                    "command_replies",
-                )
+                self.db.execute(
+                    'SELECT 1 FROM "' + table.replace('"', '""') + '" LIMIT 1'
+                ).fetchone()
+                for table in sorted(self.backup_tables.keys() - _INITIAL_TABLES)
             )
         ):
             raise OperationsError("restore_requires_fresh_instance")
@@ -213,8 +270,19 @@ class Operations:
         if (
             schedule_revision != 1
             or json.loads(settings)["enabled"]
+            or BudgetLedger(self.store).policy() != (1, default_policy())
+            or self.db.execute(
+                "SELECT revision,profile_id FROM web_search_policy WHERE id=1"
+            ).fetchone()
+            != (1, None)
             or self.db.execute(
                 "SELECT 1 FROM migration_info WHERE key='legacy_imported'"
+            ).fetchone()
+            or self.db.execute(
+                "SELECT 1 FROM source_readiness WHERE epoch<>1 OR attempt_id IS NOT NULL LIMIT 1"
+            ).fetchone()
+            or self.db.execute(
+                "SELECT 1 FROM profile_epochs WHERE generation<>1 LIMIT 1"
             ).fetchone()
         ):
             raise OperationsError("restore_requires_fresh_instance")
@@ -232,9 +300,13 @@ class Operations:
         ):
             raise OperationsError("invalid_portable_settings")
         omitted = value["omitted"]
-        if set(omitted) - {"source_urls", "model_urls", "model_names", "labels"} or any(
-            type(count) is not int or not 0 <= count <= 1000 for count in omitted.values()
-        ):
+        if set(omitted) - {
+            "source_urls",
+            "model_urls",
+            "model_names",
+            "model_profiles",
+            "labels",
+        } or any(type(count) is not int or not 0 <= count <= 1000 for count in omitted.values()):
             raise OperationsError("invalid_portable_settings")
         settings = value["settings"]
         try:
@@ -367,6 +439,13 @@ class Operations:
                 "SELECT state FROM model_attempts ORDER BY rowid DESC LIMIT 100"
             )
         ]
+        occurrences = {"subscriptions": [], "special_accounts": []}
+        for account, status in self.db.execute(
+            """SELECT s.account_id IS NOT NULL,o.status FROM schedule_occurrences o
+               JOIN schedule_scopes s ON s.id=o.scope_id
+               ORDER BY o.updated_at DESC,o.rowid DESC LIMIT 50"""
+        ):
+            occurrences["special_accounts" if account else "subscriptions"].append(status)
         delivery = [
             row[0]
             for row in self.db.execute(
@@ -395,6 +474,10 @@ class Operations:
                 "model_attempts": _safe_counts(model, _ATTEMPT_STATES),
                 "model_fallback_tasks": fallback_count,
                 "recent_jobs": _safe_counts(jobs, _JOB_STATES),
+                "recent_schedule": {
+                    kind: _safe_counts(states, _SCHEDULE_STATES)
+                    for kind, states in occurrences.items()
+                },
                 "recent_delivery_parts": _safe_counts(delivery, _DELIVERY_STATES),
                 "budget": self._business_budget(now),
                 "log_bytes": self._log_usage()[0],
@@ -458,10 +541,18 @@ class Operations:
                             "SELECT name FROM sqlite_master WHERE type='table' LIMIT 200"
                         )
                     }
-                    required = (
-                        {"settings"} if version == 0 else {"app_configuration", "migration_info"}
-                    )
+                    required = {
+                        name
+                        for introduced, names in _BACKUP_TABLES.items()
+                        if introduced <= version
+                        for name in names.split()
+                    }
                     if not required <= tables:
+                        raise OperationsError("invalid_backup")
+                    if version == DATABASE_VERSION and any(
+                        self._columns(backup, name) != columns
+                        for name, columns in self.backup_tables.items()
+                    ):
                         raise OperationsError("invalid_backup")
         except (OSError, sqlite3.Error, AttributeError):
             raise OperationsError("invalid_backup") from None
@@ -560,8 +651,10 @@ class Operations:
         names = ("stdout.log", "stderr.log")
         rotations = tuple(f"{name}.{number}" for name in names for number in range(1, 4))
         total = candidates = removed = 0
+        if self.log_directory is None:
+            return total, candidates, removed
         try:
-            fd = os.open(self.directory / "logs", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            fd = os.open(self.log_directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         except OSError:
             return total, candidates, removed
         try:

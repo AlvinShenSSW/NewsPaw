@@ -22,6 +22,10 @@ class ServiceError(RuntimeError):
     """An installation or launchctl operation could not be completed."""
 
 
+def service_log_directory(home_dir: Path) -> Path:
+    return home_dir / "Library" / "Logs" / "NewsPaw"
+
+
 def build_plist(project_dir: Path, config_path: Path, home_dir: Path) -> dict:
     """Build launchd configuration without reading files or running commands.
 
@@ -30,7 +34,7 @@ def build_plist(project_dir: Path, config_path: Path, home_dir: Path) -> dict:
     """
     if not all(p.is_absolute() for p in (project_dir, config_path, home_dir)):
         raise ValueError("Service paths must be absolute.")
-    log_dir = home_dir / "Library" / "Logs" / "NewsPaw"
+    log_dir = service_log_directory(home_dir)
     return {
         "Label": LABEL,
         "ProgramArguments": [
@@ -135,7 +139,7 @@ def _install(
         raise ServiceError("Configuration file does not exist. Complete local setup first.")
     contents = plistlib.dumps(build_plist(project_dir, config_path, home_dir))
     plist_path.parent.mkdir(parents=True, exist_ok=True)
-    _prepare_logs(home_dir / "Library" / "Logs" / "NewsPaw")
+    _prepare_logs(service_log_directory(home_dir))
     target = f"{domain}/{LABEL}"
     previous = plist_path.read_bytes() if plist_path.exists() else None
     was_loaded = _inspect(target) is not None

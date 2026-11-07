@@ -162,7 +162,7 @@ def acquire_control_lock(directory):
 
 
 class ControlServer:
-    def __init__(self, directory: Path, credentials):
+    def __init__(self, directory: Path, credentials, *, log_directory=None):
         self.directory = Path(directory).expanduser().absolute()
         self.path = self.directory / "control.sock"
         self.credentials = credentials
@@ -187,6 +187,7 @@ class ControlServer:
             self.directory,
             process_status=lambda: "running" if self._server is not None else "stopped",
             purge_x=self.x_posts.purge_expired,
+            log_directory=log_directory,
         )
         self._server = None
         self._lock_fd = None
@@ -508,6 +509,7 @@ class ControlServer:
 
 async def serve_control(directory):
     from .credentials import CredentialManager, MacKeychain
+    from .service import service_log_directory
     from .store import Store
 
     directory = Path(directory).expanduser().absolute()
@@ -516,7 +518,11 @@ async def serve_control(directory):
     server = None
     try:
         store = Store(directory / "newspaw.sqlite3")
-        server = ControlServer(directory, CredentialManager(store, MacKeychain()))
+        server = ControlServer(
+            directory,
+            CredentialManager(store, MacKeychain()),
+            log_directory=service_log_directory(Path.home().resolve()),
+        )
         server._lock_fd = lock_fd
         lock_fd = None
         await server.start()

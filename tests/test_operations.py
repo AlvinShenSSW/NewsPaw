@@ -3,6 +3,7 @@ import os
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -130,7 +131,7 @@ def test_rotated_log_cleanup_skips_active_files_and_symlinks(tmp_path):
             os.utime(file, (age, age))
         link = logs / "stdout.log.1"
         link.symlink_to(active)
-        ops = Operations(store, tmp_path, clock=lambda: now)
+        ops = Operations(store, tmp_path, clock=lambda: now, log_directory=logs)
         assert ops.cleanup()["log_candidates"] == 1
         assert ops.cleanup(apply=True)["log_removed"] == 1
         assert active.exists() and link.is_symlink() and not old.exists()
@@ -178,3 +179,116 @@ def test_cleanup_preserves_readiness_and_only_removes_eligible_orphans(tmp_path)
         assert ops.cleanup()["snapshot_candidates"] == 1
         assert ops.cleanup(apply=True)["snapshot_candidates"] == 1
         assert store._db.execute("SELECT count(*) FROM feed_snapshots").fetchone() == (1,)
+
+
+def test_diagnostics_counts_recent_schedule_outcomes_by_scope_without_identifiers(tmp_path):
+    now = datetime(2026, 11, 8, tzinfo=UTC).isoformat()
+    with closing(Store(tmp_path / "state.db")) as store:
+        with store._write():
+            for scope, account, status in (
+                ("private-sub-scope", None, "delivered"),
+                ("private-account-scope", "private-account", "outcome_unknown"),
+            ):
+                store._db.execute(
+                    "INSERT INTO schedule_scopes VALUES (?, 'sub_world', ?, '{}', '[]', 1, ?, NULL, 1)",
+                    (scope, account, now),
+                )
+                store._db.execute(
+                    """INSERT INTO schedule_occurrences
+                       (id,scope_id,slot,civil_date,status,generation,updated_at)
+                       VALUES (?,?,1,'2026-11-08',?,1,?)""",
+                    (scope + "-occurrence", scope, status, now),
+                )
+        status = Operations(store, tmp_path).support_snapshot()
+        assert status["business"]["recent_schedule"] == {
+            "subscriptions": {"delivered": 1},
+            "special_accounts": {"outcome_unknown": 1},
+        }
+        assert "private-" not in json.dumps(status)
+
+
+@pytest.mark.parametrize("independent_change", ["budget", "legacy", "web"])
+def test_independent_policy_or_legacy_state_disables_portable_restore(tmp_path, independent_change):
+    from newspaw.budget import BudgetLedger
+
+    with closing(Store(tmp_path / "state.db")) as store:
+        ops = Operations(store, tmp_path)
+        portable = ops.export_settings()
+        preview = ops.preview_import(portable)
+        if independent_change == "budget":
+            ledger = BudgetLedger(store)
+            revision, policy = ledger.policy()
+            ledger.configure(policy, revision)
+        else:
+            with store._write():
+                if independent_change == "legacy":
+                    store._db.execute("INSERT INTO settings VALUES ('voice','true')")
+                else:
+                    store._db.execute("UPDATE web_search_policy SET revision=2 WHERE id=1")
+        assert store.config_revision() == preview["revision"]
+        with pytest.raises(OperationsError, match="restore_requires_fresh_instance"):
+            ops.apply_import(portable, preview["digest"], preview["revision"])
+
+
+def test_backup_with_matching_version_but_missing_tables_is_rejected(tmp_path):
+    import sqlite3
+
+    from newspaw.migrations import _backup
+
+    path = tmp_path / "private" / "state.db"
+    with closing(Store(path)) as store:
+        backup = _backup(path)
+        with closing(sqlite3.connect(backup)) as database:
+            database.execute("DROP TABLE pipeline_jobs")
+            database.commit()
+        with pytest.raises(OperationsError, match="invalid_backup"):
+            Operations(store, path.parent).verify_backup(backup.name)
+
+
+def test_export_omits_unsupported_profile_and_clears_category_override(tmp_path):
+    with closing(Store(tmp_path / "state.db")) as store:
+        config, _ = configured()
+        profile = config["model_profiles"][0]
+        profile["provider"] = "valid-custom-provider"
+        config["categories"][0]["primary_profile_id"] = profile["id"]
+        store.save_config(config, expected_revision=1)
+        portable = Operations(store, tmp_path).export_settings()
+        assert portable["omitted"]["model_profiles"] == 1
+        assert portable["settings"]["categories"][0]["primary_profile_id"] is None
+        assert "valid-custom-provider" not in json.dumps(portable)
+
+
+def test_export_refuses_document_that_would_exceed_own_import_limit(tmp_path):
+    with closing(Store(tmp_path / "state.db")) as store:
+        config, subscription = configured()
+        config["sources"] = [
+            dict(config["sources"][0], id=f"source_{number:04d}") for number in range(200)
+        ]
+        sources = [source["id"] for source in config["sources"]]
+        config["subscriptions"] = [
+            dict(subscription, id=f"sub_{number:04d}", source_ids=sources) for number in range(200)
+        ]
+        store.save_config(config, expected_revision=1)
+        with pytest.raises(OperationsError, match="settings_not_portable"):
+            Operations(store, tmp_path).export_settings()
+
+
+def test_control_reads_actual_service_log_location(tmp_path):
+    from test_credentials import FakeKeychain
+
+    from newspaw.control import ControlServer
+    from newspaw.credentials import CredentialManager
+    from newspaw.service import build_plist
+
+    home = tmp_path / "home"
+    service = build_plist(tmp_path, tmp_path / "config", home)
+    stdout = Path(service["StandardOutPath"])
+    stdout.parent.mkdir(parents=True, mode=0o700)
+    stdout.write_bytes(b"fixture")
+    stdout.chmod(0o600)
+    data = tmp_path / "data"
+    with closing(Store(data / "state.db")) as store:
+        server = ControlServer(
+            data, CredentialManager(store, FakeKeychain()), log_directory=stdout.parent
+        )
+        assert server.operations.support_snapshot()["business"]["log_bytes"] == 7

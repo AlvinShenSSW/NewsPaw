@@ -111,6 +111,91 @@ class ModelRequest:
     reasoning_none: bool = False
 
 
+@dataclass(frozen=True)
+class SearchRequest(ModelRequest):
+    domains: tuple[str, ...] = ()
+
+
+def _search_result(data, spec, usage):
+    from .news import plain_text
+
+    output = data.get("output")
+    if not isinstance(output, list) or any(not isinstance(item, dict) for item in output):
+        raise ProviderError("invalid_output", outcome="known", usage=usage)
+    calls = [item for item in output if item.get("type") == "web_search_call"]
+    if len(calls) > 1:
+        raise ProviderError("invalid_search_receipt", outcome="known", usage=usage)
+    if not calls:
+        return {"tool_calls": 0, "citations": [], "provider_queries": None, "usage": usage}
+    action = calls[0].get("action")
+    if (
+        calls[0].get("status") != "completed"
+        or not isinstance(action, dict)
+        or action.get("type") != "search"
+        or not isinstance(action.get("sources"), list)
+    ):
+        raise ProviderError("invalid_search_receipt", outcome="known", usage=usage)
+
+    def approved(value):
+        if not isinstance(value, str):
+            return None
+        try:
+            url = checked_url(value)
+            if (
+                url.host in spec.domains
+                and url.port in {None, 443}
+                and not (url.query or url.fragment)
+            ):
+                return str(url)
+        except SafeHTTPError:
+            pass
+        return None
+
+    source_urls = {
+        approved(row.get("url")) for row in action["sources"][:100] if isinstance(row, dict)
+    } - {None}
+    citations = {}
+    for item in output:
+        parts = item.get("content")
+        if item.get("type") != "message" or not isinstance(parts, list):
+            continue
+        for part in parts:
+            if not isinstance(part, dict) or part.get("type") != "output_text":
+                continue
+            annotations = part.get("annotations")
+            if not isinstance(annotations, list):
+                continue
+            for annotation in annotations:
+                if not isinstance(annotation, dict) or annotation.get("type") != "url_citation":
+                    continue
+                url = approved(annotation.get("url"))
+                title = annotation.get("title")
+                if url in source_urls and isinstance(title, str):
+                    title = plain_text(title, 300)
+                    if title:
+                        citations.setdefault(
+                            url, dict(url=url, title=title, scope="citation_title_only")
+                        )
+                if len(citations) == 10:
+                    break
+            if len(citations) == 10:
+                break
+        if len(citations) == 10:
+            break
+    queries = action.get("queries", [action.get("query")])
+    reported = (
+        [plain_text(q, 300) for q in queries[:8] if isinstance(q, str) and q.strip()]
+        if isinstance(queries, list)
+        else []
+    )
+    return {
+        "tool_calls": 1,
+        "citations": list(citations.values()),
+        "provider_queries": reported or None,
+        "usage": usage,
+    }
+
+
 def _usage(value):
     if not isinstance(value, dict):
         return {}
@@ -251,6 +336,30 @@ class ProviderAdapter:
             body["instructions"] += "\nReturn only JSON matching this schema: " + _json(
                 spec.json_schema
             )
+        if isinstance(spec, SearchRequest):
+            if (
+                provider != "openai"
+                or spec.partition != "normal"
+                or self.profile["base_url"].rstrip("/") != "https://api.openai.com/v1"
+                or spec.image is not None
+                or spec.tool_name is not None
+                or spec.json_schema is not None
+                or not 1 <= len(spec.domains) <= 12
+                or any(not re.fullmatch(r"[a-z0-9.-]{1,253}", host) for host in spec.domains)
+            ):
+                raise ProviderError("invalid_search_scope")
+            body.update(
+                tools=[
+                    {
+                        "type": "web_search",
+                        "search_context_size": "low",
+                        "filters": {"allowed_domains": list(spec.domains)},
+                    }
+                ],
+                max_tool_calls=1,
+                tool_choice={"type": "web_search"},
+                include=["web_search_call.action.sources"],
+            )
         return body
 
     async def generate(self, spec):
@@ -342,6 +451,8 @@ class ProviderAdapter:
             if isinstance(details, dict) and details.get("reason") == "content_filter":
                 fail("policy_refused")
             fail("incomplete_output")
+        if isinstance(spec, SearchRequest):
+            return _search_result(data, spec, usage)
         output = data.get("output")
         if not isinstance(output, list):
             fail("invalid_output")

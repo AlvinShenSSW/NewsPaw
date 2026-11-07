@@ -375,3 +375,64 @@ async def test_aggregate_revocation_during_keychain_wait_creates_no_paid_x_inten
     assert not requests
     assert scans.db.execute("SELECT count(*) FROM x_timeline_steps").fetchone() == (0,)
     assert pipeline.get(aggregate)["stage"] == "stale"
+
+
+async def test_post_type_policy_invalidates_old_edition_and_reopens_bounded_history(
+    timeline_system,
+):
+    from test_x_timelines import NOW, page, post
+
+    from newspaw.pipeline import PipelineError
+
+    reads = []
+
+    async def reply(request, _):
+        reads.append(dict(request.url.params))
+        return page(
+            [
+                dict(post(190), text="OpenAI released GPT-6."),
+                post(189, minutes=2, references=[{"id": "188", "type": "replied_to"}]),
+            ]
+        )
+
+    build, scans, sub, identity, holds, _ = await _digest_fixture(timeline_system, reply)
+    pipeline = build()
+    prior = pipeline.create(sub, "prior-types", holds=holds, now=NOW)["job_id"]
+    for _ in range(3):
+        await pipeline.advance(prior, now=NOW)
+    assert pipeline.delivery_scope(prior).effective["accounts"][0].get("post_types") is None
+    current = scans.coverage("account", identity)
+    assert current["state"] == "complete"
+    assert current["last_complete"]["through_time"] == NOW.isoformat()
+    before = scans.store.config_revision()
+    with pytest.raises(ValueError, match="post types"):
+        revision, config = scans.store.load_config()
+        config["accounts"][0]["post_types"] = ["quoted", "quoted"]
+        scans.store.save_config(config, expected_revision=revision)
+
+    await scans.directory.set_route(
+        identity, sub, "special", before, post_types=["replied_to", "original", "quoted"]
+    )
+    with pytest.raises(PipelineError, match="edition_changed"):
+        pipeline.delivery_scope(prior)
+    stale = scans.coverage("account", identity)
+    assert stale["reason"] == "coverage_scope_changed" and stale["latest"]["historical"]
+    assert stale["last_complete"] is None and len(reads) == 1
+
+    next_job = pipeline.create(sub, "new-types", holds=holds, now=NOW)["job_id"]
+    assert (await pipeline.advance(next_job, now=NOW))["stage"] == "editing"
+    assert "since_id" not in reads[-1] and len(reads) == 2
+    current = scans.coverage("account", identity)
+    assert current["last_complete"]["history_gap"] == "fresh_window"
+    assert current["last_complete"]["post_types"] == ["original", "quoted", "replied_to"]
+    assert {item["id"] for item in scans.posts("account", identity)} == {"189", "190"}
+
+    impact = scans.directory.partition_impact(identity)
+    assert impact["cached_posts"] == impact["pending_jobs"] == 2
+    assert impact["aggregate_bot_ids"] == ["bot1"] and impact["special_bot_ids"] == ["bot2"]
+    assert impact["clears_post_types"]
+    await scans.directory.classify(identity, "adult", impact["revision"])
+    assert "post_types" not in scans.directory.account_status(identity)
+    assert scans.directory.partition_impact(identity)["cached_posts"] == 0
+    assert scans.coverage("account", identity)["latest"]["historical"]
+    assert scans.db.execute("SELECT DISTINCT partition FROM x_posts").fetchall() == [("normal",)]

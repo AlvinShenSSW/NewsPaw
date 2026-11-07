@@ -27,6 +27,8 @@ from .providers import ProbeService, ProfileRegistry, ProviderError
 from .scheduler import Scheduler
 from .source_catalog import catalog
 from .source_manager import SourceError, SourceManager
+from .subscriptions import Subscriptions
+from .telegram.check_send import TestSends
 from .telegram.commands import Commands
 from .telegram.outbox import Outbox
 from .telegram.registry import BotRegistry, TelegramError
@@ -39,6 +41,8 @@ from .x.video import Videos
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
+    "service.status": (set(), set()),
+    "service.stop": (set(), set()),
     "schedule.status": (set(), {"limit"}),
     "media.policy": (set(), set()),
     "media.configure": ({"settings", "revision"}, set()),
@@ -52,12 +56,13 @@ OPERATIONS = {
     ),
     "x.accounts.list": (set(), set()),
     "x.accounts.add": ({"handle", "revision"}, {"partition"}),
+    "x.accounts.partition_impact": ({"account_id"}, set()),
     "x.accounts.status": ({"account_id"}, set()),
     "x.accounts.verify": ({"account_id", "request_id", "revision"}, set()),
     "x.accounts.classify": ({"account_id", "partition", "revision"}, set()),
     "x.accounts.route": (
         {"account_id", "subscription_id", "priority", "revision"},
-        {"include_in_aggregate"},
+        {"include_in_aggregate", "post_types", "overrides"},
     ),
     "x.accounts.remove": ({"account_id", "revision"}, set()),
     "x.video.policy": (set(), set()),
@@ -83,6 +88,7 @@ OPERATIONS = {
         },
     ),
     "x.posts.advance": ({"scan_id", "step_id"}, set()),
+    "x.posts.coverage": ({"kind", "scope"}, set()),
     "x.posts.status": ({"scan_id"}, set()),
     "x.posts.stop": ({"scan_id"}, set()),
     "x.posts.list": ({"kind", "scope"}, {"limit"}),
@@ -101,6 +107,8 @@ OPERATIONS = {
     "targets.adult_permission": ({"bot_id", "allowed", "revision"}, set()),
     "targets.bot_impact": ({"bot_id"}, set()),
     "targets.delete_bot": ({"bot_id", "revision"}, set()),
+    "subscriptions.preview": ({"draft", "revision"}, set()),
+    "subscriptions.save": ({"draft", "revision"}, {"enable"}),
     "sources.catalog": (set(), set()),
     "sources.list": (set(), set()),
     "sources.discover": ({"url"}, set()),
@@ -109,19 +117,22 @@ OPERATIONS = {
     "sources.delete": ({"source_id", "revision"}, set()),
     "sources.preview": ({"source_id"}, set()),
     "sources.routes": ({"source_id"}, set()),
+    "sources.impact": ({"source_id", "action"}, set()),
     "sources.import_opml": ({"content", "revision"}, set()),
     "sources.search.policy": (set(), set()),
     "sources.search.configure": ({"profile_id", "revision"}, set()),
     "sources.search.run": ({"subscription_id", "request_id", "revision", "hold_units"}, set()),
     "sources.search.status": ({"request_id"}, set()),
     "bots.list": (set(), set()),
+    "bots.test_send": ({"bot_id", "generation", "request_id"}, set()),
+    "bots.test_status": ({"bot_id", "generation", "request_id"}, set()),
     "bots.status": ({"bot_id"}, set()),
-    "bots.verify": ({"bot_id"}, set()),
-    "bots.pair_code": ({"bot_id"}, set()),
-    "bots.action": ({"bot_id", "action"}, set()),
+    "bots.verify": ({"bot_id"}, {"generation"}),
+    "bots.pair_code": ({"bot_id"}, {"generation"}),
+    "bots.action": ({"bot_id", "action"}, {"generation"}),
     "bots.delete": ({"bot_id", "revision"}, set()),
     "models.status": ({"profile_id"}, set()),
-    "models.probe": ({"probe_id", "profile_id", "capability", "hold_units"}, set()),
+    "models.probe": ({"probe_id", "profile_id", "capability", "hold_units"}, {"revision"}),
     "budget.get": (set(), set()),
     "budget.save": ({"document", "revision"}, set()),
     "config.get": (set(), set()),
@@ -183,7 +194,9 @@ class ControlServer:
             stt_fixture=self.media.speech.probe_wav,
         )
         self.bots = BotRegistry(credentials.store, credentials.backend)
+        self.bot_tests = TestSends(self.bots)
         self.sources = SourceManager(credentials)
+        self.subscriptions = Subscriptions(credentials, self.sources, self.bots)
         self.web_search = WebSearch(credentials.store, credentials.backend)
         self.targets = TargetManager(credentials, self.bots)
         self.x = XDirectory(credentials, self.targets)
@@ -206,10 +219,12 @@ class ControlServer:
         self._lock_fd = None
         self._handlers = set()
         self._socket_identity = None
+        self._stop_requested = asyncio.Event()
 
     async def start(self):
         if self._server is not None:
             raise ValueError("already_running")
+        self._stop_requested.clear()
         if self._lock_fd is None:
             self._lock_fd = acquire_control_lock(self.directory)
         try:
@@ -235,6 +250,7 @@ class ControlServer:
             self.outbox.recover_interrupted()
             self.commands.recover_interrupted()
             self.media.recover_interrupted()
+            self.bot_tests.recover_interrupted()
             self.x.recover_interrupted()
             self.x_posts.recover_interrupted()
             self.videos.recover_interrupted()
@@ -269,6 +285,9 @@ class ControlServer:
             os.close(self._lock_fd)
             self._lock_fd = None
 
+    async def wait_for_stop(self):
+        await self._stop_requested.wait()
+
     async def _dispatch(self, data):
         if not isinstance(data, dict) or not isinstance(data.get("op"), str):
             raise CredentialError("invalid_request")
@@ -279,6 +298,15 @@ class ControlServer:
         keys = set(data) - {"op"}
         if not required <= keys or keys - required - optional:
             raise CredentialError("invalid_request")
+        if op == "service.stop":
+            self._stop_requested.set()
+        if op in {"service.status", "service.stop"}:
+            return {
+                "protocol_version": 1,
+                "state": "stopping" if self._stop_requested.is_set() else "running",
+            }
+        if self._stop_requested.is_set():
+            raise CredentialError("service_stopping")
         manager, store = self.credentials, self.credentials.store
         if op == "media.policy":
             return self.media.policy()
@@ -309,6 +337,8 @@ class ControlServer:
             return await self.x.add_account(
                 data["handle"], data["revision"], partition=data.get("partition")
             )
+        if op == "x.accounts.partition_impact":
+            return self.x.partition_impact(data["account_id"])
         if op == "x.accounts.status":
             return self.x.account_status(data["account_id"])
         if op == "x.accounts.verify":
@@ -322,6 +352,8 @@ class ControlServer:
                 data["priority"],
                 data["revision"],
                 include_in_aggregate=data.get("include_in_aggregate"),
+                post_types=data.get("post_types"),
+                overrides=data.get("overrides"),
             )
         if op == "x.accounts.remove":
             return await self.x.remove_account(data["account_id"], data["revision"])
@@ -362,6 +394,8 @@ class ControlServer:
             return self.x_posts.begin(**{key: value for key, value in data.items() if key != "op"})
         if op == "x.posts.advance":
             return await self.x_posts.advance(data["scan_id"], data["step_id"])
+        if op == "x.posts.coverage":
+            return self.x_posts.coverage(data["kind"], data["scope"])
         if op == "x.posts.status":
             return self.x_posts.status(data["scan_id"])
         if op == "x.posts.stop":
@@ -413,6 +447,12 @@ class ControlServer:
             return self.targets.bot_impact(data["bot_id"])
         if op == "targets.delete_bot":
             return await self.targets.delete_bot(data["bot_id"], data["revision"])
+        if op == "subscriptions.preview":
+            return self.subscriptions.preview(data["draft"], data["revision"])
+        if op == "subscriptions.save":
+            return await self.subscriptions.save(
+                data["draft"], data["revision"], enable=data.get("enable", False)
+            )
         if op == "sources.catalog":
             return catalog()
         if op == "sources.list":
@@ -429,6 +469,8 @@ class ControlServer:
             return await self.sources.delete(data["source_id"], data["revision"])
         if op == "sources.preview":
             return await self.sources.preview(data["source_id"])
+        if op == "sources.impact":
+            return self.sources.impact(data["source_id"], data["action"])
         if op == "sources.routes":
             return self.sources.routes(data["source_id"])
         if op == "sources.import_opml":
@@ -447,19 +489,26 @@ class ControlServer:
             return self.bots.list()
         if op == "bots.status":
             return self.bots.status(data["bot_id"])
+        if op == "bots.test_status":
+            return self.bot_tests.status(data["bot_id"], data["generation"], data["request_id"])
+        if op == "bots.test_send":
+            return await self.bot_tests.send(data["bot_id"], data["generation"], data["request_id"])
         if op == "bots.verify":
-            return await self.bots.verify(data["bot_id"])
+            return await self.bots.verify(data["bot_id"], generation=data.get("generation"))
         if op == "bots.pair_code":
-            return self.bots.pair_code(data["bot_id"])
+            return self.bots.pair_code(data["bot_id"], generation=data.get("generation"))
         if op == "bots.action":
-            return self.bots.action(data["bot_id"], data["action"])
+            return self.bots.action(
+                data["bot_id"], data["action"], generation=data.get("generation")
+            )
         if op == "bots.delete":
             return await self.bots.delete(data["bot_id"], manager, data["revision"])
         if op == "models.status":
             return ProfileRegistry(store).status(data["profile_id"])
         if op == "models.probe":
             return await self.probes.probe(
-                data["probe_id"], data["profile_id"], data["capability"], data["hold_units"]
+                data["probe_id"], data["profile_id"], data["capability"], data["hold_units"],
+                revision=data.get("revision"),
             )
         if op in {"budget.get", "budget.save"}:
             ledger = BudgetLedger(store)
@@ -542,7 +591,7 @@ async def serve_control(directory):
         server._lock_fd = lock_fd
         lock_fd = None
         await server.start()
-        await asyncio.Event().wait()
+        await server.wait_for_stop()
     finally:
         if server is not None:
             await server.close()

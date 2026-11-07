@@ -19,6 +19,15 @@ SCHEMA_VERSION = 3
 STYLES = {"text", "source_image", "newspaper"}
 LOCALES = {"zh-Hans", "en", "ja"}
 PARTITIONS = {"normal", "adult"}
+X_POST_TYPES = ("original", "quoted", "replied_to", "retweeted")
+X_DEFAULT_POST_TYPES = X_POST_TYPES[:2]
+REGIONAL_CATEGORIES = {"japan", "australia", "china"}
+REGIONAL_FOCUS = {"domestic", "entertainment"}
+_OPTIONAL = {
+    "accounts": {"include_in_aggregate", "post_types"},
+    "sources": {"focus"},
+    "subscriptions": {"source_mode", "focus_weights"},
+}
 _ID = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,79}")
 _CREDENTIAL = re.compile(r"keychain:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 _FIELDS = {
@@ -86,6 +95,34 @@ def in_x_aggregate(account, subscription):
         and subscription["category_id"] in {"x", "x_adult"}
         and (account["priority"] == "normal" or account.get("include_in_aggregate", False))
     )
+
+
+def x_post_types(values):
+    if (
+        not isinstance(values, list)
+        or not values
+        or len(values) > len(X_POST_TYPES)
+        or any(not isinstance(value, str) or value not in X_POST_TYPES for value in values)
+        or len(values) != len(set(values))
+    ):
+        raise ValueError("Invalid X post types")
+    return [kind for kind in X_POST_TYPES if kind in values]
+
+
+def uses_category_sources(subscription):
+    return (
+        subscription.get("source_mode", "explicit" if subscription["source_ids"] else "category")
+        == "category"
+    )
+
+
+def source_in_subscription(source, subscription, *, include_muted=False):
+    if uses_category_sources(subscription):
+        selected = subscription["category_id"] in source["category_ids"]
+    else:
+        selected = source["id"] in subscription["source_ids"]
+    weights = subscription.get("focus_weights", {})
+    return selected and (include_muted or weights.get(source.get("focus"), 1) > 0)
 
 
 def new_id(kind: str) -> str:
@@ -350,7 +387,7 @@ def _validate_config(config: dict) -> None:
         entries = config[kind]
         _list(entries)
         indexed[kind] = {}
-        allowed = fields | {"include_in_aggregate"} if kind == "accounts" else fields
+        allowed = fields | _OPTIONAL.get(kind, set())
         for entry in entries:
             if not isinstance(entry, dict) or not fields <= entry.keys() <= allowed:
                 raise ValueError(f"Unknown or missing {kind} fields; secrets are not accepted")
@@ -397,6 +434,13 @@ def _validate_config(config: dict) -> None:
         if source["kind"] not in {"rss", "atom", "web", "github", "huggingface", "draft"}:
             raise ValueError("Unknown source kind")
         _boolean(source["enabled"])
+        focus = source.get("focus")
+        if focus is not None and (
+            focus not in REGIONAL_FOCUS
+            or source["partition"] != "normal"
+            or not REGIONAL_CATEGORIES.intersection(source["category_ids"])
+        ):
+            raise ValueError("Invalid regional source focus")
         references(source["category_ids"], "categories")
         if source["partition"] is None and (source["enabled"] or source["category_ids"]):
             raise ValueError("Unclassified source must remain an unassigned disabled draft")
@@ -431,11 +475,36 @@ def _validate_config(config: dict) -> None:
         references([subscription["category_id"]], "categories")
         references(subscription["source_ids"], "sources")
         references(subscription["bot_ids"], "bots")
-        _times(subscription["times"])
-        _timezone(subscription["timezone"])
         _boolean(subscription["enabled"])
+        if subscription["times"] != [] or subscription["enabled"]:
+            _times(subscription["times"])
+        _timezone(subscription["timezone"])
         _integer(subscription["max_items"], 1, 20)
         _style(subscription["style"], optional=True)
+        mode = subscription.get("source_mode")
+        if "source_mode" in subscription and mode not in {"explicit", "category"}:
+            raise ValueError("Invalid source selection mode")
+        if mode == "category" and subscription["source_ids"]:
+            raise ValueError("Inherited source selection must not list explicit sources")
+        if (
+            mode == "explicit"
+            and not subscription["source_ids"]
+            and subscription["enabled"]
+            and subscription["category_id"] not in {"x", "x_adult"}
+        ):
+            raise ValueError("Enabled subscription requires a nonempty explicit source selection")
+        if "focus_weights" in subscription:
+            weights = subscription["focus_weights"]
+            if (
+                subscription["category_id"] not in REGIONAL_CATEGORIES
+                or not isinstance(weights, dict)
+                or set(weights) != REGIONAL_FOCUS
+                or not any(weights.values())
+                or any(
+                    type(value) is not int or not 0 <= value <= 100 for value in weights.values()
+                )
+            ):
+                raise ValueError("Invalid regional focus weights")
         partition = indexed["categories"][subscription["category_id"]]["partition"]
         if any(
             indexed["sources"][key]["partition"] != partition for key in subscription["source_ids"]
@@ -462,6 +531,8 @@ def _validate_config(config: dict) -> None:
             raise ValueError("Invalid stable X account ID")
         if account["priority"] not in {"normal", "special"}:
             raise ValueError("Invalid account priority")
+        if "post_types" in account:
+            x_post_types(account["post_types"])
         aggregate = account.get("include_in_aggregate", False)
         _boolean(aggregate)
         if aggregate and (

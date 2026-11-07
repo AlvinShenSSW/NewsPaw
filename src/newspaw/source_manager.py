@@ -17,7 +17,7 @@ from uuid import uuid4
 import feedparser
 import httpx
 
-from .app_config import _url, validate_config
+from .app_config import _url, source_in_subscription, uses_category_sources, validate_config
 from .connectors import AICollector, APIError, source_url
 from .connectors.av import AV_ORIGIN, AVCollector, av_supported
 from .connectors.web import WEB_ALIASES, WEB_SITES, WebCollector, web_supported
@@ -271,10 +271,11 @@ class SourceManager:
                 if cat["partition"] != s["partition"]:
                     raise SourceError("incompatible_subscription")
                 # Materialize inherited selection before modifying category membership.
-                if not sub["source_ids"]:
+                if uses_category_sources(sub):
                     sub["source_ids"] = [
                         v["id"] for v in config["sources"] if cat["id"] in v["category_ids"]
                     ]
+                sub["source_mode"] = "explicit"
                 if identity not in sub["source_ids"]:
                     sub["source_ids"].append(identity)
                 selected.append(cat["id"])
@@ -282,29 +283,63 @@ class SourceManager:
 
         return await self._mutate(revision, change)
 
+    @staticmethod
+    def _remove(config, identity):
+        config["sources"] = [source for source in config["sources"] if source["id"] != identity]
+        disabled = []
+        for sub in config["subscriptions"]:
+            if identity in sub["source_ids"]:
+                sub["source_ids"].remove(identity)
+                sub["source_mode"] = "explicit"
+                if not sub["source_ids"]:
+                    sub["enabled"] = False
+                    disabled.append(sub["id"])
+        return disabled
+
     async def delete(self, identity, revision):
         def change(config):
             self._source(identity, config)
-            config["sources"] = [s for s in config["sources"] if s["id"] != identity]
-            disabled = []
-            for sub in config["subscriptions"]:
-                if identity in sub["source_ids"]:
-                    sub["source_ids"].remove(identity)
-                    if not sub["source_ids"]:
-                        sub["enabled"] = False
-                        disabled.append(sub["id"])
-            return {"disabled_subscriptions": disabled}
+            return {"disabled_subscriptions": self._remove(config, identity)}
 
         return await self._mutate(revision, change)
+
+    def impact(self, identity, action):
+        if action not in {"pause", "delete"}:
+            raise SourceError("invalid_source_action")
+        revision, config = self.store.load_config()
+        source = self._source(identity, config)
+        affected = [
+            sub
+            for sub in config["subscriptions"]
+            if source_in_subscription(source, sub, include_muted=True)
+        ]
+        active = {sub["id"]: sub["enabled"] for sub in affected}
+        if action == "delete":
+            self._remove(config, identity)
+        else:
+            source["enabled"] = False
+        subscriptions = []
+        for sub in affected:
+            route = resolve_route(config, revision, sub["id"])
+            subscriptions.append(
+                dict(
+                    id=sub["id"],
+                    name=sub["name"],
+                    was_enabled=active[sub["id"]],
+                    enabled=sub["enabled"],
+                    blockers=list(route.blockers),
+                )
+            )
+        return dict(
+            revision=revision, source_id=identity, action=action, subscriptions=subscriptions
+        )
 
     def routes(self, identity):
         revision, config = self.store.load_config()
         source = self._source(identity, config)
         result = []
         for sub in config["subscriptions"]:
-            if identity in sub["source_ids"] or (
-                not sub["source_ids"] and sub["category_id"] in source["category_ids"]
-            ):
+            if source_in_subscription(source, sub, include_muted=True):
                 route = resolve_route(config, revision, sub["id"])
                 result.append(
                     dict(

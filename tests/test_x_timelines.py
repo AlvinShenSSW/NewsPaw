@@ -358,3 +358,26 @@ async def test_fractional_publication_after_window_floor_is_eligible(system):
     status = await scans.advance("fractional", "fractional.step")
     assert status["state"] == "complete" and status["complete_cursor"] == "120"
     assert [post["id"] for post in scans.posts("account", account)] == ["120"]
+
+
+async def test_coverage_displays_partial_and_preserves_prior_complete_without_network(system):
+    calls = []
+
+    async def responses(request, _):
+        calls.append(request)
+        return page([post(120)]) if len(calls) == 1 else page([post(125)], "more")
+
+    scans, x, identity, _ = await setup(system, responses)
+    revision = x.store.config_revision()
+    assert scans.coverage("account", identity)["state"] == "unobserved"
+    scans.begin("initial", "account", identity, revision)
+    assert scans.coverage("account", identity)["latest"]["through_time"] is None
+    await scans.advance("initial", "initial.read")
+    first = scans.coverage("account", identity)["last_complete"]
+    scans.begin("partial", "account", identity, revision, max_pages=1)
+    await scans.advance("partial", "partial.read", before_intent=lambda: True)
+    result = scans.coverage("account", identity)
+    assert result["latest"]["reason"] == "page_limit"
+    assert result["latest"]["from_time"] is None
+    assert result["last_complete"] == first
+    assert len(calls) == 2 and "Synthetic post" not in repr(result)

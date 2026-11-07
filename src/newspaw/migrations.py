@@ -204,6 +204,9 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         from .media.input_service import initialize as initialize_media_commands
 
         initialize_media_commands(db)
+        from .telegram.check_send import initialize as initialize_bot_tests
+
+        initialize_bot_tests(db)
         from .x.accounts import initialize as initialize_x
 
         initialize_x(db)

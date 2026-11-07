@@ -664,3 +664,34 @@ async def test_explicit_preview_of_disabled_source_does_not_enable_it(configured
         await collector.close()
     assert len(attempts) == 1 and calls
     assert store.load_config()[1]["sources"][0]["enabled"] is False
+
+
+async def test_github_version_header_passes_real_guarded_transport(monkeypatch):
+    from test_transport import response, transport
+
+    from newspaw.connectors import PublicAPI
+
+    adapter, stream, dialer = transport(monkeypatch, response(b'{"id":123}'))
+    async with httpx.AsyncClient(transport=adapter) as client:
+        api = PublicAPI(client, "github", NOW)
+        result = await api.get("https://api.github.com/repos/acme/skills")
+        assert api.json(result) == {"id": 123}
+    assert dialer.connect_tcp.await_count == 1
+    assert stream.sni == "api.github.com"
+
+
+@pytest.mark.parametrize("raw", ["0001-01-01T00:00:00+14:00", "9999-12-31T23:59:59-14:00"])
+async def test_extreme_api_dates_are_ineligible_without_aborting_collection(configured, raw):
+    def respond(r):
+        response = gh(r, release=True)
+        if r.url.path.endswith("/releases"):
+            data = response.json()
+            data[0]["published_at"] = raw
+            return httpx.Response(200, json=data)
+        return response
+
+    attempt, articles, _ = await collect(configured, respond)
+    assert attempt["status"] == "fresh" and len(articles) == 1
+    stored = EvidenceStore(configured[0]).snapshot(attempt["snapshot_id"], "normal")[0]
+    release = next(a for a in stored if a.metadata["event_type"] == "release")
+    assert release.published_at is None and release.published_error

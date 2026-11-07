@@ -16,9 +16,10 @@ import httpx
 from ..config import parse_times
 from ..credentials import CredentialError
 from ..media.audio import MAX_SPEECH, MediaInputError
+from ..media.newspaper import PaperError
 from ..pipeline import PipelineError
 from .client import TelegramError, TelegramSendError
-from .outbox import _AUTOMATIC_ATTEMPTS, _clock, _json, send_lane_blocked
+from .outbox import _AUTOMATIC_ATTEMPTS, OutboxError, _clock, _json, _photo, send_lane_blocked
 from .targets import TargetError
 from .text import split_delivery_text
 
@@ -47,7 +48,7 @@ _UI = {
         "choose": "Choose a scope first. For example, /news followed by its code.",
         "none": "This Bot has no active news assignment.",
         "help": "Commands: /news /search /schedule /pause /resume /status /why /x /av /paper /listen",
-        "paper": "Newspaper generation is not available yet.",
+        "paper": "Reply to a confirmed brief with /paper, optionally followed by 1 or 2 and item:1.",
         "media": "Please send your question as text.",
         "listen": "Reply to a confirmed briefing with /listen.",
         "voice_unavailable": "Local audio is unavailable for this language. Here is the briefing text.",
@@ -66,7 +67,7 @@ _UI = {
         "choose": "请先选择范围，例如发送 /news 加下方代码。",
         "none": "此 Bot 暂无启用的新闻分配。",
         "help": "命令：/news /search /schedule /pause /resume /status /why /x /av /paper /listen",
-        "paper": "报纸生成暂不可用。",
+        "paper": "请回复一条已送达的简报发送 /paper，可加 1 或 2 和 item:1。",
         "media": "请用文字发送问题。",
         "listen": "请回复一条已送达的简报发送 /listen。",
         "voice_unavailable": "当前语言的本机语音不可用。以下是简报正文。",
@@ -85,7 +86,7 @@ _UI = {
         "choose": "先に範囲を選択してください。例：/news の後に下のコードを入力。",
         "none": "この Bot には有効なニュースの配信先設定がありません。",
         "help": "コマンド：/news /search /schedule /pause /resume /status /why /x /av /paper /listen",
-        "paper": "新聞画像の生成は現在利用できません。",
+        "paper": "配信済みニュースに /paper で返信してください。1 または 2 と item:1 を追加できます。",
         "media": "質問をテキストで送ってください。",
         "listen": "配信済みニュースに /listen で返信してください。",
         "voice_unavailable": "この言語の端末音声は利用できません。ニュースをテキストでお送りします。",
@@ -252,7 +253,12 @@ class Commands:
         if replies:
             context = json.loads(replies[0][0])
             if "scope" in context:
-                return context["scope"][0], context.get("job"), context["scope"]
+                return (
+                    context["scope"][0],
+                    context.get("job"),
+                    context["scope"],
+                    bool(context.get("needs_edition")),
+                )
             return None
         job, subscription, account, payload = jobs[0]
         frozen = json.loads(json.loads(payload)["route"]["_effective"])
@@ -267,6 +273,7 @@ class Commands:
                 frozen["partition"],
                 frozen["account"]["remote_id"] if account else None,
             ],
+            True,
         )
 
     def _parse(self, payload, binding):
@@ -489,7 +496,7 @@ class Commands:
             return context, "", None
         if command == "unsupported_media":
             return context, ui["media"], None
-        if command == "help" or (query and command not in {"search", "schedule", "media"}):
+        if command == "help" or (query and command not in {"search", "schedule", "media", "paper"}):
             return context, ui["help"], None
         attachment = command in {"media", "listen"}
         anchor = None
@@ -546,6 +553,32 @@ class Commands:
             plan["expires"] = (now + timedelta(minutes=3)).isoformat()
             context.update(locale=config["news_output_locale"], language="news", media=plan)
             return context, ui[command], None
+        if command == "paper":
+            if not anchor or not anchor[3] or job is None:
+                return context, ui["paper"], None
+            options = (
+                re.fullmatch(r"(?:([12])(?: item:([1-9][0-9]?))?|item:([1-9][0-9]?))", query)
+                if query
+                else None
+            )
+            if query and options is None:
+                return context, ui["paper"], None
+            edition = self._edition(job, scope)
+            if edition is None:
+                return context, ui["denied"], None
+            page, item, only_item = options.groups() if options else (None, None, None)
+            context.update(
+                locale=config["news_output_locale"],
+                language="news",
+                job=job,
+                needs_edition=True,
+                paper=dict(
+                    pages=int(page) if page else 1 if only_item else None,
+                    item=int(item or only_item) if item or only_item else None,
+                    deadline=(now + timedelta(minutes=2)).isoformat(),
+                ),
+            )
+            return context, edition[1], None
         if command in {"news", "search", "why", "x", "av"}:
             context.update(locale=config["news_output_locale"], language="news")
             return context, self._news(command, scope, job, query, context, config), None
@@ -648,6 +681,7 @@ class Commands:
         if state != "pending":
             for part in parts:
                 part.pop("text", None)
+                part.pop("caption", None)
                 part.pop("data", None)
             self.db.execute(
                 """UPDATE command_replies SET context=json_remove(context,'$.media.file_id')
@@ -791,13 +825,63 @@ class Commands:
                 (_json(context), _json(parts), *key),
             )
 
+    async def _prepare_paper(self, key, binding, context):
+        paper = context["paper"]
+        service = self.pipeline.newspapers
+        photos = []
+
+        def authorized():
+            current = self._binding(key, chat=binding.chat_id, telegram_id=binding.telegram_id)
+            return current == binding and self._allowed(context, current)
+
+        if service is not None and authorized():
+            _, config = self.store.load_config()
+            scope = self._scope(config, binding, context["scope"][0])
+            edition = self._edition(context["job"], scope) if scope else None
+            if edition:
+                try:
+                    generated = await service.prepare(
+                        self.pipeline._edition_id(context["job"]),
+                        edition[0],
+                        scope.partition,
+                        datetime.fromisoformat(paper["deadline"]),
+                        authorized,
+                        item_number=paper["item"],
+                        page_count=paper["pages"],
+                    )
+                    if generated:
+                        photos = [_photo(part) for part in generated]
+                except (PaperError, OutboxError):
+                    pass
+        with self.store._write():
+            _, _, stored, serialized, state, inflight, _ = self._row(key)
+            if state != "pending" or inflight is not None or json.loads(stored) != context:
+                return
+            parts = json.loads(serialized)
+            if not authorized():
+                self._save(key, parts, "stale")
+                return
+            if self.clock() < datetime.fromisoformat(paper["deadline"]):
+                parts.extend({**photo, "state": "pending", "attempts": 0} for photo in photos)
+            context["paper_ready"] = True
+            self.db.execute(
+                "UPDATE command_replies SET context=?,parts=? WHERE bot_id=? AND generation=? AND update_id=?",
+                (_json(context), _json(parts), *key),
+            )
+
     async def _dispatch(self, key):
         row = self._row(key)
         if row is None:
             return
         remote, chat = row[:2]
         binding = self._binding(key, chat=chat, telegram_id=remote)
-        client = None
+        context = json.loads(row[2])
+        if binding is not None and context.get("paper") and not context.get("paper_ready"):
+            await self._prepare_paper(key, binding, context)
+            row = self._row(key)
+        if row[4] != "pending" or row[5] is not None:
+            return
+        client, asset = None, None
         try:
             if binding is not None:
                 try:
@@ -810,16 +894,26 @@ class Commands:
             planned = json.loads(row[2])
             if binding is not None and planned.get("media") and not planned.get("media_ready"):
                 await self._prepare_media(key, binding, planned, client)
+                row = self._row(key)
+            if row[4] != "pending" or row[5] is not None:
+                return
+            parts = json.loads(row[3])
+            selected = next(i for i, part in enumerate(parts) if part["state"] == "pending")
+            pending = parts[selected]
+            if client is not None and pending.get("kind") == "photo":
+                with suppress(OutboxError):
+                    asset = await self.outbox._asset(pending)
             with self.store._write():
                 remote, chat, context, parts, state, inflight, _ = self._row(key)
                 if state != "pending" or inflight is not None:
                     return
                 parts = json.loads(parts)
                 current = self._binding(key, chat=chat, telegram_id=remote)
+                current_context = json.loads(context)
                 if (
                     current is None
                     or current != binding
-                    or not self._allowed(json.loads(context), current)
+                    or not self._allowed(current_context, current)
                 ):
                     self._save(key, parts, "stale")
                     return
@@ -830,9 +924,17 @@ class Commands:
                     return
                 ordinal = next(i for i, p in enumerate(parts) if p["state"] == "pending")
                 part = parts[ordinal]
+                if ordinal != selected or part != pending:
+                    return
+                if part.get("kind") == "photo" and (
+                    asset is None
+                    or self.clock() >= datetime.fromisoformat(current_context["paper"]["deadline"])
+                ):
+                    self._save(key, parts, "failed")
+                    return
                 audio = None
                 if part.get("kind") == "audio":
-                    plan = json.loads(context)["media"]
+                    plan = current_context["media"]
                     try:
                         audio = base64.b64decode(part["data"], validate=True)
                     except (ValueError, TypeError):
@@ -850,6 +952,10 @@ class Commands:
             try:
                 if audio is not None:
                     message_id = await client.send_audio(binding, audio)
+                elif part.get("kind") == "photo":
+                    message_id = await client.send_photo(
+                        binding, asset, part["mime"], part["caption"]
+                    )
                 else:
                     message_id = await client.send_message(binding, part["text"])
             except asyncio.CancelledError:

@@ -10,9 +10,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from .app_config import default_config, upgrade_v1
+from .app_config import default_config, upgrade_v1, upgrade_v2
 
-DATABASE_VERSION = 12
+DATABASE_VERSION = 13
 _LEGACY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -120,6 +120,28 @@ def _upgrade_v2(db: sqlite3.Connection) -> None:
     )
 
 
+def _upgrade_x_config(db: sqlite3.Connection) -> None:
+    revision, raw = db.execute(
+        "SELECT revision,document FROM app_configuration WHERE id=1"
+    ).fetchone()
+    document = json.loads(raw)
+    if document["schema_version"] != 2:
+        return
+    updated = upgrade_v2(document)
+    prior = db.execute(
+        "SELECT value FROM migration_info WHERE key='untouched_import_revision'"
+    ).fetchone()
+    if revision == (int(prior[0]) if prior else 1):
+        db.execute(
+            "INSERT OR REPLACE INTO migration_info VALUES ('untouched_import_revision', ?)",
+            (str(revision + 1),),
+        )
+    db.execute(
+        "UPDATE app_configuration SET revision=revision+1,document=? WHERE id=1",
+        (json.dumps(updated, ensure_ascii=False),),
+    )
+
+
 def migrate(db: sqlite3.Connection, path: Path) -> None:
     if check_version(db) == DATABASE_VERSION:
         return
@@ -137,6 +159,8 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
             _initialize(db)
         elif version == 1:
             _upgrade_v2(db)
+        else:
+            _upgrade_x_config(db)
         db.execute("CREATE TABLE IF NOT EXISTS credential_intents (ref TEXT PRIMARY KEY)")
         from .budget import initialize as initialize_budget
 
@@ -165,6 +189,9 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         from .pipeline import initialize as initialize_pipeline
 
         initialize_pipeline(db)
+        from .x.accounts import initialize as initialize_x
+
+        initialize_x(db)
         db.execute(f"PRAGMA user_version={DATABASE_VERSION}")
         db.commit()
     except BaseException:

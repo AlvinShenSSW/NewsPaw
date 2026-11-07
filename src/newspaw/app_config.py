@@ -15,7 +15,7 @@ from dotenv import dotenv_values
 
 from .config import parse_times, parse_topics
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 STYLES = {"text", "source_image", "newspaper"}
 LOCALES = {"zh-Hans", "en", "ja"}
 PARTITIONS = {"normal", "adult"}
@@ -75,6 +75,7 @@ _TOP_FIELDS = {
     "timezone",
     "owner_id",
     "group_styles",
+    "x_api",
     *_FIELDS,
 }
 
@@ -131,6 +132,7 @@ def default_config() -> dict:
         "timezone": "Asia/Tokyo",
         "owner_id": None,
         "group_styles": {"normal": "text", "adult": "text"},
+        "x_api": {"credential_ref": None},
         "categories": [
             dict(
                 id=key,
@@ -294,6 +296,16 @@ def upgrade_v1(config: dict) -> dict:
     for kind in ("categories", "accounts"):
         for entry in result[kind]:
             entry["style"] = None
+    return upgrade_v2(result)
+
+
+def upgrade_v2(config: dict) -> dict:
+    result = deepcopy(config)
+    if type(result.get("schema_version")) is not int or result["schema_version"] != 2:
+        raise ValueError("Expected version2 configuration")
+    if "x_api" in result:
+        raise ValueError("Unexpected X configuration in version2")
+    result.update(schema_version=SCHEMA_VERSION, x_api={"credential_ref": None})
     validate_config(result)
     return result
 
@@ -310,6 +322,12 @@ def _validate_config(config: dict) -> None:
         raise ValueError("Unknown or missing configuration fields; secrets are not accepted")
     if type(config["schema_version"]) is not int or config["schema_version"] != SCHEMA_VERSION:
         raise ValueError("Unsupported configuration schema")
+    x_api = config["x_api"]
+    if not isinstance(x_api, dict) or set(x_api) != {"credential_ref"}:
+        raise ValueError("Invalid X credential slot")
+    ref = x_api["credential_ref"]
+    if ref is not None and (not isinstance(ref, str) or not _CREDENTIAL.fullmatch(ref)):
+        raise ValueError("Expected Keychain reference, never a raw credential")
     for key in ("ui_locale", "news_output_locale"):
         if config[key] not in LOCALES:
             raise ValueError("Unsupported locale")

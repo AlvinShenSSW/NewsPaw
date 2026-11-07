@@ -377,3 +377,20 @@ async def test_jobs_are_readable_and_controllable_through_private_socket(control
     audit = (await request(server, {"op": "jobs.audit", "job_id": job_id}))["result"]
     assert [event["action"] for event in audit] == ["created", "pause", "resume", "cancel"]
     assert (await request(server, {"op": "jobs.advance", "job_id": job_id}))["error"] == "unknown_operation"
+
+
+async def test_x_control_creates_local_draft_without_network_or_credentials(control):
+    server, store = control
+    listed = await request(server, {"op": "x.accounts.list"})
+    assert listed["result"]["accounts"] == [] and not listed["result"]["credential_configured"]
+    result = await request(
+        server, {"op": "x.accounts.add", "handle": "@fixture", "revision": store.config_revision()}
+    )
+    account = result["result"]["account"]
+    assert account["handle"] == "fixture" and not account["can_collect"]
+    outcome = await request(
+        server,
+        {"op": "x.accounts.verify", "account_id": account["id"], "request_id": "ui.verify.1", "revision": store.config_revision()},
+    )
+    assert outcome["result"]["state"] == "credential_missing"
+    assert outcome["result"]["attempts"] == []

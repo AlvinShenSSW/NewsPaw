@@ -17,6 +17,7 @@ from .connectors.web import WebCollector, web_scopes
 from .credentials import CredentialError
 from .editorial import EditorialError, EditorialService
 from .evidence import EvidenceError, EvidenceStore, FeedCollector, feed_scopes
+from .media.newspaper import PaperError
 from .model_runner import ModelRunner, RunnerError
 from .providers import ProviderError
 from .routing import RouteBlocked, RouteSnapshot, RouteStale
@@ -94,6 +95,7 @@ class Pipeline:
         web_factory=WebCollector,
         av_factory=AVCollector,
         source_images=None,
+        newspapers=None,
     ):
         self.store, self.db = store, store._db
         self.runner = runner if runner is not None else ModelRunner(store, backend)
@@ -101,6 +103,7 @@ class Pipeline:
         self.feed_factory, self.ai_factory = feed_factory, ai_factory
         self.web_factory, self.av_factory = web_factory, av_factory
         self.source_images = source_images
+        self.newspapers = newspapers
         self._active = {}
 
     def _row(self, job_id):
@@ -511,12 +514,45 @@ class Pipeline:
         route = RouteSnapshot(**row["payload"]["route"])
         style = route.effective["style"]
         edition_id = self._edition_id(job_id)
-        if self.editorial.get(edition_id)["state"] != "ready":
+        edition = self.editorial.get(edition_id)
+        if edition["state"] != "ready":
             raise EditorialError("edition_not_ready")
         media = dict(
             style="text", fallback_reason=None if style == "text" else "media_not_available"
         )
-        if style == "source_image" and route.effective["partition"] == "adult":
+        if style == "newspaper" and self.newspapers is not None:
+            scheduled = self.db.execute(
+                "SELECT target_at FROM schedule_occurrences WHERE job_id=? ORDER BY updated_at DESC LIMIT 1",
+                (job_id,),
+            ).fetchone()
+            deadline = (
+                datetime.fromisoformat(scheduled[0])
+                if scheduled and scheduled[0]
+                else self.newspapers.clock() + timedelta(minutes=2)
+            )
+
+            def authorize_paper():
+                self._leased(job_id, token, starting=True, now=now)
+                if self.editorial.get(edition_id)["state"] != "ready":
+                    raise EditorialError("edition_not_ready")
+                return effect_guard() if effect_guard is not None else None
+
+            try:
+                photos = await self.newspapers.prepare(
+                    edition_id,
+                    edition["result"],
+                    route.effective["partition"],
+                    deadline,
+                    authorize_paper,
+                )
+                if photos is None:
+                    return
+                if self.newspapers.clock() >= deadline:
+                    raise PaperError("newspaper_deadline")
+                media = dict(style="newspaper", photos=photos, fallback_reason=None)
+            except PaperError as exc:
+                media["fallback_reason"] = str(exc)
+        elif style == "source_image" and route.effective["partition"] == "adult":
             media["fallback_reason"] = "adult_source_media_disabled"
         elif style == "source_image" and self.source_images is not None:
 

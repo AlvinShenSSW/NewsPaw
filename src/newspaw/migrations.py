@@ -201,6 +201,9 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         from .telegram.commands import initialize as initialize_commands
 
         initialize_commands(db)
+        from .media.paper_service import initialize as initialize_newspapers
+
+        initialize_newspapers(db)
         from .x.accounts import initialize as initialize_x
 
         initialize_x(db)

@@ -32,8 +32,10 @@ from .telegram.outbox import Outbox
 from .telegram.registry import BotRegistry, TelegramError
 from .telegram.targets import TargetManager
 from .x.accounts import XDirectory
+from .x.alerts import Alerts
 from .x.digests import XDigests
 from .x.timelines import Timelines
+from .x.video import Videos
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
@@ -58,6 +60,13 @@ OPERATIONS = {
         {"include_in_aggregate"},
     ),
     "x.accounts.remove": ({"account_id", "revision"}, set()),
+    "x.video.policy": (set(), set()),
+    "x.video.save": ({"settings", "revision"}, set()),
+    "x.video.inspect": ({"request_id", "job_id", "post_id"}, set()),
+    "x.video.candidates": (set(), set()),
+    "x.video.status": ({"request_id"}, set()),
+    "x.alerts.status": (set(), set()),
+    "x.alerts.save": ({"settings", "revision"}, set()),
     "x.lists.list": (set(), set()),
     "x.lists.add": ({"value", "partition", "revision"}, {"default_adult"}),
     "x.lists.refresh": ({"list_id", "request_id", "revision"}, {"page_size", "max_pages"}),
@@ -188,6 +197,10 @@ class ControlServer:
         )
         self.outbox = Outbox(self.pipeline, self.targets, asset_resolver=assets.read)
         self.scheduler = Scheduler(self.pipeline, self.outbox)
+        self.alerts = Alerts(self.pipeline, self.outbox)
+        self.videos = Videos(self.pipeline, self.x)
+        self.outbox.alert_guard = self.alerts.guard
+        self.scheduler.alerts = self.alerts
         self.commands = Commands(self.outbox, media=self.media)
         self._server = None
         self._lock_fd = None
@@ -224,6 +237,7 @@ class ControlServer:
             self.media.recover_interrupted()
             self.x.recover_interrupted()
             self.x_posts.recover_interrupted()
+            self.videos.recover_interrupted()
             await self._server.start_serving()
             await self.bots.start()
             self.scheduler.start()
@@ -311,6 +325,20 @@ class ControlServer:
             )
         if op == "x.accounts.remove":
             return await self.x.remove_account(data["account_id"], data["revision"])
+        if op == "x.video.policy":
+            return self.videos.policy()
+        if op == "x.video.save":
+            return self.videos.configure(data["settings"], data["revision"])
+        if op == "x.video.inspect":
+            return await self.videos.inspect(data["request_id"], data["job_id"], data["post_id"])
+        if op == "x.video.candidates":
+            return self.videos.candidates()
+        if op == "x.video.status":
+            return self.videos.status(data["request_id"])
+        if op == "x.alerts.status":
+            return self.alerts.status()
+        if op == "x.alerts.save":
+            return self.alerts.configure(data["settings"], data["revision"])
         if op == "x.lists.list":
             return self.x.lists()
         if op == "x.lists.add":

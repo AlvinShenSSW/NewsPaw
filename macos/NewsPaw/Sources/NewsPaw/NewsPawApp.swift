@@ -374,12 +374,14 @@ private struct ConnectionBadge: View {
     let model: AppModel
 
     var body: some View {
-        Label(
-            model.text(model.connection.phrase),
-            systemImage: model.connection == .connected ? "checkmark.circle.fill" : "circle.dashed"
-        )
+        Label {
+            Text(model.text(model.connection.phrase))
+                .foregroundStyle(.primary)
+        } icon: {
+            Image(systemName: model.connection == .connected ? "checkmark.circle.fill" : "circle.dashed")
+                .foregroundStyle(model.connection == .connected ? Color.accentColor : Color.secondary)
+        }
         .font(.caption)
-        .foregroundStyle(model.connection == .connected ? Color.accentColor : Color.secondary)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityIdentifier("backend-state")
     }

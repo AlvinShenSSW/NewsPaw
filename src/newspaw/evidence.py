@@ -74,8 +74,7 @@ def _selection(config, subscriptions, source_id, kinds=frozenset({"rss", "atom"}
 
     if source_id is not None:
         source = _source(config, source_id, kinds)
-        if source["enabled"]:
-            append(source)
+        append(source)
     else:
         if not isinstance(subscriptions, list) or not 1 <= len(subscriptions) <= 200:
             raise EvidenceError("invalid_subscriptions")

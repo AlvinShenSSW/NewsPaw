@@ -631,3 +631,36 @@ async def test_api_provenance_render_is_localized(configured):
             )
         assert label in editor.render(locale)
         assert result["items"][0]["sources"][0]["metadata"]["commit"] == SHA
+
+
+@pytest.mark.parametrize("kind", ["github", "rss"])
+async def test_explicit_preview_of_disabled_source_does_not_enable_it(configured, kind):
+    from newspaw.evidence import FeedCollector
+
+    store, source, sub = configured
+    revision, config = store.load_config()
+    config["sources"][0].update(
+        enabled=False,
+        kind=kind,
+        url="https://github.com/acme/skills" if kind == "github" else "https://example.com/rss",
+    )
+    store.save_config(config, expected_revision=revision)
+    calls = []
+
+    def respond(r):
+        calls.append(r)
+        return (
+            gh(r)
+            if kind == "github"
+            else httpx.Response(200, content=b"<rss><channel><title>Feed</title></channel></rss>")
+        )
+
+    collector = (AICollector if kind == "github" else FeedCollector)(
+        EvidenceStore(store), client=httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    )
+    try:
+        attempts = await collector.preview(source, now=NOW)
+    finally:
+        await collector.close()
+    assert len(attempts) == 1 and calls
+    assert store.load_config()[1]["sources"][0]["enabled"] is False

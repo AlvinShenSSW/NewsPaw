@@ -190,12 +190,16 @@ def resolve_route(config, revision, subscription_id, *, account_id=None, style=N
         "special_account" if special and special["bot_ids"] is not None else "subscription"
     )
     bots = [index["bots"][key] for key in sorted(bot_ids)]
-    payload["bots"] = [
+    payload["targets"] = [
         _fields(b, "id credential_ref telegram_id chat_id verified paired adult_allowed")
         for b in bots
     ]
+    payload["bots"] = [b for b in payload["targets"] if b["verified"] and b["paired"]]
+    payload["target_diagnostics"] = {
+        b["id"]: "target_unpaired" for b in bots if not b["verified"] or not b["paired"]
+    }
     if not bots:
         blockers.append("no_target")
-    if any(not b["verified"] or not b["paired"] for b in bots):
+    elif not payload["bots"]:
         blockers.append("target_unpaired")
     return snapshot()

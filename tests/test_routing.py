@@ -274,3 +274,24 @@ def test_inherited_default_slot_cannot_be_saved_in_wrong_partition():
     config["model_profiles"][0]["partition"] = "adult"
     with pytest.raises(ValueError, match="Cross-partition"):
         validate_config(config)
+
+
+def test_unpaired_target_does_not_block_healthy_selected_bot(tmp_path):
+    config, sub = configured()
+    unavailable = deepcopy(config["bots"][0])
+    unavailable.update(id="bot2", telegram_id=1000, paired=False)
+    config["bots"].append(unavailable)
+    sub["bot_ids"].append("bot2")
+    store = Store(tmp_path / "state.db")
+    store.save_config(config, expected_revision=1)
+    route = store.preview_route(sub["id"])
+    assert not route.blockers
+    assert [b["id"] for b in route.effective["bots"]] == ["bot1"]
+    assert route.effective["target_diagnostics"] == {"bot2": "target_unpaired"}
+    assert store.revalidate_route(route) == route
+    unavailable["paired"] = True
+    store.save_config(config, expected_revision=2)
+    with pytest.raises(RouteStale):
+        store.revalidate_route(route)
+    assert len(store.preview_route(sub["id"]).effective["bots"]) == 2
+    store.close()

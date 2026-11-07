@@ -1,0 +1,554 @@
+"""Restartable edition preparation in the existing single-backend database."""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import re
+import sqlite3
+from dataclasses import asdict
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
+from .connectors import AICollector, api_scopes
+from .credentials import CredentialError
+from .editorial import EditorialError, EditorialService
+from .evidence import EvidenceError, EvidenceStore, FeedCollector, feed_scopes
+from .model_runner import ModelRunner, RunnerError
+from .providers import ProviderError
+from .routing import RouteBlocked, RouteSnapshot, RouteStale
+
+_ACTIVE = {"collecting", "editing", "preparing_media"}
+_SUCCESSFUL_FETCH = {"fresh", "stale", "empty", "no_eligible", "not_modified"}
+_COLLECTION = "json_extract(scope_json,'$.collection_id')"
+_GROUP = "json_extract(scope_json,'$.collection_group')"
+_KEY = re.compile(r"[A-Za-z0-9_.:-]{1,140}")
+_LEASE_TIME = timedelta(minutes=2)
+
+
+class PipelineError(CredentialError):
+    pass
+
+
+class _WorkStopped(RuntimeError):
+    """An old or paused worker must exit without mutating the shared model task."""
+    pass
+
+
+def _json(value):
+    return json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
+
+
+def _time(value=None):
+    value = datetime.now(UTC) if value is None else value
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise PipelineError("invalid_time")
+    return value.astimezone(UTC)
+
+
+def _key(value):
+    if not isinstance(value, str) or not _KEY.fullmatch(value):
+        raise PipelineError("invalid_job_identity")
+    return value
+
+
+def initialize(db):
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS pipeline_jobs (
+            id TEXT PRIMARY KEY, subscription_id TEXT NOT NULL, account_key TEXT NOT NULL,
+            edition_key TEXT NOT NULL, partition TEXT NOT NULL, payload TEXT NOT NULL,
+            stage TEXT NOT NULL, error_kind TEXT, paused INTEGER NOT NULL DEFAULT 0,
+            cancelled INTEGER NOT NULL DEFAULT 0, lease_token TEXT, lease_until TEXT,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+            UNIQUE(subscription_id, account_key, edition_key)
+        )"""
+    )
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS pipeline_events (
+            id INTEGER PRIMARY KEY, job_id TEXT NOT NULL REFERENCES pipeline_jobs(id),
+            occurred_at TEXT NOT NULL, action TEXT NOT NULL, stage TEXT NOT NULL, error_kind TEXT
+        )"""
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS pipeline_events_job ON pipeline_events(job_id,id)")
+    db.execute(
+        f"""CREATE INDEX IF NOT EXISTS feed_attempts_collection ON feed_attempts({_COLLECTION},{_GROUP})
+            WHERE {_COLLECTION} IS NOT NULL"""
+    )
+
+
+class Pipeline:
+    def __init__(
+        self, store, backend, *, runner=None, feed_factory=FeedCollector, ai_factory=AICollector
+    ):
+        self.store, self.db = store, store._db
+        self.runner = runner if runner is not None else ModelRunner(store, backend)
+        self.editorial = EditorialService(store, self.runner)
+        self.feed_factory, self.ai_factory = feed_factory, ai_factory
+        self._active = {}
+
+    def _row(self, job_id):
+        cursor = self.db.execute("SELECT * FROM pipeline_jobs WHERE id=?", (_key(job_id),))
+        row = cursor.fetchone()
+        if row is None:
+            raise PipelineError("missing_job")
+        result = dict(zip((field[0] for field in cursor.description), row, strict=True))
+        result["payload"] = json.loads(result["payload"])
+        return result
+
+    @staticmethod
+    def _edition_id(job_id):
+        return "brief." + job_id
+
+    def _event(self, job_id, action, stage, now, error=None):
+        self.db.execute(
+            "INSERT INTO pipeline_events(job_id,occurred_at,action,stage,error_kind) VALUES (?,?,?,?,?)",
+            (job_id, now.isoformat(), action, stage, error),
+        )
+
+    def create(
+        self,
+        subscription_id,
+        edition_key,
+        *,
+        holds,
+        account_id=None,
+        style=None,
+        task_limit=None,
+        now=None,
+    ):
+        now = _time(now)
+        account_key = "" if account_id is None else _key(account_id)
+        identity = [_key(subscription_id), account_key, _key(edition_key)]
+        job_id = "job." + hashlib.sha256(_json(identity).encode()).hexdigest()
+        with self.store._write():
+            prior = self.db.execute(
+                "SELECT payload FROM pipeline_jobs WHERE id=?", (job_id,)
+            ).fetchone()
+            if prior:
+                saved = json.loads(prior[0])
+                if (saved["route"]["request_style"], saved["holds"], saved["task_limit"]) != (
+                    style,
+                    holds,
+                    task_limit,
+                ):
+                    raise PipelineError("job_key_conflict")
+            else:
+                route = self.store.preview_route(
+                    subscription_id, account_id=account_id, style=style
+                )
+                if route.blockers:
+                    raise PipelineError("route_blocked")
+                effective = route.effective
+                if account_id is not None and effective["account"]["priority"] != "special":
+                    raise PipelineError("special_account_required")
+                profiles = [effective[role]["id"] for role in ("primary", "backup")]
+                if (
+                    not isinstance(holds, dict)
+                    or set(holds) != set(profiles)
+                    or any(
+                        type(value) is not int or not 1 <= value <= 2**53
+                        for value in holds.values()
+                    )
+                    or (
+                        task_limit is not None
+                        and (type(task_limit) is not int or not 0 <= task_limit <= 2**53)
+                    )
+                ):
+                    raise PipelineError("invalid_job_budget")
+                config = self.store.load_config()[1]
+                scopes = feed_scopes(config, [subscription_id]) + api_scopes(
+                    config, [subscription_id]
+                )
+                covered = {item["source"]["id"] for scope in scopes for item in scope["selected"]}
+                payload = dict(
+                    route=asdict(route),
+                    generations={key: self.runner.registry.profile(key)[1] for key in profiles},
+                    holds=holds,
+                    task_limit=task_limit,
+                    scopes=scopes,
+                    unsupported_source_ids=sorted(
+                        s["id"] for s in effective["sources"] if s["id"] not in covered
+                    ),
+                    attempt_ids=[],
+                    media=None,
+                )
+                self.db.execute(
+                    """INSERT INTO pipeline_jobs(
+                         id,subscription_id,account_key,edition_key,partition,payload,stage,created_at,updated_at
+                       ) VALUES (?,?,?,?,?,?,'collecting',?,?)""",
+                    (
+                        job_id,
+                        *identity,
+                        effective["partition"],
+                        _json(payload),
+                        now.isoformat(),
+                        now.isoformat(),
+                    ),
+                )
+                self._event(job_id, "created", "collecting", now)
+        return self.get(job_id)
+
+    def get(self, job_id):
+        row = self._row(job_id)
+        payload = row["payload"]
+        route = RouteSnapshot(**payload["route"]).effective
+        model = self.editorial.task_status(self._edition_id(job_id))
+        stage, status = row["stage"], row["stage"]
+        if model and model["state"] in {"outcome_unknown", "inflight"}:
+            status = model["state"]
+        elif row["cancelled"]:
+            status = "cancelled"
+        elif row["paused"]:
+            status = "paused"
+        elif stage == "editing" and model and model["state"] in {"waiting", "blocked"}:
+            status = model["state"]
+        return dict(
+            job_id=job_id,
+            edition_key=row["edition_key"],
+            subscription_id=row["subscription_id"],
+            account_id=row["account_key"] or None,
+            partition=row["partition"],
+            locale=route["locale"],
+            style=route["style"],
+            stage=stage,
+            status=status,
+            paused=bool(row["paused"]),
+            cancelled=bool(row["cancelled"]),
+            lease_until=row["lease_until"],
+            error_kind=row["error_kind"],
+            collection_id=job_id,
+            attempt_ids=payload["attempt_ids"],
+            unsupported_source_ids=payload["unsupported_source_ids"],
+            edition_id=self._edition_id(job_id),
+            model=model,
+            media=payload["media"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    @staticmethod
+    def _limit(limit):
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise PipelineError("invalid_limit")
+        return limit
+
+    def list(self, limit=25):
+        return [
+            self.get(row[0])
+            for row in self.db.execute(
+                "SELECT id FROM pipeline_jobs ORDER BY rowid DESC LIMIT ?", (self._limit(limit),)
+            )
+        ]
+
+    def audit(self, job_id, *, after=0, limit=50):
+        self._row(job_id)
+        if type(after) is not int or not 0 <= after <= 2**63 - 1:
+            raise PipelineError("invalid_cursor")
+        cursor = self.db.execute(
+            """SELECT id,occurred_at,action,stage,error_kind FROM pipeline_events
+               WHERE job_id=? AND id>? ORDER BY id LIMIT ?""",
+            (job_id, after, self._limit(limit)),
+        )
+        keys = [field[0] for field in cursor.description]
+        return [dict(zip(keys, row, strict=True)) for row in cursor]
+
+    def _preflight(self, row):
+        payload = row["payload"]
+        route = RouteSnapshot(**payload["route"])
+        self.store.revalidate_route(route)
+        for key, generation in payload["generations"].items():
+            if self.runner.registry.profile(key)[1] != generation:
+                raise RouteStale("profile_changed")
+        return route
+
+    def _claim(self, job_id, now):
+        with self.store._write():
+            row = self._row(job_id)
+            if (
+                row["stage"] not in _ACTIVE
+                or row["paused"]
+                or row["cancelled"]
+                or (row["lease_until"] and datetime.fromisoformat(row["lease_until"]) > now)
+            ):
+                return None
+            if row["stage"] == "editing":
+                model = self.editorial.task_status(self._edition_id(job_id))
+                if model and (
+                    model["state"] in {"blocked", "inflight", "outcome_unknown"}
+                    or (model["next_at"] and datetime.fromisoformat(model["next_at"]) > now)
+                ):
+                    return None
+            token = uuid4().hex
+            self.db.execute(
+                "UPDATE pipeline_jobs SET lease_token=?,lease_until=? WHERE id=?",
+                (token, (now + _LEASE_TIME).isoformat(), job_id),
+            )
+            return token
+
+    def _leased(self, job_id, token, *, starting=False, now=None):
+        row = self._row(job_id)
+        if row["lease_token"] != token:
+            raise _WorkStopped("lease_lost")
+        if starting:
+            if datetime.fromisoformat(row["lease_until"]) <= _time(now):
+                raise _WorkStopped("lease_expired")
+            if row["paused"] or row["cancelled"]:
+                raise _WorkStopped("job_paused_or_cancelled")
+            self._preflight(row)
+        return row
+
+    def _transition(self, job_id, token, stage, now, *, error=None, **updates):
+        with self.store._write():
+            row = self._leased(job_id, token, starting=stage == "awaiting_delivery", now=now)
+            if row["cancelled"]:
+                return
+            payload = {**row["payload"], **updates}
+            self.db.execute(
+                "UPDATE pipeline_jobs SET stage=?,error_kind=?,payload=?,updated_at=? WHERE id=?",
+                (stage, error, _json(payload), now.isoformat(), job_id),
+            )
+            if stage != row["stage"] or error != row["error_kind"]:
+                self._event(job_id, "transition", stage, now, error)
+
+    def _collection_attempts(self, job_id, partition):
+        return {
+            index: identity
+            for index, identity in self.db.execute(
+                f"""SELECT {_GROUP},id FROM feed_attempts WHERE {_COLLECTION}=?
+                    AND partition=? AND status NOT IN ('running','interrupted','cancelled')
+                    ORDER BY rowid""",
+                (job_id, partition),
+            )
+        }
+
+    async def _collect(self, row, token, now):
+        job_id, partition = row["id"], row["partition"]
+        scopes = row["payload"]["scopes"]
+        attempts = self._collection_attempts(job_id, partition)
+        pending = next((index for index in range(len(scopes)) if index not in attempts), None)
+
+        def guard(scope, *, starting):
+            self._leased(job_id, token, starting=starting, now=now)
+            if starting:
+                self.db.execute(
+                    f"""UPDATE feed_attempts SET status='interrupted',outcome_json=?,completed_at=?
+                        WHERE {_COLLECTION}=? AND {_GROUP}=? AND status='running'""",
+                    (
+                        _json({"error_kind": "interrupted"}),
+                        _time(now).isoformat(),
+                        job_id,
+                        scope["collection_group"],
+                    ),
+                )
+
+        evidence = EvidenceStore(self.store, collection_guard=guard)
+        if pending is not None:
+            scope = dict(scopes[pending], collection_id=job_id, collection_group=pending)
+            factory = self.ai_factory if "kinds" in scope else self.feed_factory
+            collector = factory(evidence)
+            try:
+                result = await collector.fetch_scope(scope, 24, now)
+                attempts[pending] = result["id"]
+            finally:
+                await collector.close()
+        ids = [attempts[index] for index in sorted(attempts)]
+        if len(attempts) != len(scopes):
+            self._transition(job_id, token, "collecting", _time(now), attempt_ids=ids)
+            return
+        outcomes = [evidence.attempt(key, partition=partition) for key in ids]
+        successful = any(
+            result["status"] in _SUCCESSFUL_FETCH
+            and (result.get("coverage_complete", True) or result.get("accepted_count", 0) > 0)
+            for result in outcomes
+        )
+        self._transition(
+            job_id,
+            token,
+            "editing" if successful else "collection_failed",
+            _time(now),
+            error=None if successful else "all_sources_failed",
+            attempt_ids=ids,
+        )
+
+    async def _edit(self, row, token, now):
+        job_id, payload = row["id"], row["payload"]
+        edition_id = self._edition_id(job_id)
+        edition = self.editorial.prepare(
+            edition_id,
+            RouteSnapshot(**payload["route"]),
+            payload["attempt_ids"],
+            payload["holds"],
+            payload["task_limit"],
+            now=now,
+        )
+        if edition["state"] in {
+            "pending",
+            "waiting",
+            "blocked",
+            "inflight",
+            "outcome_unknown",
+        }:
+            edition = await self.editorial.advance(
+                edition_id,
+                now=now,
+                before_dispatch=lambda: self._leased(job_id, token, starting=True, now=now),
+            )
+        state = edition["state"]
+        if state in {"ready", "no_news"}:
+            if state == "ready" and not edition["result"]["items"]:
+                self._transition(job_id, token, "blocked", _time(now), error="no_publishable_items")
+            else:
+                self._transition(
+                    job_id, token, "preparing_media" if state == "ready" else "no_news", _time(now)
+                )
+        elif state in {"stale", "cancelled", "refused"}:
+            self._transition(job_id, token, state, _time(now), error=edition["error_kind"])
+
+    async def _step(self, job_id, token, now):
+        try:
+            row = self._leased(job_id, token, starting=True, now=now)
+            if row["stage"] == "collecting":
+                await self._collect(row, token, now)
+            elif row["stage"] == "editing":
+                await self._edit(row, token, now)
+            else:
+                style = RouteSnapshot(**row["payload"]["route"]).effective["style"]
+                edition_id = self._edition_id(job_id)
+                if self.editorial.get(edition_id)["state"] != "ready":
+                    raise EditorialError("edition_not_ready")
+                self._transition(
+                    job_id,
+                    token,
+                    "awaiting_delivery",
+                    _time(now),
+                    media=dict(
+                        style="text",
+                        edition_id=edition_id,
+                        fallback_reason=None if style == "text" else "media_not_available",
+                    ),
+                )
+        except (RouteBlocked, RouteStale):
+            self._transition(job_id, token, "stale", _time(now), error="configuration_changed")
+        except (EvidenceError, EditorialError, ProviderError, RunnerError) as exc:
+            if str(exc) == "storage_failed":
+                raise PipelineError("storage_failed") from None
+            self._transition(job_id, token, "blocked", _time(now), error="preparation_failed")
+
+    async def advance(self, job_id, *, now=None):
+        try:
+            token = self._claim(job_id, _time(now))
+            if token is None:
+                return self.get(job_id)
+            task = asyncio.create_task(self._step(job_id, token, now))
+            self._active[job_id, token] = task
+            try:
+                await task
+            except _WorkStopped:
+                pass
+            except asyncio.CancelledError as exc:
+                if not exc.args or exc.args[0] not in {"job_cancelled", "job_paused"}:
+                    raise
+            finally:
+                self._active.pop((job_id, token), None)
+                with self.store._write():
+                    self.db.execute(
+                        "UPDATE pipeline_jobs SET lease_token=NULL,lease_until=NULL WHERE id=? AND lease_token=?",
+                        (job_id, token),
+                    )
+            return self.get(job_id)
+        except (sqlite3.Error, OSError):
+            raise PipelineError("storage_failed") from None
+
+    def _control(self, job_id, action, now=None):
+        now = _time(now)
+        with self.store._write():
+            row = self._row(job_id)
+            if row["cancelled"] or row["stage"] not in _ACTIVE | {"awaiting_delivery"}:
+                return
+            if action == "cancel":
+                self.db.execute(
+                    "UPDATE pipeline_jobs SET cancelled=1,stage='cancelled',updated_at=? WHERE id=?",
+                    (now.isoformat(), job_id),
+                )
+                self._event(job_id, action, "cancelled", now)
+            else:
+                paused = action == "pause"
+                if bool(row["paused"]) != paused:
+                    self.db.execute(
+                        "UPDATE pipeline_jobs SET paused=?,updated_at=? WHERE id=?",
+                        (int(paused), now.isoformat(), job_id),
+                    )
+                    self._event(job_id, action, row["stage"], now)
+
+    def pause(self, job_id):
+        self._control(job_id, "pause")
+        result = self.get(job_id)
+        model = result["model"]
+        if (
+            result["paused"]
+            and result["stage"] == "editing"
+            and (model is None or model["state"] in {"pending", "waiting"})
+        ):
+            self._cancel_local(job_id, "job_paused")
+        return result
+
+    def _cancel_local(self, job_id, reason):
+        for (identity, _), task in self._active.items():
+            if identity == job_id:
+                task.cancel(reason)
+
+    def cancel(self, job_id):
+        self._control(job_id, "cancel")
+        if self._row(job_id)["cancelled"]:
+            self._cancel_local(job_id, "job_cancelled")
+        return self.get(job_id)
+
+    def resume(self, job_id, *, acknowledge_duplicate_charge=False):
+        if type(acknowledge_duplicate_charge) is not bool:
+            raise PipelineError("invalid_acknowledgement")
+        row = self._row(job_id)
+        if row["cancelled"]:
+            raise PipelineError("job_not_resumable")
+        model = self.editorial.task_status(self._edition_id(job_id))
+        if (
+            row["stage"] == "editing"
+            and model
+            and model["state"] in {"blocked", "outcome_unknown"}
+            and not (
+                row["paused"]
+                and model["state"] == "outcome_unknown"
+                and not acknowledge_duplicate_charge
+            )
+        ):
+            if row["lease_until"] and datetime.fromisoformat(row["lease_until"]) > _time():
+                raise PipelineError("job_busy")
+            try:
+                self._preflight(row)
+                self.runner.resume(
+                    model["task_id"],
+                    acknowledge_duplicate_charge=acknowledge_duplicate_charge,
+                )
+            except (RouteBlocked, RouteStale):
+                raise PipelineError("configuration_changed") from None
+            except RunnerError as exc:
+                raise PipelineError(str(exc)) from None
+        self._control(job_id, "resume")
+        return self.get(job_id)
+
+    def recover_interrupted(self):
+        """Call only after acquiring the exclusive backend process lock."""
+        self.runner.recover_interrupted()
+        EvidenceStore(self.store).recover_interrupted()
+        with self.store._write():
+            self.db.execute(
+                "UPDATE pipeline_jobs SET lease_token=NULL,lease_until=NULL WHERE lease_token IS NOT NULL"
+            )
+
+    async def close(self):
+        tasks = tuple(self._active.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)

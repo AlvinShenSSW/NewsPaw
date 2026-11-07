@@ -342,6 +342,11 @@ class ModelRunner:
             raise RunnerError("storage_failed") from None
 
     async def _advance(self, task_id, validator, *, operation, version, now, before_dispatch):
+        def check_work():
+            # A superseded worker may neither dispatch nor change pending task state.
+            if before_dispatch is not None:
+                before_dispatch()
+
         realtime = now is None
         now = _time(now)
         async with self._lock:
@@ -364,6 +369,7 @@ class ModelRunner:
                 profile, repair, blocked = self._select(task_id, payload, now)
                 if profile is None:
                     with self.store._write():
+                        check_work()
                         if blocked in {"profile_cooldown", "profile_half_open_busy"}:
                             dates = [
                                 datetime.fromisoformat(h["cooldown_until"])
@@ -397,8 +403,7 @@ class ModelRunner:
                     if current["next_at"] and now < datetime.fromisoformat(current["next_at"]):
                         return self.status(task_id)
                     self._preflight(payload, profile)
-                    if before_dispatch is not None:
-                        before_dispatch()
+                    check_work()
                     chosen, chosen_repair, reason = self._select(task_id, payload, now)
                     if chosen is None or chosen["id"] != profile["id"] or chosen_repair != repair:
                         self._state(task_id, "waiting", reason or "selection_changed", now)
@@ -453,10 +458,12 @@ class ModelRunner:
                 else:
                     with self.store._write():
                         if self._task(task_id)["state"] in {"pending", "waiting"}:
+                            check_work()
                             self._state(task_id, "stale", "configuration_changed")
             except (BudgetError, CredentialError, RunnerError) as exc:
                 with self.store._write():
                     if self._task(task_id)["state"] in {"pending", "waiting"}:
+                        check_work()
                         self._state(task_id, "blocked", str(exc))
             except ProviderError as exc:
                 if realtime:
@@ -466,6 +473,7 @@ class ModelRunner:
                 else:
                     with self.store._write():
                         if self._task(task_id)["state"] in {"pending", "waiting"}:
+                            check_work()
                             self._state(task_id, "blocked", exc.code)
             except asyncio.CancelledError:
                 if realtime:

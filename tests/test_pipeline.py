@@ -11,6 +11,7 @@ from test_model_runner import NOW
 from test_routing import configured
 
 from newspaw.budget import BudgetLedger
+from newspaw.credentials import CredentialError
 from newspaw.evidence import FeedCollector
 from newspaw.pipeline import Pipeline, PipelineError
 from newspaw.providers import ProfileRegistry
@@ -192,7 +193,8 @@ async def test_database_lease_blocks_second_collector_and_fences_old_cache(datab
 
 
 class WaitingKey:
-    def __init__(self):
+    def __init__(self, error=None):
+        self.error = error
         self.started = asyncio.Event()
         self.release = threading.Event()
         self.loop = asyncio.get_running_loop()
@@ -200,13 +202,16 @@ class WaitingKey:
     def read(self, ref):
         self.loop.call_soon_threadsafe(self.started.set)
         assert self.release.wait(5), "fixture credential read timed out"
+        if self.error:
+            raise self.error
         return "synthetic"
 
 
-async def test_expired_model_lease_fences_dispatch_after_key_read(database):
+@pytest.mark.parametrize("old_key_error", [None, CredentialError("key_unavailable")])
+async def test_expired_model_lease_fences_dispatch_after_key_read(database, old_key_error):
     store, sub, path = database
     first, _, first_calls = prepare(store)
-    first_key = first.runner.backend = WaitingKey()
+    first_key = first.runner.backend = WaitingKey(old_key_error)
     job = create(first, sub)
     await first.advance(job, now=NOW)
     old = asyncio.create_task(first.advance(job, now=NOW))

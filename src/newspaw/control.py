@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .budget import BudgetError, BudgetLedger
 from .credentials import CredentialError
+from .media.source_images import AssetStore, SourceImages
 from .pipeline import Pipeline
 from .providers import ProbeService, ProfileRegistry, ProviderError
 from .scheduler import Scheduler
@@ -27,6 +28,7 @@ from .telegram.commands import Commands
 from .telegram.outbox import Outbox
 from .telegram.registry import BotRegistry, TelegramError
 from .telegram.targets import TargetManager
+from .x.accounts import XDirectory
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
@@ -39,6 +41,17 @@ OPERATIONS = {
         {"job_id", "bot_id", "ordinal", "action"},
         {"acknowledge_duplicate_send", "message_id"},
     ),
+    "x.accounts.list": (set(), set()),
+    "x.accounts.add": ({"handle", "revision"}, {"partition"}),
+    "x.accounts.status": ({"account_id"}, set()),
+    "x.accounts.verify": ({"account_id", "request_id", "revision"}, set()),
+    "x.accounts.classify": ({"account_id", "partition", "revision"}, set()),
+    "x.accounts.route": ({"account_id", "subscription_id", "priority", "revision"}, set()),
+    "x.accounts.remove": ({"account_id", "revision"}, set()),
+    "x.lists.list": (set(), set()),
+    "x.lists.add": ({"value", "partition", "revision"}, {"default_adult"}),
+    "x.lists.refresh": ({"list_id", "request_id", "revision"}, {"page_size", "max_pages"}),
+    "x.operation": ({"request_id"}, set()),
     "jobs.list": (set(), {"limit"}),
     "jobs.get": ({"job_id"}, set()),
     "jobs.audit": ({"job_id"}, {"after", "limit"}),
@@ -127,8 +140,14 @@ class ControlServer:
         self.bots = BotRegistry(credentials.store, credentials.backend)
         self.sources = SourceManager(credentials)
         self.targets = TargetManager(credentials, self.bots)
-        self.pipeline = Pipeline(credentials.store, credentials.backend)
-        self.outbox = Outbox(self.pipeline, self.targets)
+        self.x = XDirectory(credentials, self.targets)
+        assets = AssetStore(self.directory / "media")
+        self.pipeline = Pipeline(
+            credentials.store,
+            credentials.backend,
+            source_images=SourceImages(credentials.store, assets),
+        )
+        self.outbox = Outbox(self.pipeline, self.targets, asset_resolver=assets.read)
         self.scheduler = Scheduler(self.pipeline, self.outbox)
         self.commands = Commands(self.outbox)
         self._server = None
@@ -162,6 +181,7 @@ class ControlServer:
             self.pipeline.recover_interrupted()
             self.outbox.recover_interrupted()
             self.commands.recover_interrupted()
+            self.x.recover_interrupted()
             await self._server.start_serving()
             await self.bots.start()
             self.scheduler.start()
@@ -223,6 +243,38 @@ class ControlServer:
                 acknowledge_duplicate_send=data.get("acknowledge_duplicate_send", False),
                 message_id=data.get("message_id"),
             )
+        if op == "x.accounts.list":
+            return self.x.accounts()
+        if op == "x.accounts.add":
+            return await self.x.add_account(
+                data["handle"], data["revision"], partition=data.get("partition")
+            )
+        if op == "x.accounts.status":
+            return self.x.account_status(data["account_id"])
+        if op == "x.accounts.verify":
+            return await self.x.verify(data["account_id"], data["request_id"], data["revision"])
+        if op == "x.accounts.classify":
+            return await self.x.classify(data["account_id"], data["partition"], data["revision"])
+        if op == "x.accounts.route":
+            return await self.x.set_route(
+                data["account_id"], data["subscription_id"], data["priority"], data["revision"]
+            )
+        if op == "x.accounts.remove":
+            return await self.x.remove_account(data["account_id"], data["revision"])
+        if op == "x.lists.list":
+            return self.x.lists()
+        if op == "x.lists.add":
+            return self.x.add_list(
+                data["value"], data["partition"], data["revision"],
+                default_adult=data.get("default_adult", False),
+            )
+        if op == "x.lists.refresh":
+            return await self.x.refresh_list(
+                data["list_id"], data["request_id"], data["revision"],
+                page_size=data.get("page_size", 25), max_pages=data.get("max_pages", 4),
+            )
+        if op == "x.operation":
+            return self.x.operation(data["request_id"])
         if op == "jobs.list":
             return self.pipeline.list(data.get("limit", 25))
         if op == "jobs.get":

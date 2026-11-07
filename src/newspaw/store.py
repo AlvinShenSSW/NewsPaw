@@ -162,27 +162,35 @@ class Store:
         return row[0], document
 
     def save_config(self, document: dict, *, expected_revision: int) -> int:
+        with self._write():
+            return self._save_config_tx(document, expected_revision)
+
+    def _save_config_tx(self, document: dict, expected_revision: int) -> int:
+        """Write configuration and invalidate dependent identities in the caller transaction."""
+        from .providers import invalidate_profiles
+        from .source_manager import invalidate_sources
+        from .telegram.registry import invalidate_bots
+        from .x.accounts import invalidate_accounts
+
+        if not self._db.in_transaction:
+            raise RuntimeError("Configuration write requires a transaction")
         validate_config(document)
         if type(expected_revision) is not int or expected_revision < 1:
             raise ValueError("Invalid expected configuration revision")
-        with self._write():
-            from .providers import invalidate_profiles
-
-            document = invalidate_profiles(self._db, self.load_config()[1], document)
-            from .telegram.registry import invalidate_bots
-
-            document = invalidate_bots(self._db, self.load_config()[1], document)
-            from .source_manager import invalidate_sources
-
-            document = invalidate_sources(self._db, self.load_config()[1], document)
-            payload = json.dumps(document, ensure_ascii=False, allow_nan=False)
-            changed = self._db.execute(
-                "UPDATE app_configuration SET document=?, revision=revision+1 WHERE id=1 AND revision=?",
-                (payload, expected_revision),
-            ).rowcount
-            if changed != 1:
-                raise ValueError("Configuration changed; reload before saving")
-        return expected_revision + 1
+        revision, current = self.load_config()
+        if revision != expected_revision:
+            raise ValueError("Configuration changed; reload before saving")
+        document = invalidate_profiles(self._db, current, document)
+        document = invalidate_bots(self._db, current, document)
+        document = invalidate_sources(self._db, current, document)
+        invalidate_accounts(self._db, current, document)
+        changed = self._db.execute(
+            "UPDATE app_configuration SET document=?,revision=revision+1 WHERE id=1 AND revision=?",
+            (json.dumps(document, ensure_ascii=False, allow_nan=False), revision),
+        ).rowcount
+        if changed != 1:
+            raise ValueError("Configuration changed; reload before saving")
+        return revision + 1
 
     def pending_credentials(self) -> list[str]:
         check_version(self._db)
@@ -214,28 +222,11 @@ class Store:
         )
 
     def commit_credentials(self, document, expected_revision, *, retired=(), imported=False) -> int:
-        validate_config(document)
-        if type(expected_revision) is not int or expected_revision < 1:
-            raise ValueError("Invalid expected revision")
         with self._write():
-            from .providers import invalidate_profiles
-
-            document = invalidate_profiles(self._db, self.load_config()[1], document)
-            from .telegram.registry import invalidate_bots
-
-            document = invalidate_bots(self._db, self.load_config()[1], document)
-            from .source_manager import invalidate_sources
-
-            document = invalidate_sources(self._db, self.load_config()[1], document)
             eligible = self._db.execute(
                 "SELECT value FROM migration_info WHERE key='untouched_import_revision'"
             ).fetchone()
-            changed = self._db.execute(
-                "UPDATE app_configuration SET document=?, revision=revision+1 WHERE id=1 AND revision=?",
-                (json.dumps(document, ensure_ascii=False), expected_revision),
-            ).rowcount
-            if changed != 1:
-                raise ValueError("Configuration changed; reload before saving")
+            self._save_config_tx(document, expected_revision)
             self._db.executemany(
                 "INSERT OR IGNORE INTO credential_intents VALUES (?)", [(ref,) for ref in retired]
             )
@@ -302,20 +293,8 @@ class Store:
                 if profile["id"] in old_profiles:
                     profile["credential_ref"] = old_profiles[profile["id"]]["credential_ref"]
             document["bots"] = current["bots"]
-            validate_config(document)
-            from .providers import invalidate_profiles
-
-            document = invalidate_profiles(self._db, current, document)
-            from .telegram.registry import invalidate_bots
-
-            document = invalidate_bots(self._db, current, document)
-            from .source_manager import invalidate_sources
-
-            document = invalidate_sources(self._db, current, document)
-            self._db.execute(
-                "UPDATE app_configuration SET revision=revision+1, document=? WHERE id=1",
-                (json.dumps(document, ensure_ascii=False),),
-            )
+            document["x_api"] = current["x_api"]
+            self._save_config_tx(document, revision)
             self._db.execute("INSERT INTO migration_info VALUES ('legacy_imported', ?)", (_now(),))
 
     def get(self, key: str, default: str | None = None) -> str | None:

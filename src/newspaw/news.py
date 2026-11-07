@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+from xml.etree import ElementTree
 from xml.parsers import expat
 
 import feedparser
@@ -52,6 +53,7 @@ class Article:
     published_error: str = ""
     evidence_scope: str = "rss_excerpt"
     metadata: dict = field(default_factory=dict)
+    image_credit: str = ""
 
     @property
     def content_sha256(self) -> str:
@@ -254,6 +256,34 @@ def _image(entry: dict) -> str | None:
     return next((safe for item in candidates if (safe := public_url(item, https_only=True))), None)
 
 
+def _media_credits(data):
+    """Keep a credit only when the publisher attaches it directly to the image URL."""
+    namespace = "{http://search.yahoo.com/mrss/}"
+    try:
+        root = ElementTree.fromstring(data)
+    except ElementTree.ParseError:
+        return {}
+    by_url = {}
+    for content in root.iter(namespace + "content"):
+        declared = content.get("type")
+        if content.get("medium", "image") != "image" or (
+            declared and not declared.startswith("image/")
+        ):
+            continue
+        image_url = public_url(content.get("url", ""), https_only=True)
+        if image_url is None:
+            continue
+        if image_url in by_url:
+            by_url[image_url] = []
+            continue
+        by_url[image_url] = [
+            text
+            for credit in content.findall(namespace + "credit")
+            if (text := plain_text("".join(credit.itertext()), 150))
+        ]
+    return {url: names[0] for url, names in by_url.items() if len(names) == 1}
+
+
 def parse_evidence(
     data: bytes,
     feed_url: str,
@@ -299,7 +329,9 @@ def parse_evidence(
 
     if len(parsed.entries) > MAX_ITEMS:
         reject("entry_limit", len(parsed.entries) - MAX_ITEMS)
-    for entry in parsed.entries[:MAX_ITEMS]:
+    entries = parsed.entries[:MAX_ITEMS]
+    credits = _media_credits(data) if any(entry.get("media_credit") for entry in entries) else {}
+    for entry in entries:
         title = plain_text(entry.get("title", ""), 500)
         url = public_url(urljoin(feed_url, entry.get("link", "")))
         if not title or not entry.get("link") or not url:
@@ -315,6 +347,7 @@ def parse_evidence(
         summary = full_excerpt[:1500]
         source_data = entry.get("source", {})
         source = plain_text(source_data.get("title", ""), 200) or fallback_source
+        image_url = _image(entry)
         articles.append(
             Article(
                 title=title,
@@ -322,7 +355,8 @@ def parse_evidence(
                 source=str(source),
                 published_at=published,
                 summary=summary,
-                image_url=_image(entry),
+                image_url=image_url,
+                image_credit=credits.get(image_url, ""),
                 fetched_at=fetched_at,
                 feed_url=feed_url,
                 published_raw=published_raw,

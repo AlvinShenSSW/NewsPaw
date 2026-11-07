@@ -16,10 +16,13 @@ from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
 
+from .budget import BudgetError, BudgetLedger
 from .credentials import CredentialError
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
+    "budget.get": (set(), set()),
+    "budget.save": ({"document", "revision"}, set()),
     "config.get": (set(), set()),
     "config.save": ({"document", "revision"}, set()),
     "route.preview": ({"subscription_id"}, {"account_id", "style"}),
@@ -97,6 +100,7 @@ class ControlServer:
             self.path.chmod(0o600)
             self._socket_identity = self.path.stat().st_ino
             await self.credentials.cleanup()
+            BudgetLedger(self.credentials.store).recover_inflight()
             await self._server.start_serving()
         except BaseException:
             await self.close()
@@ -132,6 +136,12 @@ class ControlServer:
         if not required <= keys or keys - required - optional:
             raise CredentialError("invalid_request")
         manager, store = self.credentials, self.credentials.store
+        if op in {"budget.get", "budget.save"}:
+            ledger = BudgetLedger(store)
+            if op == "budget.get":
+                revision, document = ledger.policy()
+                return {"revision": revision, "document": document, "report": ledger.report()}
+            return {"revision": ledger.configure(data["document"], data["revision"])}
         if op == "config.get":
             revision, document = store.load_config()
             return {"revision": revision, "document": document}
@@ -174,7 +184,7 @@ class ControlServer:
                     raise CredentialError("invalid_request")
                 result = await self._dispatch(json.loads(raw))
                 response = {"ok": True, "result": result}
-            except CredentialError as exc:
+            except (CredentialError, BudgetError) as exc:
                 response = {"ok": False, "error": str(exc)}
             except Exception:
                 response = {"ok": False, "error": "invalid_request"}

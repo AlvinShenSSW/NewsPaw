@@ -245,6 +245,7 @@ async def test_schedule_hold_stops_next_public_web_request(tmp_path, hold_before
 
 def test_web_discovery_upgrade_preserves_x_directory_and_schedule(tmp_path):
     from newspaw.control import ControlServer
+    from newspaw.migrations import DATABASE_VERSION
 
     path = tmp_path / "state.db"
     keys = FakeKeychain()
@@ -261,7 +262,7 @@ def test_web_discovery_upgrade_preserves_x_directory_and_schedule(tmp_path):
 
     with closing(Store(path)) as store:
         server = ControlServer(tmp_path, CredentialManager(store, keys))
-        assert store._db.execute("PRAGMA user_version").fetchone() == (16,)
+        assert store._db.execute("PRAGMA user_version").fetchone() == (DATABASE_VERSION,)
         assert server.x.list_status("456")["id"] == "456"
         assert server.scheduler.policy() == expected
         assert server.web_search.policy()["profile_id"] is None

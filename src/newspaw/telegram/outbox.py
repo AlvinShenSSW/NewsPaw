@@ -84,6 +84,21 @@ def initialize(db):
     )
 
 
+def send_lane_blocked(db, remote, now):
+    clock = now.isoformat()
+    return (
+        db.execute(
+            """SELECT 1 FROM delivery_targets WHERE telegram_id=?
+           AND (inflight_part IS NOT NULL OR backoff_until>?)
+           UNION ALL
+           SELECT 1 FROM command_replies WHERE telegram_id=?
+           AND (inflight_part IS NOT NULL OR backoff_until>?) LIMIT 1""",
+            (remote, clock, remote, clock),
+        ).fetchone()
+        is not None
+    )
+
+
 def _photo(item):
     if (
         not isinstance(item, dict)
@@ -382,12 +397,7 @@ class Outbox:
         if target is None or not self._revalidate(route, target):
             return None
         remote = target["telegram_id"]
-        blocked = self.db.execute(
-            """SELECT 1 FROM delivery_targets WHERE telegram_id=?
-               AND (inflight_part IS NOT NULL OR backoff_until>?) LIMIT 1""",
-            (remote, now.isoformat()),
-        ).fetchone()
-        if blocked:
+        if send_lane_blocked(self.db, remote, now):
             return None
         for ordinal, part in enumerate(target["parts"]):
             if part["state"] in _FINISHED_PARTS:

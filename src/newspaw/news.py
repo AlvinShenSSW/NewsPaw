@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import ipaddress
 import json
 import re
@@ -13,9 +14,12 @@ from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+from xml.parsers import expat
 
 import feedparser
 import httpx
+
+from .transport import SafeHTTPError, source_client
 
 MAX_FEED_BYTES = 2 * 1024 * 1024
 MAX_ITEMS = 200
@@ -153,7 +157,7 @@ def plain_text(value: str, limit: int = 1500) -> str:
 
 
 def public_url(value: str, *, https_only: bool = False) -> str | None:
-    """Reject local/literal-private URLs; callers never download article images."""
+    """Syntactic display/link filter; actual fetches also use the guarded transport."""
     try:
         if not isinstance(value, str) or len(value) > 2048:
             return None
@@ -248,7 +252,35 @@ def _parse_feed(
     now: datetime,
     fetched_at: datetime,
 ) -> tuple[list[Article], dict[str, int]]:
-    parsed = feedparser.parse(data)
+    if not isinstance(data, bytes) or len(data) > MAX_FEED_BYTES:
+        raise NewsError("新闻源内容过大或格式无效。", "oversized_feed")
+    parser = expat.ParserCreate()
+    depth = count = 0
+
+    def start_element(name, attrs):
+        nonlocal depth, count
+        depth += 1
+        count += 1
+        if depth > 64 or count > 50_000:
+            raise NewsError("新闻源结构超过解析上限。", "parse_limit")
+
+    def end_element(name):
+        nonlocal depth
+        depth -= 1
+
+    def reject_doctype(*args):
+        raise NewsError("新闻源不支持 DTD 或自定义实体。", "unsafe_xml")
+
+    parser.StartElementHandler = start_element
+    parser.EndElementHandler = end_element
+    parser.StartDoctypeDeclHandler = reject_doctype
+    parser.SetParamEntityParsing(expat.XML_PARAM_ENTITY_PARSING_NEVER)
+    try:
+        parser.Parse(data, True)
+    except expat.ExpatError:
+        raise NewsError("新闻源没有返回有效的 XML。", "invalid_feed") from None
+    # feedparser treats even bytes as possible filenames; a stream is data only.
+    parsed = feedparser.parse(io.BytesIO(data))
     if not parsed.get("version"):
         raise NewsError("新闻源没有返回有效的 RSS 或 Atom 内容。", "invalid_feed")
     oldest = now - timedelta(hours=max_age_hours)
@@ -347,12 +379,7 @@ class NewsService:
         self.max_age_hours = max_age_hours
         self.last_failed_sources = 0
         self.last_report: RetrievalReport | None = None
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(15, connect=10),
-            follow_redirects=False,
-            headers={"User-Agent": "NewsPaw/0.1 (RSS reader)"},
-            limits=httpx.Limits(max_connections=5, max_keepalive_connections=5),
-        )
+        self._client = source_client(max_bytes=MAX_FEED_BYTES, deadline=30)
         self._semaphore = asyncio.Semaphore(5)
 
     def _search_url(self, query: str) -> str:
@@ -414,6 +441,8 @@ class NewsService:
             error_kind = "http_error"
         except (httpx.TimeoutException, TimeoutError):
             error_kind = "timeout"
+        except SafeHTTPError as exc:
+            error_kind = exc.kind
         except httpx.RequestError:
             error_kind = "network_error"
         except NewsError as exc:

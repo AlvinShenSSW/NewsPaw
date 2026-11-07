@@ -35,7 +35,7 @@ def service_with_transport(monkeypatch, handler, feeds=None, **kwargs):
     factory = httpx.AsyncClient
     transport = httpx.MockTransport(handler)
     monkeypatch.setattr(
-        httpx, "AsyncClient", lambda **options: factory(transport=transport, **options)
+        httpx, "AsyncClient", lambda **options: factory(**(options | {"transport": transport}))
     )
     return AVNewsService(feeds, **kwargs)
 

@@ -1,27 +1,43 @@
 """Owner-only command replies and local, explicitly scoped operations."""
 
 import asyncio
+import base64
+import hashlib
 import json
 import logging
 import re
 import sqlite3
 from contextlib import suppress
 from dataclasses import asdict, dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import httpx
 
 from ..config import parse_times
 from ..credentials import CredentialError
+from ..media.audio import MAX_SPEECH, MediaInputError
+from ..media.newspaper import PaperError
 from ..pipeline import PipelineError
 from .client import TelegramError, TelegramSendError
-from .outbox import _AUTOMATIC_ATTEMPTS, _clock, _json, send_lane_blocked
+from .outbox import _AUTOMATIC_ATTEMPTS, OutboxError, _clock, _json, _photo, send_lane_blocked
 from .targets import TargetError
 from .text import split_delivery_text
 
 _SELECTOR = re.compile(r"[sa]:[A-Za-z][A-Za-z0-9_-]{0,79}")
 _COMMAND = re.compile(r"/([a-z]+)(?:@([A-Za-z0-9_]{1,32}))?")
-_COMMANDS = {"news", "search", "schedule", "pause", "resume", "status", "why", "x", "av", "paper"}
+_COMMANDS = {
+    "news",
+    "search",
+    "schedule",
+    "pause",
+    "resume",
+    "status",
+    "why",
+    "x",
+    "av",
+    "paper",
+    "listen",
+}
 _ACTIVE_JOBS = ("collecting", "editing", "preparing_media", "awaiting_delivery")
 _BATCH = 8
 _LOG = logging.getLogger(__name__)
@@ -31,9 +47,11 @@ _UI = {
         "denied": "This Bot cannot access that scope or brief.",
         "choose": "Choose a scope first. For example, /news followed by its code.",
         "none": "This Bot has no active news assignment.",
-        "help": "Commands: /news /search /schedule /pause /resume /status /why /x /av /paper",
-        "paper": "Newspaper generation is not available yet.",
+        "help": "Commands: /news /search /schedule /pause /resume /status /why /x /av /paper /listen",
+        "paper": "Reply to a confirmed brief with /paper, optionally followed by 1 or 2 and item:1.",
         "media": "Please send your question as text.",
+        "listen": "Reply to a confirmed briefing with /listen.",
+        "voice_unavailable": "Local audio is unavailable for this language. Here is the briefing text.",
         "schedule": "Schedule ({zone}): {times}",
         "inherited": "This change would also retime a special account. Use Mac settings.",
         "bad_times": "Enter times as HH:MM,HH:MM.",
@@ -48,9 +66,11 @@ _UI = {
         "denied": "此 Bot 无权访问这个订阅、账号或简报。",
         "choose": "请先选择范围，例如发送 /news 加下方代码。",
         "none": "此 Bot 暂无启用的新闻分配。",
-        "help": "命令：/news /search /schedule /pause /resume /status /why /x /av /paper",
-        "paper": "报纸生成暂不可用。",
+        "help": "命令：/news /search /schedule /pause /resume /status /why /x /av /paper /listen",
+        "paper": "请回复一条已送达的简报发送 /paper，可加 1 或 2 和 item:1。",
         "media": "请用文字发送问题。",
+        "listen": "请回复一条已送达的简报发送 /listen。",
+        "voice_unavailable": "当前语言的本机语音不可用。以下是简报正文。",
         "schedule": "推送时间（{zone}）：{times}",
         "inherited": "修改会同时改变特别关注账号的时间，请在 Mac 设置中调整。",
         "bad_times": "请输入 HH:MM,HH:MM 格式的时间。",
@@ -65,9 +85,11 @@ _UI = {
         "denied": "この Bot には指定された範囲やニュースを読む権限がありません。",
         "choose": "先に範囲を選択してください。例：/news の後に下のコードを入力。",
         "none": "この Bot には有効なニュースの配信先設定がありません。",
-        "help": "コマンド：/news /search /schedule /pause /resume /status /why /x /av /paper",
-        "paper": "新聞画像の生成は現在利用できません。",
+        "help": "コマンド：/news /search /schedule /pause /resume /status /why /x /av /paper /listen",
+        "paper": "配信済みニュースに /paper で返信してください。1 または 2 と item:1 を追加できます。",
         "media": "質問をテキストで送ってください。",
+        "listen": "配信済みニュースに /listen で返信してください。",
+        "voice_unavailable": "この言語の端末音声は利用できません。ニュースをテキストでお送りします。",
         "schedule": "配信時刻（{zone}）：{times}",
         "inherited": "特別フォロー中のアカウントにも影響します。Mac の設定で変更してください。",
         "bad_times": "時刻を HH:MM,HH:MM の形式で入力してください。",
@@ -145,13 +167,13 @@ class Scope:
 
 
 class Commands:
-    def __init__(self, outbox, *, clock=_clock):
+    def __init__(self, outbox, *, clock=_clock, media=None):
         self.outbox = outbox
         self.pipeline = outbox.pipeline
         self.targets = outbox.targets
         self.registry = self.targets.registry
         self.store, self.db = outbox.store, outbox.db
-        self.clock, self._task = clock, None
+        self.clock, self._task, self.media = clock, None, media
 
     def _scope(self, config, binding, code):
         if not isinstance(code, str) or not _SELECTOR.fullmatch(code):
@@ -210,7 +232,7 @@ class Commands:
             return scope.category == "av"
         return True
 
-    def _anchor(self, binding, message_id):
+    def _anchor(self, binding, message_id, *, briefing_only=False):
         key = (binding.bot_id, binding.chat_id, message_id)
         jobs = self.db.execute(
             """SELECT d.job_id,j.subscription_id,j.account_key,j.payload
@@ -226,12 +248,17 @@ class Commands:
                AND r.generation=? AND r.telegram_id=? LIMIT 2""",
             (*key, binding.generation, binding.telegram_id),
         ).fetchall()
-        if len(jobs) + len(replies) != 1:
+        if len(jobs) + len(replies) != 1 or (briefing_only and not jobs):
             return None
         if replies:
             context = json.loads(replies[0][0])
             if "scope" in context:
-                return context["scope"][0], context.get("job"), context["scope"]
+                return (
+                    context["scope"][0],
+                    context.get("job"),
+                    context["scope"],
+                    bool(context.get("needs_edition")),
+                )
             return None
         job, subscription, account, payload = jobs[0]
         frozen = json.loads(json.loads(payload)["route"]["_effective"])
@@ -246,10 +273,12 @@ class Commands:
                 frozen["partition"],
                 frozen["account"]["remote_id"] if account else None,
             ],
+            True,
         )
 
     def _parse(self, payload, binding):
         value = payload.get("text", payload.get("caption", "")).strip()
+        explicit_command = value.startswith("/")
         first, _, remaining = value.partition(" ")
         match = _COMMAND.fullmatch(first)
         if first.startswith("/"):
@@ -267,6 +296,10 @@ class Commands:
         else:
             command = "search"
         if "media" in payload:
+            if command != "search":
+                return "unsupported_media", None, ""
+            if not explicit_command:
+                return "media", None, ""
             command = "media"
         first, _, remaining = value.partition(" ")
         if first.startswith(("s:", "a:")):
@@ -279,6 +312,7 @@ class Commands:
             for row in self.db.execute(
                 """SELECT id FROM pipeline_jobs WHERE subscription_id=? AND account_key=?
                    AND partition=? AND cancelled=0 AND stage='awaiting_delivery'
+                   AND json_extract(payload,'$.alert') IS NULL
                    ORDER BY created_at DESC,rowid DESC LIMIT 12""",
                 (scope.subscription, scope.account or "", scope.partition),
             )
@@ -291,7 +325,13 @@ class Commands:
             return None
         if (route.subscription_id, route.account_id) != (scope.subscription, scope.account):
             return None
-        result = self.pipeline.editorial.get(self.pipeline._edition_id(job))["result"]
+        entry = self.pipeline.get(job)
+        result = self.pipeline.editorial.get(entry["edition_id"])["result"]
+        if alert := self.pipeline._row(job)["payload"].get("alert"):
+            result = dict(
+                result,
+                items=[item for item in result["items"] if item["event_key"] == alert["item"]],
+            )
         return result, text
 
     def _news(self, command, scope, job, query, context, config):
@@ -461,16 +501,23 @@ class Commands:
         command, explicit, query = self._parse(payload, binding)
         if command is None:
             return context, "", None
-        if command == "help" or (query and command not in {"search", "schedule", "media"}):
+        if command == "unsupported_media":
+            return context, ui["media"], None
+        if command == "help" or (query and command not in {"search", "schedule", "media", "paper"}):
             return context, ui["help"], None
+        attachment = command in {"media", "listen"}
         anchor = None
         reply_id = payload.get("reply_to_message_id")
         if reply_id is not None:
-            anchor = self._anchor(binding, reply_id)
+            anchor = self._anchor(binding, reply_id, briefing_only=attachment)
             if not anchor or (explicit and explicit != anchor[0]):
                 return context, ui["denied"], None
         job = anchor[1] if anchor else None
         code = explicit or (anchor[0] if anchor else None)
+        if (command == "listen" and not job) or (
+            command == "media" and self.media is not None and not (explicit or job)
+        ):
+            return context, ui[command], None
         if code:
             scope = self._scope(config, binding, code)
             if (
@@ -490,6 +537,55 @@ class Commands:
                 return context, "\n".join(lines), None
             scope = choices[0]
         context["scope"] = scope.key()
+        if attachment:
+            if scope.partition != "normal" or self.media is None:
+                return context, ui[command], None
+            if job:
+                if self._edition(job, scope) is None:
+                    return context, ui["denied"], None
+                context.update(job=job, needs_edition=True, media_anchor=reply_id)
+            try:
+                plan = self.media.plan(payload.get("media"), listen=command == "listen")
+            except MediaInputError:
+                if command == "listen" and job:
+                    edition = self._edition(job, scope)
+                    if edition:
+                        context.update(locale=config["news_output_locale"], language="news")
+                        return (
+                            context,
+                            _UI[context["locale"]]["voice_unavailable"] + "\n\n" + edition[1],
+                            None,
+                        )
+                return context, ui[command], None
+            plan["expires"] = (now + timedelta(minutes=3)).isoformat()
+            context.update(locale=config["news_output_locale"], language="news", media=plan)
+            return context, ui[command], None
+        if command == "paper":
+            if not anchor or not anchor[3] or job is None:
+                return context, ui["paper"], None
+            options = (
+                re.fullmatch(r"(?:([12])(?: item:([1-9][0-9]?))?|item:([1-9][0-9]?))", query)
+                if query
+                else None
+            )
+            if query and options is None:
+                return context, ui["paper"], None
+            edition = self._edition(job, scope)
+            if edition is None:
+                return context, ui["denied"], None
+            page, item, only_item = options.groups() if options else (None, None, None)
+            context.update(
+                locale=config["news_output_locale"],
+                language="news",
+                job=job,
+                needs_edition=True,
+                paper=dict(
+                    pages=int(page) if page else 1 if only_item else None,
+                    item=int(item or only_item) if item or only_item else None,
+                    deadline=(now + timedelta(minutes=2)).isoformat(),
+                ),
+            )
+            return context, edition[1], None
         if command in {"news", "search", "why", "x", "av"}:
             context.update(locale=config["news_output_locale"], language="news")
             return context, self._news(command, scope, job, query, context, config), None
@@ -569,6 +665,14 @@ class Commands:
         scope = self._scope(config, binding, context["scope"][0])
         if not scope or scope.key() != context["scope"]:
             return False
+        if context.get("needs_media_policy") and (
+            self.media is None or not self.media.allowed(context["media"])
+        ):
+            return False
+        if anchor_id := context.get("media_anchor"):
+            anchor = self._anchor(binding, anchor_id, briefing_only=True)
+            if not anchor or anchor[1] != context["job"] or anchor[2] != scope.key():
+                return False
         if context.get("needs_edition"):
             return self._edition(context["job"], scope) is not None
         return True
@@ -584,6 +688,13 @@ class Commands:
         if state != "pending":
             for part in parts:
                 part.pop("text", None)
+                part.pop("caption", None)
+                part.pop("data", None)
+            self.db.execute(
+                """UPDATE command_replies SET context=json_remove(context,'$.media.file_id')
+                   WHERE bot_id=? AND generation=? AND update_id=?""",
+                key,
+            )
         self.db.execute(
             """UPDATE command_replies SET parts=?,state=?,inflight_part=?,backoff_until=?
                WHERE bot_id=? AND generation=? AND update_id=?""",
@@ -623,13 +734,161 @@ class Commands:
                 state = part["state"] = "outcome_unknown"
             self._save(key, parts, state, backoff=backoff)
 
+    async def _prepare_media(self, key, binding, context, client):
+        plan = context["media"]
+        expiry = datetime.fromisoformat(plan["expires"])
+
+        def allowed():
+            current = self._binding(key, chat=binding.chat_id, telegram_id=binding.telegram_id)
+            return current == binding and self._allowed(context, current)
+
+        def live():
+            return (
+                allowed()
+                and self.clock() < expiry
+                and self.media is not None
+                and self.media.allowed(plan)
+            )
+
+        _, config = self.store.load_config()
+        text = _UI[config["ui_locale"]]["media"]
+        audio = None
+        produced = False
+        next_context = context
+        if allowed():
+            scope = self._scope(config, binding, context["scope"][0])
+            if plan["kind"] == "listen":
+                edition = self._edition(context["job"], scope)
+                if edition:
+                    result, text = edition
+                    spoken = " ".join(
+                        f"{item['title']}. {item['body']}" for item in result["items"][:8]
+                    )
+                    try:
+                        if not live():
+                            raise MediaInputError("voice_unavailable")
+                        audio = await self.media.speech.synthesize(spoken, result["locale"])
+                        if (
+                            not live()
+                            or not isinstance(audio, bytes)
+                            or not 1 <= len(audio) <= MAX_SPEECH
+                        ):
+                            raise MediaInputError("voice_unavailable")
+                        produced = True
+                    except (MediaInputError, OSError):
+                        audio = None
+                        text = _UI[context["locale"]]["voice_unavailable"] + "\n\n" + text
+            else:
+                try:
+                    if client is None or not live():
+                        raise MediaInputError("media_capability_unavailable")
+                    phrase = await self.media.query(key, plan, client, live)
+                    if not live():
+                        raise MediaInputError("media_scope_changed")
+                    next_context = context.copy()
+                    text = self._news(
+                        "search", scope, context.get("job"), phrase, next_context, config
+                    )
+                    produced = True
+                except (MediaInputError, TelegramError):
+                    next_context = {**context, "locale": config["ui_locale"], "language": "ui"}
+        with self.store._write():
+            _, _, stored, serialized, state, inflight, _ = self._row(key)
+            if state != "pending" or inflight is not None or json.loads(stored) != context:
+                return
+            if not allowed():
+                self._save(key, json.loads(serialized), "stale")
+                return
+            if plan["kind"] != "listen":
+                context = next_context
+            if produced and not live():
+                self._save(key, json.loads(serialized), "stale")
+                return
+            try:
+                parts = [
+                    dict(text=value, state="pending", attempts=0)
+                    for value in split_delivery_text(text)
+                ]
+            except ValueError:
+                parts = []
+            if not parts or len(parts) > 80 or len(text.encode()) > 512 * 1024:
+                self._save(key, json.loads(serialized), "failed")
+                return
+            if audio:
+                parts.append(
+                    dict(
+                        kind="audio",
+                        state="pending",
+                        attempts=0,
+                        data=base64.b64encode(audio).decode("ascii"),
+                        sha256=hashlib.sha256(audio).hexdigest(),
+                    )
+                )
+            context["media"] = {k: v for k, v in plan.items() if k != "file_id"}
+            context["media_ready"] = True
+            context["needs_media_policy"] = produced
+            self.db.execute(
+                "UPDATE command_replies SET context=?,parts=? WHERE bot_id=? AND generation=? AND update_id=?",
+                (_json(context), _json(parts), *key),
+            )
+
+    async def _prepare_paper(self, key, binding, context):
+        paper = context["paper"]
+        service = self.pipeline.newspapers
+        photos = []
+
+        def authorized():
+            current = self._binding(key, chat=binding.chat_id, telegram_id=binding.telegram_id)
+            return current == binding and self._allowed(context, current)
+
+        if service is not None and authorized():
+            _, config = self.store.load_config()
+            scope = self._scope(config, binding, context["scope"][0])
+            edition = self._edition(context["job"], scope) if scope else None
+            if edition:
+                try:
+                    generated = await service.prepare(
+                        self.pipeline._edition_id(context["job"]),
+                        edition[0],
+                        scope.partition,
+                        datetime.fromisoformat(paper["deadline"]),
+                        authorized,
+                        item_number=paper["item"],
+                        page_count=paper["pages"],
+                    )
+                    if generated:
+                        photos = [_photo(part) for part in generated]
+                except (PaperError, OutboxError):
+                    pass
+        with self.store._write():
+            _, _, stored, serialized, state, inflight, _ = self._row(key)
+            if state != "pending" or inflight is not None or json.loads(stored) != context:
+                return
+            parts = json.loads(serialized)
+            if not authorized():
+                self._save(key, parts, "stale")
+                return
+            if self.clock() < datetime.fromisoformat(paper["deadline"]):
+                parts.extend({**photo, "state": "pending", "attempts": 0} for photo in photos)
+            context["paper_ready"] = True
+            self.db.execute(
+                "UPDATE command_replies SET context=?,parts=? WHERE bot_id=? AND generation=? AND update_id=?",
+                (_json(context), _json(parts), *key),
+            )
+
     async def _dispatch(self, key):
         row = self._row(key)
         if row is None:
             return
         remote, chat = row[:2]
         binding = self._binding(key, chat=chat, telegram_id=remote)
-        client = None
+        context = json.loads(row[2])
+        if binding is not None and context.get("paper") and not context.get("paper_ready"):
+            await self._prepare_paper(key, binding, context)
+            row = self._row(key)
+        if row[4] != "pending" or row[5] is not None:
+            return
+        client, asset = None, None
         try:
             if binding is not None:
                 try:
@@ -639,16 +898,29 @@ class Commands:
                     client = self.outbox.client_factory(token)
                 except (CredentialError, TelegramError, OSError):
                     pass
+            planned = json.loads(row[2])
+            if binding is not None and planned.get("media") and not planned.get("media_ready"):
+                await self._prepare_media(key, binding, planned, client)
+                row = self._row(key)
+            if row[4] != "pending" or row[5] is not None:
+                return
+            parts = json.loads(row[3])
+            selected = next(i for i, part in enumerate(parts) if part["state"] == "pending")
+            pending = parts[selected]
+            if client is not None and pending.get("kind") == "photo":
+                with suppress(OutboxError):
+                    asset = await self.outbox._asset(pending)
             with self.store._write():
                 remote, chat, context, parts, state, inflight, _ = self._row(key)
                 if state != "pending" or inflight is not None:
                     return
                 parts = json.loads(parts)
                 current = self._binding(key, chat=chat, telegram_id=remote)
+                current_context = json.loads(context)
                 if (
                     current is None
                     or current != binding
-                    or not self._allowed(json.loads(context), current)
+                    or not self._allowed(current_context, current)
                 ):
                     self._save(key, parts, "stale")
                     return
@@ -659,10 +931,40 @@ class Commands:
                     return
                 ordinal = next(i for i, p in enumerate(parts) if p["state"] == "pending")
                 part = parts[ordinal]
+                if ordinal != selected or part != pending:
+                    return
+                if part.get("kind") == "photo" and (
+                    asset is None
+                    or self.clock() >= datetime.fromisoformat(current_context["paper"]["deadline"])
+                ):
+                    self._save(key, parts, "failed")
+                    return
+                audio = None
+                if part.get("kind") == "audio":
+                    plan = current_context["media"]
+                    try:
+                        audio = base64.b64decode(part["data"], validate=True)
+                    except (ValueError, TypeError):
+                        audio = None
+                    if (
+                        audio is None
+                        or not 1 <= len(audio) <= MAX_SPEECH
+                        or hashlib.sha256(audio).hexdigest() != part["sha256"]
+                        or self.clock() >= datetime.fromisoformat(plan["expires"])
+                    ):
+                        self._save(key, parts, "failed")
+                        return
                 part.update(state="inflight", attempts=part["attempts"] + 1)
                 self._save(key, parts, "pending", inflight=ordinal)
             try:
-                message_id = await client.send_message(binding, part["text"])
+                if audio is not None:
+                    message_id = await client.send_audio(binding, audio)
+                elif part.get("kind") == "photo":
+                    message_id = await client.send_photo(
+                        binding, asset, part["mime"], part["caption"]
+                    )
+                else:
+                    message_id = await client.send_message(binding, part["text"])
             except asyncio.CancelledError:
                 self._finish(key, ordinal, error=TelegramSendError("cancelled_after_intent"))
                 raise

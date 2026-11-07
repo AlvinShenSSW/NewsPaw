@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import plistlib
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -121,9 +122,12 @@ def _prepare_logs(log_dir: Path) -> None:
     for filename in ("stdout.log", "stderr.log"):
         log_path = log_dir / filename
         descriptor = os.open(
-            log_path, os.O_CREAT | os.O_APPEND | os.O_WRONLY | os.O_NOFOLLOW, 0o600
+            log_path, os.O_CREAT | os.O_APPEND | os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600
         )
         try:
+            info = os.fstat(descriptor)
+            if info.st_uid != os.getuid() or not stat.S_ISREG(info.st_mode):
+                raise OSError("unsafe_service_log")
             os.fchmod(descriptor, 0o600)
         finally:
             os.close(descriptor)

@@ -3,7 +3,7 @@
 from copy import deepcopy
 from dataclasses import asdict
 
-from ..app_config import validate_config
+from ..app_config import in_x_aggregate, validate_config
 from ..credentials import CredentialError
 from ..routing import resolve_route
 from .registry import Binding, TelegramError, remove_bot
@@ -45,7 +45,7 @@ def _scopes(config):
         targets = a["bot_ids"]
         if a["priority"] == "special" and targets is None and sub:
             targets = sub["bot_ids"]
-        elif a["priority"] == "normal" and sub and sub["category_id"] in {"x", "x_adult"}:
+        if sub and in_x_aggregate(a, sub):
             members[sub["id"]].append(a["id"])
         result[("account", a["id"])] = (
             a["partition"],
@@ -217,6 +217,8 @@ class TargetManager:
         def change(config):
             account = _entry(config, "accounts", identity)
             if account["partition"] != partition:
+                account.pop("include_in_aggregate", None)
+                account.pop("post_types", None)
                 account.update(
                     partition=partition, subscription_id=None, bot_ids=[], times=None, style=None
                 )

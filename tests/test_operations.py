@@ -292,3 +292,60 @@ def test_control_reads_actual_service_log_location(tmp_path):
             data, CredentialManager(store, FakeKeychain()), log_directory=stdout.parent
         )
         assert server.operations.support_snapshot()["business"]["log_bytes"] == 7
+
+
+def test_export_preserves_explicit_empty_after_omitting_the_only_private_source(tmp_path):
+    from newspaw.app_config import uses_category_sources
+
+    with closing(Store(tmp_path / "state.db")) as store:
+        config, sub = configured()
+        source = config["sources"][0]
+        source["url"] = "https://example.com/feed?custom=private-fixture"
+        config["sources"].append(dict(source, id="public_feed", url="https://example.org/rss"))
+        sub["source_ids"] = [source["id"]]
+        store.save_config(config, expected_revision=1)
+        exported = Operations(store, tmp_path).export_settings()
+        subscription = next(
+            s for s in exported["settings"]["subscriptions"] if s["id"] == sub["id"]
+        )
+        assert subscription["source_ids"] == [] and not uses_category_sources(subscription)
+        assert exported["omitted"]["source_urls"] == 1
+
+
+def test_restore_is_fresh_with_default_new_policies_and_rejects_changed_policy(tmp_path):
+    with closing(Store(tmp_path / "state.db")) as store:
+        ops = Operations(store, tmp_path)
+        portable = ops.export_settings()
+        assert ops.preview_import(portable)["revision"] == 1
+        with store._write():
+            store._db.execute("UPDATE x_video_policy SET revision=2 WHERE id=1")
+        with pytest.raises(OperationsError, match="restore_requires_fresh_instance"):
+            ops.preview_import(portable)
+
+
+def test_cleanup_preserves_referenced_paper_assets_and_cleans_old_orphans(tmp_path):
+    now = datetime(2026, 11, 8, 2, tzinfo=UTC)
+    with closing(Store(tmp_path / "state.db")) as store:
+        assets = AssetStore(tmp_path / "media")
+
+        def photo(color):
+            content = BytesIO()
+            Image.new("RGB", (20, 20), color).save(content, "JPEG")
+            identity = assets.put(content.getvalue(), kind="paper")
+            path = tmp_path / "media" / (identity + ".jpg")
+            age = (now - timedelta(days=10)).timestamp()
+            os.utime(path, (age, age))
+            return identity, path
+
+        identity, pinned = photo("black")
+        _, orphan = photo("white")
+        with store._write():
+            store._db.execute(
+                "INSERT INTO newspapers VALUES ('paper','normal','brief','{}','building',NULL)"
+            )
+            store._db.execute(
+                "INSERT INTO newspaper_effects VALUES ('effect','paper','completed',?,NULL,'known')",
+                (json.dumps({"asset_id": identity}),),
+            )
+        result = Operations(store, tmp_path, clock=lambda: now).cleanup(apply=True)
+        assert result["media_removed"] == 1 and pinned.exists() and not orphan.exists()

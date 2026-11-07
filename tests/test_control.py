@@ -374,6 +374,40 @@ async def test_target_rpc_no_fake_readiness_and_explicit_empty_assignment(contro
     assert denied == {"ok": False, "error": "missing_bot"}
 
 
+async def test_explicit_service_stop_acknowledges_and_releases_private_endpoint(monkeypatch):
+    from types import SimpleNamespace
+
+    from newspaw.control import acquire_control_lock, serve_control
+
+    monkeypatch.setattr("newspaw.credentials.MacKeychain", FakeKeychain)
+    with tempfile.TemporaryDirectory(prefix="np-stop-") as directory:
+        root = Path(directory)
+        endpoint = SimpleNamespace(path=root / "control.sock")
+        running = asyncio.create_task(serve_control(root))
+        try:
+            async with asyncio.timeout(3):
+                while True:
+                    try:
+                        status = await request(endpoint, {"op": "service.status"})
+                    except (FileNotFoundError, ConnectionRefusedError):
+                        if running.done():
+                            running.result()
+                            pytest.fail("control server exited before accepting connections")
+                        await asyncio.sleep(0.01)
+                    else:
+                        break
+            assert status == {"ok": True, "result": {"protocol_version": 1, "state": "running"}}
+            stopped = await request(endpoint, {"op": "service.stop"})
+            assert stopped == {"ok": True, "result": {"protocol_version": 1, "state": "stopping"}}
+            await asyncio.wait_for(running, 3)
+            assert not endpoint.path.exists()
+            os.close(acquire_control_lock(root))
+        finally:
+            if not running.done():
+                running.cancel()
+                await asyncio.gather(running, return_exceptions=True)
+
+
 async def test_jobs_are_readable_and_controllable_through_private_socket(control):
     from test_routing import configured
 

@@ -17,9 +17,12 @@ from .connectors.web import WebCollector, web_scopes
 from .credentials import CredentialError
 from .editorial import EditorialError, EditorialService
 from .evidence import EvidenceError, EvidenceStore, FeedCollector, feed_scopes
+from .media.newspaper import PaperError
 from .model_runner import ModelRunner, RunnerError
 from .providers import ProviderError
 from .routing import RouteBlocked, RouteSnapshot, RouteStale
+from .x.digests import x_scopes
+from .x.timelines import TimelineError
 
 _ACTIVE = {"collecting", "editing", "preparing_media"}
 _SUCCESSFUL_FETCH = {"fresh", "stale", "empty", "no_eligible", "not_modified"}
@@ -94,6 +97,8 @@ class Pipeline:
         web_factory=WebCollector,
         av_factory=AVCollector,
         source_images=None,
+        newspapers=None,
+        x_digests=None,
     ):
         self.store, self.db = store, store._db
         self.runner = runner if runner is not None else ModelRunner(store, backend)
@@ -101,6 +106,8 @@ class Pipeline:
         self.feed_factory, self.ai_factory = feed_factory, ai_factory
         self.web_factory, self.av_factory = web_factory, av_factory
         self.source_images = source_images
+        self.newspapers = newspapers
+        self.x_digests = x_digests
         self._active = {}
 
     def _row(self, job_id):
@@ -173,12 +180,15 @@ class Pipeline:
                 ):
                     raise PipelineError("invalid_job_budget")
                 config = self.store.load_config()[1]
-                scopes = (
-                    feed_scopes(config, [subscription_id])
-                    + api_scopes(config, [subscription_id])
-                    + web_scopes(config, [subscription_id])
-                    + av_scopes(config, [subscription_id])
-                )
+                if effective["category_id"] in {"x", "x_adult"}:
+                    scopes = x_scopes(config, route)
+                else:
+                    scopes = (
+                        feed_scopes(config, [subscription_id])
+                        + api_scopes(config, [subscription_id])
+                        + web_scopes(config, [subscription_id])
+                        + av_scopes(config, [subscription_id])
+                    )
                 covered = {item["source"]["id"] for scope in scopes for item in scope["selected"]}
                 payload = dict(
                     route=asdict(route),
@@ -212,7 +222,8 @@ class Pipeline:
         row = self._row(job_id)
         payload = row["payload"]
         route = RouteSnapshot(**payload["route"]).effective
-        model = self.editorial.task_status(self._edition_id(job_id))
+        edition_id = self._edition_id(payload.get("alert", {}).get("parent", job_id))
+        model = self.editorial.task_status(edition_id) if "alert" not in payload else None
         stage, status = row["stage"], row["stage"]
         if model and model["state"] in {"outcome_unknown", "inflight"}:
             status = model["state"]
@@ -239,7 +250,7 @@ class Pipeline:
             collection_id=job_id,
             attempt_ids=payload["attempt_ids"],
             unsupported_source_ids=payload["unsupported_source_ids"],
-            edition_id=self._edition_id(job_id),
+            edition_id=edition_id,
             model=model,
             media=payload["media"],
             created_at=row["created_at"],
@@ -294,6 +305,19 @@ class Pipeline:
         if row["stage"] != "awaiting_delivery":
             raise PipelineError("edition_not_ready")
         payload = row["payload"]
+        if alert := payload.get("alert"):
+            parent = self.delivery_scope(alert["parent"])
+            result = self.editorial.get(self._edition_id(alert["parent"]))["result"]
+            if (
+                not result
+                or not any(
+                    item["event_key"] == alert["item"]
+                    and hashlib.sha256(_json(item).encode()).hexdigest() == alert["item_hash"]
+                    for item in result["items"]
+                )
+            ):
+                raise PipelineError("edition_changed")
+            return parent
         route = RouteSnapshot(**payload["route"])
         current = self.store.preview_route(
             route.subscription_id, account_id=route.account_id, style=route.request_style
@@ -309,7 +333,12 @@ class Pipeline:
             raise PipelineError("edition_changed")
         try:
             self._check_profile_generations(payload)
-        except (ProviderError, RouteStale):
+            if current_content["category_id"] in {
+                "x",
+                "x_adult",
+            } and not self.editorial.x_evidence_current(self._edition_id(job_id), route):
+                raise RouteStale("x_evidence_changed")
+        except (ProviderError, RouteStale, EditorialError):
             raise PipelineError("edition_changed") from None
         try:
             delivery_allowed = self.editorial.delivery_allowed(self._edition_id(job_id), route)
@@ -321,10 +350,13 @@ class Pipeline:
 
     def delivery_input(self, job_id):
         route = self.delivery_scope(job_id)
+        payload = self._row(job_id)["payload"]
+        if alert := payload.get("alert"):
+            return route, alert["text"], None
         edition_id = self._edition_id(job_id)
         if self.editorial.get(edition_id)["state"] != "ready":
             raise PipelineError("edition_changed")
-        return route, self.editorial.render(edition_id), self._row(job_id)["payload"]["media"]
+        return route, self.editorial.render(edition_id), payload["media"]
 
     def _claim(self, job_id, now):
         with self.store._write():
@@ -419,24 +451,47 @@ class Pipeline:
             result["status"] != "configuration_changed" for result in outcomes
         ):
             scope = dict(scopes[pending], collection_id=job_id, collection_group=pending)
-            if scope.get("kinds") == ["web"]:
-                factory = self.av_factory if scope["partition"] == "adult" else self.web_factory
-            else:
-                factory = self.ai_factory if "kinds" in scope else self.feed_factory
-            collector = factory(evidence)
-            try:
-                if scope.get("kinds") == ["web"]:
-                    result = await collector.fetch_scope(
-                        scope, 24, now, before_request=before_request
+            kinds = scope.get("kinds")
+            if kinds == ["x_account"]:
+                if self.x_digests is None:
+                    raise EvidenceError("x_digest_unavailable")
+
+                def authorize_x():
+                    self._leased(job_id, token, starting=True, now=now)
+                    if not evidence.current(scope):
+                        raise RouteStale("x_scope_changed")
+                    return effect_guard() if effect_guard is not None else None
+
+                try:
+                    result = await self.x_digests.fetch_scope(
+                        evidence,
+                        scope,
+                        datetime.fromisoformat(row["created_at"]),
+                        before_intent=authorize_x,
                     )
+                except TimelineError as exc:
+                    if str(exc) == "configuration_changed":
+                        raise RouteStale("x_scope_changed") from None
+                    raise EvidenceError(str(exc)) from None
+            else:
+                if kinds == ["web"]:
+                    factory = self.av_factory if scope["partition"] == "adult" else self.web_factory
                 else:
-                    result = await collector.fetch_scope(scope, 24, now)
-                if result is None:
-                    return
-                attempts[pending] = result["id"]
-                outcomes.append(result)
-            finally:
-                await collector.close()
+                    factory = self.ai_factory if kinds else self.feed_factory
+                collector = factory(evidence)
+                try:
+                    if kinds == ["web"]:
+                        result = await collector.fetch_scope(
+                            scope, 24, now, before_request=before_request
+                        )
+                    else:
+                        result = await collector.fetch_scope(scope, 24, now)
+                finally:
+                    await collector.close()
+            if result is None:
+                return
+            attempts[pending] = result["id"]
+            outcomes.append(result)
         ids = [attempts[index] for index in sorted(attempts)]
         if any(result["status"] == "configuration_changed" for result in outcomes):
             self._transition(
@@ -458,6 +513,10 @@ class Pipeline:
             )
             for result in outcomes
         )
+        if scopes and scopes[0].get("kinds") == ["x_account"]:
+            successful = any(result["accepted_count"] > 0 for result in outcomes) or all(
+                result["status"] == "empty" and result["coverage_complete"] for result in outcomes
+            )
         self._transition(
             job_id,
             token,
@@ -471,13 +530,20 @@ class Pipeline:
         job_id, payload = row["id"], row["payload"]
         edition_id = self._edition_id(job_id)
 
+        route = RouteSnapshot(**payload["route"])
+
         def before_dispatch():
             self._leased(job_id, token, starting=True, now=now)
+            if route.effective["category_id"] in {
+                "x",
+                "x_adult",
+            } and not self.editorial.x_evidence_current(edition_id, route):
+                raise RouteStale("x_evidence_changed")
             return effect_guard() if effect_guard is not None else None
 
         edition = self.editorial.prepare(
             edition_id,
-            RouteSnapshot(**payload["route"]),
+            route,
             payload["attempt_ids"],
             payload["holds"],
             payload["task_limit"],
@@ -511,12 +577,45 @@ class Pipeline:
         route = RouteSnapshot(**row["payload"]["route"])
         style = route.effective["style"]
         edition_id = self._edition_id(job_id)
-        if self.editorial.get(edition_id)["state"] != "ready":
+        edition = self.editorial.get(edition_id)
+        if edition["state"] != "ready":
             raise EditorialError("edition_not_ready")
         media = dict(
             style="text", fallback_reason=None if style == "text" else "media_not_available"
         )
-        if style == "source_image" and route.effective["partition"] == "adult":
+        if style == "newspaper" and self.newspapers is not None:
+            scheduled = self.db.execute(
+                "SELECT target_at FROM schedule_occurrences WHERE job_id=? ORDER BY updated_at DESC LIMIT 1",
+                (job_id,),
+            ).fetchone()
+            deadline = (
+                datetime.fromisoformat(scheduled[0])
+                if scheduled and scheduled[0]
+                else self.newspapers.clock() + timedelta(minutes=2)
+            )
+
+            def authorize_paper():
+                self._leased(job_id, token, starting=True, now=now)
+                if self.editorial.get(edition_id)["state"] != "ready":
+                    raise EditorialError("edition_not_ready")
+                return effect_guard() if effect_guard is not None else None
+
+            try:
+                photos = await self.newspapers.prepare(
+                    edition_id,
+                    edition["result"],
+                    route.effective["partition"],
+                    deadline,
+                    authorize_paper,
+                )
+                if photos is None:
+                    return
+                if self.newspapers.clock() >= deadline:
+                    raise PaperError("newspaper_deadline")
+                media = dict(style="newspaper", photos=photos, fallback_reason=None)
+            except PaperError as exc:
+                media["fallback_reason"] = str(exc)
+        elif style == "source_image" and route.effective["partition"] == "adult":
             media["fallback_reason"] = "adult_source_media_disabled"
         elif style == "source_image" and self.source_images is not None:
 

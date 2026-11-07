@@ -189,6 +189,8 @@ class Scheduler:
         self._fixed_clock = clock is not None
         self._loop = None
         self._tasks = {}
+        self.alerts = None
+        self._alert_task = None
 
     def policy(self):
         self.store.load_config()
@@ -782,6 +784,13 @@ class Scheduler:
                         await task
                     except Exception as exc:
                         _LOG.warning("Schedule worker failed (%s)", type(exc).__name__)
+            if self.alerts is not None and (self._alert_task is None or self._alert_task.done()):
+                if self._alert_task is not None:
+                    try:
+                        await self._alert_task
+                    except Exception as exc:
+                        _LOG.warning("Alert worker failed (%s)", type(exc).__name__)
+                self._alert_task = asyncio.create_task(self.alerts.tick())
             try:
                 ready = self.plan()
             except (sqlite3.Error, OSError, CredentialError):
@@ -800,6 +809,9 @@ class Scheduler:
             await asyncio.gather(self._loop, return_exceptions=True)
             self._loop = None
         tasks = list(self._tasks.values())
+        if self._alert_task is not None:
+            tasks.append(self._alert_task)
+            self._alert_task = None
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

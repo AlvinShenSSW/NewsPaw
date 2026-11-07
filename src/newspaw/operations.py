@@ -16,15 +16,19 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from urllib.parse import unquote, urlsplit
 
-from .app_config import default_config, upgrade_v2, validate_config
+from .app_config import default_config, upgrade_v2, uses_category_sources, validate_config
 from .budget import BudgetLedger, default_policy
 from .credentials import CredentialError
 from .evidence import EvidenceError, EvidenceStore
+from .media.input_service import _POLICY as MEDIA_DEFAULT
+from .media.paper_service import _POLICY as NEWSPAPER_DEFAULT
 from .media.source_images import AssetStore, ImageError
 from .migrations import DATABASE_VERSION
 from .providers import ProfileRegistry
 from .scheduler import _LEASE_STATES, _TERMINAL
 from .store import AUDIT_RETENTION
+from .x.alerts import _DEFAULT as X_ALERT_DEFAULT
+from .x.video import _DEFAULT as X_VIDEO_DEFAULT
 
 _FORMAT = 1
 _MAX_PORTABLE = 512 * 1024
@@ -49,6 +53,17 @@ _BACKUP_TABLES = {
     16: "web_search_policy web_search_requests",
     17: "command_replies",
     18: "x_posts x_post_observations x_timeline_cursors x_timeline_scans x_timeline_steps",
+    19: "x_digest_links",
+    20: "newspaper_policy newspapers newspaper_effects",
+    21: "telegram_media_policy telegram_media_effects",
+    22: "bot_test_sends",
+    23: "x_alert_policy x_alerts x_alert_posts x_alert_checked x_video_policy x_video_receipts",
+}
+_SETTINGS_DEFAULTS = {
+    "newspaper_policy": NEWSPAPER_DEFAULT,
+    "telegram_media_policy": MEDIA_DEFAULT,
+    "x_alert_policy": X_ALERT_DEFAULT,
+    "x_video_policy": X_VIDEO_DEFAULT,
 }
 _INITIAL_TABLES = {
     "app_configuration",
@@ -58,10 +73,11 @@ _INITIAL_TABLES = {
     "web_search_policy",
     "source_readiness",
     "profile_epochs",
+    *_SETTINGS_DEFAULTS,
 }
 _SCHEDULE_STATES = _LEASE_STATES | _TERMINAL | {"rescheduled"}
 
-_SOURCE_FILE = re.compile(r"source_[a-f0-9]{64}\.jpg")
+_ASSET_FILE = re.compile(r"(?:source|paper)_[a-f0-9]{64}\.jpg")
 _GENERATED_ID = re.compile(
     r"(?:categories|subscriptions|sources|bots|accounts|model_profiles)_[a-f0-9]{32}"
 )
@@ -168,9 +184,12 @@ def _scrub_settings(document):
     available_sources = {source["id"] for source in sources}
     for sub in config["subscriptions"]:
         sub["enabled"] = False
+        inherited = uses_category_sources(sub)
         sub["source_ids"] = [
             identity for identity in sub["source_ids"] if identity in available_sources
         ]
+        if not inherited and not sub["source_ids"]:
+            sub["source_mode"] = "explicit"
     profiles = []
     for profile in config["model_profiles"]:
         official = defaults.get(profile["provider"])
@@ -286,6 +305,10 @@ class Operations:
             ).fetchone()
         ):
             raise OperationsError("restore_requires_fresh_instance")
+        for table, default in _SETTINGS_DEFAULTS.items():
+            row = self.db.execute(f"SELECT revision,settings FROM {table} WHERE id=1").fetchone()
+            if row is None or row[0] != 1 or json.loads(row[1]) != default:
+                raise OperationsError("restore_requires_fresh_instance")
         return revision
 
     def _portable(self, value):
@@ -602,8 +625,14 @@ class Operations:
                 """SELECT 1 FROM pipeline_jobs j,json_each(j.payload,'$.media.photos') p
                WHERE json_extract(p.value,'$.asset_id')=?
                UNION ALL SELECT 1 FROM delivery_manifests m,json_each(m.manifest,'$.parts') p
+               WHERE json_extract(p.value,'$.asset_id')=?
+               UNION ALL SELECT 1 FROM command_replies c,json_each(c.parts) p
+               WHERE json_extract(p.value,'$.asset_id')=?
+               UNION ALL SELECT 1 FROM newspaper_effects e
+               WHERE json_extract(e.result,'$.asset_id')=?
+               UNION ALL SELECT 1 FROM newspapers n,json_each(n.result) p
                WHERE json_extract(p.value,'$.asset_id')=? LIMIT 1""",
-                (identity, identity),
+                (identity,) * 5,
             ).fetchone()
             is not None
         )
@@ -620,7 +649,7 @@ class Operations:
                 for index, file in enumerate(files):
                     if index >= 10 * limit or candidates >= limit:
                         break
-                    if not _SOURCE_FILE.fullmatch(file.name):
+                    if not _ASSET_FILE.fullmatch(file.name):
                         continue
                     try:
                         info = file.stat(follow_symlinks=False)

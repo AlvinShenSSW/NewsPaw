@@ -92,8 +92,11 @@ def send_lane_blocked(db, remote, now):
            AND (inflight_part IS NOT NULL OR backoff_until>?)
            UNION ALL
            SELECT 1 FROM command_replies WHERE telegram_id=?
-           AND (inflight_part IS NOT NULL OR backoff_until>?) LIMIT 1""",
-            (remote, clock, remote, clock),
+           AND (inflight_part IS NOT NULL OR backoff_until>?)
+           UNION ALL
+           SELECT 1 FROM bot_test_sends WHERE telegram_id=?
+           AND (state='inflight' OR backoff_until>?) LIMIT 1""",
+            (remote, clock, remote, clock, remote, clock),
         ).fetchone()
         is not None
     )
@@ -134,7 +137,9 @@ def _manifest(route, text, media):
         raise OutboxError("invalid_photo")
     for item in photos:
         photo = _photo(item)
-        if route.effective["partition"] != "normal" and photo["asset_id"].startswith("source_"):
+        if route.effective["partition"] != "normal" and photo["asset_id"].startswith(
+            ("source_", "paper_")
+        ):
             raise OutboxError("incompatible_photo_partition")
         parts.append(photo)
     if not parts or len(parts) > _MAX_PARTS or len(_json(parts).encode()) > 512 * 1024:
@@ -153,6 +158,7 @@ class Outbox:
         self.pipeline, self.targets = pipeline, targets
         self.store, self.db = pipeline.store, pipeline.db
         self.client_factory, self.asset_resolver = client_factory, asset_resolver
+        self.alert_guard = None
 
     def _manifest_row(self, job_id):
         row = self.db.execute(
@@ -238,6 +244,7 @@ class Outbox:
                 self._save(target)
             elif (
                 not started
+                and not manifest.get("fixed_targets")
                 and target["reason"] == "target_removed"
                 and not target["selected"]
                 and target["binding"] is not None
@@ -245,7 +252,7 @@ class Outbox:
             ):
                 target.update(selected=1, reason=None)
                 self._save(target)
-        if not started:
+        if not started and not manifest.get("fixed_targets"):
             for bot_id in states.keys() - existing.keys():
                 binding = bindings.get(bot_id)
                 self._add(
@@ -267,10 +274,18 @@ class Outbox:
                     route, text, media = self.pipeline.delivery_input(job_id)
                 except PipelineError as exc:
                     raise OutboxError(str(exc)) from None
+                manifest = _manifest(route, text, media)
+                alert = self.pipeline._row(job_id)["payload"].get("alert")
+                if alert is not None:
+                    manifest["fixed_targets"] = True
                 self.db.execute(
                     "INSERT INTO delivery_manifests VALUES (?,?,0,NULL,?)",
-                    (job_id, _json(_manifest(route, text, media)), now.isoformat()),
+                    (job_id, _json(manifest), now.isoformat()),
                 )
+                if alert is not None:
+                    for entry in alert["bindings"]:
+                        binding = Binding(**entry)
+                        self._add(job_id, binding.bot_id, binding, None, len(manifest["parts"]))
             self._live(job_id)
         return self.status(job_id)
 
@@ -512,6 +527,11 @@ class Outbox:
                     self._save(current[0])
                     return self.status(job_id, bot_id=bot_id)
                 if effect_guard is not None and effect_guard() is False:
+                    return self.status(job_id, bot_id=bot_id)
+                manifest, _, _ = self._manifest_row(job_id)
+                if manifest.get("fixed_targets") and (
+                    self.alert_guard is None or not self.alert_guard(job_id)
+                ):
                     return self.status(job_id, bot_id=bot_id)
                 attempt = self._begin(current[0], ordinal, _clock(now))
             try:

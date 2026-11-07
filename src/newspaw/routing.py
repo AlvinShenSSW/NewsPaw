@@ -6,7 +6,15 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from .app_config import STYLES, validate_config
+from .app_config import (
+    STYLES,
+    X_DEFAULT_POST_TYPES,
+    in_x_aggregate,
+    source_in_subscription,
+    uses_category_sources,
+    validate_config,
+    x_post_types,
+)
 
 # Version of the effective route contract, independent of additive config fields.
 ROUTE_SCHEMA_VERSION = 2
@@ -26,6 +34,15 @@ def _json(value):
 
 def _fields(entry, names):
     return {key: entry[key] for key in names.split()}
+
+
+def _x_account(account):
+    result = _fields(account, "id remote_id handle partition priority")
+    if "post_types" in account:
+        types = x_post_types(account["post_types"])
+        if tuple(types) != X_DEFAULT_POST_TYPES:
+            result["post_types"] = types
+    return result
 
 
 @dataclass(frozen=True)
@@ -110,26 +127,20 @@ def resolve_route(config, revision, subscription_id, *, account_id=None, style=N
         if selected_account["subscription_id"] != subscription_id:
             blockers.append("account_subscription_mismatch")
             return snapshot()
-        payload["account"] = _fields(selected_account, "id remote_id handle partition priority")
+        payload["account"] = _x_account(selected_account)
         if selected_account["remote_id"] is None:
             blockers.append("account_identity_unverified")
     elif category["id"] in {"x", "x_adult"}:
         members = sorted(
-            (
-                a
-                for a in config["accounts"]
-                if a["subscription_id"] == subscription_id and a["priority"] == "normal"
-            ),
+            (account for account in config["accounts"] if in_x_aggregate(account, subscription)),
             key=lambda a: a["id"],
         )
-        payload["accounts"] = [
-            _fields(a, "id remote_id handle partition priority") for a in members
-        ]
+        payload["accounts"] = [_x_account(a) for a in members]
         if not members:
             blockers.append("no_accounts")
         if any(a["remote_id"] is None for a in members):
             blockers.append("account_identity_unverified")
-        explanation["accounts"] = "ordinary members; special daily accounts excluded"
+        explanation["accounts"] = "ordinary members and explicitly opted-in special accounts"
     if not subscription["enabled"]:
         blockers.append("subscription_disabled")
     if config["owner_id"] is None:
@@ -165,19 +176,22 @@ def resolve_route(config, revision, subscription_id, *, account_id=None, style=N
             payload[role] = None
         elif profile["credential_ref"] is None:
             blockers.append(f"missing_{role}_credential")
-    if subscription["source_ids"]:
-        sources = [index["sources"][key] for key in subscription["source_ids"]]
-        explanation["sources"] = "explicit subscription selection"
-    else:
-        sources = [
-            source
-            for source in config["sources"]
-            if category["id"] in source["category_ids"] and source["enabled"]
-        ]
-        explanation["sources"] = "enabled category sources"
+    inherited = uses_category_sources(subscription)
+    sources = [
+        source
+        for source in config["sources"]
+        if source_in_subscription(source, subscription) and (source["enabled"] or not inherited)
+    ]
+    explanation["sources"] = (
+        "enabled category sources" if inherited else "explicit subscription selection"
+    )
     payload["sources"] = [
         _fields(s, "id kind url partition enabled") for s in sorted(sources, key=lambda s: s["id"])
     ]
+    if weights := subscription.get("focus_weights"):
+        payload["focus_weights"] = weights
+        for selected in payload["sources"]:
+            selected["focus"] = index["sources"][selected["id"]].get("focus")
     if any(not s["enabled"] for s in sources):
         blockers.append("source_disabled")
     if any(s["kind"] == "draft" for s in sources):

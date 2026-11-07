@@ -575,3 +575,22 @@ async def test_wrong_pair_replay_once_across_restart(system):
     api.updates = [update("/pair " + code, 20)]
     await restarted.poll_once("bot1", now=NOW)
     assert restarted.snapshot("bot1").owner_id == 123
+
+
+async def test_lifecycle_requires_current_explicit_generation_before_mutation_or_network(system):
+    registry, api, _ = system
+    initial = registry.status("bot1")
+    assert initial["generation"] == 0
+    await registry.verify("bot1", generation=0)
+    current = registry.status("bot1")
+    history = list(api.calls)
+    with pytest.raises(TelegramError, match="binding_changed"):
+        await registry.verify("bot1", generation=0)
+    for action in ("pause", "resume", "unbind"):
+        with pytest.raises(TelegramError, match="binding_changed"):
+            registry.action("bot1", action, generation=0)
+    with pytest.raises(TelegramError, match="binding_changed"):
+        registry.pair_code("bot1", generation=0)
+    assert registry.status("bot1") == current and api.calls == history
+    pair = registry.pair_code("bot1", generation=current["generation"])
+    assert pair["expires_at"] and registry.status("bot1")["generation"] > current["generation"]

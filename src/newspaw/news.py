@@ -273,12 +273,14 @@ def _media_credits(data):
         image_url = public_url(content.get("url", ""), https_only=True)
         if image_url is None:
             continue
-        credits = by_url.setdefault(image_url, [])
-        credits.extend(
+        if image_url in by_url:
+            by_url[image_url] = []
+            continue
+        by_url[image_url] = [
             text
             for credit in content.findall(namespace + "credit")
             if (text := plain_text("".join(credit.itertext()), 150))
-        )
+        ]
     return {url: names[0] for url, names in by_url.items() if len(names) == 1}
 
 

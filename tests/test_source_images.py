@@ -84,6 +84,21 @@ def test_publisher_credit_is_bound_to_the_exact_image_and_does_not_change_conten
     assert credited[0].content_sha256 == no_credit[0].content_sha256
 
 
+def test_duplicate_publisher_image_declarations_make_credit_ambiguous():
+    from test_model_runner import NOW
+
+    from newspaw.news import parse_evidence
+
+    image_url = "https://images.example.com/photo.png"
+    duplicate = f'<m:content url="{image_url}" type="image/png"/>'.encode()
+    data = feed_photo().replace(b"</item>", duplicate + b"</item>")
+
+    articles, _ = parse_evidence(data, "https://example.com/rss", NOW)
+
+    assert articles[0].image_url == image_url
+    assert articles[0].image_credit == ""
+
+
 def attach_images(pipeline, directory, handler):
     import httpx
 

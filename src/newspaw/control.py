@@ -20,6 +20,7 @@ from .budget import BudgetError, BudgetLedger
 from .connectors.web_search import WebSearch
 from .credentials import CredentialError
 from .media.source_images import AssetStore, SourceImages
+from .operations import Operations
 from .pipeline import Pipeline
 from .providers import ProbeService, ProfileRegistry, ProviderError
 from .scheduler import Scheduler
@@ -33,6 +34,13 @@ from .x.accounts import XDirectory
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
+    "ops.diagnostics": (set(), set()),
+    "ops.support_snapshot": (set(), set()),
+    "ops.export_settings": (set(), set()),
+    "ops.preview_import": ({"portable"}, set()),
+    "ops.apply_import": ({"portable", "digest", "revision"}, set()),
+    "ops.verify_backup": ({"name"}, set()),
+    "ops.cleanup": (set(), {"apply", "limit"}),
     "schedule.status": (set(), {"limit"}),
     "schedule.configure": ({"settings", "revision"}, set()),
     "schedule.resolve": ({"occurrence_id", "action"}, set()),
@@ -156,6 +164,11 @@ class ControlServer:
         self.outbox = Outbox(self.pipeline, self.targets, asset_resolver=assets.read)
         self.scheduler = Scheduler(self.pipeline, self.outbox)
         self.commands = Commands(self.outbox)
+        self.operations = Operations(
+            credentials.store,
+            self.directory,
+            process_status=lambda: "running" if self._server is not None else "stopped",
+        )
         self._server = None
         self._lock_fd = None
         self._handlers = set()
@@ -231,6 +244,22 @@ class ControlServer:
         if not required <= keys or keys - required - optional:
             raise CredentialError("invalid_request")
         manager, store = self.credentials, self.credentials.store
+        if op == "ops.diagnostics":
+            return self.operations.diagnostics()
+        if op == "ops.support_snapshot":
+            return self.operations.support_snapshot()
+        if op == "ops.export_settings":
+            return self.operations.export_settings()
+        if op == "ops.preview_import":
+            return self.operations.preview_import(data["portable"])
+        if op == "ops.apply_import":
+            return self.operations.apply_import(data["portable"], data["digest"], data["revision"])
+        if op == "ops.verify_backup":
+            return await asyncio.to_thread(self.operations.verify_backup, data["name"])
+        if op == "ops.cleanup":
+            return self.operations.cleanup(
+                apply=data.get("apply", False), limit=data.get("limit", 100)
+            )
         if op == "schedule.status":
             return self.scheduler.status(limit=data.get("limit", 25))
         if op == "schedule.configure":
@@ -272,13 +301,18 @@ class ControlServer:
             return self.x.lists()
         if op == "x.lists.add":
             return self.x.add_list(
-                data["value"], data["partition"], data["revision"],
+                data["value"],
+                data["partition"],
+                data["revision"],
                 default_adult=data.get("default_adult", False),
             )
         if op == "x.lists.refresh":
             return await self.x.refresh_list(
-                data["list_id"], data["request_id"], data["revision"],
-                page_size=data.get("page_size", 25), max_pages=data.get("max_pages", 4),
+                data["list_id"],
+                data["request_id"],
+                data["revision"],
+                page_size=data.get("page_size", 25),
+                max_pages=data.get("max_pages", 4),
             )
         if op == "x.operation":
             return self.x.operation(data["request_id"])

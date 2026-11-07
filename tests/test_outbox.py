@@ -493,3 +493,48 @@ def test_splitter_keeps_astral_budget_and_citation_links():
     assert parts == ["🐾" * 10, link]
     with pytest.raises(ValueError, match="citation_line_too_long"):
         split_delivery_text(link + "a" * 30, limit=30)
+
+
+async def test_owner_requeue_only_arms_initially_unready_existing_target(system):
+    pipeline, targets, job, _, _ = system
+    targets.registry.action("bot2", "pause", now=NOW)
+    outbox, calls = sender(pipeline, targets)
+    outbox.enqueue(job, now=NOW)
+    assert bot_status(outbox, job, "bot2")["reason"] == "paused"
+    targets.registry.action("bot2", "resume", now=NOW)
+    outbox.enqueue(job, now=NOW)
+    await outbox.advance(job, "bot2", now=NOW)
+    assert not calls and bot_status(outbox, job, "bot2")["part_count"] == 0
+
+    with pytest.raises(OutboxError, match="target_not_requeueable"):
+        outbox.requeue_target(job, "bot1")
+    view = outbox.requeue_target(job, "bot2")
+    assert not calls and not view["started"]
+    assert view["targets"]["bot2"]["parts"][0]["attempts"] == []
+    await outbox.advance(job, "bot2", now=NOW)
+    assert len(calls) == 1 and bot_status(outbox, job, "bot2")["status"] == "delivered"
+
+
+async def test_owner_requeue_cannot_expand_recipients_after_other_bot_intent(system):
+    pipeline, targets, job, _, _ = system
+    dispatch_started, response_ready = asyncio.Event(), asyncio.Event()
+
+    async def respond(_):
+        dispatch_started.set()
+        await response_ready.wait()
+        return ready_response()
+
+    targets.registry.action("bot2", "pause", now=NOW)
+    outbox, calls = sender(pipeline, targets, respond)
+    outbox.enqueue(job, now=NOW)
+    sending = asyncio.create_task(outbox.advance(job, "bot1", now=NOW))
+    try:
+        await asyncio.wait_for(dispatch_started.wait(), 2)
+        targets.registry.action("bot2", "resume", now=NOW)
+        with pytest.raises(OutboxError, match="recipient_set_frozen"):
+            outbox.requeue_target(job, "bot2")
+    finally:
+        response_ready.set()
+        await sending
+    await outbox.advance(job, "bot2", now=NOW)
+    assert len(calls) == 1 and bot_status(outbox, job, "bot2")["part_count"] == 0

@@ -388,4 +388,7 @@ async def test_outbox_rpc_exposes_status_and_resolution_without_dispatch(control
         {"op": "delivery.resolve", "job_id": "job.missing", "bot_id": "bot1", "ordinal": -1, "action": "retry"},
     )
     assert bad == {"ok": False, "error": "invalid_resolution"}
+    assert await request(
+        server, {"op": "delivery.requeue_target", "job_id": "job.missing", "bot_id": "bot1"}
+    ) == {"ok": False, "error": "missing_delivery"}
     assert (await request(server, {"op": "delivery.advance", "job_id": "job.missing"}))["error"] == "unknown_operation"

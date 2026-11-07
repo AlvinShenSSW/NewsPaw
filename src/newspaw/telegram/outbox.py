@@ -26,6 +26,7 @@ _MAX_PARTS = 80
 _AUTOMATIC_ATTEMPTS = 3
 _MAX_ATTEMPTS = 6
 _FINISHED_PARTS = {"delivered", "owner_confirmed", "skipped"}
+_INITIAL_BLOCKERS = {"paused", "unverified", "unpaired", "adult_not_allowed"}
 _ID = re.compile(r"[A-Za-z0-9_.:-]{1,140}")
 _ASSET_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}")
 _SHA = re.compile(r"[a-f0-9]{64}")
@@ -52,6 +53,10 @@ def _id(value):
     if not isinstance(value, str) or not _ID.fullmatch(value):
         raise OutboxError("invalid_identity")
     return value
+
+
+def _pending_parts(count):
+    return [dict(state="pending", attempts=[]) for _ in range(count)]
 
 
 def initialize(db):
@@ -185,9 +190,7 @@ class Outbox:
                 binding.chat_id if binding else None,
                 _json(asdict(binding)) if binding else None,
                 reason,
-                _json(
-                    [dict(state="pending", attempts=[]) for _ in range(count)] if binding else []
-                ),
+                _json(_pending_parts(count) if binding else []),
             ),
         )
 
@@ -251,6 +254,42 @@ class Outbox:
                 )
             self._live(job_id)
         return self.status(job_id)
+
+    def requeue_target(self, job_id, bot_id):
+        """Explicitly arm one originally unready target before the edition's first intent."""
+        with self.store._write():
+            manifest, started, stopped = self._manifest_row(job_id)
+            if started:
+                raise OutboxError("recipient_set_frozen")
+            if stopped:
+                raise OutboxError(stopped)
+            target = self._row(job_id, bot_id)
+            if (
+                not target["selected"]
+                or target["binding"] is not None
+                or target["parts"]
+                or target["reason"] not in _INITIAL_BLOCKERS
+            ):
+                raise OutboxError("target_not_requeueable")
+            route = self.pipeline.delivery_scope(job_id)
+            preview = self.targets.preview(route.subscription_id, account_id=route.account_id)
+            binding = next((item for item in preview["bindings"] if item["bot_id"] == bot_id), None)
+            if binding is None:
+                raise OutboxError("target_not_ready")
+            self.db.execute(
+                """UPDATE delivery_targets
+                   SET telegram_id=?,chat_id=?,binding=?,reason=NULL,parts=?
+                   WHERE job_id=? AND bot_id=?""",
+                (
+                    binding["telegram_id"],
+                    binding["chat_id"],
+                    _json(binding),
+                    _json(_pending_parts(len(manifest["parts"]))),
+                    job_id,
+                    bot_id,
+                ),
+            )
+        return self.status(job_id, bot_id=bot_id)
 
     def status(self, job_id, *, bot_id=None):
         manifest, started, stopped = self._manifest_row(job_id)

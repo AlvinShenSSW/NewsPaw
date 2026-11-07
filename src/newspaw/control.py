@@ -29,6 +29,7 @@ from .telegram.targets import TargetManager
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
     "delivery.status": ({"job_id"}, {"bot_id"}),
+    "delivery.requeue_target": ({"job_id", "bot_id"}, set()),
     "delivery.resolve": (
         {"job_id", "bot_id", "ordinal", "action"},
         {"acknowledge_duplicate_send", "message_id"},
@@ -193,6 +194,8 @@ class ControlServer:
         manager, store = self.credentials, self.credentials.store
         if op == "delivery.status":
             return self.outbox.status(data["job_id"], bot_id=data.get("bot_id"))
+        if op == "delivery.requeue_target":
+            return self.outbox.requeue_target(data["job_id"], data["bot_id"])
         if op == "delivery.resolve":
             return self.outbox.resolve(
                 data["job_id"],

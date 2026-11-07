@@ -1,0 +1,217 @@
+"""Same-user Unix socket control. No TCP, commands, or remote administration."""
+
+from __future__ import annotations
+
+import asyncio
+import ctypes
+import errno
+import fcntl
+import json
+import os
+import socket
+import stat
+import struct
+import sys
+from contextlib import suppress
+from dataclasses import asdict
+from pathlib import Path
+
+from .credentials import CredentialError
+
+MAX_FRAME = 8 * 1024 * 1024
+OPERATIONS = {
+    "config.get": (set(), set()),
+    "config.save": ({"document", "revision"}, set()),
+    "route.preview": ({"subscription_id"}, {"account_id", "style"}),
+    "credentials.set": ({"kind", "id", "value", "revision"}, set()),
+    "credentials.remove": ({"kind", "id", "revision"}, set()),
+    "credentials.status": (set(), set()),
+    "credentials.cleanup": (set(), set()),
+    "legacy.preferences": ({"path", "revision"}, set()),
+    "legacy.secrets": ({"path", "revision"}, set()),
+}
+
+
+def peer_uid(sock):
+    if sys.platform == "darwin":
+        fn = ctypes.CDLL(None, use_errno=True).getpeereid
+        fn.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_uint), ctypes.POINTER(ctypes.c_uint)]
+        fn.restype = ctypes.c_int
+        uid, gid = ctypes.c_uint(), ctypes.c_uint()
+        if fn(sock.fileno(), ctypes.byref(uid), ctypes.byref(gid)) != 0:
+            raise ValueError("peer_unavailable")
+        return uid.value
+    if sys.platform.startswith("linux"):
+        return struct.unpack("3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[1]
+    raise ValueError("peer_unavailable")
+
+
+def acquire_control_lock(directory):
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    info = directory.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise ValueError("unsafe_control_directory")
+    fd = os.open(directory / "agent.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise ValueError("unsafe_control_lock")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError("already_running") from None
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+class ControlServer:
+    def __init__(self, directory: Path, credentials):
+        self.directory = Path(directory).expanduser().absolute()
+        self.path = self.directory / "control.sock"
+        self.credentials = credentials
+        self._server = None
+        self._lock_fd = None
+        self._handlers = set()
+        self._socket_identity = None
+
+    async def start(self):
+        if self._server is not None:
+            raise ValueError("already_running")
+        if self._lock_fd is None:
+            self._lock_fd = acquire_control_lock(self.directory)
+        try:
+            if self.path.exists() or self.path.is_symlink():
+                info = self.path.lstat()
+                if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
+                    raise ValueError("unsafe_control_socket")
+                with socket.socket(socket.AF_UNIX) as probe:
+                    probe.settimeout(0.2)
+                    if probe.connect_ex(str(self.path)) != errno.ECONNREFUSED:
+                        raise ValueError("control_socket_in_use")
+                self.path.unlink()
+            self._server = await asyncio.start_unix_server(
+                self._handle, path=self.path, limit=MAX_FRAME + 1, start_serving=False
+            )
+            self.path.chmod(0o600)
+            self._socket_identity = self.path.stat().st_ino
+            await self.credentials.cleanup()
+            await self._server.start_serving()
+        except BaseException:
+            await self.close()
+            raise
+
+    async def close(self):
+        if self._server is not None:
+            self._server.close()
+            await self._server.wait_closed()
+            self._server = None
+        if self._handlers:
+            await asyncio.gather(*self._handlers, return_exceptions=True)
+        await self.credentials.drain()
+        if self._socket_identity is not None:
+            try:
+                if self.path.lstat().st_ino == self._socket_identity:
+                    self.path.unlink()
+            except FileNotFoundError:
+                pass
+            self._socket_identity = None
+        if self._lock_fd is not None:
+            os.close(self._lock_fd)
+            self._lock_fd = None
+
+    async def _dispatch(self, data):
+        if not isinstance(data, dict) or not isinstance(data.get("op"), str):
+            raise CredentialError("invalid_request")
+        op = data["op"]
+        if op not in OPERATIONS:
+            raise CredentialError("unknown_operation")
+        required, optional = OPERATIONS[op]
+        keys = set(data) - {"op"}
+        if not required <= keys or keys - required - optional:
+            raise CredentialError("invalid_request")
+        manager, store = self.credentials, self.credentials.store
+        if op == "config.get":
+            revision, document = store.load_config()
+            return {"revision": revision, "document": document}
+        if op == "config.save":
+            return await manager.save_config(data["document"], data["revision"])
+        if op == "route.preview":
+            route = store.preview_route(
+                data["subscription_id"], account_id=data.get("account_id"), style=data.get("style")
+            )
+            return {
+                **{k: v for k, v in asdict(route).items() if not k.startswith("_")},
+                "effective": route.effective,
+                "explanation": route.explanation,
+            }
+        if op == "credentials.set":
+            return await manager.set(data["kind"], data["id"], data["value"], data["revision"])
+        if op == "credentials.remove":
+            return await manager.remove(data["kind"], data["id"], data["revision"])
+        if op == "credentials.status":
+            return await manager.status()
+        if op == "credentials.cleanup":
+            return await manager.cleanup()
+        if op == "legacy.preferences":
+            return await manager.import_preferences(data["path"], data["revision"])
+        return await manager.import_secrets(data["path"], data["revision"])
+
+    async def _handle(self, reader, writer):
+        task = asyncio.current_task()
+        if len(self._handlers) >= 16:
+            writer.close()
+            return
+        self._handlers.add(task)
+        try:
+            try:
+                if peer_uid(writer.get_extra_info("socket")) != os.getuid():
+                    raise CredentialError("peer_denied")
+                async with asyncio.timeout(10):
+                    raw = await reader.readline()
+                if not raw.endswith(b"\n") or len(raw) > MAX_FRAME:
+                    raise CredentialError("invalid_request")
+                result = await self._dispatch(json.loads(raw))
+                response = {"ok": True, "result": result}
+            except CredentialError as exc:
+                response = {"ok": False, "error": str(exc)}
+            except Exception:
+                response = {"ok": False, "error": "invalid_request"}
+            encoded = json.dumps(response, ensure_ascii=False).encode() + b"\n"
+            if len(encoded) > MAX_FRAME:
+                encoded = b'{"ok":false,"error":"response_too_large"}\n'
+            writer.write(encoded)
+            async with asyncio.timeout(10):
+                await writer.drain()
+        except (ConnectionError, TimeoutError):
+            pass
+        finally:
+            writer.close()
+            with suppress(ConnectionError):
+                await writer.wait_closed()
+            self._handlers.discard(task)
+
+
+async def serve_control(directory):
+    from .credentials import CredentialManager, MacKeychain
+    from .store import Store
+
+    directory = Path(directory).expanduser().absolute()
+    lock_fd = acquire_control_lock(directory)
+    store = None
+    server = None
+    try:
+        store = Store(directory / "newspaw.sqlite3")
+        server = ControlServer(directory, CredentialManager(store, MacKeychain()))
+        server._lock_fd = lock_fd
+        lock_fd = None
+        await server.start()
+        await asyncio.Event().wait()
+    finally:
+        if server is not None:
+            await server.close()
+        if store is not None:
+            store.close()
+        if lock_fd is not None:
+            os.close(lock_fd)

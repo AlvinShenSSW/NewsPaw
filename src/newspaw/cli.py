@@ -135,6 +135,10 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("init", help="生成私有配置和随机配对码，不覆盖已有文件")
     commands.add_parser("doctor", help="检查本机配置，不发送消息")
     commands.add_parser("run", help="前台运行 Telegram bot")
+    control = commands.add_parser("control", help="仅运行本机配置接口，不采集或发送")
+    control.add_argument(
+        "--data-dir", type=Path, default=Path.home() / "Library/Application Support/NewsPaw"
+    )
     for name in ("search", "collect"):
         sub = commands.add_parser(name, help="采集公开新闻并记录证据，不发送消息")
         if name == "search":
@@ -153,6 +157,11 @@ def main(argv: list[str] | None = None) -> int:
     for name in ("httpx", "httpcore", "openai", "telegram", "apscheduler"):
         logging.getLogger(name).setLevel(logging.CRITICAL)
     try:
+        if args.command == "control":
+            from .control import serve_control
+
+            asyncio.run(serve_control(args.data_dir))
+            return 0
         if args.command == "init":
             print(initialize(args.config))
             return 0

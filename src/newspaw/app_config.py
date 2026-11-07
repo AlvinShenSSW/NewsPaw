@@ -455,9 +455,10 @@ def _validate_config(config: dict) -> None:
         raise ValueError("Configuration too large")
 
 
-def import_preferences(env_path: Path | None, legacy: dict[str, str]) -> dict:
+def import_preferences(env_path: Path | None, legacy: dict[str, str], *, values=None) -> dict:
     """Import a narrow preference allowlist, without interpolation or credentials."""
-    values = dotenv_values(env_path, interpolate=False) if env_path is not None else {}
+    if values is None:
+        values = dotenv_values(env_path, interpolate=False) if env_path is not None else {}
     config = default_config()
     aliases = {
         "简体中文": "zh-Hans",
@@ -562,7 +563,7 @@ def import_preferences(env_path: Path | None, legacy: dict[str, str]) -> dict:
     owner = legacy.get("owner_id") or values.get("TELEGRAM_OWNER_ID")
     if owner:
         try:
-            config["owner_id"] = int(owner)
+            config["owner_id"] = int(owner) or None
         except ValueError:
             raise ValueError("Invalid legacy owner ID") from None
     # Prototype defaults are not evidence that the user chose an override.

@@ -308,3 +308,24 @@ def test_save_after_upgrade_revokes_legacy_import_eligibility(tmp_path):
     with pytest.raises(ValueError, match="untouched"):
         store.import_legacy_config()
     store.close()
+
+
+def test_v2_upgrade_adds_only_credential_journal(tmp_path):
+    path = tmp_path / "state.db"
+    store = Store(path)
+    original = store.load_config()
+    store.close()
+    with sqlite3.connect(path) as db:
+        db.execute("DROP TABLE credential_intents")
+        db.execute("PRAGMA user_version=2")
+    upgraded = Store(path)
+    assert upgraded.load_config() == original
+    assert upgraded.pending_credentials() == []
+    upgraded.close()
+    backups = list(tmp_path.glob("state.db.backup-*"))
+    assert len(backups) == 1
+    with closing(sqlite3.connect(backups[0])) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert not db.execute(
+            "SELECT name FROM sqlite_master WHERE name='credential_intents'"
+        ).fetchall()

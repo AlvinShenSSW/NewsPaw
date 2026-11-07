@@ -37,3 +37,9 @@ M1/M2 发布必须检查对应依赖全集、每项内部/Kimi审阅及最终提
 ## 工作流依据
 
 官方 [checkout](https://github.com/actions/checkout)、[setup-python](https://github.com/actions/setup-python)、[setup-uv](https://github.com/astral-sh/setup-uv) 的 release/tag 已在建工作流时核对，固定对应提交。之后升级需通过同样检查，不静默引用浮动主分支。
+
+## 独立本机 Keychain 测试
+
+`NEWSPAW_NATIVE_KEYCHAIN_TEST=1 uv run pytest -q tests/test_native_keychain.py` 显式启用 macOS 原生测试。它使用随机 `io.newspaw.tests.<UUID>` 服务与合成值，完成读写后删除该测试项；不会读取 NewsPaw 真实凭据。默认离线套件跳过此项，CI 不设置这个开关。
+
+`uv run newspaw control --data-dir <私有目录>` 仅以前台方式提供本机设置接口，不启动采集、模型或 Telegram。配置变更需要当前 revision；断线后先重新读取配置，不盲目重试。

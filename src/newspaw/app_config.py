@@ -202,7 +202,16 @@ def _url(value):
             raise ValueError
         for key, _ in parse_qsl(parsed.query, keep_blank_values=True):
             normalized = re.sub(r"[^a-z]", "", key.lower())
-            if any(word in normalized for word in ("token", "key", "password", "secret", "auth")):
+            if normalized in {
+                "key",
+                "apikey",
+                "token",
+                "accesstoken",
+                "password",
+                "secret",
+                "auth",
+                "authorization",
+            } or normalized.endswith(("apikey", "token", "password", "secret", "authorization")):
                 raise ValueError
     except ValueError:
         raise ValueError("Configuration URLs must be HTTPS without credentials") from None

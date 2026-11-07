@@ -78,3 +78,12 @@ def test_import_preserves_topics_feeds_and_database_override(tmp_path):
     assert all(s["max_items"] == 3 for s in config["subscriptions"])
     assert all(s["source_ids"] == [config["sources"][0]["id"]] for s in config["subscriptions"])
     assert import_preferences(path, {"topics": "Apple;我的专题"}) == config
+
+
+def test_url_author_filter_is_not_a_credential_but_encoded_api_key_is(tmp_path):
+    path = tmp_path / "old.env"
+    path.write_text("NEWS_FEEDS=https://example.com/feed?author=123\n")
+    assert import_preferences(path, {})["sources"][0]["url"].endswith("author=123")
+    path.write_text("NEWS_FEEDS=https://example.com/feed?api%5Fkey=hidden\n")
+    with pytest.raises(ValueError, match="without credentials"):
+        import_preferences(path, {})

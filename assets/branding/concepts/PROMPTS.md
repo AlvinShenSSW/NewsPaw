@@ -1,6 +1,6 @@
 # NewsPaw logo concepts
 
-Generated with the built-in image_gen tool on 2026-11-07. Black, white and neutral gray; raster PNG concept explorations. No final logo has been selected or installed in the app. Original generated files were preserved.
+Generated with the built-in image_gen tool on 2026-11-07. Black, white and neutral gray; raster PNG concept explorations. The user selected concept 1, the paw-print and newspaper, on 2026-11-07; it is used in the settings mockup. No native app icon is installed. Original generated files were preserved.
 
 ## 1. newspaw-paw-newspaper.png
 

@@ -259,9 +259,16 @@ class XDirectory:
 
         return await self.targets._mutate(revision, change)
 
-    async def set_route(self, identity, subscription_id, priority, revision):
+    async def set_route(
+        self, identity, subscription_id, priority, revision, *, include_in_aggregate=None
+    ):
         if priority not in ("normal", "special"):
             raise XError("invalid_priority")
+        if include_in_aggregate is not None and (
+            type(include_in_aggregate) is not bool
+            or (include_in_aggregate and (priority != "special" or subscription_id is None))
+        ):
+            raise XError("invalid_aggregate_membership")
 
         def change(config):
             account = _account(config, identity)
@@ -275,6 +282,13 @@ class XDirectory:
                 account.update(
                     bot_ids=None if priority == "special" else [], times=None, style=None
                 )
+            if priority != "special" or account["subscription_id"] != subscription_id:
+                account.pop("include_in_aggregate", None)
+            if include_in_aggregate is not None and priority == "special":
+                if include_in_aggregate:
+                    account["include_in_aggregate"] = True
+                else:
+                    account.pop("include_in_aggregate", None)
             account.update(subscription_id=subscription_id, priority=priority)
             if account != prior:
                 affected = {prior["subscription_id"], subscription_id} - {None}
@@ -571,6 +585,7 @@ class XDirectory:
                     "UPDATE x_identities SET remote_id=NULL WHERE account_id=?", (owner,)
                 )
             observed = self._identity(account["id"])
+            alias = self._identity(requested["id"]) if bare_duplicate else None
             if not observed or not observed["observed_at"] or observed["observed_at"] <= when:
                 account.update(handle=item["handle"], remote_id=item["remote_id"])
                 if bare_duplicate:
@@ -586,6 +601,10 @@ class XDirectory:
                 if _json(config["accounts"]) != original_accounts:
                     saved_revision = self.store._save_config_tx(config, saved_revision)
                 self._observe(account, item, context["ref"], when, direct=True)
+                if alias and alias["direct"]:
+                    self.db.execute(
+                        "UPDATE x_identities SET direct=1 WHERE account_id=?", (account["id"],)
+                    )
             else:
                 saved_revision = context["revision"]
             status = self.account_status(account["id"])

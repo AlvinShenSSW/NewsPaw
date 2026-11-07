@@ -541,3 +541,42 @@ async def test_received_x_page_error_settles_known_units(system, status, body, r
     ).fetchall() == [("settled", 100, 1)]
     assert await x.refresh_list("456", "list.received", revision, page_size=100) == operation
     assert len(requests) == 2
+
+
+async def test_explicit_alias_follows_canonical_list_account_after_deduplication(system):
+    store, _, _ = system
+    members = [user("12345", "previous_name")]
+
+    async def response(request, _):
+        if request.url.path == "/2/lists/456":
+            return httpx.Response(
+                200, json={"data": {"id": "456", "name": "Fixture", "private": False}}
+            )
+        if request.url.path == "/2/lists/456/members":
+            return httpx.Response(
+                200, json={"data": members, "meta": {"result_count": len(members)}}
+            )
+        assert request.url.path == "/2/users/by/username/renamed"
+        return httpx.Response(200, json={"data": user("12345", "renamed")})
+
+    x, _ = directory(system, response)
+    x.add_list("456", "normal", store.config_revision())
+    await x.refresh_list("456", "list.initial", store.config_revision())
+    revision, config = store.load_config()
+    canonical = config["accounts"][0]["id"]
+    subscription = next(sub for sub in config["subscriptions"] if sub["category_id"] == "x")
+    subscription["enabled"] = True
+    store.save_config(config, expected_revision=revision)
+    await x.classify(canonical, "normal", store.config_revision())
+    await x.set_route(canonical, subscription["id"], "normal", store.config_revision())
+    assert x.account_status(canonical)["direct"] is False
+    alias = (await x.add_account("renamed", store.config_revision()))["account"]["id"]
+    verified = await x.verify(alias, "verify.alias", store.config_revision())
+    assert verified["state"] == "duplicate" and verified["canonical_account_id"] == canonical
+    assert [row["id"] for row in store.load_config()[1]["accounts"]] == [canonical]
+    assert verified["account"]["direct"] is True
+
+    members.clear()
+    await x.refresh_list("456", "list.removed", store.config_revision())
+    status = x.account_status(canonical)
+    assert not status["member_active"] and status["can_collect"]

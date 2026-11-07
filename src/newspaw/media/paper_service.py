@@ -445,7 +445,8 @@ class Newspapers:
                 }
             )
         with self.store._write():
-            self._authorized(policy, profiles, guard)
+            if not self._authorized(policy, profiles, guard):
+                return None
             self.db.execute(
                 "UPDATE newspapers SET state='ready',result=? WHERE id=?", (_json(photos), paper)
             )

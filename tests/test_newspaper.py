@@ -223,6 +223,22 @@ async def test_newspaper_shares_verified_cached_image_and_retains_clickable_sour
     ).fetchone() == (1, 2)
 
 
+async def test_newspaper_rechecks_scope_after_last_provider_returns(prepared_papers):
+    service, _, ocr, calls = prepared_papers
+    frozen = edition()
+    ocr.lines = [make_plan(frozen, page_count=1)["pages"][0]["lines"]]
+    future = datetime.now(UTC) + timedelta(seconds=5)
+
+    result = await service.prepare(
+        "brief.revoked", frozen, "normal", future, lambda: "vision" not in calls
+    )
+
+    assert result is None and calls == ["generation", "vision"]
+    assert service.db.execute("SELECT state,result FROM newspapers").fetchall() == [
+        ("building", None)
+    ]
+
+
 async def test_second_page_ocr_failure_does_not_publish_first_page(prepared_papers):
     service, _, ocr, calls = prepared_papers
     frozen = edition()

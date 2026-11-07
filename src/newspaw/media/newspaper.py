@@ -8,6 +8,7 @@ import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ..credentials import CredentialError
 from ..news import public_url
 
 _LOCALES = {
@@ -18,7 +19,7 @@ _LOCALES = {
 _MAX_IMAGE = 2 * 1024 * 1024
 
 
-class PaperError(ValueError):
+class PaperError(CredentialError):
     pass
 
 

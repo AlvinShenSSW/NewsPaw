@@ -87,3 +87,21 @@ def test_url_author_filter_is_not_a_credential_but_encoded_api_key_is(tmp_path):
     path.write_text("NEWS_FEEDS=https://example.com/feed?api%5Fkey=hidden\n")
     with pytest.raises(ValueError, match="without credentials"):
         import_preferences(path, {})
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Signature=private&Key-Pair-Id=ABC",
+        "sig=private",
+        "X-Amz-Signature=private",
+        "X-Goog-Credential=private",
+        "AWSAccessKeyId=private",
+        "subscription-key=private",
+    ],
+)
+def test_signed_feed_credentials_are_never_imported(tmp_path, query):
+    path = tmp_path / "old.env"
+    path.write_text(f"NEWS_FEEDS=https://example.com/feed?{query}\n")
+    with pytest.raises(ValueError, match="without credentials"):
+        import_preferences(path, {})

@@ -211,7 +211,25 @@ def _url(value):
                 "secret",
                 "auth",
                 "authorization",
-            } or normalized.endswith(("apikey", "token", "password", "secret", "authorization")):
+                "sig",
+                "signature",
+                "credential",
+                "keypairid",
+                "googleaccessid",
+                "authkey",
+            } or normalized.endswith(
+                (
+                    "apikey",
+                    "token",
+                    "password",
+                    "secret",
+                    "authorization",
+                    "signature",
+                    "credential",
+                    "accesskeyid",
+                    "subscriptionkey",
+                )
+            ):
                 raise ValueError
     except ValueError:
         raise ValueError("Configuration URLs must be HTTPS without credentials") from None

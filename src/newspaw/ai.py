@@ -93,7 +93,7 @@ class AIService:
                 api_key=api_key,
                 base_url=base_url or None,
                 timeout=90.0,
-                max_retries=1,
+                max_retries=0,
                 http_client=provider_client(base_url or "https://api.openai.com/v1"),
             )
             if api_key.strip()

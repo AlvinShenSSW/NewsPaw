@@ -319,6 +319,7 @@ class XDirectory:
         *,
         include_in_aggregate=None,
         post_types=None,
+        overrides=None,
     ):
         if priority not in ("normal", "special"):
             raise XError("invalid_priority")
@@ -327,6 +328,13 @@ class XDirectory:
             or (include_in_aggregate and (priority != "special" or subscription_id is None))
         ):
             raise XError("invalid_aggregate_membership")
+        if overrides is not None and (
+            not isinstance(overrides, dict)
+            or overrides.keys() != {"times", "bot_ids", "style"}
+            or priority != "special"
+            or subscription_id is None
+        ):
+            raise XError("invalid_account_overrides")
         if post_types is not None:
             try:
                 post_types = x_post_types(post_types)
@@ -357,6 +365,17 @@ class XDirectory:
                     account.pop("post_types", None)
                 else:
                     account["post_types"] = post_types
+            if overrides is not None:
+                bot_ids = overrides["bot_ids"]
+                account.update(
+                    times=overrides["times"],
+                    style=overrides["style"],
+                    bot_ids=(
+                        self.targets._targets(config, bot_ids, account["partition"])
+                        if bot_ids is not None
+                        else None
+                    ),
+                )
             account.update(subscription_id=subscription_id, priority=priority)
             if account != prior:
                 affected = {prior["subscription_id"], subscription_id} - {None}

@@ -56,7 +56,7 @@ OPERATIONS = {
     "x.accounts.classify": ({"account_id", "partition", "revision"}, set()),
     "x.accounts.route": (
         {"account_id", "subscription_id", "priority", "revision"},
-        {"include_in_aggregate", "post_types"},
+        {"include_in_aggregate", "post_types", "overrides"},
     ),
     "x.accounts.remove": ({"account_id", "revision"}, set()),
     "x.lists.list": (set(), set()),
@@ -324,6 +324,7 @@ class ControlServer:
                 data["revision"],
                 include_in_aggregate=data.get("include_in_aggregate"),
                 post_types=data.get("post_types"),
+                overrides=data.get("overrides"),
             )
         if op == "x.accounts.remove":
             return await self.x.remove_account(data["account_id"], data["revision"])

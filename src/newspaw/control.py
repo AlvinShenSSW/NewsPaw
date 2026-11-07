@@ -22,9 +22,18 @@ from .providers import ProbeService, ProfileRegistry, ProviderError
 from .source_catalog import catalog
 from .source_manager import SourceError, SourceManager
 from .telegram.registry import BotRegistry, TelegramError
+from .telegram.targets import TargetManager
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
+    "targets.preview": ({"subscription_id"}, {"account_id"}),
+    "targets.set_subscription": ({"subscription_id", "bot_ids", "revision"}, set()),
+    "targets.set_category": ({"category_id", "bot_ids", "revision"}, set()),
+    "targets.set_account": ({"account_id", "bot_ids", "revision"}, set()),
+    "targets.account_partition": ({"account_id", "partition", "revision"}, set()),
+    "targets.adult_permission": ({"bot_id", "allowed", "revision"}, set()),
+    "targets.bot_impact": ({"bot_id"}, set()),
+    "targets.delete_bot": ({"bot_id", "revision"}, set()),
     "sources.catalog": (set(), set()),
     "sources.list": (set(), set()),
     "sources.discover": ({"url"}, set()),
@@ -98,6 +107,7 @@ class ControlServer:
         self.probes = ProbeService(credentials.store, credentials.backend)
         self.bots = BotRegistry(credentials.store, credentials.backend)
         self.sources = SourceManager(credentials)
+        self.targets = TargetManager(credentials, self.bots)
         self._server = None
         self._lock_fd = None
         self._handlers = set()
@@ -169,6 +179,32 @@ class ControlServer:
         if not required <= keys or keys - required - optional:
             raise CredentialError("invalid_request")
         manager, store = self.credentials, self.credentials.store
+        if op == "targets.preview":
+            return self.targets.preview(data["subscription_id"], account_id=data.get("account_id"))
+        if op == "targets.set_subscription":
+            return await self.targets.set_subscription(
+                data["subscription_id"], data["bot_ids"], data["revision"]
+            )
+        if op == "targets.set_category":
+            return await self.targets.set_category(
+                data["category_id"], data["bot_ids"], data["revision"]
+            )
+        if op == "targets.set_account":
+            return await self.targets.set_account(
+                data["account_id"], data["bot_ids"], data["revision"]
+            )
+        if op == "targets.account_partition":
+            return await self.targets.account_partition(
+                data["account_id"], data["partition"], data["revision"]
+            )
+        if op == "targets.adult_permission":
+            return await self.targets.adult_permission(
+                data["bot_id"], data["allowed"], data["revision"]
+            )
+        if op == "targets.bot_impact":
+            return self.targets.bot_impact(data["bot_id"])
+        if op == "targets.delete_bot":
+            return await self.targets.delete_bot(data["bot_id"], data["revision"])
         if op == "sources.catalog":
             return catalog()
         if op == "sources.list":

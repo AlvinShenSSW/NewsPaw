@@ -330,3 +330,30 @@ async def test_source_setup_rpc_catalog_import_and_routes(control):
     )
     assert rejected == {"ok": False, "error": "unsafe_url"}
     assert store.config_revision() == 2
+
+
+async def test_target_rpc_no_fake_readiness_and_explicit_empty_assignment(control):
+    server, store = control
+    result = await request(server, {"op": "targets.preview", "subscription_id": "sub_world"})
+    assert result["ok"] and result["result"]["ready_bot_ids"] == []
+    assert "no_target" in result["result"]["blockers"]
+    result = await request(
+        server,
+        {
+            "op": "targets.set_subscription",
+            "subscription_id": "sub_world",
+            "bot_ids": [],
+            "revision": store.config_revision(),
+        },
+    )
+    assert result["ok"] and result["result"]["affected_subscriptions"] == []
+    denied = await request(
+        server,
+        {
+            "op": "targets.adult_permission",
+            "bot_id": "missing",
+            "allowed": True,
+            "revision": store.config_revision(),
+        },
+    )
+    assert denied == {"ok": False, "error": "missing_bot"}

@@ -161,6 +161,8 @@ async def test_delete_impact_cas_and_binding_revocation(setup):
     assert store.load_config() == before
     result = await manager.delete_bot("bot1", store.config_revision())
     assert result["impact"]["subscriptions"] == impact["subscriptions"]
+    assert result["affected_subscriptions"] == impact["subscriptions"]
+    assert result["affected_accounts"] == []
     with pytest.raises(TargetError):
         manager.revalidate_target("sub_world", "bot1", binding)
 
@@ -239,9 +241,10 @@ async def test_impact_tracks_inherited_and_explicit_specials_only(setup):
     ]
     store.save_config(config, expected_revision=rev)
     impact = manager.bot_impact("bot1")
+    assert impact["subscription_targets"]["sub_world"] == ["bot1"]
     assert impact["accounts"] == [
-        dict(id="inherited", inherited=True, last_target=True),
-        dict(id="explicit", inherited=False, last_target=False),
+        dict(id="inherited", inherited=True, last_target=True, bot_ids=["bot1"]),
+        dict(id="explicit", inherited=False, last_target=False, bot_ids=["bot1", "bot2"]),
     ]
     result = await manager.set_subscription("sub_world", ["bot2"], store.config_revision())
     assert result["affected_accounts"] == ["inherited"]
@@ -269,3 +272,57 @@ async def test_subscription_assignment_cas_and_unknown_target_atomic(setup):
     with pytest.raises(TargetError):
         await manager.set_subscription("sub_world", ["missing"], before[0])
     assert store.load_config() == before
+
+
+async def test_ordinary_partition_change_reports_old_aggregate(setup):
+    manager, _, store = setup
+    rev, config = store.load_config()
+    config["accounts"] = [
+        dict(
+            id="ordinary",
+            remote_id="12345",
+            handle="fixture",
+            partition="normal",
+            priority="normal",
+            subscription_id="sub_x",
+            bot_ids=["bot1"],
+            times=None,
+            style=None,
+        )
+    ]
+    store.save_config(config, expected_revision=rev)
+    before = store.preview_route("sub_x")
+    result = await manager.account_partition("ordinary", "adult", store.config_revision())
+    assert store.preview_route("sub_x").fingerprint != before.fingerprint
+    assert result["affected_accounts"] == ["ordinary"]
+    assert result["affected_subscriptions"] == ["sub_x"]
+
+
+async def test_adult_optout_and_delete_report_stored_ordinary_references(setup):
+    manager, _, store = setup
+    await manager.adult_permission("bot1", True, store.config_revision())
+    rev, config = store.load_config()
+    config["accounts"] = [
+        dict(
+            id="ordinary",
+            remote_id="12345",
+            handle="fixture",
+            partition="adult",
+            priority="normal",
+            subscription_id="sub_x_adult",
+            bot_ids=["bot1"],
+            times=None,
+            style=None,
+        )
+    ]
+    store.save_config(config, expected_revision=rev)
+    result = await manager.adult_permission("bot1", False, store.config_revision())
+    assert result["affected_accounts"] == ["ordinary"]
+    assert result["affected_subscriptions"] == []
+    await manager.adult_permission("bot1", True, store.config_revision())
+    rev, config = store.load_config()
+    config["accounts"][0]["bot_ids"] = ["bot1"]
+    store.save_config(config, expected_revision=rev)
+    result = await manager.delete_bot("bot1", store.config_revision())
+    assert result["affected_accounts"] == ["ordinary"]
+    assert result["impact"]["accounts"] == []

@@ -59,6 +59,15 @@ def _clear_pair(state):
     state.update(pair_hash=None, pair_salt=None, pair_issued=0, pair_expires=0, pair_tries=0)
 
 
+def remove_bot(config, identity):
+    """Remove a Bot and all of its configured assignments in place."""
+    config["bots"] = [b for b in config["bots"] if b["id"] != identity]
+    for group in ("subscriptions", "accounts"):
+        for entry in config[group]:
+            if entry["bot_ids"] is not None:
+                entry["bot_ids"] = [key for key in entry["bot_ids"] if key != identity]
+
+
 def initialize(db):
     first = not db.execute("SELECT 1 FROM sqlite_master WHERE name='bot_registrations'").fetchone()
     db.execute(
@@ -426,11 +435,7 @@ class BotRegistry:
         if actual != revision:
             raise TelegramError("config_conflict")
         self._bot(identity)
-        config["bots"] = [b for b in config["bots"] if b["id"] != identity]
-        for group in ("categories", "subscriptions", "accounts"):
-            for entry in config[group]:
-                if entry.get("bot_ids") is not None:
-                    entry["bot_ids"] = [key for key in entry["bot_ids"] if key != identity]
+        remove_bot(config, identity)
         return await manager.save_config(config, revision)
 
     def inbox(self, identity, limit=100):

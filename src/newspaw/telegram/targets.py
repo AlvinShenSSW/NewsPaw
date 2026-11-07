@@ -6,7 +6,7 @@ from dataclasses import asdict
 from ..app_config import validate_config
 from ..credentials import CredentialError
 from ..routing import resolve_route
-from .registry import Binding, TelegramError
+from .registry import Binding, TelegramError, remove_bot
 
 
 class TargetError(CredentialError):
@@ -38,22 +38,26 @@ def _special(config, identity):
 
 def _scopes(config):
     result = {}
-    for sub in config["subscriptions"]:
-        result[("subscription", sub["id"])] = (
+    subscriptions = {sub["id"]: sub for sub in config["subscriptions"]}
+    members = {key: [] for key in subscriptions}
+    for a in config["accounts"]:
+        sub = subscriptions.get(a["subscription_id"])
+        targets = a["bot_ids"]
+        if a["priority"] == "special" and targets is None and sub:
+            targets = sub["bot_ids"]
+        elif a["priority"] == "normal" and sub and sub["category_id"] in {"x", "x_adult"}:
+            members[sub["id"]].append(a["id"])
+        result[("account", a["id"])] = (
+            a["partition"],
+            a["subscription_id"],
+            tuple(sorted(targets or [])),
+        )
+    for key, sub in subscriptions.items():
+        result[("subscription", key)] = (
             _partition(config, sub),
             tuple(sorted(sub["bot_ids"])),
+            tuple(sorted(members[key])),
         )
-    for a in config["accounts"]:
-        if a["priority"] == "special":
-            sub = next(
-                (s for s in config["subscriptions"] if s["id"] == a["subscription_id"]), None
-            )
-            targets = a["bot_ids"] if a["bot_ids"] is not None else sub["bot_ids"] if sub else []
-            result[("account", a["id"])] = (
-                a["partition"],
-                a["subscription_id"],
-                tuple(sorted(targets)),
-            )
     return result
 
 
@@ -168,7 +172,7 @@ class TargetManager:
         async def operation():
             config = self.credentials._current(revision)
             before = deepcopy(config)
-            change(config)
+            details = change(config) or {}
             validate_config(config)
             affected = _affected(before, config)
             saved = (
@@ -176,7 +180,7 @@ class TargetManager:
                 if config != before
                 else {"revision": revision}
             )
-            return {**saved, **affected}
+            return {**saved, **affected, **details}
 
         return await self.credentials._submit(operation)
 
@@ -238,6 +242,9 @@ class TargetManager:
 
     def bot_impact(self, identity):
         revision, config = self.store.load_config()
+        return self._bot_impact(config, identity, revision)
+
+    def _bot_impact(self, config, identity, revision):
         _entry(config, "bots", identity)
         subs = [s for s in config["subscriptions"] if identity in s["bot_ids"]]
         accounts = []
@@ -250,7 +257,12 @@ class TargetManager:
             targets = a["bot_ids"] if a["bot_ids"] is not None else sub["bot_ids"] if sub else []
             if identity in targets:
                 accounts.append(
-                    dict(id=a["id"], inherited=a["bot_ids"] is None, last_target=len(targets) == 1)
+                    dict(
+                        id=a["id"],
+                        inherited=a["bot_ids"] is None,
+                        last_target=len(targets) == 1,
+                        bot_ids=sorted(targets),
+                    )
                 )
         return dict(
             revision=revision,
@@ -258,12 +270,14 @@ class TargetManager:
             subscriptions=sorted(s["id"] for s in subs),
             categories=sorted({s["category_id"] for s in subs}),
             last_target_subscriptions=sorted(s["id"] for s in subs if s["bot_ids"] == [identity]),
+            subscription_targets={s["id"]: sorted(s["bot_ids"]) for s in subs},
             accounts=accounts,
         )
 
     async def delete_bot(self, identity, revision):
-        impact = self.bot_impact(identity)
-        if impact["revision"] != revision:
-            raise TargetError("config_conflict")
-        saved = await self.registry.delete(identity, self.credentials, revision)
-        return {**saved, "impact": impact}
+        def change(config):
+            impact = self._bot_impact(config, identity, revision)
+            remove_bot(config, identity)
+            return {"impact": impact}
+
+        return await self._mutate(revision, change)

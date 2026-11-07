@@ -431,6 +431,11 @@ class EditorialService:
                     ),
                 )
             )
+            if "coverage_complete" in attempt:
+                coverage[-1].update(
+                    coverage_complete=attempt["coverage_complete"],
+                    coverage_gaps=attempt.get("coverage_gaps", []),
+                )
             for article in articles:
                 entries.append(
                     dict(
@@ -451,9 +456,11 @@ class EditorialService:
                         fetched_at=article.fetched_at.isoformat() if article.fetched_at else None,
                         language=article.language,
                         content_hash=article.content_sha256,
-                        scope="rss_excerpt" if article.summary.strip() else "title_only",
+                        scope=article.evidence_scope if article.summary.strip() else "title_only",
                     )
                 )
+                if article.metadata:
+                    entries[-1]["metadata"] = article.metadata
         covered = {key for row in coverage for key in row["source_ids"]}
         for source in effective["sources"]:
             if source["id"] not in covered:
@@ -474,6 +481,8 @@ class EditorialService:
         pool, by_hash = [], {}
         for entry in ordered:
             alias = {k: entry[k] for k in ("url", "source", "published_at")}
+            if entry.get("metadata"):
+                alias["metadata"] = entry["metadata"]
             if entry["content_hash"] in by_hash:
                 prior = by_hash[entry["content_hash"]]
                 if alias not in prior["sources"]:
@@ -776,13 +785,53 @@ class EditorialService:
             parts.extend(
                 f"{s['source']} · {s['published_at']}\n{s['url']}" for s in item["sources"]
             )
+            for source in item["sources"]:
+                metadata = source.get("metadata")
+                if metadata:
+                    event = metadata.get("event_type")
+                    labels_by_locale = {
+                        "en": {
+                            "release": "Repository release",
+                            "file_commit": "File commit",
+                            "file_deleted": "File deletion",
+                            "model_created": "Model repository created",
+                            "model_revision": "Model repository revision",
+                        },
+                        "zh-Hans": {
+                            "release": "仓库版本发布",
+                            "file_commit": "文件提交",
+                            "file_deleted": "文件删除",
+                            "model_created": "模型仓库创建",
+                            "model_revision": "模型仓库更新",
+                        },
+                        "ja": {
+                            "release": "リポジトリのリリース",
+                            "file_commit": "ファイルのコミット",
+                            "file_deleted": "ファイルの削除",
+                            "model_created": "モデルリポジトリの作成",
+                            "model_revision": "モデルリポジトリの更新",
+                        },
+                    }
+                    note = {
+                        "en": "API and downloads have not been verified.",
+                        "zh-Hans": "尚未验证接口与下载可用性。",
+                        "ja": "API とダウンロードの利用可否は未検証です。",
+                    }[result["locale"]]
+                    parts.append(
+                        labels_by_locale[result["locale"]].get(event, labels["excerpt"])
+                        + " · "
+                        + note
+                    )
         if not result["items"]:
             parts.append(result["empty_note"])
         for conflict in result["conflicts"]:
             parts.append(labels["conflict"] + "\n" + conflict["note"])
             parts.extend(f"{s['source']}\n{s['url']}" for s in conflict["sources"])
         covered = {
-            key for c in result["coverage"] if c["eligible_count"] for key in c["source_ids"]
+            key
+            for c in result["coverage"]
+            if c["eligible_count"] and c.get("coverage_complete", True)
+            for key in c["source_ids"]
         }
         gaps = len({key for c in result["coverage"] for key in c["source_ids"]} - covered)
         if gaps:

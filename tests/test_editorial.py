@@ -547,3 +547,59 @@ async def test_cached_model_result_is_revalidated_after_waiting_for_runner(
     result = await pending
     assert result["state"] == "stale" and result["result"] is None
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Read HTTPS://evil.example now.",
+        "Read hTtPs://evil.example now.",
+        "Verified by multiple sources.",
+        "Confirmed by multiple sources.",
+    ],
+)
+def test_model_links_and_multi_source_verification_are_rejected(body):
+    data = output()
+    data["items"][0]["body"] = body
+    with pytest.raises(EditorialError):
+        BriefValidator(pool(), "en", 6).validate(data)
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+async def test_concurrent_prepare_rechecks_after_another_connection_wins(
+    environment, monkeypatch, conflict
+):
+    from newspaw.store import Store
+
+    store, sub, attempts = environment
+    editor, calls = service(store)
+    other_store = Store(store._db.execute("PRAGMA database_list").fetchone()[2])
+    other, other_calls = service(other_store)
+    original = editor._pool
+
+    def interleaved(*args, **kwargs):
+        result = original(*args, **kwargs)
+        route = other_store.preview_route(sub)
+        from test_model_runner import NOW
+
+        other.prepare(
+            "edition",
+            route,
+            attempts,
+            {"normal_primary": 101 if conflict else 100, "normal_backup": 100},
+            task_limit=500,
+            now=NOW,
+        )
+        return result
+
+    monkeypatch.setattr(editor, "_pool", interleaved)
+    try:
+        if conflict:
+            with pytest.raises(EditorialError, match="edition_id_conflict"):
+                prepare(editor, sub, attempts)
+        else:
+            assert prepare(editor, sub, attempts) == other.get("edition")
+        assert not calls and not other_calls
+        assert store._db.execute("SELECT count(*) FROM editorial_editions").fetchone()[0] == 1
+    finally:
+        other_store.close()

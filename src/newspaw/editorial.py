@@ -58,7 +58,7 @@ _TRADITIONAL = set(
     "這個與為發佈國學術開關體時網後來說產權於從業華報導據無實機聲稱點數們過還麼將應讀寫"
 )
 _INDEPENDENCE = re.compile(
-    r"independently confirmed|independent corroboration|多家.{0,6}证实|多家.{0,6}證實|独立.{0,4}证实|独立.{0,4}確認",
+    r"(?:verified|confirmed) by (?:multiple|several) sources|independently confirmed|independent corroboration|多家.{0,6}证实|多家.{0,6}證實|独立.{0,4}证实|独立.{0,4}確認",
     re.I,
 )
 _LABELS = {
@@ -170,7 +170,7 @@ def _text(value, maximum=1200):
         not isinstance(value, str)
         or not value.strip()
         or len(value) > maximum
-        or re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|https?://|\[\d+\]", value)
+        or re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|https?://|\[\d+\]", value, re.I)
     ):
         raise EditorialError("invalid_prose")
     return value
@@ -610,20 +610,28 @@ class EditorialService:
             else None
         )
         with self.store._write():
-            self.store.revalidate_route(route)
-            self.db.execute(
-                "INSERT INTO editorial_editions VALUES (?,?,?,?,?,?,?,?,NULL)",
-                (
-                    edition_id,
-                    route.subscription_id,
-                    route.effective["partition"],
-                    now.isoformat(),
-                    _json(payload),
-                    task_id,
-                    "pending" if pool else "no_news",
-                    _json(result) if result else None,
-                ),
-            )
+            # Another connection may have frozen this edition while we built the pool.
+            existing = self.db.execute(
+                "SELECT payload FROM editorial_editions WHERE id=?", (edition_id,)
+            ).fetchone()
+            if existing:
+                if _json(json.loads(existing[0])["input"]) != _json(args):
+                    raise EditorialError("edition_id_conflict")
+            else:
+                self.store.revalidate_route(route)
+                self.db.execute(
+                    "INSERT INTO editorial_editions VALUES (?,?,?,?,?,?,?,?,NULL)",
+                    (
+                        edition_id,
+                        route.subscription_id,
+                        route.effective["partition"],
+                        now.isoformat(),
+                        _json(payload),
+                        task_id,
+                        "pending" if pool else "no_news",
+                        _json(result) if result else None,
+                    ),
+                )
         self._submit(self._row(edition_id))
         return self.get(edition_id)
 

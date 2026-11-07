@@ -9,6 +9,25 @@ from newspaw.media.newspaper import PaperError, bounded_preparation, make_plan, 
 telegram_delivery = telegram_system
 
 
+def test_newspaper_tables_upgrade_x_timeline_database(tmp_path):
+    from contextlib import closing
+
+    from newspaw.store import Store
+
+    path = tmp_path / "state.db"
+    with closing(Store(path)) as previous, previous._write():
+        previous._db.execute("DROP TABLE newspaper_effects")
+        previous._db.execute("DROP TABLE newspapers")
+        previous._db.execute("DROP TABLE newspaper_policy")
+        previous._db.execute("PRAGMA user_version=18")
+    with closing(Store(path)) as upgraded:
+        assert upgraded._db.execute("PRAGMA user_version").fetchone() == (19,)
+        for table in ("newspaper_policy", "newspapers", "newspaper_effects", "x_timeline_scans"):
+            assert upgraded._db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            ).fetchone()
+
+
 def edition(locale="en"):
     labels = {
         "en": ("Published update", "The office reported 12 products."),

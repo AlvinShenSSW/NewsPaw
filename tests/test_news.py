@@ -36,7 +36,7 @@ def mock_service(monkeypatch, feeds, handler, **kwargs):
     factory = httpx.AsyncClient
     transport = httpx.MockTransport(handler)
     monkeypatch.setattr(
-        httpx, "AsyncClient", lambda **kwargs: factory(transport=transport, **kwargs)
+        httpx, "AsyncClient", lambda **kwargs: factory(**(kwargs | {"transport": transport}))
     )
     return NewsService(feeds, **kwargs)
 
@@ -409,3 +409,18 @@ def test_empty_valid_feed_returns_no_news(monkeypatch):
             await service.close()
 
     asyncio.run(scenario())
+
+
+def test_feed_bytes_are_never_interpreted_as_local_file_path(tmp_path):
+    private = tmp_path / "private-feed.xml"
+    private.write_bytes(rss([{"title": "must-not-read"}]))
+    with pytest.raises(NewsError):
+        parse_feed(str(private).encode(), "https://example.com/rss")
+
+
+def test_feed_parser_rejects_doctype_in_utf16_and_excessive_nesting():
+    payload = '<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE rss [<!ENTITY x "private">]><rss version="2.0"><channel><title>&x;</title></channel></rss>'
+    with pytest.raises(NewsError):
+        parse_feed(payload.encode("utf-16"), "https://example.com/rss")
+    with pytest.raises(NewsError):
+        parse_feed(b"<rss>" + b"<x>" * 70 + b"</x>" * 70 + b"</rss>", "https://example.com/rss")

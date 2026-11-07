@@ -1,6 +1,6 @@
 version = 1
 revision = 3
-requires-python = ">=3.12"
+requires-python = ">=3.12.4"
 resolution-markers = [
     "python_full_version >= '3.14'",
     "python_full_version < '3.14'",
@@ -256,6 +256,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "feedparser" },
+    { name = "httpcore" },
     { name = "httpx" },
     { name = "openai" },
     { name = "python-dotenv" },
@@ -272,6 +273,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "feedparser", specifier = ">=6.0.11,<7" },
+    { name = "httpcore", specifier = ">=1.0.9,<2" },
     { name = "httpx", specifier = ">=0.28,<0.29" },
     { name = "openai", specifier = ">=2,<3" },
     { name = "python-dotenv", specifier = ">=1.1,<2" },

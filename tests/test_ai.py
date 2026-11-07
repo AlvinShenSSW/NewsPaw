@@ -7,7 +7,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
+from openai import APIStatusError
 
 import newspaw.ai as ai_module
 from newspaw.ai import MAX_AUDIO_SECONDS, MAX_IMAGE_BYTES, AIError, AIService
@@ -249,3 +251,22 @@ async def test_media_timeout_kills_child(monkeypatch):
     with pytest.raises(AIError, match="超时"):
         await ai_module._run_media("ffmpeg")
     assert process.returncode == -9
+
+
+@pytest.mark.asyncio
+async def test_dispatched_model_request_is_not_retried(monkeypatch):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(500, json={"error": {"message": "temporary"}})
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    monkeypatch.setattr(ai_module, "provider_client", lambda origin: http_client)
+    adapter = AIService("test-key")
+    try:
+        with pytest.raises(APIStatusError):
+            await adapter._require_client().responses.create(model="test", input="test")
+        assert len(requests) == 1
+    finally:
+        await adapter._require_client().close()

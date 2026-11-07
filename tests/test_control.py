@@ -359,11 +359,12 @@ async def test_target_rpc_no_fake_readiness_and_explicit_empty_assignment(contro
     assert denied == {"ok": False, "error": "missing_bot"}
 
 
-async def test_explicit_service_stop_acknowledges_and_releases_private_endpoint():
+async def test_explicit_service_stop_acknowledges_and_releases_private_endpoint(monkeypatch):
     from types import SimpleNamespace
 
     from newspaw.control import acquire_control_lock, serve_control
 
+    monkeypatch.setattr("newspaw.credentials.MacKeychain", FakeKeychain)
     with tempfile.TemporaryDirectory(prefix="np-stop-") as directory:
         root = Path(directory)
         endpoint = SimpleNamespace(path=root / "control.sock")
@@ -374,6 +375,9 @@ async def test_explicit_service_stop_acknowledges_and_releases_private_endpoint(
                     try:
                         status = await request(endpoint, {"op": "service.status"})
                     except (FileNotFoundError, ConnectionRefusedError):
+                        if running.done():
+                            running.result()
+                            pytest.fail("control server exited before accepting connections")
                         await asyncio.sleep(0.01)
                     else:
                         break

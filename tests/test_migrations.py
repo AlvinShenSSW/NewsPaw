@@ -491,3 +491,29 @@ def test_v6_runner_upgrade_failure_rolls_back_and_retries(tmp_path, monkeypatch)
     reopened = Store(path)
     assert reopened.load_config() == original
     reopened.close()
+
+
+def test_v7_editorial_upgrade_failure_rolls_back_and_retries(tmp_path,monkeypatch):
+    import newspaw.editorial as editorial
+    path=tmp_path/"state.db"
+    store=Store(path)
+    original=store.load_config()
+    store.close()
+    with closing(sqlite3.connect(path)) as db:
+        db.execute("DROP TABLE editorial_editions")
+        db.execute("PRAGMA user_version=7")
+        db.commit()
+    initialize=editorial.initialize
+    def fail(db):
+        initialize(db)
+        raise RuntimeError("injected editorial migration failure")
+    monkeypatch.setattr(editorial,"initialize",fail)
+    with pytest.raises(RuntimeError):
+        Store(path)
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0]==7
+        assert not db.execute("SELECT 1 FROM sqlite_master WHERE name='editorial_editions'").fetchall()
+    monkeypatch.setattr(editorial,"initialize",initialize)
+    reopened=Store(path)
+    assert reopened.load_config()==original
+    reopened.close()

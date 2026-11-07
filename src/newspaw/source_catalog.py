@@ -87,17 +87,17 @@ _CATALOG = (
     {
         "id": "cnn",
         "name": "CNN World",
-        "url": "https://edition.cnn.com/world",
+        "url": "https://edition.cnn.com/sitemap/news.xml",
         "kind": "web",
         "category_id": "world",
         "scope": "国际时政",
         "partition": "normal",
         "origin": "user",
         "availability": "not_verified",
-        "validation": "adapter_required",
+        "validation": "preview_required",
         "evidence_date": "2026-11-07",
         "evidence_reference": "docs/source-strategy.md",
-        "historical_note": "Historical World RSS sample was stale; website adapter required.",
+        "historical_note": "Official news sitemap; World and regional headlines with publication dates, no article excerpts. Old World RSS was stale.",
     },
     {
         "id": "nhk",
@@ -199,10 +199,10 @@ _CATALOG = (
         "partition": "normal",
         "origin": "recommended",
         "availability": "not_verified",
-        "validation": "adapter_required",
+        "validation": "preview_required",
         "evidence_date": "2026-11-07",
         "evidence_reference": "docs/source-strategy.md",
-        "historical_note": "Publisher discontinued public RSS updates; website adapter required.",
+        "historical_note": "Public metadata sample; descriptions retained only when marked free.",
     },
     {
         "id": "sbs",
@@ -259,10 +259,10 @@ _CATALOG = (
         "partition": "normal",
         "origin": "user",
         "availability": "not_verified",
-        "validation": "adapter_required",
+        "validation": "preview_required",
         "evidence_date": "2026-11-07",
         "evidence_reference": "docs/source-strategy.md",
-        "historical_note": "Candidate; current access and evidence scope require preview.",
+        "historical_note": "Public metadata sample; coverage is limited and paid articles are skipped.",
     },
     {
         "id": "zaobao-ent",
@@ -274,40 +274,40 @@ _CATALOG = (
         "partition": "normal",
         "origin": "user",
         "availability": "not_verified",
-        "validation": "adapter_required",
+        "validation": "preview_required",
         "evidence_date": "2026-11-07",
         "evidence_reference": "docs/source-strategy.md",
-        "historical_note": "Candidate; current access and evidence scope require preview.",
+        "historical_note": "Public metadata sample; coverage is limited and paid articles are skipped.",
     },
     {
         "id": "macrumors",
         "name": "MacRumors",
-        "url": "https://www.macrumors.com/",
-        "kind": "web",
+        "url": "https://feeds.macrumors.com/MacRumors-Front",
+        "kind": "rss",
         "category_id": "electronics",
         "scope": "新产品",
         "partition": "normal",
         "origin": "recommended",
         "availability": "not_verified",
-        "validation": "adapter_required",
+        "validation": "preview_required",
         "evidence_date": "2026-11-07",
         "evidence_reference": "docs/source-strategy.md",
-        "historical_note": "Candidate; current access and evidence scope require preview.",
+        "historical_note": "Official Front feed; recent publication dates observed.",
     },
     {
         "id": "apple",
         "name": "Apple Newsroom",
-        "url": "https://www.apple.com/newsroom/",
-        "kind": "web",
+        "url": "https://www.apple.com/newsroom/rss-feed.rss",
+        "kind": "atom",
         "category_id": "electronics",
         "scope": "新产品",
         "partition": "normal",
         "origin": "recommended",
         "availability": "not_verified",
-        "validation": "adapter_required",
+        "validation": "preview_required",
         "evidence_date": "2026-11-07",
         "evidence_reference": "docs/source-strategy.md",
-        "historical_note": "Candidate; current access and evidence scope require preview.",
+        "historical_note": "Official Atom was reachable; sampled entries expose only update times and were not fresh publication evidence.",
     },
     {
         "id": "ieee",
@@ -432,9 +432,25 @@ _CATALOG = (
 )
 
 
+_OBSERVATIONS = {
+    "ap": "Public section returned HTTP 403 to the source client.",
+    "cnn": "Official sitemap returned current World/regional entries; title/date/link only.",
+    "yahoo-jp": "Domestic Topics RSS returned eight current entries; curated coverage.",
+    "yahoo-ent": "Entertainment Topics RSS returned eight current entries; curated coverage.",
+    "abc": "General section redirected; no general-news metadata adapter.",
+    "abc-ent": "Public landing page and timestamped article metadata were reachable.",
+    "zaobao": "Public landing page and timestamped article metadata were reachable.",
+    "zaobao-ent": "Public landing page and timestamped article metadata were reachable.",
+    "macrumors": "Official Front RSS returned current entries with explicit publication dates.",
+    "apple": "Official Atom returned 20 entries without an explicit publication date.",
+    "openai_news": "Public RSS was readable; no entry in the sampled 24-hour window.",
+    "hf_blog": "Public RSS was readable; no entry in the sampled 24-hour window.",
+}
+
+
 def catalog():
     """Accepted source suggestions and dated provenance, never live health flags."""
-    return deepcopy(list(_CATALOG)) + [
+    rows = deepcopy(list(_CATALOG)) + [
         dict(
             s,
             category_id="ai",
@@ -446,3 +462,16 @@ def catalog():
         )
         for s in ai_sources()
     ]
+    for row in rows:
+        kind = row["kind"]
+        row["connection"] = (
+            "adapter_required"
+            if row["validation"] == "adapter_required"
+            else {
+                "github": "official_api",
+                "huggingface": "official_api",
+                "web": "public_metadata",
+            }.get(kind, kind)
+        )
+        row["dated_observation"] = _OBSERVATIONS.get(row["id"])
+    return rows

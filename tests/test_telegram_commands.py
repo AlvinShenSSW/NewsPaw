@@ -229,3 +229,33 @@ async def test_mixed_bot_prompts_for_media_scope_without_model_or_file_fetch(sys
     assert "s:sub_av" in text and "s:sub_world" in text
     assert "fixture-opaque-file" not in "\n".join(pipeline.db.iterdump())
     assert len(model_calls) == 1
+
+
+async def test_command_migration_keeps_existing_inbox_and_delivery(system):
+    from contextlib import closing
+
+    from newspaw.store import Store
+
+    pipeline, targets, job, _, path = system
+    _, outbox, _ = command_service(system)
+    outbox.enqueue(job, now=NOW)
+    await inbox(system, "/news", 2)
+    binding = targets.registry.snapshot("bot1")
+    with pipeline.store._write():
+        pipeline.db.execute("DROP TABLE command_replies")
+        pipeline.db.execute("DROP INDEX inbox_pending")
+        pipeline.db.execute("DROP INDEX command_jobs_scope")
+        pipeline.db.execute("DROP INDEX delivery_message_binding")
+        pipeline.db.execute("PRAGMA user_version=16")
+
+    with closing(Store(path)) as upgraded:
+        assert upgraded._db.execute("PRAGMA user_version").fetchone() == (17,)
+        assert upgraded._db.execute("SELECT count(*) FROM command_replies").fetchone() == (0,)
+        assert upgraded._db.execute(
+            "SELECT state FROM bot_inbox WHERE bot_id=? AND generation=? AND update_id=2",
+            (binding.bot_id, binding.generation),
+        ).fetchone() == ("pending",)
+        assert upgraded._db.execute(
+            "SELECT telegram_id FROM delivery_targets WHERE job_id=? AND bot_id=?",
+            (job, binding.bot_id),
+        ).fetchone() == (binding.telegram_id,)

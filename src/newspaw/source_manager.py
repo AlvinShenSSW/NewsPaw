@@ -19,6 +19,7 @@ import httpx
 
 from .app_config import _url, validate_config
 from .connectors import AICollector, APIError, source_url
+from .connectors.web import WEB_ALIASES, WEB_SITES, WebCollector, web_supported
 from .credentials import CredentialError
 from .evidence import EvidenceError, EvidenceStore, FeedCollector
 from .news import (
@@ -173,6 +174,7 @@ class SourceManager:
                 or not latest["snapshot_id"]
                 or latest["status"]
                 not in {"fresh", "stale", "empty", "no_eligible", "not_modified"}
+                or (source["kind"] == "web" and latest["status"] not in {"fresh", "stale"})
             ):
                 return False
             scope = json.loads(
@@ -231,12 +233,13 @@ class SourceManager:
             config["sources"] = [v for v in config["sources"] if v["id"] != s.get("id")] + [s]
             validate_config(config)
             if s["enabled"]:
-                if not s["category_ids"] or s["kind"] not in {
+                supported = s["kind"] in {
                     "rss",
                     "atom",
                     "github",
                     "huggingface",
-                }:
+                } or (s["kind"] == "web" and web_supported(s))
+                if not s["category_ids"] or not supported:
                     raise SourceError("unsupported_source")
                 if not self._ready(s):
                     raise SourceError("preview_required")
@@ -315,12 +318,17 @@ class SourceManager:
         source = self._source(identity)
         if source["partition"] is None:
             raise SourceError("unclassified_source")
-        if source["kind"] not in {"rss", "atom", "github", "huggingface"}:
+        factory = {
+            "rss": FeedCollector,
+            "atom": FeedCollector,
+            "github": AICollector,
+            "huggingface": AICollector,
+            "web": WebCollector if web_supported(source) else None,
+        }.get(source["kind"])
+        if factory is None:
             raise SourceError("unsupported_source")
         epoch = self._epoch(identity)[0]
-        collector = (FeedCollector if source["kind"] in {"rss", "atom"} else AICollector)(
-            self.evidence, client=self.client_factory()
-        )
+        collector = factory(self.evidence, client=self.client_factory())
         try:
             result = (await collector.preview(identity, now=now))[0]
         finally:
@@ -390,6 +398,19 @@ class SourceManager:
 
     async def discover(self, value):
         url = normalize_url(value)
+        entry = WEB_ALIASES.get(url, url)
+        if entry in WEB_SITES:
+            return dict(
+                kind="web",
+                choices=[
+                    dict(
+                        url=entry,
+                        kind="web",
+                        name=WEB_SITES[entry].publisher,
+                        validation="preview_required",
+                    )
+                ],
+            )
         parts = urlsplit(url)
         if parts.hostname in {"x.com", "www.x.com", "twitter.com", "www.twitter.com"}:
             return dict(kind="x", destination="x_accounts", choices=[])

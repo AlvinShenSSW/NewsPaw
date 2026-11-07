@@ -4,6 +4,9 @@
 
 **目前为系统设计和后台原型，尚不是可安装的完整 Mac 应用。未启用后台服务或真实推送。**
 
+- [开发路线图与 GitHub epics/issues](docs/planning/README.md)：全盘审计、需求验收、任务依赖与 Kimi 独立终审状态。
+- [已确认的界面基线](docs/mockup/README.md)：后续沿用当前 mockup，不重新设计。
+
 - [产品与系统设计](docs/system-design.md)：八类主题、每类独立时间、X 账号单独日更与费用控制、原生 Mac 界面、模型路由、实施顺序。
 - [新闻来源与添加流程](docs/source-strategy.md)：中国与 AI 新分类、推荐和自选来源、RSS/API/网页采集、App 内添加与路由预览。
 - [主备模型与语言设置](docs/model-routing.md)：每个槽位独立 URL/Key/模型、分类覆盖、失败切换、界面与新闻输出的独立三语设置。

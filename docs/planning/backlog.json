@@ -1,0 +1,859 @@
+{
+  "schema": 1,
+  "date": "2026-11-07",
+  "baseline": "1504d445579c7d03c88a6352fad58f6fbb485d17",
+  "epics": [
+    {
+      "id": "E01",
+      "title": "配置、数据与安全边界",
+      "outcome": "建立唯一配置和内容分区契约，支持现有原型安全迁移。"
+    },
+    {
+      "id": "E02",
+      "title": "新闻来源、采集与证据",
+      "outcome": "覆盖六类普通新闻和独立 AV 来源，提供真实可追溯的添加与采集流程。"
+    },
+    {
+      "id": "E03",
+      "title": "模型主备、编辑与语言",
+      "outcome": "将普通/成人主备、费用预算和目标语言串成可恢复的编辑管线。"
+    },
+    {
+      "id": "E04",
+      "title": "X 账号聚合与节约采集",
+      "outcome": "稳定账号、List、增量游标、预算及两种关注级别。"
+    },
+    {
+      "id": "E05",
+      "title": "分主题调度与可靠投递",
+      "outcome": "独立计划、冻结期次、持久化任务和逐消息回执。"
+    },
+    {
+      "id": "E06",
+      "title": "多 Telegram Bot 与交互",
+      "outcome": "分别验证绑定，多对多分配，严格限定每个 Bot 的操作范围。"
+    },
+    {
+      "id": "E07",
+      "title": "沿用现有 mockup 的原生 Mac App",
+      "outcome": "实现既定五页设置与菜单栏，不重新设计布局和品牌。"
+    },
+    {
+      "id": "E08",
+      "title": "来源配图、AI 报纸与媒体交互",
+      "outcome": "默认文字链接，指定内容生成一至两页报纸，完善语音与图片请求。"
+    },
+    {
+      "id": "E09",
+      "title": "运维、打包与发布验收",
+      "outcome": "诊断、数据生命周期、安装升级及有真实证据的交付验证。"
+    }
+  ],
+  "issues": [
+    {
+      "id": "F01",
+      "epic": "E01",
+      "title": "版本化配置与 SQLite 迁移",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [],
+      "requirements": [
+        "R01",
+        "R02",
+        "R04",
+        "R10"
+      ],
+      "scope": "定义 source/category/subscription/account/model_profile/bot 的稳定 ID、schema 版本和配置版本；从 .env 与旧 SQLite 提供显式迁移。",
+      "acceptance": [
+        "迁移前备份且失败回滚；重复迁移无重复数据",
+        "秘密只保留引用；私人来源不写仓库",
+        "旧版本不能写新 schema；默认值保留用户已确认型号与两种语言"
+      ],
+      "validation": "旧库、空库、损坏库、并发写入和升级中断 fixture；不触碰真实 data/。",
+      "paths": "config.py, store.py, new migrations/",
+      "non_goals": "不实现 UI 或自动启动服务。"
+    },
+    {
+      "id": "F02",
+      "epic": "E01",
+      "title": "统一有效路由与内容分区契约",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [
+        "F01"
+      ],
+      "requirements": [
+        "R02",
+        "R04",
+        "R08"
+      ],
+      "scope": "解析来源→订阅→分区→主备→语言→样式→Bot；输出可解释的有效路由及配置版本。",
+      "acceptance": [
+        "继承/覆盖不修改上游；不兼容分区拒绝保存",
+        "未分类项不能进入模型；成人目标必须显式配置",
+        "变更发出版本失效信号供队列消费；路由预览不调用模型"
+      ],
+      "validation": "覆盖优先级矩阵、普通/成人交叉、未知分类、删除引用；建立执行前复验契约。",
+      "paths": "new routing.py, config.py, store.py",
+      "non_goals": "不由模型猜分区，不实现队列执行器。"
+    },
+    {
+      "id": "F03",
+      "epic": "E01",
+      "title": "统一安全 HTTP 获取与输入边界",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [],
+      "requirements": [
+        "R03"
+      ],
+      "scope": "替换 URL 字面检查的不足；来源、网页、媒体使用受限获取器，模型凭据使用独立受信 endpoint 客户端。",
+      "acceptance": [
+        "解析与实际连接均拒绝私网/回环/链路本地，包括 DNS 重绑定与 IPv6",
+        "每跳重定向重新校验；认证头不跨 origin",
+        "响应大小、超时、压缩/解析上限可测试；拒绝 userinfo 与危险协议"
+      ],
+      "validation": "本地模拟 DNS/transport 测试私网、重定向、超大响应、取消；不扫描真实内网。",
+      "paths": "news.py, new transport.py, tests/test_news.py",
+      "non_goals": "不限制用户选择已验证的公开自定义模型网关，不做通用浏览器自动化。"
+    },
+    {
+      "id": "F04",
+      "epic": "E01",
+      "title": "Keychain 与私有本机控制接口",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [
+        "F01",
+        "F02"
+      ],
+      "requirements": [
+        "R01",
+        "R04",
+        "R08",
+        "R10"
+      ],
+      "scope": "后台唯一写配置；SwiftUI 通过用户私有 Unix socket 请求读写、校验和控制；Keychain 存秘密。",
+      "acceptance": [
+        "socket 目录/peer 权限限制当前用户；请求带配置版本，冲突不覆盖",
+        "Keychain 写失败不留下半配置；锁定/撤销可诊断",
+        "配置、日志、错误和导出无明文 Key/Token；不开放公网端口"
+      ],
+      "validation": "Keychain fake 与 macOS 测试凭据隔离；非法 peer、陈旧版本、断线和日志脱敏测试。",
+      "paths": "new control/, new secrets/, config.py",
+      "non_goals": "不使用真实用户秘密做自动测试，不提供远程控制。"
+    },
+    {
+      "id": "S01",
+      "epic": "E02",
+      "title": "RSS/Atom 证据持久化与来源健康",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [
+        "F01",
+        "F02",
+        "F03"
+      ],
+      "requirements": [
+        "R03",
+        "R05"
+      ],
+      "scope": "复用现有解析器，增加 normalized evidence、来源状态、条件请求与同分区采集复用。",
+      "acceptance": [
+        "发布/更新/抓取时间分别保留；时间未知/过期/未来不混新鲜新闻",
+        "200 但过期、304、零结果、限流、失败分开；低频源有独立健康阈值",
+        "同源多订阅复用获取但保留各自主题关联；审计失败也落库"
+      ],
+      "validation": "RSS/Atom/多语言、ETag/304、错误时间、重启和同源多订阅 fixture。",
+      "paths": "news.py, sources.py, store.py",
+      "non_goals": "不声称读过全文或核实新闻。"
+    },
+    {
+      "id": "S02",
+      "epic": "E02",
+      "title": "普通来源目录与已适配网页补证",
+      "priority": "P1",
+      "phase": "M1",
+      "depends_on": [
+        "S01",
+        "M01",
+        "M03"
+      ],
+      "requirements": [
+        "R03",
+        "R05"
+      ],
+      "scope": "目录覆盖 BBC/AP/CNN、NHK/Yahoo Japan/ORICON、ABC/SBS/Guardian、中华新闻来源与联合早报、MacRumors/厂商/研究机构；实现可维护的网页/发现适配接口。",
+      "acceptance": [
+        "每个推荐项标明实际可用 RSS/API/网页/待适配，不把推荐当已接入",
+        "CNN/Yahoo/联合早报有实测入口或清楚的受限降级；不绕付费墙",
+        "补证工具只访问授权公开源，记录搜索供应商、query、URL、摘录范围；未配置搜索不冒充调用"
+      ],
+      "validation": "保存合法公开小 fixture；网页结构变化/付费墙/跨站重定向失败可见；按类别做一次手动公共连通性验收。",
+      "paths": "sources.toml, new connectors/web.py, docs/source-strategy.md",
+      "non_goals": "不做全网爬虫，不承诺每家都提供免费全文。"
+    },
+    {
+      "id": "S03",
+      "epic": "E02",
+      "title": "AI 模型与 Skill/Repo 更新连接器",
+      "priority": "P1",
+      "phase": "M2",
+      "depends_on": [
+        "S01"
+      ],
+      "requirements": [
+        "R03",
+        "R05"
+      ],
+      "scope": "接入 GitHub Releases/相关文件提交、Hugging Face 模型卡和厂商公告。",
+      "acceptance": [
+        "无 Release 的 skill 库能按相关文件变化发现更新，纯排版可过滤",
+        "保存 commit/release/model 版本、许可证和可用性；公告与实际上线分开",
+        "README/SKILL.md 永远只作资料；不安装或执行项目"
+      ],
+      "validation": "无 release、分页/限流、repo 重命名、删除、许可证缺失及恶意 README fixture。",
+      "paths": "new connectors/github.py, huggingface.py, source catalog",
+      "non_goals": "不自动推荐投资，不按 Stars 单维排名。"
+    },
+    {
+      "id": "S04",
+      "epic": "E02",
+      "title": "来源管理 API、识别与 OPML 草稿导入",
+      "priority": "P1",
+      "phase": "M1",
+      "depends_on": [
+        "S01",
+        "F04"
+      ],
+      "requirements": [
+        "R02",
+        "R03"
+      ],
+      "scope": "提供推荐目录、URL 识别、多个 feed 选择、分类/范围、预览和启停接口。",
+      "acceptance": [
+        "未知站只保存草稿；实际预览展示出版商/时间/证据范围",
+        "未分类/跨分区拒绝启用；一次来源可分配多个兼容订阅",
+        "OPML 有大小/条数/嵌套上限，重复导入幂等；试采集不发 Telegram"
+      ],
+      "validation": "恶意 XML、重复 feed、多 feed 首页、无时区、源删除与引用中的订阅。",
+      "paths": "sources.py, control/, new importers/opml.py",
+      "non_goals": "不把 mockup 的演示验证状态导入成已就绪配置。"
+    },
+    {
+      "id": "S05",
+      "epic": "E02",
+      "title": "独立 AV 产业来源与编辑管线接入",
+      "priority": "P1",
+      "phase": "M2",
+      "depends_on": [
+        "S01",
+        "M02",
+        "M04",
+        "Q01"
+      ],
+      "requirements": [
+        "R02",
+        "R03",
+        "R04",
+        "R09"
+      ],
+      "scope": "接通已确认 fiu758.com 的文字产业采集；将第二站作为待提供来源，不虚构。",
+      "acceptance": [
+        "AV 独立订阅、时间和显式目标；原文只进成人模型",
+        "无可用非露骨产业事实或模型失败不原样转发；默认不采发原始媒体",
+        "第二站提供前仅显示待补充，不阻塞第一站离线实现；以后通过 S04 添加"
+      ],
+      "validation": "合成非露骨 fixture 验证拒绝/缺时/空源/主备失败；第二站需用户资料后单独真实验证。",
+      "paths": "av.py, grok.py, source catalog, pipeline/",
+      "non_goals": "不生成露骨内容，不运行用户旧脚本，不编造第二网站。"
+    },
+    {
+      "id": "M01",
+      "epic": "E03",
+      "title": "四提供商适配与分能力连接验证",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [
+        "F01",
+        "F03",
+        "F04"
+      ],
+      "requirements": [
+        "R04"
+      ],
+      "scope": "OpenAI Luna、MiMo Flash、DeepSeek Flash、Grok4.3 各自适配；文字/视觉/转写/生图的能力记录独立。",
+      "acceptance": [
+        "四槽 URL/Key 引用/模型独立；协议参数按供应商处理",
+        "修改 URL/Key/model 后旧验证失效；默认模型不静默升级",
+        "仅配置不自动付费；显式连接测试报告鉴权、模型权限与所测能力"
+      ],
+      "validation": "模拟各提供商响应和 MiMo 非严格工具参数；真实冒烟单独启用并记录模型/用量。",
+      "paths": "ai.py, grok.py, new providers/",
+      "non_goals": "不把文字模型当作生图或音频模型，不假设兼容端点完全等价。"
+    },
+    {
+      "id": "M02",
+      "epic": "E03",
+      "title": "同分区主备与有界失败恢复",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [
+        "M01",
+        "F02",
+        "M03"
+      ],
+      "requirements": [
+        "R04"
+      ],
+      "scope": "冻结证据与任务配置，主备切换复用证据；实现有限重试、retry-after、冷却及可见故障。",
+      "acceptance": [
+        "网络/429/5xx、401/模型错误、内容拒绝、无新闻分别处理",
+        "不跨分区、不重复抓 X、不因 Telegram 错误重新调用模型",
+        "格式修复后重校验引用；主备都失败保留任务，不发原文"
+      ],
+      "validation": "故障矩阵、超时结果未知、冷却恢复、取消、拒绝不切换、预算不足。",
+      "paths": "new model_runner.py, providers/",
+      "non_goals": "不实现跨组兜底或无界自修复。"
+    },
+    {
+      "id": "M03",
+      "epic": "E03",
+      "title": "持久化费用预算与并发预留",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [
+        "F01"
+      ],
+      "requirements": [
+        "R04",
+        "R06",
+        "R09"
+      ],
+      "scope": "模型总额/生图子额、供应商额度和 X 读量分账；预留→结算→释放。",
+      "acceptance": [
+        "并发任务/主备/修复共用上限；崩溃重启不丢预留",
+        "估算与实际用量区别展示；未知价格/超时消耗保守保留",
+        "OpenAI credit 只抵绑定组织用量，不当作 X/其他服务余额；已领取 $100 作为用户说明，不伪造账户读取"
+      ],
+      "validation": "并发超额、预留崩溃恢复、跨月/账期、未知usage、费用表更新、多个 Bot 复用不多记。",
+      "paths": "new budget.py, store.py",
+      "non_goals": "不保存计费后台凭据，不自动充值，不承诺估算等于官方账单。"
+    },
+    {
+      "id": "M04",
+      "epic": "E03",
+      "title": "证据编辑、目标语言与事件基础归并",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [
+        "S01",
+        "M02"
+      ],
+      "requirements": [
+        "R04",
+        "R05"
+      ],
+      "scope": "形成结构化冻结简报，准确翻译全部标题/正文；基础事件聚合与选稿。",
+      "acceptance": [
+        "三个目标语言覆盖标题/正文/冲突与说明；失败不推原文",
+        "引用必须指向本期证据，保留来源冲突/个人声明/传闻/突破阶段",
+        "条数不足少报；不同订阅能引用同一事件，转载不算独立佐证"
+      ],
+      "validation": "中英日 gold fixtures、数字/专名/无证据断言、错误引用、重复事件/实质更新、只读标题。",
+      "paths": "ai.py, new editorial/, store.py",
+      "non_goals": "不把语义校验宣称为绝对真实性保证，不引入向量数据库。"
+    },
+    {
+      "id": "X01",
+      "epic": "E04",
+      "title": "X 账号与 List 分类管理",
+      "priority": "P1",
+      "phase": "M2",
+      "depends_on": [
+        "F02",
+        "F04"
+      ],
+      "requirements": [
+        "R06",
+        "R08"
+      ],
+      "scope": "稳定 ID、账号/List 验证、普通/成人与特别/普通两维设置。",
+      "acceptance": [
+        "用户名变化不重复订阅；停用/私有/无权限有明确状态",
+        "List 新成员先分类再模型处理；混合流不误入普通模型",
+        "分区变更清除不兼容路由覆盖并发出任务失效；不暗中迁移成人目标"
+      ],
+      "validation": "改名、重复添加、未知成员、成员退出、分区转换和持久化恢复。",
+      "paths": "new x/accounts.py, control/, store.py",
+      "non_goals": "不预填成人账号，不自动启用马斯克真实采集。"
+    },
+    {
+      "id": "X02",
+      "epic": "E04",
+      "title": "X 增量 timeline 与可恢复分页",
+      "priority": "P1",
+      "phase": "M2",
+      "depends_on": [
+        "X01",
+        "F03",
+        "M03"
+      ],
+      "requirements": [
+        "R06"
+      ],
+      "scope": "官方 X API 获取指定账号和 List，保存原帖/引用/回复/转发关系。",
+      "acceptance": [
+        "先原子落库再推进完整游标；分页截断保存回补缺口",
+        "List 不依赖 since_id；首次回补有界；重试保留资源费用估算",
+        "账号/分区预算不能超总预算，限额明确标记覆盖不足"
+      ],
+      "validation": "中途崩溃、429、删帖、空页、重复页、倒序边界、预算截断和 List 重叠读取。",
+      "paths": "new x/collector.py, budget.py, store.py",
+      "non_goals": "不使用抓网页或 Grok 搜索假装完整官方 timeline。"
+    },
+    {
+      "id": "X03",
+      "epic": "E04",
+      "title": "特别账号日更与分区汇总",
+      "priority": "P1",
+      "phase": "M2",
+      "depends_on": [
+        "X02",
+        "M04",
+        "Q01"
+      ],
+      "requirements": [
+        "R05",
+        "R06"
+      ],
+      "scope": "每个特别账号独立期次，普通关注进入普通/成人各自汇总，按用户兴趣归组。",
+      "acceptance": [
+        "默认特别账号不双报，显式选择才并入汇总",
+        "保留帖子链接/作者/时间和采集覆盖；无新帖与失败分开",
+        "同证据复用但同分区缓存；账号覆盖时间/Bot/样式分别解析"
+      ],
+      "validation": "多账号多主题、部分抓取、无新帖、故障、同一帖子用于不同订阅、成人隔离。",
+      "paths": "new x/digests.py, editorial/, pipeline/",
+      "non_goals": "不默认实时轮询，不将账号意见改写为已核实事实。"
+    },
+    {
+      "id": "X04",
+      "epic": "E04",
+      "title": "后续：重大事件提醒与受限视频理解",
+      "priority": "P2",
+      "phase": "Later",
+      "depends_on": [
+        "X03",
+        "D03",
+        "Q02"
+      ],
+      "requirements": [
+        "R06",
+        "R09"
+      ],
+      "scope": "实现用户显式开启的重大事件提醒和视频抽帧/转写能力，各有频率与预算。",
+      "acceptance": [
+        "默认关闭；需配置兼容媒体模型和独立预算",
+        "同事件更新节流、每日提醒上限与安静时段明确",
+        "无法处理视频就说明覆盖缺口；成人不交普通媒体模型"
+      ],
+      "validation": "重复事件、预算耗尽、长视频/恶意媒体、安静时段与主备能力不足。",
+      "paths": "x/, media/, scheduler/",
+      "non_goals": "不是 M1/M2 完成条件，不承诺逐条完整视频分析。"
+    },
+    {
+      "id": "Q01",
+      "epic": "E05",
+      "title": "持久化任务与冻结简报流水线",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [
+        "F02",
+        "S01",
+        "M04"
+      ],
+      "requirements": [
+        "R05",
+        "R07"
+      ],
+      "scope": "采集、编辑、媒体准备、待投递分别持久化，建立 lease/唯一约束和阶段幂等。",
+      "acceptance": [
+        "阶段重启恢复不重做已成功付费调用；冻结证据/语言/模型版本",
+        "采集失败和零结果有不同终态；取消/暂停不阻塞其他订阅",
+        "期次贯通 collection/brief/job 与审计记录"
+      ],
+      "validation": "进程在每阶段边界退出、并发抢占、过期 lease、数据库忙、磁盘写失败。",
+      "paths": "new pipeline/, store.py, bot.py",
+      "non_goals": "不以单内存锁或 last_slot 代替队列。"
+    },
+    {
+      "id": "Q02",
+      "epic": "E05",
+      "title": "多目标 outbox、分块回执与未知结果",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [
+        "Q01",
+        "T01"
+      ],
+      "requirements": [
+        "R07",
+        "R08",
+        "R09"
+      ],
+      "scope": "每个 Bot/chat/part 独立投递；复用冻结正文与媒体。",
+      "acceptance": [
+        "同一目标重复路由只送一份；多目标不被全局去重吞掉",
+        "部分成功只重试明确未完成块；超时结果未知不盲重发",
+        "暂停/删除/解绑前后执行复验；一个目标失败不拖住其他目标"
+      ],
+      "validation": "发前/发后写回间崩溃、429、token撤销、用户拉黑、相册部分失败与重复租约。",
+      "paths": "new delivery/, store.py, bot.py",
+      "non_goals": "不宣称严格 exactly-once，不换 Bot 兜底。"
+    },
+    {
+      "id": "Q03",
+      "epic": "E05",
+      "title": "分类计划、睡眠恢复与配置变更语义",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [
+        "Q01",
+        "Q02"
+      ],
+      "requirements": [
+        "R02",
+        "R04",
+        "R07"
+      ],
+      "scope": "每订阅多个稳定时间槽与 IANA 时区；目标发送前预采集；睡眠/断网有界补发。",
+      "acceptance": [
+        "默认只补最新一期；6小时建议可改；过期记录跳过",
+        "DST 缺失顺延/重复只一次；时间/时区改变不重复完成期次",
+        "语言/分区/目标修改使未发失效重算；部分已发停止并等待用户选择"
+      ],
+      "validation": "Tokyo/Sydney DST、跨日、长睡眠、暂停恢复、调时、语言在两块之间改变、未发/部分发路由变化。",
+      "paths": "schedule.py, pipeline/, delivery/",
+      "non_goals": "不保证睡眠中按点送达，不增加常开云服务器。"
+    },
+    {
+      "id": "T01",
+      "epic": "E06",
+      "title": "多 Bot 身份、一次性配对与生命周期",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [
+        "F04"
+      ],
+      "requirements": [
+        "R08"
+      ],
+      "scope": "Bot 列表、token验证、同一主人逐 Bot 私聊绑定、每 Bot 轮询游标与连接状态。",
+      "acceptance": [
+        "getMe 是只读验证；重复 Bot ID/webhook 冲突不静默抢占",
+        "配对码短时一次性/限次，不能凭用户名或 /start 授权",
+        "暂停/解绑/删除使绑定版本失效；Token轮换必须重新验证"
+      ],
+      "validation": "假 getMe、重复Bot、错误/过期/重放配对、主人不一致、撤销Token、webhook存在。",
+      "paths": "bot.py, new telegram/registry.py, control/",
+      "non_goals": "不向群组或其他用户发送，不自动删除别的应用 webhook。"
+    },
+    {
+      "id": "T02",
+      "epic": "E06",
+      "title": "分类与特别账号的 Bot 分配",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [
+        "T01",
+        "F02"
+      ],
+      "requirements": [
+        "R02",
+        "R08"
+      ],
+      "scope": "实现分类多对多目标、特别账号继承/覆盖与影响预览，消费路由契约。",
+      "acceptance": [
+        "无目标/未验证/未配对/暂停分别展示",
+        "成人目标显式选择；分区变更重新确认覆盖",
+        "删除 Bot 显示受影响订阅；仅目标变化不改语言/样式/时间"
+      ],
+      "validation": "两Bot分配矩阵、同一特别账号覆盖、成人迁移、删除引用、多个就绪状态。",
+      "paths": "routing.py, telegram/, control/",
+      "non_goals": "不实现每 Bot 独立新闻语言。"
+    },
+    {
+      "id": "T03",
+      "epic": "E06",
+      "title": "有作用范围的 Telegram 查询与管理命令",
+      "priority": "P1",
+      "phase": "M1",
+      "depends_on": [
+        "T02",
+        "Q03",
+        "M04"
+      ],
+      "requirements": [
+        "R04",
+        "R08"
+      ],
+      "scope": "/news /search /schedule /pause /resume /status /why 及后续 /x /av /paper 统一授权入口。",
+      "acceptance": [
+        "Bot只能操作已分配订阅/账号；单账号权限不扩大整个分区",
+        "自由文字/媒体在调用模型前确定内容范围；混合Bot先选择",
+        "回复新闻按 brief 权限/分区；管理文案用UI语言，新闻用输出语言"
+      ],
+      "validation": "未授权私聊、群聊、跨Bot brief ID、成人请求到普通Bot、配置并发与模糊输入。",
+      "paths": "bot.py, telegram/commands.py, control/",
+      "non_goals": "不通过聊天收密钥，不让模型执行配置修改。"
+    },
+    {
+      "id": "U01",
+      "epic": "E07",
+      "title": "SwiftUI 菜单栏外壳与独立三语界面",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [
+        "F04"
+      ],
+      "requirements": [
+        "R01",
+        "R04"
+      ],
+      "scope": "基于归档 mockup 建 SwiftUI 工程和五页导航；连接后台真实状态。",
+      "acceptance": [
+        "沿用当前品牌/布局/图标；zh-Hans/en/ja 可独立切换",
+        "关窗口不停止后台；退出UI/停止后台清楚分开",
+        "界面状态来自后台，掉线不显示正常；键盘/VoiceOver/浅深主题可用"
+      ],
+      "validation": "macOS 构建+基础 UI tests，三语长文本/缩放、后台失联、菜单栏操作截图对照。",
+      "paths": "new macos/NewsPaw/, assets/branding/, docs/mockup/",
+      "non_goals": "不重设计，不用HTML mockup冒充原生App。"
+    },
+    {
+      "id": "U02",
+      "epic": "E07",
+      "title": "订阅与来源页、计划和路由预览",
+      "priority": "P1",
+      "phase": "M1",
+      "depends_on": [
+        "U01",
+        "S04",
+        "T02",
+        "Q03"
+      ],
+      "requirements": [
+        "R01",
+        "R02",
+        "R03",
+        "R07"
+      ],
+      "scope": "实现当前来源目录/添加向导、分类开关、范围权重/条数、独立时间与有效路由。",
+      "acceptance": [
+        "来源识别/试采集显示真实结果；模拟标记不能变已验证",
+        "国内/娱乐可拆订阅；删除/暂停显示影响",
+        "无模型/目标/时间等未就绪项可保存草稿，不自动开始推送"
+      ],
+      "validation": "三语 UI 流程、OPML重复、未知源、缺配置、保存冲突和误触回退。",
+      "paths": "macos/NewsPaw/Sources/, control/",
+      "non_goals": "保持既有五页结构；不触发自动历史推送。"
+    },
+    {
+      "id": "U03",
+      "epic": "E07",
+      "title": "模型、Bot、预算和运行设置页",
+      "priority": "P1",
+      "phase": "M1",
+      "depends_on": [
+        "U01",
+        "M02",
+        "M03",
+        "T02",
+        "Q03"
+      ],
+      "requirements": [
+        "R01",
+        "R04",
+        "R08"
+      ],
+      "scope": "实现主备槽、能力验证、Keychain输入、多Bot绑定分配、样式和运行开关。",
+      "acceptance": [
+        "普通/成人与文字/生图关系明确；覆盖不污染默认",
+        "配对/验证/测试均是真实不同状态；用户动作才发测试消息",
+        "费用区分文本/搜索/生图/X和预估/实际；连接失效原因可见"
+      ],
+      "validation": "四槽不同凭据fake、两Bot绑定、删除影响、语言切换保留设置、预算到限。",
+      "paths": "macos/NewsPaw/Settings/, control/",
+      "non_goals": "无自动充值、无明文导出、无未配置能力的假成功。"
+    },
+    {
+      "id": "U04",
+      "epic": "E07",
+      "title": "X 两分区账号与覆盖状态页面",
+      "priority": "P1",
+      "phase": "M2",
+      "depends_on": [
+        "U01",
+        "X03",
+        "T02"
+      ],
+      "requirements": [
+        "R01",
+        "R06"
+      ],
+      "scope": "沿用当前 X 页实现账号/List添加、特别关注、帖子类型、时间/目标/样式覆盖和预算。",
+      "acceptance": [
+        "普通/成人两栏不混用；特别/普通是独立维度",
+        "展示实际稳定身份、预算、分页缺口和最近完整范围",
+        "转换分区先显示受影响路由/缓存/任务，再提交版本化变更"
+      ],
+      "validation": "账号改名、List待分类、特殊账号双报开关、预算暂停和三语 UI。",
+      "paths": "macos/NewsPaw/X/, control/",
+      "non_goals": "不预装私人账号名单。"
+    },
+    {
+      "id": "D01",
+      "epic": "E08",
+      "title": "显式来源配图与文字默认样式",
+      "priority": "P1",
+      "phase": "M2",
+      "depends_on": [
+        "Q02",
+        "F03"
+      ],
+      "requirements": [
+        "R09"
+      ],
+      "scope": "移除有图即发送的原型行为；按本次/账号/分类/全局样式优先级投递。",
+      "acceptance": [
+        "默认仅文字链接；来源图保留相关条目/出处/署名",
+        "成人自动媒体预览关闭，包括链接预览",
+        "图片失败退合格文字，不额外付费生图；每部分有回执"
+      ],
+      "validation": "无图/错图/失效URL/过大图、成人URL预览禁用、多目标文件复用。",
+      "paths": "bot.py, new media/source_images.py, delivery/",
+      "non_goals": "不把 AI 图冒充现场照片，不自行抓更多 X 历史找图。"
+    },
+    {
+      "id": "D02",
+      "epic": "E08",
+      "title": "1–2 页 AI 报纸生成、校验与按次制作",
+      "priority": "P1",
+      "phase": "M2",
+      "depends_on": [
+        "D01",
+        "M02",
+        "M03",
+        "T03"
+      ],
+      "requirements": [
+        "R04",
+        "R09"
+      ],
+      "scope": "冻结目标语言编辑稿→页面计划→独立生图→OCR/同分区视觉校验→媒体投递；回复简报按次制作。",
+      "acceptance": [
+        "每份最多2页，文字/数字/来源编号/页序/语言校验；AI示意标记与可点击来源",
+        "无生图/验证能力或质量失败降级合格文字；不自动迟到补图",
+        "缓存含分区/稿/语言/模型/页数；发给多Bot不重复生图；单次制作不修改订阅"
+      ],
+      "validation": "三语可读性样本、OCR不匹配、第二页失败、预算耗尽、重试复用、跨Bot回复越权。",
+      "paths": "new media/newspaper.py, providers/images.py, telegram/, macos/",
+      "non_goals": "不以HTML截图替代生图，不预填未经选择的图像模型。"
+    },
+    {
+      "id": "D03",
+      "epic": "E08",
+      "title": "图片/语音提问与目标语言播报",
+      "priority": "P1",
+      "phase": "M2",
+      "depends_on": [
+        "M02",
+        "T03",
+        "F03"
+      ],
+      "requirements": [
+        "R04",
+        "R08",
+        "R09"
+      ],
+      "scope": "普通新闻截图线索、语音转写、本机TTS；通过单独能力路由选择模型。",
+      "acceptance": [
+        "先授权与内容范围再处理媒体；无相应能力明确要求文字",
+        "大小/时长和下载上限执行在读取中；临时文件异常也清理",
+        "播报使用目标语言声音，缺声降级文字；不凭图断言身份/地点/时间"
+      ],
+      "validation": "损坏/超限/分块下载媒体、ffmpeg取消清理、日英中声音缺失、成人范围拒入普通模型。",
+      "paths": "ai.py, bot.py, new media/audio.py, macos/",
+      "non_goals": "视频理解归 X04，不把 Luna 的文字能力当成音频转写能力。"
+    },
+    {
+      "id": "O01",
+      "epic": "E09",
+      "title": "任务诊断、保留策略与安全备份恢复",
+      "priority": "P1",
+      "phase": "M1",
+      "depends_on": [
+        "Q03",
+        "F04"
+      ],
+      "requirements": [
+        "R10"
+      ],
+      "scope": "最近任务/来源健康/模型切换/费用/outbox 可追溯；清理、导出、备份/恢复有明确边界。",
+      "acceptance": [
+        "清理不删待发引用证据或破坏去重；日志与媒体可控容量",
+        "导出脱敏且无秘密；导入先预览，恢复不重放历史outbox",
+        "恢复后Bot重验/重绑，迁移可回滚；区分程序存活与业务健康"
+      ],
+      "validation": "活跃引用清理、满盘、损坏备份、旧schema、跨机器恢复、异常文本日志脱敏。",
+      "paths": "store.py, service.py, control/, macos/Diagnostics/",
+      "non_goals": "不自动同步私人数据至GitHub，不做云备份服务。"
+    },
+    {
+      "id": "O02",
+      "epic": "E09",
+      "title": "自包含 macOS 安装与后台服务生命周期",
+      "priority": "P1",
+      "phase": "M1",
+      "depends_on": [
+        "U01",
+        "F04"
+      ],
+      "requirements": [
+        "R01",
+        "R10"
+      ],
+      "scope": "打包 Python 运行时和需要的媒体工具，SMAppService 管理用户级后台；提供升级/卸载流程。",
+      "acceptance": [
+        "新机器无需仓库/uv/系统Python即可启动；登录项授权可见",
+        "升级先停worker/迁移/恢复，失败可回退，不启动双实例",
+        "签名/公证要求单列；本地构建不冒充已公证；卸载明确数据保留选择"
+      ],
+      "validation": "干净macOS测试用户安装、重启/登出/睡眠、更新失败、双实例、移除应用与数据保留。",
+      "paths": "macos/, service.py, new packaging/",
+      "non_goals": "不申请root权限，不自动安装到用户当前运行环境。"
+    },
+    {
+      "id": "O03",
+      "epic": "E09",
+      "title": "CI、故障注入与分阶段发布验收",
+      "priority": "P0",
+      "phase": "M1",
+      "depends_on": [],
+      "requirements": [
+        "R10",
+        "R11"
+      ],
+      "scope": "建立离线Python检查和后续Swift构建/契约/E2E矩阵；记录各里程碑验收，留出真实凭据联调入口。",
+      "acceptance": [
+        "CI不含密钥/私人名单；不会发真实Telegram或付费请求",
+        "加入模块时同步纳入适当检查；原型133测试不能代替目标链路验收",
+        "M1及M2发布必须验证对应依赖全集、Kimi外门和最终提交检查；未通过不得标产品完成"
+      ],
+      "validation": "现有 pytest/ruff 基线；CI触发/失败场景；最终以两Bot、双语言、故障恢复、成人隔离和费用上限做端到端验收。",
+      "paths": ".github/workflows/, tests/, macos tests, docs/testing/",
+      "non_goals": "本issue初期搭框架，具体功能测试随子issue提交；不一次实现所有业务。"
+    }
+  ]
+}

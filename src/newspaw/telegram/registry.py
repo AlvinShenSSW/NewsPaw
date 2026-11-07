@@ -440,7 +440,7 @@ class BotRegistry:
         return [
             dict(generation=g, update_id=u, payload=json.loads(p), state=s)
             for g, u, p, s in self.db.execute(
-                "SELECT generation,update_id,payload,state FROM bot_inbox WHERE bot_id=? ORDER BY rowid LIMIT ?",
+                "SELECT generation,update_id,payload,state FROM bot_inbox WHERE bot_id=? AND state<>'pair_seen' ORDER BY rowid LIMIT ?",
                 (identity, limit),
             )
         ]
@@ -517,19 +517,35 @@ class BotRegistry:
             if text.startswith("/pair"):
                 parts = text.split()
                 valid_shape = len(parts) == 2 and parts[0] == "/pair" and len(parts[1]) <= 128
+                if self.db.execute(
+                    "SELECT 1 FROM bot_inbox WHERE bot_id=? AND generation=? AND update_id=?",
+                    (row["id"], row["generation"], update_id),
+                ).fetchone():
+                    continue
                 if (
                     state["pair_hash"]
                     and state["pair_expires"] > when
                     and state["pair_tries"] < 5
                     and message["date"] >= int(state["pair_issued"])
                 ):
+                    # A code-free marker prevents a replay consuming another attempt.
+                    self.db.execute(
+                        "INSERT INTO bot_inbox VALUES (?,?,?,'{}','pair_seen')",
+                        (row["id"], row["generation"], update_id),
+                    )
                     matches = valid_shape and hmac.compare_digest(
                         hashlib.sha256((state["pair_salt"] + parts[1]).encode()).hexdigest(),
                         state["pair_hash"],
                     )
                     owner = config["owner_id"]
                     if matches and (owner is None or owner == message["sender_id"]):
-                        config["owner_id"] = message["sender_id"]
+                        if owner is None:
+                            prior_config = deepcopy(config)
+                            config["owner_id"] = message["sender_id"]
+                            config = invalidate_bots(self.db, prior_config, config)
+                            # Preserve only the pair established by this transaction;
+                            # every pre-owner-change registration has been revoked.
+                            row["generation"] += 1
                         state.update(
                             paired=True, chat_id=message["chat_id"], status="paired", cutover=when
                         )

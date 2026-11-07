@@ -516,3 +516,62 @@ async def test_token_rotation_through_keychain_manager_invalidates_immediately(s
     with pytest.raises(TelegramError):
         registry.revalidate(binding)
     assert not registry.status("bot1")["verified"]
+
+
+async def test_first_owner_revokes_other_code_and_inflight_poll(system):
+    registry, api, store = system
+    revision, config = store.load_config()
+    config["owner_id"] = None
+    for bot in config["bots"]:
+        bot.update(verified=False, paired=False, telegram_id=None, chat_id=None)
+    config["bots"].append({**config["bots"][0], "id": "bot2", "name": "Second"})
+    store.save_config(config, expected_revision=revision)
+    await registry.verify("bot1", now=NOW)
+    first_code = registry.pair_code("bot1", now=NOW)["code"]
+    second = API()
+    second.remote_id = 1000
+    registry.client_factory = lambda token: second
+    await registry.verify("bot2", now=NOW)
+    second_code = registry.pair_code("bot2", now=NOW)["code"]
+    prior = registry.status("bot2")["generation"]
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def delayed(method, params=None):
+        assert method == "getUpdates"
+        entered.set()
+        await release.wait()
+        return [update("/pair " + second_code, 22)]
+
+    second.call = delayed
+    pending = asyncio.create_task(registry.poll_once("bot2", now=NOW))
+    await entered.wait()
+    registry.client_factory = lambda token: api
+    api.updates = [update("/pair " + first_code, 11)]
+    await registry.poll_once("bot1", now=NOW)
+    release.set()
+    result = await asyncio.gather(pending, return_exceptions=True)
+    assert isinstance(result[0], TelegramError)
+    status = registry.status("bot2")
+    assert status["generation"] > prior and not status["verified"] and not status["paired"]
+    assert status["cursor"] is None
+    assert registry._row("bot2")["state"]["pair_hash"] is None
+    assert registry.snapshot("bot1").owner_id == 123
+    assert store.load_config()[1]["bots"][1]["verified"] is False
+
+
+async def test_wrong_pair_replay_once_across_restart(system):
+    registry, api, store = system
+    await registry.verify("bot1", now=NOW)
+    code = registry.pair_code("bot1", now=NOW)["code"]
+    api.updates = [update("/pair wrong", 19)]
+    await registry.poll_once("bot1", now=NOW)
+    restarted = BotRegistry(store, Keys(), client_factory=lambda token: api)
+    for _ in range(5):
+        await restarted.poll_once("bot1", now=NOW)
+    assert restarted._row("bot1")["state"]["pair_tries"] == 1
+    assert restarted.status("bot1")["polling"]
+    assert restarted.inbox("bot1") == []
+    assert "/pair" not in "\n".join(store._db.iterdump())
+    api.updates = [update("/pair " + code, 20)]
+    await restarted.poll_once("bot1", now=NOW)
+    assert restarted.snapshot("bot1").owner_id == 123

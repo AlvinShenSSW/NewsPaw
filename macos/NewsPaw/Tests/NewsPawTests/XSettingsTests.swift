@@ -12,6 +12,7 @@ import Testing
     #expect(explicit["times"] as? [String] == ["07:00", "20:30"])
     #expect(explicit["bot_ids"] as? [String] == [])
     #expect(explicit["style"] as? String == "text")
+    #expect(XRouteInput.overrides(times: "", bots: nil, style: "")["times"] as? [String] == [])
 }
 
 @Test func xCoverageDistinguishesPartialFromHistoricalComplete() throws {

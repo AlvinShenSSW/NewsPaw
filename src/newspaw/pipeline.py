@@ -33,6 +33,7 @@ class PipelineError(CredentialError):
 
 class _WorkStopped(RuntimeError):
     """An old or paused worker must exit without mutating the shared model task."""
+
     pass
 
 
@@ -347,10 +348,10 @@ class Pipeline:
             self._preflight(row)
         return row
 
-    def _transition(self, job_id, token, stage, now, *, error=None, **updates):
+    def _transition(self, job_id, token, stage, now, *, error=None, effect_guard=None, **updates):
         with self.store._write():
             row = self._leased(job_id, token, starting=stage == "awaiting_delivery", now=now)
-            if row["cancelled"]:
+            if row["cancelled"] or (effect_guard is not None and effect_guard() is False):
                 return
             payload = {**row["payload"], **updates}
             self.db.execute(
@@ -371,7 +372,7 @@ class Pipeline:
             )
         }
 
-    async def _collect(self, row, token, now):
+    async def _collect(self, row, token, now, effect_guard):
         job_id, partition = row["id"], row["partition"]
         scopes = row["payload"]["scopes"]
         attempts = self._collection_attempts(job_id, partition)
@@ -380,6 +381,8 @@ class Pipeline:
         def guard(scope, *, starting):
             self._leased(job_id, token, starting=starting, now=now)
             if starting:
+                if effect_guard is not None and effect_guard() is False:
+                    return False
                 self.db.execute(
                     f"""UPDATE feed_attempts SET status='interrupted',outcome_json=?,completed_at=?
                         WHERE {_COLLECTION}=? AND {_GROUP}=? AND status='running'""",
@@ -392,20 +395,30 @@ class Pipeline:
                 )
 
         evidence = EvidenceStore(self.store, collection_guard=guard)
-        if pending is not None:
+        outcomes = [evidence.attempt(key, partition=partition) for key in attempts.values()]
+        if pending is not None and all(
+            result["status"] != "configuration_changed" for result in outcomes
+        ):
             scope = dict(scopes[pending], collection_id=job_id, collection_group=pending)
             factory = self.ai_factory if "kinds" in scope else self.feed_factory
             collector = factory(evidence)
             try:
                 result = await collector.fetch_scope(scope, 24, now)
+                if result is None:
+                    return
                 attempts[pending] = result["id"]
+                outcomes.append(result)
             finally:
                 await collector.close()
         ids = [attempts[index] for index in sorted(attempts)]
+        if any(result["status"] == "configuration_changed" for result in outcomes):
+            self._transition(
+                job_id, token, "stale", _time(now), error="configuration_changed", attempt_ids=ids
+            )
+            return
         if len(attempts) != len(scopes):
             self._transition(job_id, token, "collecting", _time(now), attempt_ids=ids)
             return
-        outcomes = [evidence.attempt(key, partition=partition) for key in ids]
         successful = any(
             result["status"] in _SUCCESSFUL_FETCH
             and (result.get("coverage_complete", True) or result.get("accepted_count", 0) > 0)
@@ -420,9 +433,14 @@ class Pipeline:
             attempt_ids=ids,
         )
 
-    async def _edit(self, row, token, now):
+    async def _edit(self, row, token, now, effect_guard):
         job_id, payload = row["id"], row["payload"]
         edition_id = self._edition_id(job_id)
+
+        def before_dispatch():
+            self._leased(job_id, token, starting=True, now=now)
+            return effect_guard() if effect_guard is not None else None
+
         edition = self.editorial.prepare(
             edition_id,
             RouteSnapshot(**payload["route"]),
@@ -441,7 +459,7 @@ class Pipeline:
             edition = await self.editorial.advance(
                 edition_id,
                 now=now,
-                before_dispatch=lambda: self._leased(job_id, token, starting=True, now=now),
+                before_dispatch=before_dispatch,
             )
         state = edition["state"]
         if state in {"ready", "no_news"}:
@@ -454,7 +472,7 @@ class Pipeline:
         elif state in {"stale", "cancelled", "refused"}:
             self._transition(job_id, token, state, _time(now), error=edition["error_kind"])
 
-    async def _media(self, row, token, now):
+    async def _media(self, row, token, now, effect_guard):
         job_id = row["id"]
         route = RouteSnapshot(**row["payload"]["route"])
         style = route.effective["style"]
@@ -473,6 +491,7 @@ class Pipeline:
                     self._leased(job_id, token, starting=True, now=now)
                     if self.editorial.get(edition_id)["state"] != "ready":
                         raise EditorialError("edition_not_ready")
+                    return effect_guard() if effect_guard is not None else None
 
             media = await self.source_images.prepare(
                 route,
@@ -480,21 +499,26 @@ class Pipeline:
                 self.editorial.image_anchors(edition_id),
                 authorize,
             )
-            if media is None or authorize() is False:
+            if media is None:
                 return
         self._transition(
-            job_id, token, "awaiting_delivery", _time(now), media=dict(media, edition_id=edition_id)
+            job_id,
+            token,
+            "awaiting_delivery",
+            _time(now),
+            effect_guard=effect_guard,
+            media=dict(media, edition_id=edition_id),
         )
 
-    async def _step(self, job_id, token, now):
+    async def _step(self, job_id, token, now, effect_guard):
         try:
             row = self._leased(job_id, token, starting=True, now=now)
             if row["stage"] == "collecting":
-                await self._collect(row, token, now)
+                await self._collect(row, token, now, effect_guard)
             elif row["stage"] == "editing":
-                await self._edit(row, token, now)
+                await self._edit(row, token, now, effect_guard)
             else:
-                await self._media(row, token, now)
+                await self._media(row, token, now, effect_guard)
         except (RouteBlocked, RouteStale):
             self._transition(job_id, token, "stale", _time(now), error="configuration_changed")
         except (EvidenceError, EditorialError, ProviderError, RunnerError) as exc:
@@ -502,12 +526,12 @@ class Pipeline:
                 raise PipelineError("storage_failed") from None
             self._transition(job_id, token, "blocked", _time(now), error="preparation_failed")
 
-    async def advance(self, job_id, *, now=None):
+    async def advance(self, job_id, *, now=None, effect_guard=None):
         try:
             token = self._claim(job_id, _time(now))
             if token is None:
                 return self.get(job_id)
-            task = asyncio.create_task(self._step(job_id, token, now))
+            task = asyncio.create_task(self._step(job_id, token, now, effect_guard))
             self._active[job_id, token] = task
             try:
                 await task

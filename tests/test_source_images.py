@@ -273,3 +273,23 @@ def test_jpeg_exif_orientation_is_applied_then_removed():
     with Image.open(io.BytesIO(data)) as image:
         assert not image.getexif()
     assert b"Fixture private author" not in data
+
+
+async def test_schedule_guard_false_before_photo_get_commits_hold_without_request(system, tmp_path):
+    from test_model_runner import NOW
+    from test_pipeline import create
+
+    pipeline, _, _, _, _ = system
+    attach_images(pipeline, tmp_path / "media", lambda _: pytest.fail("photo request after hold"))
+    job = create(pipeline, "sub_world", "held-picture", style="source_image")
+    await pipeline.advance(job, now=NOW)
+    assert (await pipeline.advance(job, now=NOW))["stage"] == "preparing_media"
+    pipeline.db.execute("CREATE TABLE media_guard_proof (value TEXT)")
+
+    def deny():
+        pipeline.db.execute("INSERT INTO media_guard_proof VALUES ('held')")
+        return False
+
+    result = await pipeline.advance(job, now=NOW, effect_guard=deny)
+    assert result["stage"] == "preparing_media" and result["media"] is None
+    assert pipeline.db.execute("SELECT value FROM media_guard_proof").fetchone() == ("held",)

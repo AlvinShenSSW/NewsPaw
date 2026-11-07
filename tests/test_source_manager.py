@@ -361,3 +361,20 @@ def test_legacy_import_initializes_unpreviewed_source_markers(tmp_path):
         ]
     finally:
         store.close()
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"<rss><channel>",
+        b"<root/>",
+        b'<root><head><link rel="alternate" type="application/rss+xml" href="https://example.com/feed"/></head></root>',
+    ],
+)
+async def test_xml_failure_is_not_website_discovery(setup, content):
+    manager, _ = setup
+    manager.client_factory = lambda: httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, content=content))
+    )
+    with pytest.raises(SourceError, match="invalid_feed"):
+        await manager.discover(URL)

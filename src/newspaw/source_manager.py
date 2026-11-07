@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import re
 from contextlib import suppress
 from copy import deepcopy
 from dataclasses import asdict
@@ -445,6 +446,13 @@ class SourceManager:
                             b"<!doctype html>"
                         ):
                             raise SourceError("unsafe_xml") from None
+                        html = response.headers.get("content-type", "").split(";", 1)[
+                            0
+                        ].strip().lower() in {"text/html", "application/xhtml+xml"} or re.match(
+                            rb"\s*(?:<!doctype\s+html>\s*)?<html(?:\s|>)", data[:1024], re.I
+                        )
+                        if not html or exc.kind not in {"invalid_feed", "unsafe_xml"}:
+                            raise SourceError(exc.kind) from None
                         parser = _Links(url)
                         parser.feed(response.text)
                         return dict(

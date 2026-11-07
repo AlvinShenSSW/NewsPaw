@@ -22,11 +22,17 @@ from .pipeline import Pipeline
 from .providers import ProbeService, ProfileRegistry, ProviderError
 from .source_catalog import catalog
 from .source_manager import SourceError, SourceManager
+from .telegram.outbox import Outbox
 from .telegram.registry import BotRegistry, TelegramError
 from .telegram.targets import TargetManager
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
+    "delivery.status": ({"job_id"}, {"bot_id"}),
+    "delivery.resolve": (
+        {"job_id", "bot_id", "ordinal", "action"},
+        {"acknowledge_duplicate_send", "message_id"},
+    ),
     "jobs.list": (set(), {"limit"}),
     "jobs.get": ({"job_id"}, set()),
     "jobs.audit": ({"job_id"}, {"after", "limit"}),
@@ -116,6 +122,7 @@ class ControlServer:
         self.sources = SourceManager(credentials)
         self.targets = TargetManager(credentials, self.bots)
         self.pipeline = Pipeline(credentials.store, credentials.backend)
+        self.outbox = Outbox(self.pipeline, self.targets)
         self._server = None
         self._lock_fd = None
         self._handlers = set()
@@ -145,6 +152,7 @@ class ControlServer:
             BudgetLedger(self.credentials.store).recover_inflight()
             ProfileRegistry(self.credentials.store).recover_interrupted()
             self.pipeline.recover_interrupted()
+            self.outbox.recover_interrupted()
             await self._server.start_serving()
             await self.bots.start()
         except BaseException:
@@ -183,6 +191,17 @@ class ControlServer:
         if not required <= keys or keys - required - optional:
             raise CredentialError("invalid_request")
         manager, store = self.credentials, self.credentials.store
+        if op == "delivery.status":
+            return self.outbox.status(data["job_id"], bot_id=data.get("bot_id"))
+        if op == "delivery.resolve":
+            return self.outbox.resolve(
+                data["job_id"],
+                data["bot_id"],
+                data["ordinal"],
+                data["action"],
+                acknowledge_duplicate_send=data.get("acknowledge_duplicate_send", False),
+                message_id=data.get("message_id"),
+            )
         if op == "jobs.list":
             return self.pipeline.list(data.get("limit", 25))
         if op == "jobs.get":

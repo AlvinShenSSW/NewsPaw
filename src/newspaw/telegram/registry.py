@@ -59,6 +59,13 @@ def _clear_pair(state):
     state.update(pair_hash=None, pair_salt=None, pair_issued=0, pair_expires=0, pair_tries=0)
 
 
+def _revoke(row):
+    row["generation"] += 1
+    state = row["state"]
+    state.update(verified=False, paired=False, polling=False, chat_id=None)
+    _clear_pair(state)
+
+
 def remove_bot(config, identity):
     """Remove a Bot and all of its configured assignments in place."""
     config["bots"] = [b for b in config["bots"] if b["id"] != identity]
@@ -285,6 +292,17 @@ class BotRegistry:
         if not isinstance(binding, Binding) or self.snapshot(binding.bot_id) != binding:
             raise TelegramError("binding_changed")
         return binding
+
+    def revoke_send_binding(self, binding, reason):
+        """Called in the receipt transaction for a verified rejection."""
+        try:
+            self.revalidate(binding)
+            row = self._current(binding.bot_id, binding.generation)
+        except TelegramError:
+            return
+        row["state"]["status"] = reason
+        _revoke(row)
+        self._save(row)
 
     def _current(self, identity, generation):
         _, bot = self._bot(identity)
@@ -640,9 +658,7 @@ class BotRegistry:
                         + (exc.retry_after if exc.retry_after is not None else 5),
                     )
                     if exc.kind in {"token_revoked", "forbidden", "consumer_conflict"}:
-                        current["generation"] += 1
-                        s.update(verified=False, paired=False, polling=False, chat_id=None)
-                        _clear_pair(s)
+                        _revoke(current)
                     self._save(current)
             finally:
                 if client is not None:

@@ -225,6 +225,8 @@ def _url(value):
                     "secret",
                     "authorization",
                     "signature",
+                    "sig",
+                    "keypairid",
                     "credential",
                     "accesskeyid",
                     "subscriptionkey",

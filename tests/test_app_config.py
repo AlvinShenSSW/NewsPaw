@@ -94,6 +94,7 @@ def test_url_author_filter_is_not_a_credential_but_encoded_api_key_is(tmp_path):
     [
         "Signature=private&Key-Pair-Id=ABC",
         "sig=private",
+        "provider-sig=private",
         "X-Amz-Signature=private",
         "X-Goog-Credential=private",
         "AWSAccessKeyId=private",

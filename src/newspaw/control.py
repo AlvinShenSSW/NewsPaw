@@ -30,6 +30,7 @@ from .telegram.outbox import Outbox
 from .telegram.registry import BotRegistry, TelegramError
 from .telegram.targets import TargetManager
 from .x.accounts import XDirectory
+from .x.timelines import Timelines
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
@@ -53,6 +54,22 @@ OPERATIONS = {
     "x.lists.add": ({"value", "partition", "revision"}, {"default_adult"}),
     "x.lists.refresh": ({"list_id", "request_id", "revision"}, {"page_size", "max_pages"}),
     "x.operation": ({"request_id"}, set()),
+    "x.posts.begin": (
+        {"scan_id", "kind", "scope", "revision"},
+        {
+            "page_size",
+            "include_original",
+            "include_quotes",
+            "include_replies",
+            "include_reposts",
+            "fresh",
+        },
+    ),
+    "x.posts.advance": ({"scan_id", "step_id"}, set()),
+    "x.posts.status": ({"scan_id"}, set()),
+    "x.posts.stop": ({"scan_id"}, set()),
+    "x.posts.list": ({"kind", "scope"}, {"limit"}),
+    "x.posts.purge_expired": (set(), {"limit"}),
     "jobs.list": (set(), {"limit"}),
     "jobs.get": ({"job_id"}, set()),
     "jobs.audit": ({"job_id"}, {"after", "limit"}),
@@ -147,6 +164,7 @@ class ControlServer:
         self.web_search = WebSearch(credentials.store, credentials.backend)
         self.targets = TargetManager(credentials, self.bots)
         self.x = XDirectory(credentials, self.targets)
+        self.x_posts = Timelines(self.x)
         assets = AssetStore(self.directory / "media")
         self.pipeline = Pipeline(
             credentials.store,
@@ -189,6 +207,7 @@ class ControlServer:
             self.outbox.recover_interrupted()
             self.commands.recover_interrupted()
             self.x.recover_interrupted()
+            self.x_posts.recover_interrupted()
             await self._server.start_serving()
             await self.bots.start()
             self.scheduler.start()
@@ -272,16 +291,33 @@ class ControlServer:
             return self.x.lists()
         if op == "x.lists.add":
             return self.x.add_list(
-                data["value"], data["partition"], data["revision"],
+                data["value"],
+                data["partition"],
+                data["revision"],
                 default_adult=data.get("default_adult", False),
             )
         if op == "x.lists.refresh":
             return await self.x.refresh_list(
-                data["list_id"], data["request_id"], data["revision"],
-                page_size=data.get("page_size", 25), max_pages=data.get("max_pages", 4),
+                data["list_id"],
+                data["request_id"],
+                data["revision"],
+                page_size=data.get("page_size", 25),
+                max_pages=data.get("max_pages", 4),
             )
         if op == "x.operation":
             return self.x.operation(data["request_id"])
+        if op == "x.posts.begin":
+            return self.x_posts.begin(**{key: value for key, value in data.items() if key != "op"})
+        if op == "x.posts.advance":
+            return await self.x_posts.advance(data["scan_id"], data["step_id"])
+        if op == "x.posts.status":
+            return self.x_posts.status(data["scan_id"])
+        if op == "x.posts.stop":
+            return self.x_posts.stop(data["scan_id"])
+        if op == "x.posts.list":
+            return self.x_posts.posts(data["kind"], data["scope"], limit=data.get("limit", 50))
+        if op == "x.posts.purge_expired":
+            return self.x_posts.purge_expired(limit=data.get("limit", 100))
         if op == "jobs.list":
             return self.pipeline.list(data.get("limit", 25))
         if op == "jobs.get":

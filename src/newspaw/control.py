@@ -19,7 +19,9 @@ from pathlib import Path
 from .budget import BudgetError, BudgetLedger
 from .connectors.web_search import WebSearch
 from .credentials import CredentialError
+from .media.input_service import MediaCommands
 from .media.source_images import AssetStore, SourceImages
+from .media.speech_provider import TranscriptionProvider
 from .pipeline import Pipeline
 from .providers import ProbeService, ProfileRegistry, ProviderError
 from .scheduler import Scheduler
@@ -35,6 +37,8 @@ from .x.timelines import Timelines
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
     "schedule.status": (set(), {"limit"}),
+    "media.policy": (set(), set()),
+    "media.configure": ({"settings", "revision"}, set()),
     "schedule.configure": ({"settings", "revision"}, set()),
     "schedule.resolve": ({"occurrence_id", "action"}, set()),
     "delivery.status": ({"job_id"}, {"bot_id"}),
@@ -158,7 +162,13 @@ class ControlServer:
         self.directory = Path(directory).expanduser().absolute()
         self.path = self.directory / "control.sock"
         self.credentials = credentials
-        self.probes = ProbeService(credentials.store, credentials.backend)
+        self.media = MediaCommands(credentials.store, credentials.backend)
+        self.probes = ProbeService(
+            credentials.store,
+            credentials.backend,
+            stt_factory=TranscriptionProvider,
+            stt_fixture=self.media.speech.probe_wav,
+        )
         self.bots = BotRegistry(credentials.store, credentials.backend)
         self.sources = SourceManager(credentials)
         self.web_search = WebSearch(credentials.store, credentials.backend)
@@ -173,7 +183,7 @@ class ControlServer:
         )
         self.outbox = Outbox(self.pipeline, self.targets, asset_resolver=assets.read)
         self.scheduler = Scheduler(self.pipeline, self.outbox)
-        self.commands = Commands(self.outbox)
+        self.commands = Commands(self.outbox, media=self.media)
         self._server = None
         self._lock_fd = None
         self._handlers = set()
@@ -206,6 +216,7 @@ class ControlServer:
             self.pipeline.recover_interrupted()
             self.outbox.recover_interrupted()
             self.commands.recover_interrupted()
+            self.media.recover_interrupted()
             self.x.recover_interrupted()
             self.x_posts.recover_interrupted()
             await self._server.start_serving()
@@ -250,6 +261,10 @@ class ControlServer:
         if not required <= keys or keys - required - optional:
             raise CredentialError("invalid_request")
         manager, store = self.credentials, self.credentials.store
+        if op == "media.policy":
+            return self.media.policy()
+        if op == "media.configure":
+            return self.media.configure(data["settings"], data["revision"])
         if op == "schedule.status":
             return self.scheduler.status(limit=data.get("limit", 25))
         if op == "schedule.configure":

@@ -402,3 +402,17 @@ async def test_same_url_multiple_source_ids_reuse_and_retired_scope_refuses_read
     with pytest.raises(EvidenceError, match="scope_changed"):
         repo.articles(result["id"], partition="normal", subscription_id="sub_world", now=NOW)
     await service.close()
+
+
+@pytest.mark.asyncio
+async def test_malformed_redirect_finishes_failed_attempt(configured):
+    _, repo = configured
+    service = collector(
+        repo, lambda _: httpx.Response(302, headers={"location": "https://[invalid"})
+    )
+    result = (await service.preview("source1", now=NOW))[0]
+    assert result["status"] == "failed"
+    assert result["error_kind"] == "redirect_rejected"
+    assert repo.history("source1")[-1]["status"] == "failed"
+    assert repo.recover_interrupted() == 0
+    await service.close()

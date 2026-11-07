@@ -467,8 +467,11 @@ class FeedCollector:
                                 snapshot_id=cache["snapshot_id"],
                             )
                         if response.is_redirect:
-                            target = urljoin(url, response.headers.get("location", ""))
-                            old, new = urlsplit(url), urlsplit(target)
+                            try:
+                                target = urljoin(url, response.headers.get("location", ""))
+                                old, new = urlsplit(url), urlsplit(target)
+                            except ValueError:
+                                raise EvidenceError("redirect_rejected") from None
                             if (old.scheme, old.netloc) != (
                                 new.scheme,
                                 new.netloc,

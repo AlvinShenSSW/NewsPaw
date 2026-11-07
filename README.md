@@ -4,7 +4,8 @@
 
 **目前为系统设计和后台原型，尚不是可安装的完整 Mac 应用。未启用后台服务或真实推送。**
 
-- [产品与系统设计](docs/system-design.md)：六类主题、每类独立时间、X 账号单独日更与费用控制、原生 Mac 界面、模型路由、实施顺序。
+- [产品与系统设计](docs/system-design.md)：八类主题、每类独立时间、X 账号单独日更与费用控制、原生 Mac 界面、模型路由、实施顺序。
+- [新闻来源与添加流程](docs/source-strategy.md)：中国与 AI 新分类、推荐和自选来源、RSS/API/网页采集、App 内添加与路由预览。
 - [主备模型与语言设置](docs/model-routing.md)：每个槽位独立 URL/Key/模型、分类覆盖、失败切换、界面与新闻输出的独立三语设置。
 - [推送样式与 AI 报纸](docs/delivery-formats.md)：默认文字链接、按需来源配图、指定内容生成为 1–2 张报纸图，附可点击来源。
 - [多 Bot 绑定与新闻分配](docs/telegram-routing.md)：分别绑定多个 Telegram Bot，按分类和特别关注账号选择一个或多个接收目标。

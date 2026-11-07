@@ -1,0 +1,15 @@
+# NewsPaw logo concepts
+
+Generated with the built-in image_gen tool on 2026-11-07. Black, white and neutral gray; raster PNG concept explorations. No final logo has been selected or installed in the app. Original generated files were preserved.
+
+## 1. newspaw-paw-newspaper.png
+
+Use case: logo-brand. Create ONE polished original logo concept for a macOS AI news companion called NewsPaw. Square white canvas. Concept: a bold compact paw-print emblem whose central pad is cleverly formed by a folded newspaper, with two or three clear negative-space news columns. Four clean rounded toe pads. Integrate the newspaper and paw into ONE memorable symbol, not two adjacent icons. Below it place the exact wordmark "NewsPaw" in refined contemporary sans-serif lettering, black, balanced spacing. Strictly black, white and neutral gray only. Flat vector-like graphic rendered as an image, crisp edges, highly legible at small app-icon size, generous whitespace, professional editorial identity, friendly but restrained. Centered icon above wordmark. No extra text, no slogan, no mockup, no stationery, no shadows, gradients, textures, 3D, watermark, or multiple versions.
+
+## 2. newspaw-n-monogram.png
+
+Use case: logo-brand. Create ONE polished original logo concept for "NewsPaw", an intelligent personal news agent for macOS. Square white canvas. Concept: a distinctive minimalist uppercase N monogram with a small paw impression integrated through negative space into its geometric strokes. The N should remain immediately readable; the subtle paw detail adds personality. Use strong architectural proportions, slightly softened corners and a compact silhouette suitable for a menu bar/app icon. Exact wordmark "NewsPaw" centered beneath the mark in an elegant modern sans-serif. Strict monochrome black, white and neutral gray, no colored accents. Flat vector-like precision as a generated image, confident Swiss editorial design, ample negative space. One standalone logo lockup only, no presentation grid, no slogan, mockups, effects, shadows, gradients, textures or watermark.
+
+## 3. newspaw-news-hound.png
+
+Use case: logo-brand. Create ONE original premium logo for "NewsPaw", a friendly AI news companion. Square white canvas. Concept: an alert little hound's head subtly constructed from folded-newspaper geometry: two expressive folded-paper ears, a simple nose and confident attentive expression, with a few purposeful negative-space lines suggesting a newspaper. A clever highly simplified dog/news emblem, compact and iconic, not a detailed illustration. Make it feel trustworthy and smart, not childish or aggressive. Exact wordmark "NewsPaw" below the emblem in a warm clean sans-serif with carefully spaced lettering. Black, white and neutral gray ONLY. Flat vector-like bold shapes, crisp silhouette, excellent small-size readability, generous white space. One centered logo, no additional text, slogan, mockups, page of variants, shadows, texture, 3D, gradients or watermark.

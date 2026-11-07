@@ -6,6 +6,8 @@ Kimi CLI 已由 2.1.1 升级至 2.5.2，`kimi provider list` 显示可用 `kimi-
 
 本机 `.afk/config.md` 保存 test/lint、插件路径、`gates: kimi`、`priority: kimi`、`policy: leave-open`。本轮只规划与设计审阅，不启动 AFK 全流程；未来先接收明确的 issue 编号及范围。epic 不适合作为一个巨大 PR，优先把子 issue 逐个执行；依赖完成后再进入其子任务。
 
+当前插件 Kimi helper 没有直接转发模型选择参数，本机使用 `KIMI_GATE_BIN` 指向 `.afk/bin/kimi-k31`：该 wrapper 只执行真实 Kimi CLI 并添加 `--model kimi-code/k3.1-pro`，其余参数原样转交。没有修改插件或全局默认模型。未来执行前应检查 wrapper 与 `--print-args`；在另一台机器重建同等显式选择，不能默默使用 CLI 默认值。
+
 ## 推荐顺序
 
 1. M1 基础：O03、F01、F03 → F02/F04 → S01、M01/M03 → M02/M04；T01 和 U01 可在依赖就绪后并行排队。

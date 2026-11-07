@@ -550,3 +550,19 @@ async def test_interrupted_reverification_removes_derived_capability_atomically(
     assert records.status("normal_primary")["text"]["state"] == "outcome_unknown"
     assert store.load_config()[1]["model_profiles"][0]["capabilities"] == []
     assert store.config_revision() == revision + 1
+
+
+def test_native_probe_rejects_stale_configuration_before_recording_intent(tmp_path):
+    from contextlib import closing
+
+    from newspaw.store import Store
+
+    with closing(Store(tmp_path / "state.db")) as store:
+        registry = ProfileRegistry(store)
+        revision, config = store.load_config()
+        config["model_profiles"][0]["model"] = "new-fixture-model"
+        store.save_config(config, expected_revision=revision)
+        with pytest.raises(ProviderError, match="config_conflict"):
+            registry.begin("stale.probe", "normal_primary", "text", 100, revision=revision)
+        assert registry.get("stale.probe") is None
+        assert store._db.execute("SELECT count(*) FROM budget_attempts").fetchone() == (0,)

@@ -238,35 +238,13 @@ struct SettingsWindow: View {
     }
 
     private func models(_ config: AppConfig) -> some View {
-        VStack(alignment: .leading, spacing: 15) {
-            ForEach(["normal", "adult"], id: \.self) { partition in
-                sectionTitle(partition == "adult" ? .adult : .ordinary)
-                VStack(spacing: 1) {
-                    ForEach(config.modelProfiles.filter { $0.partition == partition }) { profile in
-                        line(
-                            model.text(profile.role == "primary" ? .primary : .backup) + " · " + profile.model,
-                            note: profile.provider,
-                            status: profile.capabilities.contains("text") ? .verified : .unverified
-                        )
-                    }
-                }
-                .background(cardBackground)
-            }
-        }
+        ModelWorkspace(model: model, config: config)
     }
 
     private var delivery: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if model.bots.isEmpty {
-                statusCard(model.text(.noBots))
-            } else {
-                VStack(spacing: 1) {
-                    ForEach(model.bots) { bot in
-                        line(bot.name, status: bot.label)
-                    }
-                }
-                .background(cardBackground)
-            }
+            BotWorkspace(model: model)
+            RuntimePolicyWorkspace(model: model)
             VStack(alignment: .leading, spacing: 11) {
                 ConnectionBadge(model: model)
                 Text(model.text(.lifecycleNote)).foregroundStyle(.secondary)

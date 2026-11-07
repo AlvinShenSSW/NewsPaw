@@ -113,7 +113,7 @@ OPERATIONS = {
     "bots.action": ({"bot_id", "action"}, {"generation"}),
     "bots.delete": ({"bot_id", "revision"}, set()),
     "models.status": ({"profile_id"}, set()),
-    "models.probe": ({"probe_id", "profile_id", "capability", "hold_units"}, set()),
+    "models.probe": ({"probe_id", "profile_id", "capability", "hold_units"}, {"revision"}),
     "budget.get": (set(), set()),
     "budget.save": ({"document", "revision"}, set()),
     "config.get": (set(), set()),
@@ -447,7 +447,8 @@ class ControlServer:
             return ProfileRegistry(store).status(data["profile_id"])
         if op == "models.probe":
             return await self.probes.probe(
-                data["probe_id"], data["profile_id"], data["capability"], data["hold_units"]
+                data["probe_id"], data["profile_id"], data["capability"], data["hold_units"],
+                revision=data.get("revision"),
             )
         if op in {"budget.get", "budget.save"}:
             ledger = BudgetLedger(store)

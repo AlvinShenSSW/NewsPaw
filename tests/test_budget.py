@@ -356,3 +356,19 @@ def test_begin_refuses_superseded_configured_price(budget):
     ledger.configure(policy, revision)
     with pytest.raises(BudgetError, match="price_changed"):
         ledger.begin_attempt("price", now=NOW)
+
+
+@pytest.mark.parametrize("meter", ["model", "x"])
+def test_dispatch_rejects_regressed_clock_after_new_period_exists(budget, meter):
+    ledger, _ = budget
+    args = {"meter": meter, "quote": UNKNOWN if meter == "model" else READS}
+    old_time = datetime(2026, 10, 31, 14, 59, tzinfo=UTC)
+    new_time = datetime(2026, 10, 31, 15, 1, tzinfo=UTC)
+    old = ledger.reserve("old", "old", max_units=10, now=old_time, **args)
+    fresh = ledger.reserve("fresh", "fresh", max_units=10, now=new_time, **args)
+    assert old["period_id"] != fresh["period_id"]
+    with pytest.raises(BudgetError, match="clock_before_current_period"):
+        ledger.begin_attempt("old", now=old_time)
+    assert ledger.get("old")["state"] == "reserved"
+    assert ledger.begin_attempt("fresh", now=new_time)["state"] == "inflight"
+    ledger.release("old")

@@ -442,6 +442,12 @@ class BudgetLedger:
             record = self.get(attempt_id)
             if record["state"] != "reserved":
                 raise BudgetError("attempt_not_dispatchable")
+            latest_start = self.db.execute(
+                "SELECT start FROM budget_periods WHERE meter=? ORDER BY start DESC LIMIT 1",
+                (record["meter"],),
+            ).fetchone()[0]
+            if now < datetime.fromisoformat(latest_start):
+                raise BudgetError("clock_before_current_period")
             start, end = self.db.execute(
                 "SELECT start,end FROM budget_periods WHERE id=?", (record["period_id"],)
             ).fetchone()

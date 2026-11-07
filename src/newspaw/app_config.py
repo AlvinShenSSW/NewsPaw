@@ -22,6 +22,7 @@ PARTITIONS = {"normal", "adult"}
 REGIONAL_CATEGORIES = {"japan", "australia", "china"}
 REGIONAL_FOCUS = {"domestic", "entertainment"}
 _OPTIONAL = {
+    "accounts": {"include_in_aggregate"},
     "sources": {"focus"},
     "subscriptions": {"source_mode", "focus_weights"},
 }
@@ -100,6 +101,14 @@ def source_in_subscription(source, subscription, *, include_muted=False):
         selected = source["id"] in subscription["source_ids"]
     weights = subscription.get("focus_weights", {})
     return selected and (include_muted or weights.get(source.get("focus"), 1) > 0)
+
+
+def in_x_aggregate(account, subscription):
+    return (
+        account["subscription_id"] == subscription["id"]
+        and subscription["category_id"] in {"x", "x_adult"}
+        and (account["priority"] == "normal" or account.get("include_in_aggregate", False))
+    )
 
 
 def new_id(kind: str) -> str:
@@ -508,6 +517,14 @@ def _validate_config(config: dict) -> None:
             raise ValueError("Invalid stable X account ID")
         if account["priority"] not in {"normal", "special"}:
             raise ValueError("Invalid account priority")
+        aggregate = account.get("include_in_aggregate", False)
+        _boolean(aggregate)
+        if aggregate and (
+            account["priority"] != "special"
+            or indexed["subscriptions"].get(account["subscription_id"], {}).get("category_id")
+            not in {"x", "x_adult"}
+        ):
+            raise ValueError("Invalid special account aggregate opt-in")
         if account["subscription_id"] is not None:
             references([account["subscription_id"]], "subscriptions")
             sub = indexed["subscriptions"][account["subscription_id"]]

@@ -369,7 +369,8 @@ def test_v2_upgrade_keeps_untouched_legacy_preferences(tmp_path, marker):
         assert upgraded.load_config()[1]["x_api"]["credential_ref"] is None
 
 
-async def test_v2_upgrade_reuses_confirmed_paid_edition(tmp_path):
+@pytest.mark.parametrize("prior_version", [12, 14])
+async def test_v2_upgrade_reuses_confirmed_paid_edition(tmp_path, prior_version):
     from test_model_runner import NOW
     from test_pipeline import create, prepare
     from test_routing import configured
@@ -394,8 +395,19 @@ async def test_v2_upgrade_reuses_confirmed_paid_edition(tmp_path):
         config.pop("x_api")
         with store._write():
             store._db.execute("UPDATE app_configuration SET document=?", (json.dumps(config),))
-            store._db.execute("PRAGMA user_version=12")
+            if prior_version == 14:
+                store._db.execute(
+                    "UPDATE schedule_policy SET revision=7,settings=json_set(settings,'$.catchup_minutes',45)"
+                )
+                for table in ("x_operations", "x_lists", "x_identities"):
+                    store._db.execute(f"DROP TABLE {table}")
+            store._db.execute(f"PRAGMA user_version={prior_version}")
     with closing(Store(path)) as upgraded:
+        if prior_version == 14:
+            revision, settings = upgraded._db.execute(
+                "SELECT revision,settings FROM schedule_policy WHERE id=1"
+            ).fetchone()
+            assert revision == 7 and json.loads(settings)["catchup_minutes"] == 45
         pipe, reads, calls = prepare(upgraded)
         assert (await pipe.advance(job, now=NOW))["stage"] == "awaiting_delivery"
         assert not reads and not calls

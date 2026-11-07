@@ -19,7 +19,10 @@ from pathlib import Path
 from .budget import BudgetError, BudgetLedger
 from .connectors.web_search import WebSearch
 from .credentials import CredentialError
+from .media.image_provider import ImageProvider
 from .media.input_service import MediaCommands
+from .media.newspaper import MacOCR
+from .media.paper_service import Newspapers
 from .media.source_images import AssetStore, SourceImages
 from .media.speech_provider import TranscriptionProvider
 from .pipeline import Pipeline
@@ -46,6 +49,8 @@ OPERATIONS = {
     "schedule.status": (set(), {"limit"}),
     "media.policy": (set(), set()),
     "media.configure": ({"settings", "revision"}, set()),
+    "newspaper.policy": (set(), set()),
+    "newspaper.configure": ({"settings", "revision"}, set()),
     "schedule.configure": ({"settings", "revision"}, set()),
     "schedule.resolve": ({"occurrence_id", "action"}, set()),
     "delivery.status": ({"job_id"}, {"bot_id"}),
@@ -192,6 +197,7 @@ class ControlServer:
             credentials.backend,
             stt_factory=TranscriptionProvider,
             stt_fixture=self.media.speech.probe_wav,
+            image_factory=ImageProvider,
         )
         self.bots = BotRegistry(credentials.store, credentials.backend)
         self.bot_tests = TestSends(self.bots)
@@ -202,10 +208,13 @@ class ControlServer:
         self.x = XDirectory(credentials, self.targets)
         self.x_posts = Timelines(self.x)
         assets = AssetStore(self.directory / "media")
+        ocr = MacOCR(Path(sys.executable).resolve().with_name("newspaw-ocr"))
+        self.newspapers = Newspapers(credentials.store, credentials.backend, assets, ocr)
         self.pipeline = Pipeline(
             credentials.store,
             credentials.backend,
             source_images=SourceImages(credentials.store, assets),
+            newspapers=self.newspapers,
             x_digests=XDigests(self.x_posts),
         )
         self.outbox = Outbox(self.pipeline, self.targets, asset_resolver=assets.read)
@@ -249,8 +258,9 @@ class ControlServer:
             self.pipeline.recover_interrupted()
             self.outbox.recover_interrupted()
             self.commands.recover_interrupted()
-            self.media.recover_interrupted()
             self.bot_tests.recover_interrupted()
+            self.media.recover_interrupted()
+            self.newspapers.recover_interrupted()
             self.x.recover_interrupted()
             self.x_posts.recover_interrupted()
             self.videos.recover_interrupted()
@@ -312,6 +322,10 @@ class ControlServer:
             return self.media.policy()
         if op == "media.configure":
             return self.media.configure(data["settings"], data["revision"])
+        if op == "newspaper.policy":
+            return self.newspapers.policy()
+        if op == "newspaper.configure":
+            return self.newspapers.configure(data["settings"], data["revision"])
         if op == "schedule.status":
             return self.scheduler.status(limit=data.get("limit", 25))
         if op == "schedule.configure":

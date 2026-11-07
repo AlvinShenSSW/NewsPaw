@@ -213,7 +213,8 @@ class Commands:
     def _anchor(self, binding, message_id):
         key = (binding.bot_id, binding.chat_id, message_id)
         jobs = self.db.execute(
-            """SELECT d.job_id FROM delivery_targets d,json_each(d.parts) p
+            """SELECT d.job_id,j.subscription_id,j.account_key,j.payload
+               FROM delivery_targets d JOIN pipeline_jobs j ON j.id=d.job_id,json_each(d.parts) p
                WHERE d.bot_id=? AND d.chat_id=? AND json_extract(p.value,'$.message_id')=?
                AND json_extract(p.value,'$.state')='delivered' AND d.binding=? LIMIT 2""",
             (*key, _json(asdict(binding))),
@@ -232,9 +233,20 @@ class Commands:
             if "scope" in context:
                 return context["scope"][0], context.get("job"), context["scope"]
             return None
-        job = self.pipeline.get(jobs[0][0])
-        code = "a:" + job["account_id"] if job["account_id"] else "s:" + job["subscription_id"]
-        return code, job["job_id"], None
+        job, subscription, account, payload = jobs[0]
+        frozen = json.loads(json.loads(payload)["route"]["_effective"])
+        code = "a:" + account if account else "s:" + subscription
+        return (
+            code,
+            job,
+            [
+                code,
+                subscription,
+                frozen["category_id"],
+                frozen["partition"],
+                frozen["account"]["remote_id"] if account else None,
+            ],
+        )
 
     def _parse(self, payload, binding):
         value = payload.get("text", payload.get("caption", "")).strip()
@@ -246,7 +258,8 @@ class Commands:
             command, handle = match.groups()
             if (
                 handle
-                and handle.casefold() != self.registry.status(binding.bot_id)["username"].casefold()
+                and handle.casefold()
+                != (self.registry.status(binding.bot_id)["username"] or "").casefold()
             ):
                 return None, None, ""
             command = command if command in _COMMANDS else "help"
@@ -360,17 +373,24 @@ class Commands:
                 ),
                 None,
             )
-        if job is None:
-            return ui["no_job"], None
-        view = self.pipeline.get(job)
-        if (view["subscription_id"], view["account_id"], view["partition"]) != (
+        view = self.pipeline.get(job) if job is not None else None
+        if view and (view["subscription_id"], view["account_id"], view["partition"]) != (
             scope.subscription,
             scope.account,
             scope.partition,
         ):
             return ui["denied"], None
-        context["job"] = job
+        if job is not None:
+            context["job"] = job
         if command == "status":
+            occurrence = self.db.execute(
+                """SELECT o.status FROM schedule_occurrences o JOIN schedule_scopes s
+                   ON s.id=o.scope_id WHERE s.subscription_id=? AND s.account_id IS ?
+                   AND s.active=1 ORDER BY o.updated_at DESC,o.target_at DESC LIMIT 1""",
+                (scope.subscription, scope.account),
+            ).fetchone()
+            if not view and not occurrence:
+                return ui["no_job"], None
             statuses = {
                 "en": (
                     "Collecting",
@@ -390,15 +410,22 @@ class Commands:
                     "確認が必要",
                 ),
             }[context["locale"]]
-            index = {
-                "collecting": 0,
-                "editing": 1,
-                "preparing_media": 2,
-                "awaiting_delivery": 3,
-                "paused": 4,
-            }.get(view["status"], 5)
-            return ui["status"].format(status=statuses[index]), None
-        if view["cancelled"] or view["stage"] not in _ACTIVE_JOBS:
+            index = (
+                {
+                    "collecting": 0,
+                    "editing": 1,
+                    "preparing_media": 2,
+                    "awaiting_delivery": 3,
+                    "paused": 4,
+                }.get(view["status"], 5)
+                if view
+                else 5
+            )
+            status = statuses[index]
+            if occurrence:
+                status += " · " + self._schedule_status(context["locale"], occurrence[0])
+            return ui["status"].format(status=status), None
+        if not view or view["cancelled"] or view["stage"] not in _ACTIVE_JOBS:
             return ui["no_job"], None
         if command == "resume" and (
             not view["paused"]
@@ -409,6 +436,24 @@ class Commands:
         paused = command == "pause"
         self.pipeline.set_paused_tx(job, paused, now)
         return ui[command], job if paused else None
+
+    @staticmethod
+    def _schedule_status(locale, state):
+        labels = {
+            "en": ("Scheduled", "Preparing", "Late", "Delivered", "Skipped", "Needs attention"),
+            "zh-Hans": ("已计划", "准备中", "延迟", "已送达", "已跳过", "待处理"),
+            "ja": ("予定済み", "準備中", "遅延", "配信済み", "スキップ", "確認が必要"),
+        }
+        index = {
+            "planned": 0,
+            "preparing": 1,
+            "late": 2,
+            "delivered": 3,
+            "skipped": 4,
+            "superseded": 4,
+            "cancelled": 4,
+        }.get(state, 5)
+        return labels[locale][index]
 
     def _reply(self, revision, config, payload, binding, now):
         ui = _UI[config["ui_locale"]]
@@ -440,7 +485,7 @@ class Commands:
                 if not choices:
                     return context, ui["none"], None
                 page = choices[:15]
-                context.update(choices=[s.key() for s in page], selector_command=command)
+                context.update(choices=[[s.key(), s.name] for s in page], selector_command=command)
                 lines = [ui["choose"], *(f"{s.code} · {s.name}" for s in page)]
                 return context, "\n".join(lines), None
             scope = choices[0]
@@ -518,7 +563,7 @@ class Commands:
             return False
         if "choices" in context:
             choices = self._choices(config, binding, context["selector_command"])[:15]
-            return context["choices"] == [s.key() for s in choices]
+            return context["choices"] == [[s.key(), s.name] for s in choices]
         if "scope" not in context:
             return True
         scope = self._scope(config, binding, context["scope"][0])

@@ -148,7 +148,7 @@ def invalidate_bots(db, current, document):
                 (generation, ref, remote, active, _json(state), key),
             )
         db.execute(
-            "UPDATE bot_inbox SET state='stale' WHERE bot_id=? AND generation<>? AND state='pending'",
+            "UPDATE bot_inbox SET state='stale',payload='{}' WHERE bot_id=? AND generation<>? AND state='pending'",
             (key, generation),
         )
         _projection(result, key, remote, state, active)
@@ -219,7 +219,7 @@ class BotRegistry:
             ),
         )
         self.db.execute(
-            "UPDATE bot_inbox SET state='stale' WHERE bot_id=? AND generation<>? AND state='pending'",
+            "UPDATE bot_inbox SET state='stale',payload='{}' WHERE bot_id=? AND generation<>? AND state='pending'",
             (row["id"], row["generation"]),
         )
         current = self.store.load_config()[1]

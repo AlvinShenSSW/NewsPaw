@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .budget import BudgetError, BudgetLedger
 from .credentials import CredentialError
+from .media.source_images import AssetStore, SourceImages
 from .pipeline import Pipeline
 from .providers import ProbeService, ProfileRegistry, ProviderError
 from .scheduler import Scheduler
@@ -139,8 +140,13 @@ class ControlServer:
         self.sources = SourceManager(credentials)
         self.targets = TargetManager(credentials, self.bots)
         self.x = XDirectory(credentials, self.targets)
-        self.pipeline = Pipeline(credentials.store, credentials.backend)
-        self.outbox = Outbox(self.pipeline, self.targets)
+        assets = AssetStore(self.directory / "media")
+        self.pipeline = Pipeline(
+            credentials.store,
+            credentials.backend,
+            source_images=SourceImages(credentials.store, assets),
+        )
+        self.outbox = Outbox(self.pipeline, self.targets, asset_resolver=assets.read)
         self.scheduler = Scheduler(self.pipeline, self.outbox)
         self._server = None
         self._lock_fd = None

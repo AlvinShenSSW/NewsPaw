@@ -263,6 +263,24 @@ class BudgetLedger:
         task_limit=None,
         now=None,
     ):
+        with self.store._write():
+            return self._reserve(attempt_id, task_id, max_units=max_units, quote=quote, meter=meter, partition=partition, provider=provider, account_id=account_id, image=image, task_limit=task_limit, now=now)
+
+    def _reserve(
+        self,
+        attempt_id,
+        task_id,
+        *,
+        max_units,
+        quote,
+        meter="model",
+        partition="normal",
+        provider=None,
+        account_id=None,
+        image=False,
+        task_limit=None,
+        now=None,
+    ):
         now = _time(datetime.now(UTC) if now is None else now)
         provider = provider if provider is not None else ("x" if meter == "x" else "openai")
         if meter == "x" and provider != "x":
@@ -308,56 +326,55 @@ class BudgetLedger:
             reserved_units=max_units,
             quote=quote,
         )
-        with self.store._write():
-            existing = self._get(attempt_id)
-            if existing:
-                if (
-                    any(existing[key] != value for key, value in frozen.items())
-                    or self._task_limit(meter, task_id) != task_limit
-                ):
-                    raise BudgetError("idempotency_conflict")
-                return existing
-            _, policy = self.policy()
-            if quote["known"] and quote["source"] == "configured":
-                rate = quote["rate"]
-                if rate not in policy["prices"] or rate["provider"] != provider:
-                    raise BudgetError("price_changed")
-                expected = self.quote(
-                    provider,
-                    rate["model"],
-                    input_max=quote["input_max"],
-                    output_max=quote["output_max"],
-                )
-                if quote != expected:
-                    raise BudgetError("invalid_quote_bound")
-            period = self._period(now, meter, policy)
-            task = self.db.execute(
-                "SELECT limit_units FROM budget_tasks WHERE meter=? AND task_id=?", (meter, task_id)
-            ).fetchone()
-            if task and task[0] != task_limit:
-                raise BudgetError("task_policy_changed")
-            frozen["period_id"] = period
-            self._admit(policy, frozen, max_units, task_limit)
-            self.db.execute(
-                "INSERT OR IGNORE INTO budget_tasks VALUES (?,?,?)", (meter, task_id, task_limit)
+        existing = self._get(attempt_id)
+        if existing:
+            if (
+                any(existing[key] != value for key, value in frozen.items())
+                or self._task_limit(meter, task_id) != task_limit
+            ):
+                raise BudgetError("idempotency_conflict")
+            return existing
+        _, policy = self.policy()
+        if quote["known"] and quote["source"] == "configured":
+            rate = quote["rate"]
+            if rate not in policy["prices"] or rate["provider"] != provider:
+                raise BudgetError("price_changed")
+            expected = self.quote(
+                provider,
+                rate["model"],
+                input_max=quote["input_max"],
+                output_max=quote["output_max"],
             )
-            self.db.execute(
-                "INSERT INTO budget_attempts(id,task_id,meter,partition,provider,account_id,image,period_id,reserved_units,settled_units,state,quote_json,usage_json,created_at,reason) VALUES (?,?,?,?,?,?,?,?,?,NULL,'reserved',?,'{}',?,NULL)",
-                (
-                    attempt_id,
-                    task_id,
-                    meter,
-                    partition,
-                    provider,
-                    account_id,
-                    int(image),
-                    period,
-                    max_units,
-                    _json(quote),
-                    now.isoformat(),
-                ),
-            )
-            return self._get(attempt_id)
+            if quote != expected:
+                raise BudgetError("invalid_quote_bound")
+        period = self._period(now, meter, policy)
+        task = self.db.execute(
+            "SELECT limit_units FROM budget_tasks WHERE meter=? AND task_id=?", (meter, task_id)
+        ).fetchone()
+        if task and task[0] != task_limit:
+            raise BudgetError("task_policy_changed")
+        frozen["period_id"] = period
+        self._admit(policy, frozen, max_units, task_limit)
+        self.db.execute(
+            "INSERT OR IGNORE INTO budget_tasks VALUES (?,?,?)", (meter, task_id, task_limit)
+        )
+        self.db.execute(
+            "INSERT INTO budget_attempts(id,task_id,meter,partition,provider,account_id,image,period_id,reserved_units,settled_units,state,quote_json,usage_json,created_at,reason) VALUES (?,?,?,?,?,?,?,?,?,NULL,'reserved',?,'{}',?,NULL)",
+            (
+                attempt_id,
+                task_id,
+                meter,
+                partition,
+                provider,
+                account_id,
+                int(image),
+                period,
+                max_units,
+                _json(quote),
+                now.isoformat(),
+            ),
+        )
+        return self._get(attempt_id)
 
     def _admit(self, policy, record, max_units, task_limit):
         meter, task_id, period, provider, partition, account_id, image = (
@@ -437,40 +454,46 @@ class BudgetLedger:
         return record
 
     def begin_attempt(self, attempt_id, *, now=None):
-        now = _time(datetime.now(UTC) if now is None else now)
         with self.store._write():
-            record = self.get(attempt_id)
-            if record["state"] != "reserved":
-                raise BudgetError("attempt_not_dispatchable")
-            latest_start = self.db.execute(
-                "SELECT start FROM budget_periods WHERE meter=? ORDER BY start DESC LIMIT 1",
-                (record["meter"],),
-            ).fetchone()[0]
-            if now < datetime.fromisoformat(latest_start):
-                raise BudgetError("clock_before_current_period")
-            start, end = self.db.execute(
-                "SELECT start,end FROM budget_periods WHERE id=?", (record["period_id"],)
-            ).fetchone()
-            if not datetime.fromisoformat(start) <= now < datetime.fromisoformat(end):
-                raise BudgetError("reservation_expired")
-            _, policy = self.policy()
-            if (
-                record["quote"]["source"] == "configured"
-                and record["quote"]["rate"] not in policy["prices"]
-            ):
-                raise BudgetError("price_changed")
-            self._admit(policy, record, 0, self._task_limit(record["meter"], record["task_id"]))
-            self.db.execute("UPDATE budget_attempts SET state='inflight' WHERE id=?", (attempt_id,))
-            return self._get(attempt_id)
+            return self._begin_attempt(attempt_id, now=now)
+
+    def _begin_attempt(self, attempt_id, *, now=None):
+        now = _time(datetime.now(UTC) if now is None else now)
+        record = self.get(attempt_id)
+        if record["state"] != "reserved":
+            raise BudgetError("attempt_not_dispatchable")
+        latest_start = self.db.execute(
+            "SELECT start FROM budget_periods WHERE meter=? ORDER BY start DESC LIMIT 1",
+            (record["meter"],),
+        ).fetchone()[0]
+        if now < datetime.fromisoformat(latest_start):
+            raise BudgetError("clock_before_current_period")
+        start, end = self.db.execute(
+            "SELECT start,end FROM budget_periods WHERE id=?", (record["period_id"],)
+        ).fetchone()
+        if not datetime.fromisoformat(start) <= now < datetime.fromisoformat(end):
+            raise BudgetError("reservation_expired")
+        _, policy = self.policy()
+        if (
+            record["quote"]["source"] == "configured"
+            and record["quote"]["rate"] not in policy["prices"]
+        ):
+            raise BudgetError("price_changed")
+        self._admit(policy, record, 0, self._task_limit(record["meter"], record["task_id"]))
+        self.db.execute("UPDATE budget_attempts SET state='inflight' WHERE id=?", (attempt_id,))
+        return self._get(attempt_id)
 
     def mark_unknown(self, attempt_id):
         with self.store._write():
-            record = self.get(attempt_id)
-            if record["state"] not in {"inflight", "outcome_unknown"}:
-                raise BudgetError("cannot_mark_unknown")
-            self.db.execute(
-                "UPDATE budget_attempts SET state='outcome_unknown' WHERE id=?", (attempt_id,)
-            )
+            return self._mark_unknown(attempt_id)
+
+    def _mark_unknown(self, attempt_id):
+        record = self.get(attempt_id)
+        if record["state"] not in {"inflight", "outcome_unknown"}:
+            raise BudgetError("cannot_mark_unknown")
+        self.db.execute(
+            "UPDATE budget_attempts SET state='outcome_unknown' WHERE id=?", (attempt_id,)
+        )
 
     def recover_inflight(self):
         with self.store._write():
@@ -531,6 +554,10 @@ class BudgetLedger:
         return self._get(attempt_id)
 
     def reconcile(self, attempt_id, *, units, reason):
+        with self.store._write():
+            return self._reconcile(attempt_id, units=units, reason=reason)
+
+    def _reconcile(self, attempt_id, *, units, reason):
         _units(units, optional=True)
         if reason not in {
             "provider_confirmation",
@@ -540,22 +567,21 @@ class BudgetLedger:
             raise BudgetError("invalid_reconciliation_reason")
         if reason == "operator_confirmed_unsent" and units != 0:
             raise BudgetError("invalid_reconciliation_cost")
-        with self.store._write():
-            record = self.get(attempt_id)
-            if record["state"] != "outcome_unknown" and not (
-                record["state"] == "settled" and record["settled_units"] is None
-            ):
-                raise BudgetError("cannot_reconcile_attempt")
-            self.db.execute(
-                "UPDATE budget_attempts SET state='settled',settled_units=?,reason=?,cost_source=? WHERE id=?",
-                (
-                    units,
-                    reason,
-                    "unknown" if units is None else "operator_confirmation",
-                    attempt_id,
-                ),
-            )
-            return self._get(attempt_id)
+        record = self.get(attempt_id)
+        if record["state"] != "outcome_unknown" and not (
+            record["state"] == "settled" and record["settled_units"] is None
+        ):
+            raise BudgetError("cannot_reconcile_attempt")
+        self.db.execute(
+            "UPDATE budget_attempts SET state='settled',settled_units=?,reason=?,cost_source=? WHERE id=?",
+            (
+                units,
+                reason,
+                "unknown" if units is None else "operator_confirmation",
+                attempt_id,
+            ),
+        )
+        return self._get(attempt_id)
 
     def report(self):
         revision, policy = self.policy()

@@ -463,3 +463,31 @@ def test_v5_upgrade_removes_unverified_legacy_capabilities(tmp_path):
         initialize(reopened._db)
     assert reopened.load_config() == current  # Later schema upgrades do not clear evidence.
     reopened.close()
+
+
+def test_v6_runner_upgrade_failure_rolls_back_and_retries(tmp_path, monkeypatch):
+    import newspaw.model_runner as model_runner
+
+    path = tmp_path / "state.db"
+    store = Store(path)
+    original = store.load_config()
+    store.close()
+    with closing(sqlite3.connect(path)) as db:
+        for table in ("model_tasks", "model_attempts", "model_health"):
+            db.execute("DROP TABLE " + table)
+        db.execute("PRAGMA user_version=6")
+        db.commit()
+    initialize = model_runner.initialize
+    def fail(db):
+        initialize(db)
+        raise RuntimeError("injected runner migration failure")
+    monkeypatch.setattr(model_runner,"initialize",fail)
+    with pytest.raises(RuntimeError):
+        Store(path)
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert not db.execute("SELECT 1 FROM sqlite_master WHERE name='model_tasks'").fetchall()
+    monkeypatch.setattr(model_runner,"initialize",initialize)
+    reopened = Store(path)
+    assert reopened.load_config() == original
+    reopened.close()

@@ -106,6 +106,9 @@ class ControlServer:
             await self.credentials.cleanup()
             BudgetLedger(self.credentials.store).recover_inflight()
             ProfileRegistry(self.credentials.store).recover_interrupted()
+            from .model_runner import ModelRunner
+
+            ModelRunner(self.credentials.store, self.credentials.backend).recover_interrupted()
             from .evidence import EvidenceStore
 
             EvidenceStore(self.credentials.store).recover_interrupted()

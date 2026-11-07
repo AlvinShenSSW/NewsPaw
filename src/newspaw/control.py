@@ -19,10 +19,21 @@ from pathlib import Path
 from .budget import BudgetError, BudgetLedger
 from .credentials import CredentialError
 from .providers import ProbeService, ProfileRegistry, ProviderError
+from .source_catalog import catalog
+from .source_manager import SourceError, SourceManager
 from .telegram.registry import BotRegistry, TelegramError
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
+    "sources.catalog": (set(), set()),
+    "sources.list": (set(), set()),
+    "sources.discover": ({"url"}, set()),
+    "sources.save": ({"source", "revision"}, set()),
+    "sources.assign": ({"source_id", "subscriptions", "revision"}, set()),
+    "sources.delete": ({"source_id", "revision"}, set()),
+    "sources.preview": ({"source_id"}, set()),
+    "sources.routes": ({"source_id"}, set()),
+    "sources.import_opml": ({"content", "revision"}, set()),
     "bots.list": (set(), set()),
     "bots.status": ({"bot_id"}, set()),
     "bots.verify": ({"bot_id"}, set()),
@@ -86,6 +97,7 @@ class ControlServer:
         self.credentials = credentials
         self.probes = ProbeService(credentials.store, credentials.backend)
         self.bots = BotRegistry(credentials.store, credentials.backend)
+        self.sources = SourceManager(credentials)
         self._server = None
         self._lock_fd = None
         self._handlers = set()
@@ -157,6 +169,26 @@ class ControlServer:
         if not required <= keys or keys - required - optional:
             raise CredentialError("invalid_request")
         manager, store = self.credentials, self.credentials.store
+        if op == "sources.catalog":
+            return catalog()
+        if op == "sources.list":
+            return self.sources.list()
+        if op == "sources.discover":
+            return await self.sources.discover(data["url"])
+        if op == "sources.save":
+            return await self.sources.save(data["source"], data["revision"])
+        if op == "sources.assign":
+            return await self.sources.assign(
+                data["source_id"], data["subscriptions"], data["revision"]
+            )
+        if op == "sources.delete":
+            return await self.sources.delete(data["source_id"], data["revision"])
+        if op == "sources.preview":
+            return await self.sources.preview(data["source_id"])
+        if op == "sources.routes":
+            return self.sources.routes(data["source_id"])
+        if op == "sources.import_opml":
+            return await self.sources.import_opml(data["content"], data["revision"])
         if op == "bots.list":
             return self.bots.list()
         if op == "bots.status":
@@ -223,7 +255,7 @@ class ControlServer:
                     raise CredentialError("invalid_request")
                 result = await self._dispatch(json.loads(raw))
                 response = {"ok": True, "result": result}
-            except (CredentialError, BudgetError, ProviderError, TelegramError) as exc:
+            except (CredentialError, BudgetError, ProviderError, TelegramError, SourceError) as exc:
                 response = {"ok": False, "error": str(exc)}
             except Exception:
                 response = {"ok": False, "error": "invalid_request"}

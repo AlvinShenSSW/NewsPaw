@@ -34,6 +34,8 @@ from .x.timelines import Timelines
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
+    "service.status": (set(), set()),
+    "service.stop": (set(), set()),
     "schedule.status": (set(), {"limit"}),
     "schedule.configure": ({"settings", "revision"}, set()),
     "schedule.resolve": ({"occurrence_id", "action"}, set()),
@@ -178,10 +180,12 @@ class ControlServer:
         self._lock_fd = None
         self._handlers = set()
         self._socket_identity = None
+        self._stop_requested = asyncio.Event()
 
     async def start(self):
         if self._server is not None:
             raise ValueError("already_running")
+        self._stop_requested.clear()
         if self._lock_fd is None:
             self._lock_fd = acquire_control_lock(self.directory)
         try:
@@ -239,6 +243,9 @@ class ControlServer:
             os.close(self._lock_fd)
             self._lock_fd = None
 
+    async def wait_for_stop(self):
+        await self._stop_requested.wait()
+
     async def _dispatch(self, data):
         if not isinstance(data, dict) or not isinstance(data.get("op"), str):
             raise CredentialError("invalid_request")
@@ -249,6 +256,15 @@ class ControlServer:
         keys = set(data) - {"op"}
         if not required <= keys or keys - required - optional:
             raise CredentialError("invalid_request")
+        if op == "service.stop":
+            self._stop_requested.set()
+        if op in {"service.status", "service.stop"}:
+            return {
+                "protocol_version": 1,
+                "state": "stopping" if self._stop_requested.is_set() else "running",
+            }
+        if self._stop_requested.is_set():
+            raise CredentialError("service_stopping")
         manager, store = self.credentials, self.credentials.store
         if op == "schedule.status":
             return self.scheduler.status(limit=data.get("limit", 25))
@@ -490,7 +506,7 @@ async def serve_control(directory):
         server._lock_fd = lock_fd
         lock_fd = None
         await server.start()
-        await asyncio.Event().wait()
+        await server.wait_for_stop()
     finally:
         if server is not None:
             await server.close()

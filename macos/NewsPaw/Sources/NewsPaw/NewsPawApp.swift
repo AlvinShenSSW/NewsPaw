@@ -3,6 +3,14 @@ import SwiftUI
 
 @MainActor
 final class WindowLifetime: NSObject, NSApplicationDelegate {
+    var revealSettings: (() -> Void)?
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        guard !hasVisibleWindows, let revealSettings else { return true }
+        revealSettings()
+        return false
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
@@ -23,13 +31,22 @@ struct NewsPawApp: App {
 
     var body: some Scene {
         Window("NewsPaw", id: "settings") {
-            SettingsWindow(model: model)
+            SettingsWindow(model: model) { action in
+                lifetime.revealSettings = {
+                    action(id: "settings")
+                    NSApp.activate()
+                }
+            }
                 .frame(minWidth: 680, minHeight: 450)
                 .preferredColorScheme(developmentAppearance)
                 .task { model.startMonitoring() }
         }
         .defaultSize(width: 990, height: 680)
         .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button(model.text(.openSettings)) { lifetime.revealSettings?() }
+                    .keyboardShortcut(",")
+            }
             CommandGroup(replacing: .appTermination) {
                 Button(model.text(.quitSettings)) { NSApp.terminate(nil) }
                     .keyboardShortcut("q")
@@ -73,7 +90,9 @@ private struct ServiceMenu: View {
 }
 
 struct SettingsWindow: View {
+    @Environment(\.openWindow) private var openWindow
     @Bindable var model: AppModel
+    var registerOpen: ((OpenWindowAction) -> Void)? = nil
 
     var body: some View {
         NavigationSplitView {
@@ -136,6 +155,7 @@ struct SettingsWindow: View {
                 }
             }
         }
+        .onAppear { registerOpen?(openWindow) }
     }
 
     @ViewBuilder private func pageContent(_ page: SettingsPage) -> some View {

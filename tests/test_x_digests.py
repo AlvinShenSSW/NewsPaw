@@ -377,6 +377,44 @@ async def test_aggregate_revocation_during_keychain_wait_creates_no_paid_x_inten
     assert pipeline.get(aggregate)["stage"] == "stale"
 
 
+@pytest.mark.parametrize("has_post", [False, True])
+async def test_delayed_x_scan_uses_actual_covered_window_not_older_job_creation(
+    timeline_system, has_post
+):
+    from datetime import timedelta
+
+    from test_x_timelines import NOW, page, post
+
+    from newspaw.evidence import EvidenceStore
+
+    created = NOW + timedelta(milliseconds=900)
+    completed_window = NOW + timedelta(seconds=1)
+    new_post = dict(post(190), created_at=(NOW + timedelta(milliseconds=950)).isoformat())
+
+    async def reply(request, _):
+        assert request.url.params["end_time"] == "2026-11-08T02:00:01Z"
+        return page([new_post] if has_post else [])
+
+    build, scans, sub, _, holds, model_calls = await _digest_fixture(timeline_system, reply)
+    pipeline = build()
+    job = pipeline.create(sub, "cross-second", holds=holds, now=created)["job_id"]
+    scans.clock = lambda: completed_window
+    collected = await pipeline.advance(job, now=completed_window)
+    assert collected["stage"] == "editing"
+    evidence = EvidenceStore(scans.store)
+    attempt = evidence.attempt(collected["attempt_ids"][0], partition="normal")
+    assert attempt["coverage_complete"] and not attempt["coverage_gaps"]
+    assert attempt["x_coverage"]["through_time"] == completed_window.isoformat()
+    assert attempt["status"] == ("fresh" if has_post else "empty")
+    articles = evidence.articles(
+        attempt["id"], partition="normal", subscription_id=sub, now=completed_window
+    )
+    assert len(articles) == int(has_post)
+    if not has_post:
+        assert (await pipeline.advance(job, now=completed_window))["stage"] == "no_news"
+        assert not model_calls
+
+
 async def test_post_type_policy_invalidates_old_edition_and_reopens_bounded_history(
     timeline_system,
 ):

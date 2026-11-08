@@ -16,8 +16,6 @@ from .control import acquire_control_lock
 from .migrations import DATABASE_VERSION
 from .store import Store
 
-_MAX_BACKUP = 512 * 1024 * 1024
-
 
 def check_upgrade(directory):
     directory = Path(directory).absolute()
@@ -32,7 +30,6 @@ def check_upgrade(directory):
             not stat.S_ISREG(info.st_mode)
             or info.st_uid != os.getuid()
             or info.st_mode & 0o077
-            or not 1 <= info.st_size <= _MAX_BACKUP
         ):
             raise ValueError("invalid_upgrade_database")
         deadline = time.monotonic() + 12

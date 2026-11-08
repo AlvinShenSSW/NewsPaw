@@ -33,16 +33,30 @@ private final class FixtureSocket {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    func serve(_ replies: [String], holdMilliseconds: Int = 0) -> Task<[String], Error> {
+    struct HeldReply: Sendable {
+        let index: Int
+        let received: AsyncStream<Void>.Continuation
+        let release: AsyncStream<Void>
+    }
+
+    func serve(
+        _ replies: [String], holdMilliseconds: Int = 0, heldReply: HeldReply? = nil
+    ) -> Task<[String], Error> {
         let listener = fd
         return Task.detached {
             var requests: [String] = []
-            for reply in replies {
+            var delayed: Task<Void, Error>?
+            defer {
+                delayed?.cancel()
+                heldReply?.received.finish()
+            }
+            for (index, reply) in replies.enumerated() {
                 var ready = pollfd(fd: listener, events: Int16(POLLIN), revents: 0)
                 guard Darwin.poll(&ready, 1, 2_000) == 1 else { throw SocketFailure.timeout }
                 let client = Darwin.accept(listener, nil, nil)
                 guard client >= 0 else { throw SocketFailure.disconnected }
-                defer { Darwin.close(client) }
+                var handedOff = false
+                defer { if !handedOff { Darwin.close(client) } }
                 var noSignal: Int32 = 1
                 _ = setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
                 var receiveTimeout = timeval(tv_sec: 2, tv_usec: 0)
@@ -61,20 +75,36 @@ private final class FixtureSocket {
                     request.append(contentsOf: buffer.prefix(count))
                 }
                 requests.append(String(decoding: request.dropLast(), as: UTF8.self))
-                // Deliberately split a reply across writes.
-                let split = reply.index(after: reply.startIndex)
-                for fragment in [String(reply[..<split]), String(reply[split...])] {
-                    let data = Data(fragment.utf8)
-                    let count = data.withUnsafeBytes {
-                        Darwin.send(client, $0.baseAddress, $0.count, 0)
+                if let heldReply, heldReply.index == index {
+                    handedOff = true
+                    delayed = Task {
+                        defer { Darwin.close(client) }
+                        heldReply.received.finish()
+                        for await _ in heldReply.release {}
+                        try Task.checkCancellation()
+                        try Self.send(reply, to: client)
                     }
-                    guard count == data.count else { throw SocketFailure.disconnected }
+                    continue
                 }
+                try Self.send(reply, to: client)
                 if holdMilliseconds > 0 {
                     try await Task.sleep(for: .milliseconds(holdMilliseconds))
                 }
             }
+            try await delayed?.value
             return requests
+        }
+    }
+
+    private static func send(_ reply: String, to client: Int32) throws {
+        // Deliberately split a reply across writes.
+        let split = reply.index(after: reply.startIndex)
+        for fragment in [String(reply[..<split]), String(reply[split...])] {
+            let data = Data(fragment.utf8)
+            let count = data.withUnsafeBytes {
+                Darwin.send(client, $0.baseAddress, $0.count, 0)
+            }
+            guard count == data.count else { throw SocketFailure.disconnected }
         }
     }
 }
@@ -125,6 +155,44 @@ private final class FixtureSocket {
     await model.chooseDisplayLanguage(.zhHans)
     #expect(model.uiLanguage == .zhHans)
     #expect(model.config == nil)
+}
+
+@Test(arguments: [false, true])
+@MainActor func languageSaveReloadsWhileAnOldPollIsStillPending(conflict: Bool) async throws {
+    let fixture = try FixtureSocket()
+    let running = #"{"ok":true,"result":{"protocol_version":1,"state":"running"}}"# + "\n"
+    let stopping = #"{"ok":true,"result":{"protocol_version":1,"state":"stopping"}}"# + "\n"
+    let emptyBots = #"{"ok":true,"result":[]}"# + "\n"
+    let save = conflict
+        ? #"{"ok":false,"error":"config_conflict"}"# + "\n"
+        : #"{"ok":true,"result":{}}"# + "\n"
+    func config(_ locale: AppLanguage, revision: Int) -> String {
+        #"{"ok":true,"result":{"revision":\#(revision),"document":{"ui_locale":"en","news_output_locale":"\#(locale.rawValue)","categories":[],"subscriptions":[],"sources":[],"accounts":[],"model_profiles":[]}}}"# + "\n"
+    }
+    let newLocale: AppLanguage = conflict ? .en : .ja
+    let (received, markReceived) = AsyncStream<Void>.makeStream()
+    let (release, markReleased) = AsyncStream<Void>.makeStream()
+    defer { markReleased.finish() }
+    let replies = fixture.serve([
+        running, config(.zhHans, revision: 1), emptyBots,
+        stopping, config(.zhHans, revision: 1), save,
+        running, config(newLocale, revision: 2), emptyBots,
+    ], heldReply: .init(index: 3, received: markReceived, release: release))
+    let name = "NewsPawTests-" + UUID().uuidString
+    let defaults = try #require(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let model = AppModel(socket: LocalSocket(path: fixture.path), defaults: defaults)
+    await model.refresh()
+    let stale = Task { await model.refresh() }
+    for await _ in received {}
+    await model.chooseNewsLanguage(.ja)
+    #expect(model.config?.newsOutputLocale == newLocale)
+    #expect(model.error == (conflict ? .conflict : nil))
+    markReleased.finish()
+    await stale.value
+    #expect(model.connection == .connected)
+    #expect(model.config?.newsOutputLocale == newLocale)
+    #expect(try await replies.value.count == 9)
 }
 
 @Test(.enabled(if: ProcessInfo.processInfo.environment["NEWSPAW_UI_TEST_SOCKET"] != nil))

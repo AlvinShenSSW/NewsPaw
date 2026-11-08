@@ -82,7 +82,7 @@ private struct RuntimePolicyEditor: View {
                             if let remaining = period.remaining {
                                 Text(label(.remaining) + " · " + formatted(remaining, meter: period.meter))
                             }
-                            ForEach(period.meter == "x" ? ["x"] : ["text", "search", "image"], id: \.self) { key in
+                            ForEach(period.meter == "x" ? ["x"] : ["text", "search", "image", "vision", "stt", "unclassified_media"], id: \.self) { key in
                                 if let split = period.operations?[key] {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(operation(key))
@@ -134,6 +134,9 @@ private struct RuntimePolicyEditor: View {
         switch value {
         case "image": label(.image)
         case "search": label(.search)
+        case "vision": label(.vision)
+        case "stt": label(.speech)
+        case "unclassified_media": label(.unclassifiedMedia)
         case "x": "X"
         default: label(.text)
         }

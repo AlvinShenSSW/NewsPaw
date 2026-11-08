@@ -262,6 +262,7 @@ class MediaCommands:
                     quote={"known": False, "source": "manual_hold"},
                     partition="normal",
                     provider=profile["provider"],
+                    operation=capability,
                 )
                 self.budget._begin_attempt(identity)
                 self.db.execute(

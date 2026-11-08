@@ -222,7 +222,8 @@ class Pipeline:
         row = self._row(job_id)
         payload = row["payload"]
         route = RouteSnapshot(**payload["route"]).effective
-        model = self.editorial.task_status(self._edition_id(job_id))
+        edition_id = self._edition_id(payload.get("alert", {}).get("parent", job_id))
+        model = self.editorial.task_status(edition_id) if "alert" not in payload else None
         stage, status = row["stage"], row["stage"]
         if model and model["state"] in {"outcome_unknown", "inflight"}:
             status = model["state"]
@@ -249,7 +250,7 @@ class Pipeline:
             collection_id=job_id,
             attempt_ids=payload["attempt_ids"],
             unsupported_source_ids=payload["unsupported_source_ids"],
-            edition_id=self._edition_id(job_id),
+            edition_id=edition_id,
             model=model,
             media=payload["media"],
             created_at=row["created_at"],
@@ -304,6 +305,19 @@ class Pipeline:
         if row["stage"] != "awaiting_delivery":
             raise PipelineError("edition_not_ready")
         payload = row["payload"]
+        if alert := payload.get("alert"):
+            parent = self.delivery_scope(alert["parent"])
+            result = self.editorial.get(self._edition_id(alert["parent"]))["result"]
+            if (
+                not result
+                or not any(
+                    item["event_key"] == alert["item"]
+                    and hashlib.sha256(_json(item).encode()).hexdigest() == alert["item_hash"]
+                    for item in result["items"]
+                )
+            ):
+                raise PipelineError("edition_changed")
+            return parent
         route = RouteSnapshot(**payload["route"])
         current = self.store.preview_route(
             route.subscription_id, account_id=route.account_id, style=route.request_style
@@ -336,10 +350,13 @@ class Pipeline:
 
     def delivery_input(self, job_id):
         route = self.delivery_scope(job_id)
+        payload = self._row(job_id)["payload"]
+        if alert := payload.get("alert"):
+            return route, alert["text"], None
         edition_id = self._edition_id(job_id)
         if self.editorial.get(edition_id)["state"] != "ready":
             raise PipelineError("edition_changed")
-        return route, self.editorial.render(edition_id), self._row(job_id)["payload"]["media"]
+        return route, self.editorial.render(edition_id), payload["media"]
 
     def _claim(self, job_id, now):
         with self.store._write():

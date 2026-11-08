@@ -239,6 +239,60 @@ class XClient:
             raise XReadError("partial_response", units=count) from None
         return (members, next_token), count
 
+    async def video_metadata(self, post_id, author_id):
+        post_id, author_id = remote_id(post_id), remote_id(author_id)
+        body = await self._get(
+            "/2/tweets/" + post_id,
+            {
+                "tweet.fields": "author_id,created_at,possibly_sensitive,withheld,attachments",
+                "expansions": "author_id,attachments.media_keys",
+                "media.fields": "media_key,type,duration_ms,variants",
+                "user.fields": "protected,username",
+            },
+        )
+        try:
+            if "errors" in body:
+                raise ValueError()
+            raw = body["data"]
+            post = _post(raw)
+            if (
+                post["id"] != post_id
+                or post["author_id"] != author_id
+                or post["sensitive"] is not False
+                or post["withheld"]
+            ):
+                raise ValueError()
+            includes = body["includes"]
+            authors, media = includes["users"], includes["media"]
+            if not isinstance(authors, list) or len(authors) != 1:
+                raise ValueError()
+            author = _user(authors[0])
+            if author["remote_id"] != author_id or author["protected"]:
+                raise ValueError()
+            keys = raw["attachments"]["media_keys"]
+            if (
+                not isinstance(keys, list)
+                or not 1 <= len(keys) <= 4
+                or any(
+                    not isinstance(key, str) or not re.fullmatch(r"[0-9]{1,3}_[0-9]{1,30}", key)
+                    for key in keys
+                )
+                or len(keys) != len(set(keys))
+                or not isinstance(media, list)
+                or not 1 <= len(media) <= len(keys)
+            ):
+                raise ValueError()
+            if any(
+                not isinstance(item, dict) or item.get("media_key") not in keys for item in media
+            ) or len({item["media_key"] for item in media}) != len(media):
+                raise ValueError()
+        except (TypeError, ValueError, KeyError, XReadError):
+            raise XReadError("video_metadata_unavailable", units=1) from None
+        videos = [item for item in media if item.get("type") == "video"]
+        if not videos:
+            raise XReadError("video_not_available", units=1)
+        return videos[0]
+
     async def timeline(
         self, kind, identity, size, *, cursor=None, token=None, start=None, end=None
     ):

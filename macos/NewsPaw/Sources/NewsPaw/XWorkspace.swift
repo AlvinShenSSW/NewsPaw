@@ -142,6 +142,22 @@ func xState(_ value: String, _ locale: AppLanguage) -> String {
     case "outcome_unknown": ("结果未知", "Outcome unknown", "結果不明")
     case "budget_blocked", "account_limit", "partition_limit", "global_limit", "account_limit_requires_individual":
         ("读取额度受限", "Read cap reached", "読み取り上限")
+    case "delivered": ("已送达", "Delivered", "配信済み")
+    case "quiet_hours": ("安静时段，等待发送", "Deferred during quiet hours", "通知を控える時間帯のため保留")
+    case "alert_daily_limit", "video_daily_budget", "model_limit", "provider_limit":
+        ("已达预算或数量上限", "Budget or count cap reached", "予算または件数の上限に到達")
+    case "alert_cooldown": ("同主题发送间隔未到", "Topic cooldown is active", "同じ話題の通知間隔中")
+    case "alert_expired": ("提醒已过期", "Alert expired", "通知の有効期限切れ")
+    case "video_audio_unavailable", "video_stt_unavailable":
+        ("音频转写不可用", "Audio transcription unavailable", "文字起こしを利用できません")
+    case "video_vision_unavailable":
+        ("画面识别不可用", "Frame analysis unavailable", "フレームの解析を利用できません")
+    case "video_duration_unsupported", "video_format_or_duration_unsupported":
+        ("视频格式或时长超出支持范围", "Unsupported video format or duration", "未対応の動画形式または長さ")
+    case "video_outcome_unknown", "video_interrupted", "video_timeout":
+        ("处理结果未知", "Processing outcome unknown", "処理結果不明")
+    case "video_scope_changed", "alert_policy_changed":
+        ("授权范围或设置已变更", "Authorization or settings changed", "権限範囲または設定が変更されました")
     case "rate_limited": ("X 接口限流", "X rate limited", "X API レート制限")
     case "fresh_window", "coverage_scope_changed": ("采集范围已变更", "Coverage scope changed", "収集範囲が変更されました")
     case "protected": ("受保护账号", "Protected account", "非公開アカウント")
@@ -211,6 +227,7 @@ struct XWorkspace: View {
         Button(text(.addList)) { editor = .list }
         Button(text(.credential)) { editor = .credential }
         Button(text(.caps)) { editor = .budget }
+        XFeatures(model: model)
         Button(model.text(.refresh), action: refresh)
     }
 

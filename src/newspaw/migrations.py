@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from .app_config import default_config, upgrade_v1, upgrade_v2
 
-DATABASE_VERSION = 22
+DATABASE_VERSION = 23
 _LEGACY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -219,6 +219,12 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         from .x.digests import initialize as initialize_x_digests
 
         initialize_x_digests(db)
+        from .x.alerts import initialize as initialize_x_alerts
+
+        initialize_x_alerts(db)
+        from .x.video import initialize as initialize_x_video
+
+        initialize_x_video(db)
         db.execute(f"PRAGMA user_version={DATABASE_VERSION}")
         db.commit()
     except BaseException:

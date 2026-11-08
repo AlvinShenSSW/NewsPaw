@@ -312,6 +312,7 @@ class Commands:
             for row in self.db.execute(
                 """SELECT id FROM pipeline_jobs WHERE subscription_id=? AND account_key=?
                    AND partition=? AND cancelled=0 AND stage='awaiting_delivery'
+                   AND json_extract(payload,'$.alert') IS NULL
                    ORDER BY created_at DESC,rowid DESC LIMIT 12""",
                 (scope.subscription, scope.account or "", scope.partition),
             )
@@ -324,7 +325,13 @@ class Commands:
             return None
         if (route.subscription_id, route.account_id) != (scope.subscription, scope.account):
             return None
-        result = self.pipeline.editorial.get(self.pipeline._edition_id(job))["result"]
+        entry = self.pipeline.get(job)
+        result = self.pipeline.editorial.get(entry["edition_id"])["result"]
+        if alert := self.pipeline._row(job)["payload"].get("alert"):
+            result = dict(
+                result,
+                items=[item for item in result["items"] if item["event_key"] == alert["item"]],
+            )
         return result, text
 
     def _news(self, command, scope, job, query, context, config):

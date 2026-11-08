@@ -2,18 +2,23 @@
 set -euo pipefail
 umask 077
 
-if [[ $# -ne 1 && $# -ne 4 ]]; then
-    echo "Usage: build-macos.sh /absolute/output/NewsPaw.app [--ffmpeg /absolute/ffmpeg /absolute/license]" >&2
+if [[ $# -ne 1 && $# -ne 4 && $# -ne 6 ]]; then
+    echo "Usage: build-macos.sh /absolute/output/NewsPaw.app [--ffmpeg /absolute/ffmpeg /absolute/license [--ffprobe /absolute/ffprobe]]" >&2
     exit 2
 fi
 app="$1"
 [[ "$app" = /*/NewsPaw.app && ! -e "$app" && ! -L "$app" ]]
 media=
 media_license=
-if [[ $# -eq 4 ]]; then
+media_probe=
+if [[ $# -ge 4 ]]; then
     [[ "$2" = --ffmpeg && "$3" = /* && "$4" = /* && -x "$3" && -f "$4" ]]
     media="$3"
     media_license="$4"
+fi
+if [[ $# -eq 6 ]]; then
+    [[ "$5" = --ffprobe && "$6" = /* && -x "$6" ]]
+    media_probe="$6"
 fi
 [[ "$(uname -s)" = Darwin ]]
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -53,6 +58,10 @@ if [[ -n "$media" ]]; then
     cp "$media" "$helpers/ffmpeg"
     cp "$media_license" "$contents/Resources/ffmpeg-license.txt"
     shasum -a 256 "$helpers/ffmpeg" | awk '{print $1}' > "$contents/Resources/ffmpeg.sha256"
+fi
+if [[ -n "$media_probe" ]]; then
+    cp "$media_probe" "$helpers/ffprobe"
+    shasum -a 256 "$helpers/ffprobe" | awk '{print $1}' > "$contents/Resources/ffprobe.sha256"
 fi
 
 plutil -lint "$contents/Info.plist" "$contents/Library/LaunchAgents/io.newspaw.resident.plist"

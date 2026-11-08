@@ -325,10 +325,11 @@ class Videos:
                         quote={"known": False, "source": "manual_hold"},
                         partition="normal",
                         provider=profile["provider"],
+                        operation=capability,
                         now=now,
                     )
 
-    def _attempt(self, request, step, live, *, units, provider=None, account=None):
+    def _attempt(self, request, step, live, *, units, provider=None, account=None, operation=None):
         task = self._task(request)
         attempt = task + "." + step
         with self.store._write():
@@ -346,6 +347,7 @@ class Videos:
                 provider=provider or "x",
                 meter="x" if provider is None else "model",
                 account_id=account,
+                operation=operation,
                 now=self.clock(),
             )
             self.budget._begin_attempt(attempt, now=self.clock())
@@ -414,6 +416,7 @@ class Videos:
                     live,
                     units=settings[operation + "_hold"],
                     provider=profile["provider"],
+                    operation=operation,
                 )
                 try:
                     if operation == "vision":

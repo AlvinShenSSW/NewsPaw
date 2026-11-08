@@ -146,6 +146,8 @@ async def test_video_uses_exact_x_item_with_verified_same_capability_backup(time
     with pytest.raises(MediaInputError, match="video_disabled"):
         await videos.inspect("vid.one", job, "190")
     videos.configure(settings, videos.policy()["revision"])
+    ledger = BudgetLedger(videos.store)
+    prior_x = next(row["known_settled"] for row in ledger.report()["periods"] if row["meter"] == "x")
     result = await videos.inspect("vid.one", job, "190")
     assert result["state"] == "complete"
     assert len(result["frames"]) == 2 and result["transcript"] == "Fixture audio"
@@ -159,6 +161,9 @@ async def test_video_uses_exact_x_item_with_verified_same_capability_backup(time
         "speech_primary",
     ]
     assert await videos.inspect("vid.one", job, "190") == result
+    periods = {row["meter"]: row["operations"] for row in ledger.report()["periods"]}
+    assert {"vision", "stt"} <= set(periods["model"])
+    assert "image" not in periods["model"] and periods["x"]["x"]["known_settled"] == prior_x + 1
     with pytest.raises(MediaInputError, match="video_daily_budget"):
         await videos.inspect("vid.two", job, "190")
     assert len(external) == 7

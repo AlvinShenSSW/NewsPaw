@@ -1,8 +1,26 @@
 import Darwin
 import Foundation
+import MachO
+
+func executableURL() -> URL? {
+    // launchd can supply a bundle-relative argv[0].
+    var size: UInt32 = 0
+    _ = _NSGetExecutablePath(nil, &size)
+    var path = [CChar](repeating: 0, count: Int(size))
+    guard _NSGetExecutablePath(&path, &size) == 0 else { return nil }
+    return path.withUnsafeBufferPointer { buffer in
+        buffer.baseAddress.map {
+            URL(fileURLWithFileSystemRepresentation: $0, isDirectory: false, relativeTo: nil)
+                .resolvingSymlinksInPath()
+        }
+    }
+}
 
 let invocation = Array(CommandLine.arguments.dropFirst())
-let helper = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+guard let helper = executableURL() else {
+    fputs("The NewsPaw resident executable path could not be resolved.\n", stderr)
+    exit(2)
+}
 let helpers = helper.deletingLastPathComponent()
 let python = helpers.deletingLastPathComponent()
     .appendingPathComponent("Resources/Python/bin/python3.13").path

@@ -259,9 +259,16 @@ class XDirectory:
 
         return await self.targets._mutate(revision, change)
 
-    async def set_route(self, identity, subscription_id, priority, revision):
+    async def set_route(
+        self, identity, subscription_id, priority, revision, *, include_in_aggregate=None
+    ):
         if priority not in ("normal", "special"):
             raise XError("invalid_priority")
+        if include_in_aggregate is not None and (
+            type(include_in_aggregate) is not bool
+            or (include_in_aggregate and (priority != "special" or subscription_id is None))
+        ):
+            raise XError("invalid_aggregate_membership")
 
         def change(config):
             account = _account(config, identity)
@@ -275,6 +282,13 @@ class XDirectory:
                 account.update(
                     bot_ids=None if priority == "special" else [], times=None, style=None
                 )
+            if priority != "special" or account["subscription_id"] != subscription_id:
+                account.pop("include_in_aggregate", None)
+            if include_in_aggregate is not None and priority == "special":
+                if include_in_aggregate:
+                    account["include_in_aggregate"] = True
+                else:
+                    account.pop("include_in_aggregate", None)
             account.update(subscription_id=subscription_id, priority=priority)
             if account != prior:
                 affected = {prior["subscription_id"], subscription_id} - {None}

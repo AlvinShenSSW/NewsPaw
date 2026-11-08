@@ -358,3 +358,25 @@ async def test_fractional_publication_after_window_floor_is_eligible(system):
     status = await scans.advance("fractional", "fractional.step")
     assert status["state"] == "complete" and status["complete_cursor"] == "120"
     assert [post["id"] for post in scans.posts("account", account)] == ["120"]
+
+
+async def test_timeline_keeps_literal_markup_and_long_plain_post_text(system):
+    expected = {
+        "130": "Literal <b>markup</b> text &amp; entities",
+        "125": "<script>example-only text</script>",
+        "120": "A long original post " + "日" * 4600,
+    }
+
+    async def response(request, _):
+        return page(
+            [
+                dict(post(int(identity), minutes=index), text=body)
+                for index, (identity, body) in enumerate(expected.items(), 1)
+            ]
+        )
+
+    scans, directory, account, _ = await setup(system, response)
+    scans.begin("exact", "account", account, directory.store.config_revision())
+    state = await scans.advance("exact", "exact.read")
+    assert state["state"] == "complete" and state["complete_cursor"] == "130"
+    assert {item["id"]: item["text"] for item in scans.posts("account", account)} == expected

@@ -183,6 +183,7 @@ final class AppModel {
     private(set) var config: AppConfig?
     private(set) var configRevision = 0
     private(set) var bots: [BotStatus] = []
+    var pendingModelProbes: [String: ModelProbeRequest] = [:]
     private(set) var uiLanguage: AppLanguage
     private(set) var busy = false
     private(set) var error: Phrase?

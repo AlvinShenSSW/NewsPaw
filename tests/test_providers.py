@@ -176,9 +176,15 @@ async def test_explicit_probe_is_idempotent_and_capability_specific(registry):
 
     service = probes(store, handler)
     assert records.status("normal_primary")["text"]["state"] == "untested"
-    result = await service.probe("probe1", "normal_primary", "text", 100)
+    revision = store.config_revision()
+    result = await service.probe("probe1", "normal_primary", "text", 100, revision=revision)
     assert result["status"] == "verified"
-    assert (await service.probe("probe1", "normal_primary", "text", 100)) == result
+    assert store.config_revision() > revision
+    assert (await service.probe("probe1", "normal_primary", "text", 100, revision=revision)) == result
+    with pytest.raises(ProviderError, match="probe_id_conflict"):
+        await service.probe("probe1", "normal_primary", "vision", 100, revision=revision)
+    with pytest.raises(ProviderError, match="config_conflict"):
+        await service.probe("new_probe", "normal_primary", "text", 100, revision=revision)
     assert len(calls) == 1
     states = records.status("normal_primary")
     assert states["text"]["state"] == "verified" and states["vision"]["state"] == "untested"

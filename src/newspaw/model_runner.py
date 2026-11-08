@@ -422,6 +422,7 @@ class ModelRunner:
                         provider=profile["provider"],
                         partition=request.partition,
                         image=request.image is not None,
+                        operation="vision" if request.image is not None else "text",
                         task_limit=payload["task_limit"],
                         now=now,
                     )

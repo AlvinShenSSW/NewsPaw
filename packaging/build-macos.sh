@@ -28,7 +28,7 @@ trap 'rm -rf -- "$scratch"' EXIT
 staged="$scratch/NewsPaw.app"
 contents="$staged/Contents"
 helpers="$contents/Helpers"
-runtime="$helpers/Python"
+runtime="$contents/Resources/Python"
 mkdir -p "$contents"/{MacOS,Resources,Library/LaunchAgents} "$helpers"
 
 cd "$root"

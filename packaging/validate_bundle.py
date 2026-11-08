@@ -84,7 +84,7 @@ def _validate_link(target, runpaths, binary, executable, contents, binaries, *, 
 def validate(app):
     contents = app.resolve() / "Contents"
     main = contents / "MacOS" / "NewsPaw"
-    python = contents / "Helpers" / "Python"
+    python = contents / "Resources" / "Python"
     python_executable = python / "bin" / "python3.13"
     executables = {main, contents / "Helpers" / "NewsPawResident", python_executable}
     libraries = set()

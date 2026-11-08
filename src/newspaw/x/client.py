@@ -9,7 +9,6 @@ from urllib.parse import urlsplit
 import httpx
 
 from ..credentials import CredentialError
-from ..news import plain_text
 from ..transport import provider_client
 
 ORIGIN = "https://api.x.com"
@@ -109,7 +108,7 @@ def _post(data):
         id=identity,
         author_id=author,
         published_at=published.astimezone(UTC).isoformat(),
-        text=plain_text(text, 4000),
+        text=text,
         references=normalized,
         sensitive=sensitive,
         withheld=withheld is not None,

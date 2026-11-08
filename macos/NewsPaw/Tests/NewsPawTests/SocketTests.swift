@@ -1,4 +1,5 @@
 import Darwin
+import Dispatch
 import Foundation
 import Testing
 @testable import NewsPaw
@@ -36,60 +37,76 @@ private final class FixtureSocket {
     struct HeldReply: Sendable {
         let index: Int
         let received: AsyncStream<Void>.Continuation
-        let release: AsyncStream<Void>
+        let release: DispatchSemaphore
     }
 
     func serve(
         _ replies: [String], holdMilliseconds: Int = 0, heldReply: HeldReply? = nil
     ) -> Task<[String], Error> {
         let listener = fd
-        return Task.detached {
-            var requests: [String] = []
-            var pending: (client: Int32, reply: String)?
-            defer {
-                if let pending { Darwin.close(pending.client) }
-                heldReply?.received.finish()
-            }
-            for (index, reply) in replies.enumerated() {
-                var ready = pollfd(fd: listener, events: Int16(POLLIN), revents: 0)
-                guard Darwin.poll(&ready, 1, 2_000) == 1 else { throw SocketFailure.timeout }
-                let client = Darwin.accept(listener, nil, nil)
-                guard client >= 0 else { throw SocketFailure.disconnected }
-                defer { if pending?.client != client { Darwin.close(client) } }
-                var noSignal: Int32 = 1
-                _ = setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
-                var receiveTimeout = timeval(tv_sec: 2, tv_usec: 0)
-                _ = setsockopt(
-                    client, SOL_SOCKET, SO_RCVTIMEO, &receiveTimeout, socklen_t(MemoryLayout<timeval>.size)
-                )
-                var request = Data()
-                while !request.contains(10) {
-                    var buffer = [UInt8](repeating: 0, count: 128)
-                    let count = buffer.withUnsafeMutableBytes {
-                        Darwin.recv(client, $0.baseAddress!, $0.count, 0)
-                    }
-                    guard count > 0, request.count + count < 4_096 else {
-                        throw SocketFailure.invalidFrame
-                    }
-                    request.append(contentsOf: buffer.prefix(count))
-                }
-                requests.append(String(decoding: request.dropLast(), as: UTF8.self))
-                if let heldReply, heldReply.index == index {
-                    pending = (client, reply)
-                    heldReply.received.finish()
-                    continue
-                }
-                try Self.send(reply, to: client)
-                if holdMilliseconds > 0 {
-                    try await Task.sleep(for: .milliseconds(holdMilliseconds))
+        return Task.detached { @Sendable in
+            try await withCheckedThrowingContinuation { continuation in
+                DispatchQueue.global().async {
+                    continuation.resume(with: Result {
+                        try FixtureSocket.serveReplies(
+                            replies, on: listener, holdMilliseconds: holdMilliseconds, heldReply: heldReply
+                        )
+                    })
                 }
             }
-            if let pending, let heldReply {
-                for await _ in heldReply.release {}
-                try Self.send(pending.reply, to: pending.client)
-            }
-            return requests
         }
+    }
+
+    private static func serveReplies(
+        _ replies: [String], on listener: Int32, holdMilliseconds: Int, heldReply: HeldReply?
+    ) throws -> [String] {
+        var requests: [String] = []
+        var pending: (client: Int32, reply: String)?
+        defer {
+            if let pending { Darwin.close(pending.client) }
+            heldReply?.received.finish()
+        }
+        for (index, reply) in replies.enumerated() {
+            var ready = pollfd(fd: listener, events: Int16(POLLIN), revents: 0)
+            guard Darwin.poll(&ready, 1, 2_000) == 1 else { throw SocketFailure.timeout }
+            let client = Darwin.accept(listener, nil, nil)
+            guard client >= 0 else { throw SocketFailure.disconnected }
+            defer { if pending?.client != client { Darwin.close(client) } }
+            var noSignal: Int32 = 1
+            _ = setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
+            var receiveTimeout = timeval(tv_sec: 2, tv_usec: 0)
+            _ = setsockopt(
+                client, SOL_SOCKET, SO_RCVTIMEO, &receiveTimeout, socklen_t(MemoryLayout<timeval>.size)
+            )
+            var request = Data()
+            while !request.contains(10) {
+                var buffer = [UInt8](repeating: 0, count: 128)
+                let count = buffer.withUnsafeMutableBytes {
+                    Darwin.recv(client, $0.baseAddress!, $0.count, 0)
+                }
+                guard count > 0, request.count + count < 4_096 else {
+                    throw SocketFailure.invalidFrame
+                }
+                request.append(contentsOf: buffer.prefix(count))
+            }
+            requests.append(String(decoding: request.dropLast(), as: UTF8.self))
+            if let heldReply, heldReply.index == index {
+                pending = (client, reply)
+                heldReply.received.finish()
+                continue
+            }
+            try Self.send(reply, to: client)
+            if holdMilliseconds > 0 {
+                Thread.sleep(forTimeInterval: Double(holdMilliseconds) / 1_000)
+            }
+        }
+        if let pending, let heldReply {
+            guard heldReply.release.wait(timeout: .now() + .seconds(2)) == .success else {
+                throw SocketFailure.timeout
+            }
+            try Self.send(pending.reply, to: pending.client)
+        }
+        return requests
     }
 
     private static func send(_ reply: String, to client: Int32) throws {
@@ -167,8 +184,7 @@ private final class FixtureSocket {
     }
     let newLocale: AppLanguage = conflict ? .en : .ja
     let (received, markReceived) = AsyncStream<Void>.makeStream()
-    let (release, markReleased) = AsyncStream<Void>.makeStream()
-    defer { markReleased.finish() }
+    let release = DispatchSemaphore(value: 0)
     let replies = fixture.serve([
         running, config(.zhHans, revision: 1), emptyBots,
         stopping, config(.zhHans, revision: 1), save,
@@ -184,7 +200,7 @@ private final class FixtureSocket {
     await model.chooseNewsLanguage(.ja)
     #expect(model.config?.newsOutputLocale == newLocale)
     #expect(model.error == (conflict ? .conflict : nil))
-    markReleased.finish()
+    release.signal()
     await stale.value
     #expect(model.connection == .connected)
     #expect(model.config?.newsOutputLocale == newLocale)

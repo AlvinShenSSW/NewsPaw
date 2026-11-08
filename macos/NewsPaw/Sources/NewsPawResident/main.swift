@@ -4,7 +4,8 @@ import Foundation
 let invocation = Array(CommandLine.arguments.dropFirst())
 let helper = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
 let helpers = helper.deletingLastPathComponent()
-let python = helpers.appendingPathComponent("Python/bin/python3.13").path
+let python = helpers.deletingLastPathComponent()
+    .appendingPathComponent("Resources/Python/bin/python3.13").path
 let standard = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent("Library/Application Support/NewsPaw", isDirectory: true).path
 

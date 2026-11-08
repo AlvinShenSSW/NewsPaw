@@ -28,7 +28,7 @@ trap 'rm -rf -- "$scratch"' EXIT
 staged="$scratch/NewsPaw.app"
 contents="$staged/Contents"
 helpers="$contents/Helpers"
-runtime="$helpers/Python"
+runtime="$contents/Resources/Python"
 mkdir -p "$contents"/{MacOS,Resources,Library/LaunchAgents} "$helpers"
 
 cd "$root"
@@ -51,6 +51,17 @@ cp "$products/NewsPawResident" "$helpers/NewsPawResident"
 ditto "$products/NewsPaw_NewsPaw.bundle" "$contents/Resources/NewsPaw_NewsPaw.bundle"
 cp "$root/packaging/NewsPaw.Info.plist" "$contents/Info.plist"
 cp "$root/packaging/io.newspaw.resident.plist" "$contents/Library/LaunchAgents/"
+
+logo="$root/assets/branding/newspaw-logo.png"
+iconset="$scratch/NewsPaw.iconset"
+mkdir "$iconset"
+for size in 16 32 128 256 512; do
+    sips -z "$size" "$size" "$logo" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+    retina=$((size * 2))
+    sips -z "$retina" "$retina" "$logo" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil --convert icns --output "$contents/Resources/NewsPaw.icns" "$iconset"
+
 if [[ -f "$root/macos/ocr/main.swift" ]]; then
     xcrun swiftc -O "$root/macos/ocr/main.swift" -o "$runtime/bin/newspaw-ocr"
 fi

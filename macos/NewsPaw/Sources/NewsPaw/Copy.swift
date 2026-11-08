@@ -105,7 +105,7 @@ enum Phrase {
         case .displayLocal: ("界面语言保存在这台 Mac。", "Display language is saved on this Mac.", "表示言語はこの Mac に保存されます。")
         case .newsUnavailable: ("连接后台后可修改新闻输出语言。", "Connect to the backend to change the news language.", "ニュースの出力言語を変更するには接続が必要です。")
         case .saveFailed: ("语言未保存到后台", "Language was not saved to the backend", "バックエンドに言語を保存できませんでした")
-        case .conflict: ("配置刚刚变更，已刷新。", "Settings changed. The latest settings were loaded.", "設定が変更されたため、最新の設定を読み込みました。")
+        case .conflict: ("保存时配置已被更改。", "Settings changed while saving.", "保存中に設定が変更されました。")
         case .stopFailed: ("未能确认后台已停止", "Could not confirm that the backend stopped", "バックエンドの停止を確認できませんでした")
         case .categories: ("新闻分类", "News categories", "ニュース分類")
         case .sources: ("来源管理", "News sources", "情報源")

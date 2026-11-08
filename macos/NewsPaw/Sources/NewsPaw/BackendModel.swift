@@ -90,6 +90,11 @@ struct AppConfig: Decodable {
 
     struct ConfiguredBot: Decodable { let id: String; let adultAllowed: Bool }
 
+    func displaySubscription(for categoryId: String) -> Subscription? {
+        let matching = subscriptions.filter { $0.categoryId == categoryId }
+        return matching.first(where: \.enabled) ?? matching.first
+    }
+
     struct Category: Decodable, Identifiable {
         let id, name, partition: String
         let primaryProfileId, backupProfileId: String?
@@ -214,13 +219,17 @@ final class AppModel {
     func refresh() async {
         guard !refreshing, !busy else { return }
         refreshing = true
-        let started = generation
         defer { refreshing = false }
+        await loadSnapshot(generation: generation)
+    }
+
+    private func loadSnapshot(generation started: Int) async {
         do {
             let status: ServiceStatus = try BackendRPC.decode(await rpc.get("service.status"))
+            guard started == generation else { return }
             guard status.protocolVersion == 1 else { throw BackendFailure.incompatible }
             if status.state == "stopping" {
-                if started == generation { clear(.stopping) }
+                clear(.stopping)
                 return
             }
             guard status.state == "running" else { throw BackendFailure.invalidReply }
@@ -263,6 +272,7 @@ final class AppModel {
     private func saveLocale(_ field: LocaleField, _ value: AppLanguage) async {
         generation += 1
         busy = true
+        defer { busy = false }
         error = nil
         do {
             let current = try await rpc.get("config.get")
@@ -274,8 +284,9 @@ final class AppModel {
             self.error = .saveFailed
             if error is SocketFailure { clear(.offline) }
         }
-        busy = false
-        await refresh()
+        // A poll from before this save may still be in flight. Reload at the
+        // current generation while the edit owns the model.
+        await loadSnapshot(generation: generation)
     }
 
     func request(_ operation: String, fields: [String: Any] = [:]) async throws -> Data {

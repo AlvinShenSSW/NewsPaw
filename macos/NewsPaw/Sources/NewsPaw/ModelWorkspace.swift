@@ -162,12 +162,12 @@ struct ModelWorkspace: View {
     }
 }
 
-private struct ProbeProjection: Decodable {
+struct ProbeProjection: Decodable {
     let state: String
     let errorKind: String?
 }
 
-private struct ProbeResult: Decodable {
+struct ProbeResult: Decodable {
     let status: String
     let errorKind: String?
 }
@@ -180,6 +180,31 @@ struct ModelProbeRequest {
 
     func fields(profileId: String) -> [String: Any] {
         ["probe_id": id, "profile_id": profileId, "capability": capability, "hold_units": units, "revision": revision]
+    }
+}
+
+extension AppModel {
+    func resolveModelProbe(
+        _ request: ModelProbeRequest, profileId: String, identity: [String]
+    ) async throws -> (revision: Int, result: ProbeResult, statuses: [String: ProbeProjection]) {
+        do {
+            let result: ProbeResult = try BackendRPC.decode(await self.request(
+                "models.probe", fields: request.fields(profileId: profileId)
+            ))
+            let current: ConfigSnapshot = try BackendRPC.decode(await self.request("config.get"))
+            guard let saved = current.document.modelProfiles.first(where: { $0.id == profileId }),
+                  identity == [saved.provider, saved.baseUrl ?? "", saved.model] else {
+                throw BackendFailure.conflict
+            }
+            let statuses: [String: ProbeProjection] = try BackendRPC.decode(await self.request(
+                "models.status", fields: ["profile_id": profileId]
+            ))
+            if result.status != "pending" { pendingModelProbes[profileId] = nil }
+            return (current.revision, result, statuses)
+        } catch BackendFailure.conflict {
+            pendingModelProbes[profileId] = nil
+            throw BackendFailure.conflict
+        }
     }
 }
 
@@ -343,24 +368,12 @@ private struct ProfileEditor: View {
                 model.pendingModelProbes[selection.id] = request
                 last = nil
             }
-            let result: ProbeResult
-            do {
-                result = try BackendRPC.decode(await model.request(
-                    "models.probe", fields: request.fields(profileId: selection.id)
-                ))
-            } catch BackendFailure.conflict {
-                model.pendingModelProbes[selection.id] = nil
-                throw BackendFailure.conflict
-            }
-            if result.status != "pending" { model.pendingModelProbes[selection.id] = nil }
-            let current: ConfigSnapshot = try BackendRPC.decode(await model.request("config.get"))
-            guard let saved = current.document.modelProfiles.first(where: { $0.id == selection.id }),
-                  savedIdentity == [saved.provider, saved.baseUrl ?? "", saved.model] else {
-                throw BackendFailure.conflict
-            }
-            revision = current.revision
-            last = result
-            try await refreshStatuses()
+            let update = try await model.resolveModelProbe(
+                request, profileId: selection.id, identity: savedIdentity
+            )
+            revision = update.revision
+            last = update.result
+            statuses = update.statuses
             await model.refresh()
         }
     }

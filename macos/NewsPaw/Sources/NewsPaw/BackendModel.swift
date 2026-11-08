@@ -304,6 +304,20 @@ final class AppModel {
         return try await BackendRPC(socket: socket).send(data)
     }
 
+    func pauseCategory(_ id: String, revision: Int) async throws {
+        guard !busy else { throw BackendFailure.rejected }
+        generation += 1
+        busy = true
+        defer { busy = false }
+        do {
+            _ = try await request("subscriptions.pause_category", fields: ["category_id": id, "revision": revision])
+        } catch {
+            await loadSnapshot(generation: generation)
+            throw error
+        }
+        await loadSnapshot(generation: generation)
+    }
+
     func stopBackend() async {
         guard connection == .connected, !busy else { return }
         generation += 1

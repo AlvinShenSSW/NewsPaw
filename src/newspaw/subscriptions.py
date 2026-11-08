@@ -133,3 +133,22 @@ class Subscriptions:
             )
 
         return await self.credentials._submit(operation)
+
+    async def pause_category(self, category_id, revision):
+        async def operation():
+            config = self.credentials._current(revision)
+            if not any(category["id"] == category_id for category in config["categories"]):
+                raise SubscriptionError("unknown_category")
+            active = [
+                row
+                for row in config["subscriptions"]
+                if row["category_id"] == category_id and row["enabled"]
+            ]
+            if not active:
+                return dict(revision=revision, paused=0)
+            for row in active:
+                row["enabled"] = False
+            saved = await self.credentials._commit(config, revision)
+            return dict(revision=saved["revision"], paused=len(active))
+
+        return await self.credentials._submit(operation)

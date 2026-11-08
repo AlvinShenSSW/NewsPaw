@@ -79,6 +79,7 @@ struct ConfigSnapshot: Decodable {
 struct AppConfig: Decodable {
     let uiLocale: AppLanguage
     let newsOutputLocale: AppLanguage
+    let timezone: String?
     let categories: [Category]
     let subscriptions: [Subscription]
     let sources: [Source]
@@ -98,11 +99,17 @@ struct AppConfig: Decodable {
         let id, categoryId, timezone: String
         let enabled: Bool
         let times: [String]
+        let name, sourceMode, style: String?
+        let sourceIds, botIds: [String]?
+        let maxItems: Int?
+        let focusWeights: [String: Int]?
     }
 
     struct Source: Decodable, Identifiable {
         let id, name, kind: String
         let enabled: Bool
+        let url, partition, focus: String?
+        let categoryIds: [String]?
     }
 
     struct Account: Decodable, Identifiable {
@@ -157,6 +164,7 @@ final class AppModel {
 
     private(set) var connection: ConnectionState = .connecting
     private(set) var config: AppConfig?
+    private(set) var configRevision = 0
     private(set) var bots: [BotStatus] = []
     private(set) var uiLanguage: AppLanguage
     private(set) var busy = false
@@ -213,6 +221,7 @@ final class AppModel {
             let currentBots: [BotStatus] = try BackendRPC.decode(await rpc.get("bots.list"))
             guard started == generation else { return }
             config = current.document
+            configRevision = current.revision
             bots = currentBots
             connection = .connected
             if !hasLocalLanguage {
@@ -227,6 +236,7 @@ final class AppModel {
     private func clear(_ state: ConnectionState) {
         connection = state
         config = nil
+        configRevision = 0
         bots = []
     }
 
@@ -260,6 +270,30 @@ final class AppModel {
         }
         // A poll from before this save may still be in flight. Reload at the
         // current generation while the edit owns the model.
+        await loadSnapshot(generation: generation)
+    }
+
+    func request(_ operation: String, fields: [String: Any] = [:]) async throws -> Data {
+        guard connection == .connected else { throw SocketFailure.disconnected }
+        var body = fields
+        body["op"] = operation
+        let data = try JSONSerialization.data(withJSONObject: body)
+        let extended = ["sources.discover", "sources.preview"].contains(operation)
+        let socket = extended ? LocalSocket(path: rpc.socket.path, timeoutMilliseconds: 35_000) : rpc.socket
+        return try await BackendRPC(socket: socket).send(data)
+    }
+
+    func pauseCategory(_ id: String, revision: Int) async throws {
+        guard !busy else { throw BackendFailure.rejected }
+        generation += 1
+        busy = true
+        defer { busy = false }
+        do {
+            _ = try await request("subscriptions.pause_category", fields: ["category_id": id, "revision": revision])
+        } catch {
+            await loadSnapshot(generation: generation)
+            throw error
+        }
         await loadSnapshot(generation: generation)
     }
 

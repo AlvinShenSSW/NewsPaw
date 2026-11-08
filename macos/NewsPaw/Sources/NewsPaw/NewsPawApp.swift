@@ -92,6 +92,7 @@ private struct ServiceMenu: View {
 struct SettingsWindow: View {
     @Environment(\.openWindow) private var openWindow
     @Bindable var model: AppModel
+    @State private var subscriptionEditor: SubscriptionSelection?
     var registerOpen: ((OpenWindowAction) -> Void)? = nil
 
     var body: some View {
@@ -155,6 +156,9 @@ struct SettingsWindow: View {
                 }
             }
         }
+        .sheet(item: $subscriptionEditor) { selection in
+            SubscriptionEditor(model: model, selection: selection)
+        }
         .onAppear { registerOpen?(openWindow) }
     }
 
@@ -175,9 +179,11 @@ struct SettingsWindow: View {
     }
 
     private func subscriptions(_ config: AppConfig) -> some View {
-        VStack(alignment: .leading, spacing: 17) {
+        let revision = model.configRevision
+        return VStack(alignment: .leading, spacing: 17) {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 305), spacing: 11)], spacing: 11) {
                 ForEach(config.categories) { category in
+                    let entries = config.subscriptions.filter { $0.categoryId == category.id }
                     let time = config.displaySubscription(for: category.id)
                     let enabled = time?.enabled == true
                     HStack(alignment: .center, spacing: 11) {
@@ -196,9 +202,28 @@ struct SettingsWindow: View {
                         }
                         .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 5)
-                        Text(model.text(enabled ? .enabled : .disabled))
-                            .font(.caption)
-                            .foregroundStyle(enabled ? Color.accentColor : Color.secondary)
+                        CategorySubscriptionToggle(
+                            model: model, category: category, title: categoryTitle(category),
+                            subscriptions: entries, enabled: enabled, revision: revision
+                        ) { subscriptionEditor = $0 }
+                        Menu {
+                            ForEach(entries) { subscription in
+                                Button(subscription.name ?? categoryTitle(category)) {
+                                    subscriptionEditor = SubscriptionSelection(
+                                        category: category, subscription: subscription, revision: revision
+                                    )
+                                }
+                            }
+                            Button(SubscriptionCopy.new.text(model.uiLanguage)) {
+                                subscriptionEditor = SubscriptionSelection(
+                                    category: category, subscription: nil, revision: revision
+                                )
+                            }
+                        } label: {
+                            Image(systemName: "slider.horizontal.3")
+                        }
+                        .accessibilityLabel(SubscriptionCopy.edit.text(model.uiLanguage))
+                        .fixedSize()
                     }
                     .padding(13)
                     .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
@@ -207,20 +232,10 @@ struct SettingsWindow: View {
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(enabled ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: 1)
                     }
-                    .accessibilityElement(children: .combine)
+                    .accessibilityElement(children: .contain)
                 }
             }
-            sectionTitle(.sources)
-            if config.sources.isEmpty {
-                statusCard(model.text(.noSources))
-            } else {
-                VStack(spacing: 1) {
-                    ForEach(config.sources) { source in
-                        line(source.name, note: source.kind, status: source.enabled ? .enabled : .disabled)
-                    }
-                }
-                .background(cardBackground)
-            }
+            SourceWorkspace(model: model, sources: config.sources)
         }
     }
 

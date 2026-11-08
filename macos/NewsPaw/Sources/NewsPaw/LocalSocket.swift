@@ -51,7 +51,7 @@ struct LocalSocket: Sendable {
         let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw SocketFailure.disconnected }
         defer { Darwin.close(fd) }
-        let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(max(1, min(timeoutMilliseconds, 10_000))) * 1_000_000
+        let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(max(1, min(timeoutMilliseconds, 35_000))) * 1_000_000
         let flags = fcntl(fd, F_GETFL)
         var noSignal: Int32 = 1
         guard flags >= 0, fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0,

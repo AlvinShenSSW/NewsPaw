@@ -319,6 +319,7 @@ class WebSearch:
                     budget_id,
                     max_units=hold_units,
                     quote=quote,
+                    operation="search",
                     task_limit=hold_units,
                 )
                 self.budget._begin_attempt(budget_id)

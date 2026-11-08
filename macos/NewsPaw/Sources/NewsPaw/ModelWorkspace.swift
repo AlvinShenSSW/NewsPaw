@@ -3,12 +3,12 @@ import Foundation
 import SwiftUI
 
 enum ConnectionCopy {
-    case editModel, provider, endpoint, modelId, key, save, storeKey, clearKey, probe, hold
+    case editModel, provider, endpoint, modelId, key, save, storeKey, clearKey, probe, retryProbe, hold
     case text, vision, image, speech, extraModel, routing, inherit, ordinaryText, adultText
     case connectBot, token, botName, verify, pair, test, testStatus, pause, resume, unbind
     case allowAdult, removeBot, deleteImpact, affected, pairedCode, expiry
     case policy, budget, modelLimit, imageLimit, xLimit, settled, reserved, remaining, unknown
-    case reported, estimated, pages
+    case reported, estimated, pages, unclassifiedMedia
     case schedule, automatic, normalHold, adultHold, search, tools, configureImage, configureSpeech
 
     func text(_ locale: AppLanguage) -> String {
@@ -22,11 +22,13 @@ enum ConnectionCopy {
         case .storeKey: ("存入钥匙串", "Save to Keychain", "キーチェーンに保存")
         case .clearKey: ("移除凭据", "Remove credential", "認証情報を削除")
         case .probe: ("验证能力", "Verify capability", "機能を検証")
+        case .retryProbe: ("重试同一验证请求", "Retry the same verification", "同じ検証を再試行")
         case .hold: ("单次预算上限（微美元）", "Attempt cap (micro-USD)", "試行上限（マイクロ米ドル）")
         case .text: ("文字", "Text", "テキスト")
         case .vision: ("视觉理解", "Vision", "画像認識")
         case .image: ("生图", "Image generation", "画像生成")
         case .speech: ("语音转写", "Transcription", "音声の文字起こし")
+        case .unclassifiedMedia: ("历史媒体费用（类型不明）", "Older media costs (type unknown)", "過去のメディア費用（種類不明）")
         case .extraModel: ("添加独立能力模型", "Add capability profile", "機能別モデルを追加")
         case .routing: ("分类模型覆盖", "Category model overrides", "カテゴリ別モデル設定")
         case .inherit: ("使用分区默认", "Use partition default", "区分の既定値を使用")
@@ -170,6 +172,17 @@ private struct ProbeResult: Decodable {
     let errorKind: String?
 }
 
+struct ModelProbeRequest {
+    let id = UUID().uuidString.lowercased()
+    let revision: Int
+    let capability: String
+    let units: Int
+
+    func fields(profileId: String) -> [String: Any] {
+        ["probe_id": id, "profile_id": profileId, "capability": capability, "hold_units": units, "revision": revision]
+    }
+}
+
 private struct ProfileEditor: View {
     let model: AppModel
     let selection: ProfileSelection
@@ -202,10 +215,15 @@ private struct ProfileEditor: View {
         _role = State(initialValue: previous?.role ?? "primary")
         _exists = State(initialValue: previous != nil)
         _savedIdentity = State(initialValue: previous.map { [$0.provider, $0.baseUrl ?? "", $0.model] } ?? [])
+        if let pending = model.pendingModelProbes[selection.id] {
+            _capability = State(initialValue: pending.capability)
+            _hold = State(initialValue: String(pending.units))
+        }
     }
 
     private func label(_ key: ConnectionCopy) -> String { key.text(model.uiLanguage) }
     private var configured: Bool { exists && savedIdentity == [provider, endpoint, modelId] }
+    private var pendingProbe: ModelProbeRequest? { model.pendingModelProbes[selection.id] }
 
     var body: some View {
         VStack {
@@ -240,16 +258,17 @@ private struct ProfileEditor: View {
                             Text(label(.speech)).tag("stt")
                         }
                     }
+                    .disabled(pendingProbe != nil)
                     if let status = statuses[capability] {
                         Text(model.text(status.state == "verified" ? .verified : .unverified))
                         if let error = status.errorKind { Text(connectionReason(error, locale: model.uiLanguage)).font(.caption).foregroundStyle(.secondary) }
                     }
                     TextField(label(.hold), text: $hold)
-                    Button(label(.probe)) { Task { await probe() } }
-                        .disabled(!configured || boundedUnits(hold) == nil || boundedUnits(hold) == 0)
-                    if let last {
-                        Text(model.text(last.status == "verified" ? .verified : .unverified))
-                        if let error = last.errorKind { Text(connectionReason(error, locale: model.uiLanguage)).font(.caption).foregroundStyle(.secondary) }
+                        .disabled(pendingProbe != nil)
+                    Button(label(pendingProbe == nil ? .probe : .retryProbe)) { Task { await probe() } }
+                        .disabled(!configured || (pendingProbe == nil && (boundedUnits(hold) ?? 0) <= 0))
+                    if let error = last?.errorKind, error != statuses[capability]?.errorKind {
+                        Text(connectionReason(error, locale: model.uiLanguage)).font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 if let failure { Text(model.text(failure)).foregroundStyle(.secondary) }
@@ -315,17 +334,32 @@ private struct ProfileEditor: View {
 
     private func probe() async {
         await perform {
-            guard let units = boundedUnits(hold), units > 0 else { throw BackendFailure.rejected }
-            last = try BackendRPC.decode(await model.request("models.probe", fields: [
-                "probe_id": UUID().uuidString.lowercased(), "profile_id": selection.id,
-                "capability": capability, "hold_units": units, "revision": revision,
-            ]))
+            let request: ModelProbeRequest
+            if let pendingProbe {
+                request = pendingProbe
+            } else {
+                guard let units = boundedUnits(hold), units > 0 else { throw BackendFailure.rejected }
+                request = ModelProbeRequest(revision: revision, capability: capability, units: units)
+                model.pendingModelProbes[selection.id] = request
+                last = nil
+            }
+            let result: ProbeResult
+            do {
+                result = try BackendRPC.decode(await model.request(
+                    "models.probe", fields: request.fields(profileId: selection.id)
+                ))
+            } catch BackendFailure.conflict {
+                model.pendingModelProbes[selection.id] = nil
+                throw BackendFailure.conflict
+            }
+            if result.status != "pending" { model.pendingModelProbes[selection.id] = nil }
             let current: ConfigSnapshot = try BackendRPC.decode(await model.request("config.get"))
             guard let saved = current.document.modelProfiles.first(where: { $0.id == selection.id }),
                   savedIdentity == [saved.provider, saved.baseUrl ?? "", saved.model] else {
                 throw BackendFailure.conflict
             }
             revision = current.revision
+            last = result
             try await refreshStatuses()
             await model.refresh()
         }

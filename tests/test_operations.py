@@ -294,13 +294,22 @@ def test_control_reads_actual_service_log_location(tmp_path):
         assert server.operations.support_snapshot()["business"]["log_bytes"] == 7
 
 
-def test_export_preserves_explicit_empty_after_omitting_the_only_private_source(tmp_path):
+@pytest.mark.parametrize(
+    "private_url",
+    [
+        "https://example.com/feed?custom=private-fixture",
+        "https://sk-abcdefghijklmnop.example.com/feed",
+        "https://192.168.1.10/feed",
+        "https://news.internal/feed",
+    ],
+)
+def test_export_preserves_explicit_empty_after_omitting_the_only_private_source(tmp_path, private_url):
     from newspaw.app_config import uses_category_sources
 
     with closing(Store(tmp_path / "state.db")) as store:
         config, sub = configured()
         source = config["sources"][0]
-        source["url"] = "https://example.com/feed?custom=private-fixture"
+        source["url"] = private_url
         config["sources"].append(dict(source, id="public_feed", url="https://example.org/rss"))
         sub["source_ids"] = [source["id"]]
         store.save_config(config, expected_revision=1)
@@ -310,6 +319,18 @@ def test_export_preserves_explicit_empty_after_omitting_the_only_private_source(
         )
         assert subscription["source_ids"] == [] and not uses_category_sources(subscription)
         assert exported["omitted"]["source_urls"] == 1
+        assert private_url not in json.dumps(exported)
+        assert [row["id"] for row in exported["settings"]["sources"]] == ["public_feed"]
+
+        # Older portable settings can still contain an unsafe source.
+        exported["settings"]["sources"].append(dict(source, enabled=False))
+        subscription["source_ids"] = [source["id"]]
+        destination = tmp_path / "restore"
+        with closing(Store(destination / "state.db")) as restored:
+            preview = Operations(restored, destination).preview_import(exported)
+        restored_sub = next(s for s in preview["settings"]["subscriptions"] if s["id"] == sub["id"])
+        assert restored_sub["source_ids"] == [] and not uses_category_sources(restored_sub)
+        assert private_url not in json.dumps(preview)
 
 
 def test_restore_is_fresh_with_default_new_policies_and_rejects_changed_policy(tmp_path):

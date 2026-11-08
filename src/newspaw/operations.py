@@ -24,6 +24,7 @@ from .media.input_service import _POLICY as MEDIA_DEFAULT
 from .media.paper_service import _POLICY as NEWSPAPER_DEFAULT
 from .media.source_images import AssetStore, ImageError
 from .migrations import DATABASE_VERSION
+from .news import public_url
 from .providers import ProfileRegistry
 from .scheduler import _LEASE_STATES, _TERMINAL
 from .store import AUDIT_RETENTION
@@ -151,15 +152,16 @@ def _json(value):
 
 
 def _portable_url(value):
+    if public_url(value, https_only=True) is None:
+        return False
     parts = urlsplit(value)
-    decoded = unquote(parts.path)
     return not (
         parts.query
         or parts.fragment
         or parts.username
         or parts.password
         or parts.port not in {None, 443}
-        or _SECRET.search(decoded)
+        or any(_SECRET.search(unquote(part)) for part in (parts.hostname or "", parts.path))
     )
 
 

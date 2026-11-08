@@ -22,7 +22,8 @@ _COMMAND = re.compile(
 
 
 def _system(path):
-    return any(path.is_relative_to(root) for root in _SYSTEM_ROOTS)
+    normalized = Path(os.path.normpath(path))
+    return any(normalized.is_relative_to(root) and path.resolve().is_relative_to(root) for root in _SYSTEM_ROOTS)
 
 
 def _bundle_path(value, binary, executable, contents):
@@ -37,7 +38,7 @@ def _bundle_path(value, binary, executable, contents):
 
 def _validate_link(target, runpaths, binary, executable, contents, binaries):
     path = Path(target)
-    if path.is_absolute() and _system(path.resolve()):
+    if path.is_absolute() and _system(path):
         return
     if (
         target.startswith(("@loader_path/", "@executable_path/"))
@@ -50,7 +51,7 @@ def _validate_link(target, runpaths, binary, executable, contents, binaries):
         # whatever paths an upstream loader or the build environment might add.
         for runpath in runpaths:
             root = Path(runpath)
-            if root.is_absolute() and _system(root.resolve()):
+            if root.is_absolute() and _system(root):
                 candidate = (root / suffix).resolve()
                 if _system(candidate) and candidate.is_file():
                     return

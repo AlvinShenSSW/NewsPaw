@@ -77,6 +77,9 @@ fi
 
 plutil -lint "$contents/Info.plist" "$contents/Library/LaunchAgents/io.newspaw.resident.plist"
 "$runtime_python" -I "$root/packaging/validate_bundle.py" "$staged"
-env -i PATH=/usr/bin:/bin "$helpers/NewsPawResident" --self-check
+# Simulate the bundle-relative executable name supplied by launchd.
+env -i PATH=/usr/bin:/bin /bin/bash -c \
+    'cd / && exec -a Contents/Helpers/NewsPawResident "$1" --self-check' \
+    bash "$helpers/NewsPawResident"
 mv "$staged" "$app"
 printf '%s\n' "$app"

@@ -290,6 +290,7 @@ class Newspapers:
                     partition="normal",
                     provider=profile["provider"],
                     image=role != "vision",
+                    operation="vision" if role == "vision" else "image",
                     task_limit=settings["task_limit"],
                 )
                 self.budget._begin_attempt(identity)

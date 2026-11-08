@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 enum XCopy: CaseIterable {
-    case addAccount, addList, credential, configured, missing, handle, listURL, verify, refreshList
+    case addAccount, addList, credential, configured, missing, handle, remoteIdentity, listURL, verify, refreshList
     case paidAction, confirm, routing, subscription, unassigned, include, postTypes, original, quote, reply, repost
     case overrideTimes, emptyTimes, overrideBots, changePartition, impact, cached, waiting, oldRoutes, policyReset
     case coverage, latest, completeRange, historical, pages, listMembers, listCurrent, listPending
@@ -16,6 +16,7 @@ enum XCopy: CaseIterable {
         case .configured: ("已配置", "Configured", "設定済み")
         case .missing: ("未配置", "Not configured", "未設定")
         case .handle: ("账号名", "Handle", "ユーザー名")
+        case .remoteIdentity: ("X 账号 ID", "X account ID", "X アカウント ID")
         case .listURL: ("列表链接或 ID", "List URL or ID", "リストの URL または ID")
         case .verify: ("通过 X 验证账号", "Verify account on X", "X でアカウントを検証")
         case .refreshList: ("通过 X 刷新成员", "Refresh members from X", "X からメンバーを更新")
@@ -70,9 +71,9 @@ private struct XDirectoryView: Decodable {
     let accounts: [XAccount]
 }
 
-private struct XAccount: Decodable, Identifiable {
+struct XAccount: Decodable, Identifiable {
     let id, handle, priority, state: String
-    let partition, subscriptionId, style, observedAt: String?
+    let partition, subscriptionId, style, observedAt, remoteId: String?
     let botIds, times, postTypes: [String]?
     let includeInAggregate: Bool?
     let canCollect, memberActive: Bool
@@ -131,12 +132,13 @@ enum XRouteInput {
     (error as? BackendFailure) == .conflict ? model.text(.conflict) : XCopy.failed.text(model.uiLanguage)
 }
 
-private func xState(_ value: String, _ locale: AppLanguage) -> String {
+func xState(_ value: String, _ locale: AppLanguage) -> String {
     let words: (String, String, String) = switch value {
     case "ready": ("已验证", "Verified", "確認済み")
     case "complete": ("完整", "Complete", "完了")
     case "pending", "running", "unobserved", "unverified": ("待确认", "Pending", "確認待ち")
     case "incomplete", "partial", "page_limit": ("部分覆盖", "Partial", "一部のみ")
+    case "pagination_gap": ("分页覆盖有缺口", "Pagination coverage gap", "ページ取得範囲に欠落あり")
     case "outcome_unknown": ("结果未知", "Outcome unknown", "結果不明")
     case "budget_blocked", "account_limit", "partition_limit", "global_limit", "account_limit_requires_individual":
         ("读取额度受限", "Read cap reached", "読み取り上限")
@@ -480,6 +482,12 @@ private struct XAccountEditor: View {
     var body: some View {
         Form {
             Section("@" + account.handle) {
+                if let remote = account.remoteId {
+                    LabeledContent(text(.remoteIdentity)) {
+                        Text(remote).monospacedDigit().textSelection(.enabled)
+                    }
+                    .accessibilityIdentifier("x-remote-id")
+                }
                 Text(account.canCollect ? model.text(.enabled) : xState(account.state, model.uiLanguage))
                 if let observed = account.observedAt { Text(observed).font(.caption.monospaced()) }
                 XOfficialRead(

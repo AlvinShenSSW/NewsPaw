@@ -30,3 +30,23 @@ import Testing
         #expect(AppLanguage.allCases.allSatisfy { !copy.text($0).isEmpty })
     }
 }
+
+@Test func xAccountRetainsStableRemoteIdentityAcrossHandleChanges() throws {
+    func account(_ handle: String, remote: String) throws -> XAccount {
+        let data = Data(#"{"id":"local","handle":"\#(handle)","priority":"normal","state":"ready","remote_id":\#(remote),"can_collect":true,"member_active":false}"#.utf8)
+        return try BackendRPC.decode(data)
+    }
+    let first = try account("original", remote: #""9876543210123456789""#)
+    let renamed = try account("renamed", remote: #""9876543210123456789""#)
+    #expect(first.handle != renamed.handle)
+    #expect(first.remoteId == "9876543210123456789")
+    #expect(first.remoteId == renamed.remoteId)
+    #expect(try account("draft", remote: "null").remoteId == nil)
+}
+
+@Test func xPaginationGapHasSpecificCopyInEachLanguage() {
+    for locale in AppLanguage.allCases {
+        #expect(xState("pagination_gap", locale) != xState("unknown", locale))
+        #expect(xState("pagination_gap", locale) != xState("partial", locale))
+    }
+}

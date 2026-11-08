@@ -4,14 +4,19 @@ import ServiceManagement
 import SwiftUI
 
 enum ResidentState {
-    case notPackaged, off, approval, on, unavailable
+    case notPackaged, off, approval, on, notFound, unavailable
+
+    var canRegister: Bool {
+        // A fresh installation can have no Service Management record yet.
+        self == .off || self == .notFound
+    }
 
     static func status(_ value: SMAppService.Status) -> Self {
         switch value {
         case .notRegistered: .off
         case .requiresApproval: .approval
         case .enabled: .on
-        case .notFound: .unavailable
+        case .notFound: .notFound
         @unknown default: .unavailable
         }
     }
@@ -41,7 +46,7 @@ struct ResidentAgent {
     }
 
     func enable() async throws {
-        guard state == .off else { throw ResidentFailure.serviceUnavailable }
+        guard state.canRegister else { throw ResidentFailure.serviceUnavailable }
         let helperPath = helper.path
         try await Task.detached(priority: .utility) {
             let loaded = try Self.run(
@@ -53,7 +58,7 @@ struct ResidentAgent {
                 throw ResidentFailure.serviceUnavailable
             }
         }.value
-        guard state == .off else { throw ResidentFailure.serviceUnavailable }
+        guard state.canRegister else { throw ResidentFailure.serviceUnavailable }
         try SMAppService.agent(plistName: Self.plist).register()
     }
 
@@ -132,7 +137,7 @@ struct ResidentControls: View {
                 Text(label(statusCopy)).foregroundStyle(.secondary)
                 if let failure { Text(label(failure)).foregroundStyle(.secondary) }
                 HStack {
-                    if current == .off {
+                    if current.canRegister {
                         Button(label(.enable)) { Task { await change(enable: true) } }
                     }
                     if current == .approval || current == .on {
@@ -156,7 +161,7 @@ struct ResidentControls: View {
         case .off: .off
         case .approval: .approval
         case .on: .on
-        case .notPackaged, .unavailable: .unavailable
+        case .notPackaged, .notFound, .unavailable: .unavailable
         }
     }
 

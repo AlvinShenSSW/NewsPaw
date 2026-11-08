@@ -25,6 +25,7 @@ from .providers import ProbeService, ProfileRegistry, ProviderError
 from .scheduler import Scheduler
 from .source_catalog import catalog
 from .source_manager import SourceError, SourceManager
+from .telegram.commands import Commands
 from .telegram.outbox import Outbox
 from .telegram.registry import BotRegistry, TelegramError
 from .telegram.targets import TargetManager
@@ -154,6 +155,7 @@ class ControlServer:
         )
         self.outbox = Outbox(self.pipeline, self.targets, asset_resolver=assets.read)
         self.scheduler = Scheduler(self.pipeline, self.outbox)
+        self.commands = Commands(self.outbox)
         self._server = None
         self._lock_fd = None
         self._handlers = set()
@@ -185,10 +187,12 @@ class ControlServer:
             ProfileRegistry(self.credentials.store).recover_interrupted()
             self.pipeline.recover_interrupted()
             self.outbox.recover_interrupted()
+            self.commands.recover_interrupted()
             self.x.recover_interrupted()
             await self._server.start_serving()
             await self.bots.start()
             self.scheduler.start()
+            self.commands.start()
         except BaseException:
             await self.close()
             raise
@@ -198,6 +202,7 @@ class ControlServer:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
+        await self.commands.close()
         await self.scheduler.close()
         if self._handlers:
             await asyncio.gather(*self._handlers, return_exceptions=True)

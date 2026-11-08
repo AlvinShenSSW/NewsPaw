@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import sys
+from functools import cache
 from pathlib import Path
 
 _SYSTEM_ROOTS = (Path("/usr/lib"), Path("/System/Library"))
@@ -26,6 +27,21 @@ def _system(path):
     return any(normalized.is_relative_to(root) and path.resolve().is_relative_to(root) for root in _SYSTEM_ROOTS)
 
 
+@cache
+def _system_available(path):
+    if path.is_file():
+        return True
+    # Modern macOS can supply a system library from the dyld shared cache
+    # even when its install name does not exist as a file.
+    listing = subprocess.check_output(
+        ["/usr/bin/xcrun", "dyld_info", "-dependents", str(path)],
+        text=True,
+        stderr=subprocess.DEVNULL,
+        timeout=10,
+    )
+    return listing.startswith(f"{path} [")
+
+
 def _bundle_path(value, binary, executable, contents):
     anchor, _, suffix = value.partition("/")
     roots = {"@loader_path": binary.parent, "@executable_path": executable.parent}
@@ -36,9 +52,9 @@ def _bundle_path(value, binary, executable, contents):
     raise ValueError(f"Non-relocatable dependency in {binary.name}: {value}")
 
 
-def _validate_link(target, runpaths, binary, executable, contents, binaries):
+def _validate_link(target, runpaths, binary, executable, contents, binaries, *, weak):
     path = Path(target)
-    if path.is_absolute() and _system(path):
+    if path.is_absolute() and _system(path) and (weak or _system_available(path)):
         return
     if (
         target.startswith(("@loader_path/", "@executable_path/"))
@@ -53,7 +69,7 @@ def _validate_link(target, runpaths, binary, executable, contents, binaries):
             root = Path(runpath)
             if root.is_absolute() and _system(root):
                 candidate = (root / suffix).resolve()
-                if _system(candidate) and candidate.is_file():
+                if _system(candidate) and _system_available(candidate):
                     return
                 continue
             root = _bundle_path(runpath, binary, executable, contents)
@@ -100,7 +116,10 @@ def validate(app):
             executable = python_executable if binary.is_relative_to(python) else main
         for command, target in commands:
             if command in _LINKS:
-                _validate_link(target, runpaths, binary, executable, contents, binaries)
+                _validate_link(
+                    target, runpaths, binary, executable, contents, binaries,
+                    weak=command == "LC_LOAD_WEAK_DYLIB",
+                )
     print("Relocatable bundle paths verified")
 
 

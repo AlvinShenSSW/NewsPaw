@@ -22,6 +22,8 @@ from newspaw.store import Store
         ("@loader_path/lib/fixture.dylib", None, True),
         ("@executable_path/lib/fixture.dylib", None, True),
         ("@loader_path/../../../outside.dylib", None, False),
+        ("/usr/lib/libCachedFixture.dylib", None, True),
+        ("/usr/lib/__newspaw_missing_fixture__.dylib", None, False),
     ],
 )
 def test_bundle_checks_macho_dependency_resolution(tmp_path, monkeypatch, target, runpath, accepted):
@@ -43,6 +45,8 @@ def test_bundle_checks_macho_dependency_resolution(tmp_path, monkeypatch, target
             import os
 
             return os.uname().machine
+        if args[0] == "/usr/bin/xcrun":
+            return f"{args[-1]} [arm64e]:\n" if args[-1].endswith("/libCachedFixture.dylib") else ""
         if Path(args[-1]).name != "ffprobe":
             return ""
         commands = f"Load command 0\n  cmd LC_LOAD_DYLIB\n cmdsize 48\n name {target} (offset 24)\n"

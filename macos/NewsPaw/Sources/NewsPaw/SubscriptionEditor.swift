@@ -10,6 +10,7 @@ enum SubscriptionCopy {
     case newSource, sourceType, xDestination, previewPassed, previewUnavailable
     case current, stale, unknownFreshness, partialCoverage
     case none, importOPML, duplicate, added, rejected, neutral, unsupported, enableSource
+    case pauseCategory, pauseCategoryImpact, chooseSubscription, categoryPauseFailed
 
     func text(_ language: AppLanguage) -> String {
         let words: (String, String, String) = switch self {
@@ -69,6 +70,10 @@ enum SubscriptionCopy {
         case .neutral: ("未分类", "Unclassified", "未分類")
         case .unsupported: ("需要适配，已保留为草稿", "Adapter needed. Saved as a draft.", "アダプターが必要です。下書きとして保存しました")
         case .enableSource: ("启用已验证来源", "Enable verified source", "検証済みの情報源を有効にする")
+        case .pauseCategory: ("暂停此分类", "Pause this category", "このカテゴリを一時停止")
+        case .pauseCategoryImpact: ("该分类中启用的订阅将暂停，配置会保留。", "Active subscriptions in this category will pause. Their settings are kept.", "このカテゴリの有効な購読を一時停止します。設定は保持されます。")
+        case .chooseSubscription: ("选择要启用的订阅", "Choose a subscription to activate", "有効にする購読を選択")
+        case .categoryPauseFailed: ("未能暂停此分类", "Could not pause this category", "このカテゴリを一時停止できませんでした")
         }
         return switch language {
         case .zhHans: words.0
@@ -81,7 +86,98 @@ enum SubscriptionCopy {
 struct SubscriptionSelection: Identifiable {
     let category: AppConfig.Category
     let subscription: AppConfig.Subscription?
+    var revision: Int? = nil
+    var previewsOnOpen = false
     var id: String { subscription?.id ?? "new-" + category.id }
+}
+
+struct CategorySubscriptionToggle: View {
+    private enum Intent {
+        case pause(revision: Int)
+        case choose(revision: Int, subscriptions: [AppConfig.Subscription])
+    }
+
+    let model: AppModel
+    let category: AppConfig.Category
+    let title: String
+    let subscriptions: [AppConfig.Subscription]
+    let enabled: Bool
+    let revision: Int
+    let openEditor: (SubscriptionSelection) -> Void
+    @State private var intent: Intent?
+    @State private var failure: BackendFailure?
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 3) {
+            Toggle(title, isOn: Binding(get: { enabled }, set: prepare))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .accessibilityLabel(title)
+                .accessibilityIdentifier("category-toggle-\(category.id)")
+                .disabled(model.busy)
+            if let failure {
+                Text(failure == .conflict ? model.text(.conflict) : label(.categoryPauseFailed))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .confirmationDialog(
+            dialogTitle, isPresented: Binding(
+                get: { intent != nil }, set: { if !$0 { intent = nil } }
+            ), titleVisibility: .visible, presenting: intent
+        ) { action in
+            switch action {
+            case .pause(let revision):
+                Button(label(.pauseCategory), role: .destructive) {
+                    Task { await pause(revision) }
+                }
+            case .choose(let revision, let options):
+                ForEach(options) { subscription in
+                    Button(subscription.name ?? subscription.id) {
+                        preview(subscription, revision: revision)
+                    }
+                }
+            }
+            Button(label(.dismiss), role: .cancel) {}
+        } message: { action in
+            if case .pause = action {
+                Text(label(.pauseCategoryImpact))
+            }
+        }
+    }
+
+    private var dialogTitle: String {
+        if case .pause = intent { return label(.pauseCategory) }
+        return label(.chooseSubscription)
+    }
+
+    private func prepare(_ on: Bool) {
+        guard on != enabled, !model.busy else { return }
+        failure = nil
+        if !on {
+            intent = .pause(revision: revision)
+        } else if subscriptions.count > 1 {
+            intent = .choose(revision: revision, subscriptions: subscriptions)
+        } else {
+            preview(subscriptions.first, revision: revision)
+        }
+    }
+
+    private func preview(_ subscription: AppConfig.Subscription?, revision: Int) {
+        openEditor(SubscriptionSelection(
+            category: category, subscription: subscription, revision: revision, previewsOnOpen: true
+        ))
+    }
+
+    private func pause(_ revision: Int) async {
+        do {
+            try await model.pauseCategory(category.id, revision: revision)
+        } catch {
+            failure = (error as? BackendFailure) ?? .rejected
+        }
+    }
+
+    private func label(_ copy: SubscriptionCopy) -> String { copy.text(model.uiLanguage) }
 }
 
 struct SubscriptionDraft {
@@ -160,7 +256,7 @@ struct SubscriptionEditor: View {
         self.model = model
         self.selection = selection
         _draft = State(initialValue: SubscriptionDraft(selection, defaultTimezone: model.config?.timezone ?? "Asia/Tokyo"))
-        _revision = State(initialValue: model.configRevision)
+        _revision = State(initialValue: selection.revision ?? model.configRevision)
     }
 
     private func label(_ key: SubscriptionCopy) -> String { key.text(model.uiLanguage) }
@@ -240,6 +336,9 @@ struct SubscriptionEditor: View {
         }
         .disabled(busy)
         .frame(minWidth: 590, minHeight: 560)
+        .task {
+            if selection.previewsOnOpen { await run(save: false, enable: false) }
+        }
     }
 
     private func blocker(_ code: String) -> String {

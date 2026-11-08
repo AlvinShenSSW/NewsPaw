@@ -179,9 +179,11 @@ struct SettingsWindow: View {
     }
 
     private func subscriptions(_ config: AppConfig) -> some View {
-        VStack(alignment: .leading, spacing: 17) {
+        let revision = model.configRevision
+        return VStack(alignment: .leading, spacing: 17) {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 305), spacing: 11)], spacing: 11) {
                 ForEach(config.categories) { category in
+                    let entries = config.subscriptions.filter { $0.categoryId == category.id }
                     let time = config.displaySubscription(for: category.id)
                     let enabled = time?.enabled == true
                     HStack(alignment: .center, spacing: 11) {
@@ -200,17 +202,22 @@ struct SettingsWindow: View {
                         }
                         .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 5)
-                        Text(model.text(enabled ? .enabled : .disabled))
-                            .font(.caption)
-                            .foregroundStyle(enabled ? Color.accentColor : Color.secondary)
+                        CategorySubscriptionToggle(
+                            model: model, category: category, title: categoryTitle(category),
+                            subscriptions: entries, enabled: enabled, revision: revision
+                        ) { subscriptionEditor = $0 }
                         Menu {
-                            ForEach(config.subscriptions.filter { $0.categoryId == category.id }) { subscription in
+                            ForEach(entries) { subscription in
                                 Button(subscription.name ?? categoryTitle(category)) {
-                                    subscriptionEditor = SubscriptionSelection(category: category, subscription: subscription)
+                                    subscriptionEditor = SubscriptionSelection(
+                                        category: category, subscription: subscription, revision: revision
+                                    )
                                 }
                             }
                             Button(SubscriptionCopy.new.text(model.uiLanguage)) {
-                                subscriptionEditor = SubscriptionSelection(category: category, subscription: nil)
+                                subscriptionEditor = SubscriptionSelection(
+                                    category: category, subscription: nil, revision: revision
+                                )
                             }
                         } label: {
                             Image(systemName: "slider.horizontal.3")
@@ -225,7 +232,7 @@ struct SettingsWindow: View {
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(enabled ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: 1)
                     }
-                    .accessibilityElement(children: .combine)
+                    .accessibilityElement(children: .contain)
                 }
             }
             SourceWorkspace(model: model, sources: config.sources)

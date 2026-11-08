@@ -102,6 +102,7 @@ OPERATIONS = {
     "targets.delete_bot": ({"bot_id", "revision"}, set()),
     "subscriptions.preview": ({"draft", "revision"}, set()),
     "subscriptions.save": ({"draft", "revision"}, {"enable"}),
+    "subscriptions.pause_category": ({"category_id", "revision"}, set()),
     "sources.catalog": (set(), set()),
     "sources.list": (set(), set()),
     "sources.discover": ({"url"}, set()),
@@ -426,6 +427,8 @@ class ControlServer:
             return await self.subscriptions.save(
                 data["draft"], data["revision"], enable=data.get("enable", False)
             )
+        if op == "subscriptions.pause_category":
+            return await self.subscriptions.pause_category(data["category_id"], data["revision"])
         if op == "sources.catalog":
             return catalog()
         if op == "sources.list":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 import httpx
@@ -68,6 +69,50 @@ def _user(value):
     ):
         raise XReadError("malformed_response", units=1)
     return dict(remote_id=value["id"], handle=value["username"], protected=value["protected"])
+
+
+def _post(data):
+    if not isinstance(data, dict):
+        raise ValueError()
+    identity, author = remote_id(data.get("id")), remote_id(data.get("author_id"))
+    raw_date, text = data.get("created_at"), data.get("text")
+    sensitive, withheld = data.get("possibly_sensitive"), data.get("withheld")
+    references = data.get("referenced_posts", [])
+    if (
+        not isinstance(raw_date, str)
+        or not 1 <= len(raw_date) <= 64
+        or not isinstance(text, str)
+        or not 1 <= len(text) <= 32_768
+        or ("possibly_sensitive" in data and type(sensitive) is not bool)
+        or ("withheld" in data and not isinstance(withheld, dict))
+        or not isinstance(references, list)
+        or len(references) > 5
+    ):
+        raise ValueError()
+    published = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+    if published.tzinfo is None or published.utcoffset() is None:
+        raise ValueError()
+    normalized = []
+    for ref in references:
+        if not isinstance(ref, dict) or ref.get("type") not in {
+            "quoted",
+            "replied_to",
+            "retweeted",
+        }:
+            raise ValueError()
+        item = {"type": ref["type"], "id": remote_id(ref.get("id"))}
+        if item["id"] == identity or item in normalized:
+            raise ValueError()
+        normalized.append(item)
+    return dict(
+        id=identity,
+        author_id=author,
+        published_at=published.astimezone(UTC).isoformat(),
+        text=text,
+        references=normalized,
+        sensitive=sensitive,
+        withheld=withheld is not None,
+    )
 
 
 class XClient:
@@ -193,3 +238,53 @@ class XClient:
         except XReadError:
             raise XReadError("partial_response", units=count) from None
         return (members, next_token), count
+
+    async def timeline(
+        self, kind, identity, size, *, cursor=None, token=None, start=None, end=None
+    ):
+        if kind not in {"account", "list"} or type(size) is not int:
+            raise XReadError("invalid_timeline", units=0)
+        params = {
+            "max_results": size,
+            "post.fields": "author_id,created_at,text,referenced_posts,possibly_sensitive,withheld",
+        }
+        identity = remote_id(identity)
+        if kind == "account":
+            if not 5 <= size <= 100 or not end or (cursor is None) == (start is None):
+                raise XReadError("invalid_timeline", units=0)
+            params["end_time"] = end
+            if cursor is not None:
+                params["since_id"] = remote_id(cursor)
+            else:
+                params["start_time"] = start
+            path = f"/2/users/{identity}/tweets"
+        else:
+            if not 1 <= size <= 100 or any(v is not None for v in (cursor, start, end)):
+                raise XReadError("invalid_timeline", units=0)
+            path = f"/2/lists/{identity}/tweets"
+        if token is not None:
+            if not isinstance(token, str) or not _PAGE.fullmatch(token):
+                raise XReadError("invalid_page_token", units=0)
+            params["pagination_token"] = token
+        body = await self._get(path, params)
+        data, meta = body.get("data", []), body.get("meta")
+        count = max(1, len(data)) if isinstance(data, list) else 1
+        if (
+            not isinstance(data, list)
+            or body.get("errors")
+            or len(data) > size
+            or not isinstance(meta, dict)
+            or type(meta.get("result_count")) is not int
+            or meta["result_count"] != len(data)
+        ):
+            raise XReadError("partial_response", units=count)
+        next_token = meta.get("next_token")
+        if next_token is not None and (
+            not isinstance(next_token, str) or not _PAGE.fullmatch(next_token)
+        ):
+            raise XReadError("partial_response", units=count)
+        try:
+            rows = [_post(item) for item in data]
+        except (ValueError, OverflowError):
+            raise XReadError("partial_response", units=count) from None
+        return (rows, next_token), count

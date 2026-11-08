@@ -462,16 +462,25 @@ def test_conflict_keeps_both_cited_claims_in_target_language(locale, note):
 
 
 async def test_realtime_editorial_does_not_freeze_budget_dispatch_clock(environment, monkeypatch):
+    from test_model_runner import NOW
+
+    from newspaw import editorial
+
     store, sub, attempts = environment
     editor, _ = service(store)
     prepare(editor, sub, attempts)
     seen = []
     advance = editor.runner.advance
+    editorial_clock = editorial._now
 
     async def capture(*args, **kwargs):
         seen.append(kwargs["now"])
         return await advance(*args, **kwargs)
 
+    def fixture_clock(value=None):
+        return editorial_clock(NOW if value is None else value)
+
+    monkeypatch.setattr(editorial, "_now", fixture_clock)
     monkeypatch.setattr(editor.runner, "advance", capture)
     await editor.advance("edition")
     assert seen == [None]

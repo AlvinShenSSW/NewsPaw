@@ -30,3 +30,22 @@ import Testing
         _ = try await client.request(Data(#"{"op":"service.status"}"#.utf8))
     }
 }
+
+@Test func categorySchedulePrefersTheFirstEnabledSubscription() throws {
+    let data = Data("""
+        {"ui_locale":"en","news_output_locale":"ja","categories":[],"sources":[],"accounts":[],
+         "model_profiles":[],"subscriptions":[
+          {"id":"early","category_id":"world","timezone":"UTC","enabled":false,"times":["06:00"]},
+          {"id":"active","category_id":"world","timezone":"Asia/Tokyo","enabled":true,"times":["08:00"]},
+          {"id":"later","category_id":"world","timezone":"UTC","enabled":true,"times":["11:00"]},
+          {"id":"paused","category_id":"ai","timezone":"UTC","enabled":false,"times":["09:00"]}
+         ]}
+        """.utf8)
+    let config: AppConfig = try BackendRPC.decode(data)
+    let schedule = try #require(config.displaySubscription(for: "world"))
+    #expect(schedule.enabled)
+    #expect(schedule.times == ["08:00"])
+    #expect(schedule.timezone == "Asia/Tokyo")
+    #expect(config.displaySubscription(for: "ai")?.id == "paused")
+    #expect(config.displaySubscription(for: "japan") == nil)
+}

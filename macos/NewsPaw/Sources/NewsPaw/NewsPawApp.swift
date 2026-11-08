@@ -178,8 +178,8 @@ struct SettingsWindow: View {
         VStack(alignment: .leading, spacing: 17) {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 305), spacing: 11)], spacing: 11) {
                 ForEach(config.categories) { category in
-                    let enabled = config.subscriptions.contains { $0.categoryId == category.id && $0.enabled }
-                    let time = config.subscriptions.first { $0.categoryId == category.id }
+                    let time = config.displaySubscription(for: category.id)
+                    let enabled = time?.enabled == true
                     HStack(alignment: .center, spacing: 11) {
                         CategorySymbol(id: category.id)
                             .foregroundStyle(enabled ? Color.accentColor : Color.secondary)

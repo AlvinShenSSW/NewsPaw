@@ -11,6 +11,7 @@ let standard = FileManager.default.homeDirectoryForCurrentUser
 let arguments: [String]
 switch invocation {
 case []:
+    setenv("NEWSPAW_BUNDLED_RESIDENT", "1", 1)
     arguments = ["-m", "newspaw", "control", "--data-dir", standard]
 case ["--self-check"]:
     arguments = ["-m", "newspaw.bundle_runtime", "self-check"]

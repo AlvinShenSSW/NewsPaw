@@ -7,6 +7,7 @@ import ctypes
 import errno
 import fcntl
 import json
+import logging
 import os
 import socket
 import stat
@@ -14,6 +15,7 @@ import struct
 import sys
 from contextlib import suppress
 from dataclasses import asdict
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from .budget import BudgetError, BudgetLedger
@@ -25,6 +27,7 @@ from .media.newspaper import MacOCR
 from .media.paper_service import Newspapers
 from .media.source_images import AssetStore, SourceImages
 from .media.speech_provider import TranscriptionProvider
+from .operations import Operations
 from .pipeline import Pipeline
 from .providers import ProbeService, ProfileRegistry, ProviderError
 from .scheduler import Scheduler
@@ -44,6 +47,13 @@ from .x.video import Videos
 
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
+    "ops.diagnostics": (set(), set()),
+    "ops.support_snapshot": (set(), set()),
+    "ops.export_settings": (set(), set()),
+    "ops.preview_import": ({"portable"}, set()),
+    "ops.apply_import": ({"portable", "digest", "revision"}, set()),
+    "ops.verify_backup": ({"name"}, set()),
+    "ops.cleanup": (set(), {"apply", "limit"}),
     "service.status": (set(), set()),
     "service.stop": (set(), set()),
     "schedule.status": (set(), {"limit"}),
@@ -188,7 +198,7 @@ def acquire_control_lock(directory):
 
 
 class ControlServer:
-    def __init__(self, directory: Path, credentials):
+    def __init__(self, directory: Path, credentials, *, log_directory=None):
         self.directory = Path(directory).expanduser().absolute()
         self.path = self.directory / "control.sock"
         self.credentials = credentials
@@ -225,6 +235,19 @@ class ControlServer:
         self.outbox.alert_guard = self.alerts.guard
         self.scheduler.alerts = self.alerts
         self.commands = Commands(self.outbox, media=self.media)
+        self.operations = Operations(
+            credentials.store,
+            self.directory,
+            process_status=lambda: (
+                "stopping"
+                if self._stop_requested.is_set()
+                else "running"
+                if self._server is not None
+                else "stopped"
+            ),
+            purge_x=self.x_posts.purge_expired,
+            log_directory=log_directory,
+        )
         self._server = None
         self._lock_fd = None
         self._handlers = set()
@@ -319,6 +342,22 @@ class ControlServer:
         if self._stop_requested.is_set():
             raise CredentialError("service_stopping")
         manager, store = self.credentials, self.credentials.store
+        if op == "ops.diagnostics":
+            return self.operations.diagnostics()
+        if op == "ops.support_snapshot":
+            return self.operations.support_snapshot()
+        if op == "ops.export_settings":
+            return self.operations.export_settings()
+        if op == "ops.preview_import":
+            return self.operations.preview_import(data["portable"])
+        if op == "ops.apply_import":
+            return self.operations.apply_import(data["portable"], data["digest"], data["revision"])
+        if op == "ops.verify_backup":
+            return await asyncio.to_thread(self.operations.verify_backup, data["name"])
+        if op == "ops.cleanup":
+            return self.operations.cleanup(
+                apply=data.get("apply", False), limit=data.get("limit", 100)
+            )
         if op == "media.policy":
             return self.media.policy()
         if op == "media.configure":
@@ -524,7 +563,10 @@ class ControlServer:
             return ProfileRegistry(store).status(data["profile_id"])
         if op == "models.probe":
             return await self.probes.probe(
-                data["probe_id"], data["profile_id"], data["capability"], data["hold_units"],
+                data["probe_id"],
+                data["profile_id"],
+                data["capability"],
+                data["hold_units"],
                 revision=data.get("revision"),
             )
         if op in {"budget.get", "budget.save"}:
@@ -596,15 +638,40 @@ class ControlServer:
 
 async def serve_control(directory):
     from .credentials import CredentialManager, MacKeychain
+    from .service import _prepare_logs, service_log_directory
     from .store import Store
 
     directory = Path(directory).expanduser().absolute()
     lock_fd = acquire_control_lock(directory)
     store = None
     server = None
+    handler = None
+    log_directory = service_log_directory(Path.home().resolve())
     try:
+        if os.getenv("NEWSPAW_BUNDLED_RESIDENT") == "1":
+            try:
+                if log_directory.is_symlink():
+                    raise OSError("unsafe_log_directory")
+                _prepare_logs(log_directory)
+                handler = RotatingFileHandler(
+                    log_directory / "stderr.log",
+                    maxBytes=1_048_576,
+                    backupCount=3,
+                    encoding="utf-8",
+                )
+                handler.setLevel(logging.WARNING)
+                handler.setFormatter(
+                    logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+                )
+                logging.getLogger().addHandler(handler)
+            except OSError:
+                pass
         store = Store(directory / "newspaw.sqlite3")
-        server = ControlServer(directory, CredentialManager(store, MacKeychain()))
+        server = ControlServer(
+            directory,
+            CredentialManager(store, MacKeychain()),
+            log_directory=log_directory,
+        )
         server._lock_fd = lock_fd
         lock_fd = None
         await server.start()
@@ -614,5 +681,8 @@ async def serve_control(directory):
             await server.close()
         if store is not None:
             store.close()
+        if handler is not None:
+            logging.getLogger().removeHandler(handler)
+            handler.close()
         if lock_fd is not None:
             os.close(lock_fd)

@@ -255,6 +255,7 @@ struct SettingsWindow: View {
         VStack(alignment: .leading, spacing: 16) {
             BotWorkspace(model: model)
             RuntimePolicyWorkspace(model: model)
+            OperationsWorkspace(model: model)
             VStack(alignment: .leading, spacing: 11) {
                 ConnectionBadge(model: model)
                 Text(model.text(.lifecycleNote)).foregroundStyle(.secondary)

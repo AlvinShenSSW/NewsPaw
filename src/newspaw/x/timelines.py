@@ -829,15 +829,18 @@ class Timelines:
             for identity, remote, published, text, refs, account, observed in rows
         ]
 
-    def purge_expired(self, *, limit=100):
-        if type(limit) is not int or not 1 <= limit <= 1000:
+    def purge_expired(self, *, limit=100, apply=True):
+        if type(limit) is not int or not 1 <= limit <= 1000 or type(apply) is not bool:
             raise TimelineError("invalid_limit")
+        candidates = """SELECT rowid FROM x_posts WHERE body IS NOT NULL AND published_at<?
+                        ORDER BY published_at LIMIT ?"""
+        args = ((self.clock() - _AGE).isoformat(), limit)
+        if not apply:
+            count = self.db.execute(f"SELECT count(*) FROM ({candidates})", args).fetchone()[0]
+            return {"candidates": count}
         with self.store._write():
             count = self.db.execute(
-                """UPDATE x_posts SET body=NULL,refs='[]' WHERE rowid IN (
-                   SELECT rowid FROM x_posts WHERE body IS NOT NULL AND published_at<?
-                   ORDER BY published_at LIMIT ?)""",
-                ((self.clock() - _AGE).isoformat(), limit),
+                f"UPDATE x_posts SET body=NULL,refs='[]' WHERE rowid IN ({candidates})", args
             ).rowcount
         return {"purged": count}
 

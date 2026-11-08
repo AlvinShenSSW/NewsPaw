@@ -6,6 +6,7 @@ enum BackendFailure: Error, Equatable {
     case incompatible
     case invalidReply
     case conflict
+    case freshInstanceRequired
     case rejected
 }
 
@@ -51,8 +52,10 @@ struct BackendRPC {
         if !ok.boolValue {
             switch object["error"] as? String {
             case "unknown_operation": throw BackendFailure.incompatible
-            case "config_conflict", "binding_changed", "alert_policy_changed", "video_policy_changed":
+            case "config_conflict", "binding_changed", "alert_policy_changed", "video_policy_changed",
+                 "configuration_changed", "preview_changed":
                 throw BackendFailure.conflict
+            case "restore_requires_fresh_instance": throw BackendFailure.freshInstanceRequired
             default: throw BackendFailure.rejected
             }
         }
@@ -296,7 +299,7 @@ final class AppModel {
         var body = fields
         body["op"] = operation
         let data = try JSONSerialization.data(withJSONObject: body)
-        let extended = ["sources.discover", "sources.preview", "models.probe", "bots.verify", "bots.test_send", "x.accounts.verify", "x.lists.refresh"].contains(operation)
+        let extended = ["sources.discover", "sources.preview", "models.probe", "bots.verify", "bots.test_send", "x.accounts.verify", "x.lists.refresh", "ops.verify_backup"].contains(operation)
         let timeout = operation == "x.video.inspect" ? 155_000 : extended ? 35_000 : nil
         let socket = timeout.map { LocalSocket(path: rpc.socket.path, timeoutMilliseconds: $0) } ?? rpc.socket
         return try await BackendRPC(socket: socket).send(data)

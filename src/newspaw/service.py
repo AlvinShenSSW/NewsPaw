@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import plistlib
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,10 @@ class ServiceError(RuntimeError):
     """An installation or launchctl operation could not be completed."""
 
 
+def service_log_directory(home_dir: Path) -> Path:
+    return home_dir / "Library" / "Logs" / "NewsPaw"
+
+
 def build_plist(project_dir: Path, config_path: Path, home_dir: Path) -> dict:
     """Build launchd configuration without reading files or running commands.
 
@@ -30,7 +35,7 @@ def build_plist(project_dir: Path, config_path: Path, home_dir: Path) -> dict:
     """
     if not all(p.is_absolute() for p in (project_dir, config_path, home_dir)):
         raise ValueError("Service paths must be absolute.")
-    log_dir = home_dir / "Library" / "Logs" / "NewsPaw"
+    log_dir = service_log_directory(home_dir)
     return {
         "Label": LABEL,
         "ProgramArguments": [
@@ -117,9 +122,12 @@ def _prepare_logs(log_dir: Path) -> None:
     for filename in ("stdout.log", "stderr.log"):
         log_path = log_dir / filename
         descriptor = os.open(
-            log_path, os.O_CREAT | os.O_APPEND | os.O_WRONLY | os.O_NOFOLLOW, 0o600
+            log_path, os.O_CREAT | os.O_APPEND | os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600
         )
         try:
+            info = os.fstat(descriptor)
+            if info.st_uid != os.geteuid() or not stat.S_ISREG(info.st_mode):
+                raise OSError("unsafe_service_log")
             os.fchmod(descriptor, 0o600)
         finally:
             os.close(descriptor)
@@ -135,7 +143,7 @@ def _install(
         raise ServiceError("Configuration file does not exist. Complete local setup first.")
     contents = plistlib.dumps(build_plist(project_dir, config_path, home_dir))
     plist_path.parent.mkdir(parents=True, exist_ok=True)
-    _prepare_logs(home_dir / "Library" / "Logs" / "NewsPaw")
+    _prepare_logs(service_log_directory(home_dir))
     target = f"{domain}/{LABEL}"
     previous = plist_path.read_bytes() if plist_path.exists() else None
     was_loaded = _inspect(target) is not None

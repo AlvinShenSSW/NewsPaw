@@ -45,9 +45,9 @@ private final class FixtureSocket {
         let listener = fd
         return Task.detached {
             var requests: [String] = []
-            var delayed: Task<Void, Error>?
+            var pending: (client: Int32, reply: String)?
             defer {
-                delayed?.cancel()
+                if let pending { Darwin.close(pending.client) }
                 heldReply?.received.finish()
             }
             for (index, reply) in replies.enumerated() {
@@ -55,8 +55,7 @@ private final class FixtureSocket {
                 guard Darwin.poll(&ready, 1, 2_000) == 1 else { throw SocketFailure.timeout }
                 let client = Darwin.accept(listener, nil, nil)
                 guard client >= 0 else { throw SocketFailure.disconnected }
-                var handedOff = false
-                defer { if !handedOff { Darwin.close(client) } }
+                defer { if pending?.client != client { Darwin.close(client) } }
                 var noSignal: Int32 = 1
                 _ = setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
                 var receiveTimeout = timeval(tv_sec: 2, tv_usec: 0)
@@ -76,14 +75,8 @@ private final class FixtureSocket {
                 }
                 requests.append(String(decoding: request.dropLast(), as: UTF8.self))
                 if let heldReply, heldReply.index == index {
-                    handedOff = true
-                    delayed = Task {
-                        defer { Darwin.close(client) }
-                        heldReply.received.finish()
-                        for await _ in heldReply.release {}
-                        try Task.checkCancellation()
-                        try Self.send(reply, to: client)
-                    }
+                    pending = (client, reply)
+                    heldReply.received.finish()
                     continue
                 }
                 try Self.send(reply, to: client)
@@ -91,7 +84,10 @@ private final class FixtureSocket {
                     try await Task.sleep(for: .milliseconds(holdMilliseconds))
                 }
             }
-            try await delayed?.value
+            if let pending, let heldReply {
+                for await _ in heldReply.release {}
+                try Self.send(pending.reply, to: pending.client)
+            }
             return requests
         }
     }

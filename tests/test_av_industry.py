@@ -115,8 +115,21 @@ async def test_av_parser_uses_exact_adult_source_no_media_and_respects_hold(tmp_
             assert "Do not collect this body" not in "\n".join(store._db.iterdump())
 
 
-@pytest.mark.parametrize("locale", ["zh-Hans", "en", "ja"])
-async def test_av_brief_dispatch_uses_only_adult_provider_and_controlled_copy(tmp_path, locale):
+@pytest.mark.parametrize(
+    ("locale", "scenario"),
+    [
+        ("zh-Hans", "ok"),
+        ("en", "ok"),
+        ("ja", "ok"),
+        ("en", "backup"),
+        ("en", "refusal"),
+        ("en", "unknown"),
+        ("en", "all_failed"),
+    ],
+)
+async def test_av_brief_dispatch_uses_only_adult_provider_and_controlled_copy(
+    tmp_path, locale, scenario
+):
     import json
     from contextlib import closing
 
@@ -148,7 +161,22 @@ async def test_av_brief_dispatch_uses_only_adult_provider_and_controlled_copy(tm
         return httpx.Response(200, headers={"Content-Type": "text/html"}, text=html)
 
     def model(request):
-        assert request.url.host == "api.deepseek.com"
+        host = request.url.host
+        assert host in {"api.deepseek.com", "api.x.ai"}
+        if scenario in {"backup", "all_failed"} and (
+            host == "api.deepseek.com" or scenario == "all_failed"
+        ):
+            return httpx.Response(401, json={"error": {"code": "fixture"}})
+        if scenario == "refusal":
+            return httpx.Response(
+                200,
+                json={
+                    **response(),
+                    "output": [{"type": "message", "content": [{"type": "refusal"}]}],
+                },
+            )
+        if scenario == "unknown":
+            raise httpx.ReadTimeout("fixture response lost")
         body = json.loads(request.content)
         inputs = json.loads(body["input"][0]["content"][0]["text"])
         evidence = inputs["evidence"][0]
@@ -193,9 +221,24 @@ async def test_av_brief_dispatch_uses_only_adult_provider_and_controlled_copy(tm
             ),
         )
         job = pipeline.create(sub["id"], "daily", holds=holds, task_limit=500, now=NOW)["job_id"]
-        for _ in range(4):
+        for _ in range(6):
             result = await pipeline.advance(job, now=NOW)
-        assert result["stage"] == "awaiting_delivery" and len(calls) == 1, result
+        hosts = [call.url.host for call in calls]
+        if scenario in {"refusal", "unknown", "all_failed"}:
+            expected = {
+                "refusal": "refused",
+                "unknown": "outcome_unknown",
+                "all_failed": "blocked",
+            }
+            assert result["status"] == expected[scenario]
+            assert hosts == ["api.deepseek.com"] + (
+                ["api.x.ai"] if scenario == "all_failed" else []
+            )
+            with pytest.raises(PipelineError, match="edition_not_ready"):
+                pipeline.delivery_input(job)
+            return
+        assert result["stage"] == "awaiting_delivery", result
+        assert hosts == ["api.deepseek.com"] + (["api.x.ai"] if scenario == "backup" else [])
         _, text, media = pipeline.delivery_input(job)
         assert detail in text and excerpt not in text and media["style"] == "text"
         if locale == "en":
@@ -320,3 +363,112 @@ async def test_old_deduplicated_alias_denies_both_model_submit_and_delivery(
         with pytest.raises(PipelineError, match="edition_changed"):
             pipeline.delivery_scope(job)
     assert len(model_calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("scenario", "status", "gap", "terminal"),
+    [
+        ("empty", "no_eligible", "no_matching_candidates", "no_news"),
+        ("stale", "stale", "outside_time_window", "no_news"),
+        ("missing", "no_eligible", "missing_publication_date", "no_news"),
+        ("naive", "no_eligible", "invalid_publication_date", "no_news"),
+        ("conflict", "no_eligible", "conflicting_publication_date", "no_news"),
+        ("future", "no_eligible", "future_publication_date", "no_news"),
+        ("unavailable", "failed", "http_error", "collection_failed"),
+        ("wrong_identity", "failed", "article_identity_mismatch", "collection_failed"),
+    ],
+)
+async def test_av_collection_distinguishes_empty_stale_and_detail_failure(
+    tmp_path, scenario, status, gap, terminal
+):
+    from contextlib import closing
+    from datetime import timedelta
+
+    from test_credentials import FakeKeychain
+    from test_editorial import service
+
+    from newspaw.connectors.av import AV_ORIGIN, AVCollector
+    from newspaw.credentials import CredentialManager
+    from newspaw.pipeline import Pipeline
+    from newspaw.providers import ProfileRegistry
+    from newspaw.source_manager import SourceManager
+    from newspaw.store import Store
+
+    url = AV_ORIGIN + "?p=123"
+    headers = {"Content-Type": "text/html"}
+
+    def website(request):
+        if str(request.url) == AV_ORIGIN:
+            if scenario == "empty":
+                return httpx.Response(200, headers=headers, text="<html></html>")
+            date = (
+                f'<div class="post-meta"><time itemprop="datePublished" datetime="{NOW.isoformat()}"></time></div>'
+                if scenario == "conflict"
+                else ""
+            )
+            return httpx.Response(
+                200,
+                headers=headers,
+                text=f'<article id="post-123"><h2 class="post-title"><a href="{url}">FANZA の発売情報</a></h2>{date}</article>',
+            )
+        assert str(request.url) == url
+        if scenario == "unavailable":
+            return httpx.Response(503)
+        dates = {
+            "stale": (NOW - timedelta(days=2)).isoformat(),
+            "conflict": (NOW - timedelta(hours=1)).isoformat(),
+            "naive": NOW.replace(tzinfo=None).isoformat(),
+            "future": (NOW + timedelta(days=1)).isoformat(),
+        }
+        published = (
+            f'<meta property="article:published_time" content="{dates[scenario]}">'
+            if scenario in dates
+            else ""
+        )
+        canonical = AV_ORIGIN + "?p=456" if scenario == "wrong_identity" else url
+        return httpx.Response(
+            200, headers=headers, text=f'<link rel="canonical" href="{canonical}">{published}'
+        )
+
+    def client():
+        return httpx.AsyncClient(transport=httpx.MockTransport(website))
+
+    with closing(Store(tmp_path / "state.db")) as store:
+        config, sub = configured("adult")
+        config["sources"][0].update(url=AV_ORIGIN, kind="web")
+        store.save_config(config, expected_revision=1)
+        profiles = ProfileRegistry(store)
+        holds = {"adult_primary": 100, "adult_backup": 100}
+        for profile in holds:
+            profiles.begin("verify." + profile, profile, "text", 1)
+            profiles.finish("verify." + profile, {"status": "verified"})
+        editor, calls = service(store)
+        pipeline = Pipeline(
+            store,
+            editor.runner.backend,
+            runner=editor.runner,
+            av_factory=lambda evidence: AVCollector(evidence, client=client()),
+        )
+        job = pipeline.create(sub["id"], "check", holds=holds, now=NOW)["job_id"]
+        for _ in range(3):
+            result = await pipeline.advance(job, now=NOW)
+        assert result["stage"] == terminal
+        assert not calls
+
+        revision, document = store.load_config()
+        source = document["sources"][0]
+        source["enabled"] = False
+        store.save_config(document, expected_revision=revision)
+        manager = SourceManager(CredentialManager(store, FakeKeychain()), client_factory=client)
+        preview = await manager.preview(source["id"], now=NOW)
+        attempt = preview["attempt"]
+        assert attempt["evidence_scope"] == "av_industry"
+        assert attempt["status"] == status and gap in attempt["coverage_gaps"]
+        assert (attempt["error_kind"] is not None) == (status == "failed")
+        assert not attempt["accepted_count"]
+        if scenario == "stale":
+            assert preview["preview_ready"] and not preview["entries"][0]["eligible"]
+            await manager.save(dict(source, enabled=True), store.config_revision())
+            assert manager.list()[0]["source"]["enabled"]
+        else:
+            assert not preview["entries"] and not preview["preview_ready"]

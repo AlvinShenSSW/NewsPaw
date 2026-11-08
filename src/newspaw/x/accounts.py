@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 
 import httpx
 
-from ..app_config import new_id
+from ..app_config import X_DEFAULT_POST_TYPES, in_x_aggregate, new_id, x_post_types
 from ..budget import BudgetError, BudgetLedger
 from ..credentials import CredentialError
 from .client import XClient, XReadError, handle, list_id
@@ -249,6 +249,57 @@ class XDirectory:
 
         return await self.credentials._submit(operation)
 
+    def partition_impact(self, identity):
+        revision, config = self.store.load_config()
+        account = _account(config, identity)
+        partition, sub_id = account["partition"], account["subscription_id"]
+        sub = next((item for item in config["subscriptions"] if item["id"] == sub_id), None)
+        aggregate = bool(sub and in_x_aggregate(account, sub))
+        special = bool(sub and account["priority"] == "special")
+        special_bots = (
+            account["bot_ids"]
+            if account["bot_ids"] is not None
+            else (sub["bot_ids"] if sub else [])
+        )
+        bodies = self.db.execute(
+            """SELECT count(*) FROM x_posts
+               WHERE partition=? AND account_id=? AND body IS NOT NULL AND tombstone=0""",
+            (partition, identity),
+        ).fetchone()[0]
+        pending = self.db.execute(
+            """SELECT count(*) FROM pipeline_jobs j
+               LEFT JOIN delivery_manifests d ON d.job_id=j.id
+               WHERE j.partition=? AND j.cancelled=0
+                 AND (j.stage IN ('collecting','editing','preparing_media')
+                      OR (j.stage='awaiting_delivery' AND d.stopped_reason IS NULL AND
+                          (d.job_id IS NULL OR EXISTS(
+                            SELECT 1 FROM delivery_targets t,json_each(t.parts) part
+                            WHERE t.job_id=j.id AND t.selected=1 AND t.reason IS NULL
+                              AND json_extract(part.value,'$.state')
+                                  IN ('pending','inflight','outcome_unknown')
+                          ))))
+                 AND (j.account_key=? OR (j.account_key='' AND EXISTS(
+                     SELECT 1 FROM json_each(j.payload,'$.scopes') scope
+                     WHERE json_extract(scope.value,'$.x_digest.account')=?
+                 )))""",
+            (partition, identity, identity),
+        ).fetchone()[0]
+        return dict(
+            revision=revision,
+            account_id=identity,
+            partition=partition,
+            subscription_id=sub_id,
+            aggregate=aggregate,
+            special=special,
+            aggregate_bot_ids=sorted(sub["bot_ids"]) if aggregate else [],
+            special_bot_ids=sorted(special_bots) if special else [],
+            clears_special_overrides=account["priority"] == "special"
+            and any(account[name] is not None for name in ("bot_ids", "times", "style")),
+            clears_post_types="post_types" in account,
+            cached_posts=bodies,
+            pending_jobs=pending,
+        )
+
     async def classify(self, identity, partition, revision):
         return await self.targets.account_partition(identity, partition, revision)
 
@@ -260,7 +311,15 @@ class XDirectory:
         return await self.targets._mutate(revision, change)
 
     async def set_route(
-        self, identity, subscription_id, priority, revision, *, include_in_aggregate=None
+        self,
+        identity,
+        subscription_id,
+        priority,
+        revision,
+        *,
+        include_in_aggregate=None,
+        post_types=None,
+        overrides=None,
     ):
         if priority not in ("normal", "special"):
             raise XError("invalid_priority")
@@ -269,6 +328,18 @@ class XDirectory:
             or (include_in_aggregate and (priority != "special" or subscription_id is None))
         ):
             raise XError("invalid_aggregate_membership")
+        if overrides is not None and (
+            not isinstance(overrides, dict)
+            or overrides.keys() != {"times", "bot_ids", "style"}
+            or priority != "special"
+            or subscription_id is None
+        ):
+            raise XError("invalid_account_overrides")
+        if post_types is not None:
+            try:
+                post_types = x_post_types(post_types)
+            except ValueError:
+                raise XError("invalid_post_types") from None
 
         def change(config):
             account = _account(config, identity)
@@ -289,6 +360,22 @@ class XDirectory:
                     account["include_in_aggregate"] = True
                 else:
                     account.pop("include_in_aggregate", None)
+            if post_types is not None:
+                if tuple(post_types) == X_DEFAULT_POST_TYPES:
+                    account.pop("post_types", None)
+                else:
+                    account["post_types"] = post_types
+            if overrides is not None:
+                bot_ids = overrides["bot_ids"]
+                account.update(
+                    times=overrides["times"],
+                    style=overrides["style"],
+                    bot_ids=(
+                        self.targets._targets(config, bot_ids, account["partition"])
+                        if bot_ids is not None
+                        else None
+                    ),
+                )
             account.update(subscription_id=subscription_id, priority=priority)
             if account != prior:
                 affected = {prior["subscription_id"], subscription_id} - {None}

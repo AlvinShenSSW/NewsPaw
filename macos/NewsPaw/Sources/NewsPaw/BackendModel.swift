@@ -295,7 +295,7 @@ final class AppModel {
         var body = fields
         body["op"] = operation
         let data = try JSONSerialization.data(withJSONObject: body)
-        let extended = ["sources.discover", "sources.preview", "models.probe", "bots.verify", "bots.test_send"].contains(operation)
+        let extended = ["sources.discover", "sources.preview", "models.probe", "bots.verify", "bots.test_send", "x.accounts.verify", "x.lists.refresh"].contains(operation)
         let socket = extended ? LocalSocket(path: rpc.socket.path, timeoutMilliseconds: 35_000) : rpc.socket
         return try await BackendRPC(socket: socket).send(data)
     }

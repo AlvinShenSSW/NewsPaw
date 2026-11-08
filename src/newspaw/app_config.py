@@ -19,10 +19,12 @@ SCHEMA_VERSION = 3
 STYLES = {"text", "source_image", "newspaper"}
 LOCALES = {"zh-Hans", "en", "ja"}
 PARTITIONS = {"normal", "adult"}
+X_POST_TYPES = ("original", "quoted", "replied_to", "retweeted")
+X_DEFAULT_POST_TYPES = X_POST_TYPES[:2]
 REGIONAL_CATEGORIES = {"japan", "australia", "china"}
 REGIONAL_FOCUS = {"domestic", "entertainment"}
 _OPTIONAL = {
-    "accounts": {"include_in_aggregate"},
+    "accounts": {"include_in_aggregate", "post_types"},
     "sources": {"focus"},
     "subscriptions": {"source_mode", "focus_weights"},
 }
@@ -109,6 +111,18 @@ def in_x_aggregate(account, subscription):
         and subscription["category_id"] in {"x", "x_adult"}
         and (account["priority"] == "normal" or account.get("include_in_aggregate", False))
     )
+
+
+def x_post_types(values):
+    if (
+        not isinstance(values, list)
+        or not values
+        or len(values) > len(X_POST_TYPES)
+        or any(not isinstance(value, str) or value not in X_POST_TYPES for value in values)
+        or len(values) != len(set(values))
+    ):
+        raise ValueError("Invalid X post types")
+    return [kind for kind in X_POST_TYPES if kind in values]
 
 
 def new_id(kind: str) -> str:
@@ -517,6 +531,8 @@ def _validate_config(config: dict) -> None:
             raise ValueError("Invalid stable X account ID")
         if account["priority"] not in {"normal", "special"}:
             raise ValueError("Invalid account priority")
+        if "post_types" in account:
+            x_post_types(account["post_types"])
         aggregate = account.get("include_in_aggregate", False)
         _boolean(aggregate)
         if aggregate and (

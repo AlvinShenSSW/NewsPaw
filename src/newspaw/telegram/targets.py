@@ -218,6 +218,7 @@ class TargetManager:
             account = _entry(config, "accounts", identity)
             if account["partition"] != partition:
                 account.pop("include_in_aggregate", None)
+                account.pop("post_types", None)
                 account.update(
                     partition=partition, subscription_id=None, bot_ids=[], times=None, style=None
                 )

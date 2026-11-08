@@ -177,7 +177,7 @@ struct SettingsWindow: View {
         } else if let config = model.config {
             switch page {
             case .subscriptions: subscriptions(config)
-            case .accounts: accounts(config)
+            case .accounts: XWorkspace(model: model)
             case .models: models(config)
             case .delivery, .language: EmptyView()
             }
@@ -244,31 +244,6 @@ struct SettingsWindow: View {
                 }
             }
             SourceWorkspace(model: model, sources: config.sources)
-        }
-    }
-
-    private func accounts(_ config: AppConfig) -> some View {
-        VStack(alignment: .leading, spacing: 15) {
-            if config.accounts.isEmpty {
-                statusCard(model.text(.noAccounts))
-            } else {
-                accountGroup(config, partition: "normal", title: .ordinary)
-                accountGroup(config, partition: "adult", title: .adult)
-                accountGroup(config, partition: nil, title: .unclassified)
-            }
-        }
-    }
-
-    @ViewBuilder private func accountGroup(_ config: AppConfig, partition: String?, title: Phrase) -> some View {
-        let entries = config.accounts.filter { $0.partition == partition }
-        if !entries.isEmpty {
-            sectionTitle(title)
-            VStack(spacing: 1) {
-                ForEach(entries) { account in
-                    line("@" + account.handle, status: account.priority == "special" ? .special : nil)
-                }
-            }
-            .background(cardBackground)
         }
     }
 

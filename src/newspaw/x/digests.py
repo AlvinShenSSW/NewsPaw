@@ -6,11 +6,10 @@ import hashlib
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from ..app_config import in_x_aggregate
+from ..app_config import X_DEFAULT_POST_TYPES, in_x_aggregate, x_post_types
 from ..news import Article
-from .timelines import TimelineError, timeline_access_current
+from .timelines import TimelineError, same_timeline_binding, timeline_access_current
 
-_TYPES = ["original", "quoted"]
 _REUSE = timedelta(hours=1)
 _WINDOW = timedelta(hours=24)
 _ACTIVE = {"pending", "budget_blocked", "rate_limited", "http_error"}
@@ -47,6 +46,12 @@ def x_scope(config, subscription_id, account_id, special):
     source_id = "x:" + account_id
     url = "https://x.com/i/user/" + account["remote_id"]
     ref = config["x_api"]["credential_ref"]
+    post_types = x_post_types(account["post_types"]) if "post_types" in account else None
+    type_scope = (
+        {"post_types": post_types}
+        if post_types is not None and tuple(post_types) != X_DEFAULT_POST_TYPES
+        else {}
+    )
     return dict(
         url=url,
         partition=partition,
@@ -60,6 +65,7 @@ def x_scope(config, subscription_id, account_id, special):
             remote=account["remote_id"],
             special=special,
             credential_tag=hashlib.sha256(ref.encode()).hexdigest() if ref else None,
+            **type_scope,
         ),
         selected=[
             dict(
@@ -139,7 +145,12 @@ def _article(scope, post):
                 author=handle,
                 author_id=post["author_id"],
                 body_sha256=hashlib.sha256(text.encode()).hexdigest(),
-                type="quote" if post["references"] else "original",
+                type=(
+                    "+".join(sorted({ref["type"] for ref in post["references"]})).replace(
+                        "quoted", "quote"
+                    )
+                    or "original"
+                ),
                 referenced_ids=[entry["id"] for entry in post["references"]],
             )
         ),
@@ -151,23 +162,21 @@ class XDigests:
         self.timelines = timelines
         self.store, self.db = timelines.store, timelines.db
 
-    def _compatible(self, scan, binding):
-        return scan["args"]["types"] == _TYPES and all(
-            scan["binding"][key] == binding[key]
-            for key in ("ref", "remote", "partition", "authors", "stamp")
-        )
+    def _compatible(self, scan, binding, types):
+        return scan["args"]["types"] == types and same_timeline_binding(scan["binding"], binding)
 
     def _link(self, scope):
         job = scope["collection_id"]
         group = scope["collection_group"]
         account = scope["x_digest"]["account"]
+        types = scope["x_digest"].get("post_types", list(X_DEFAULT_POST_TYPES))
         binding = self.timelines._scope("account", account)
         prior = self.db.execute(
             "SELECT scan_id FROM x_digest_links WHERE job_id=? AND group_id=?", (job, group)
         ).fetchone()
         if prior:
             scan = self.timelines._scan(prior[0])
-            if not self._compatible(scan, binding):
+            if not self._compatible(scan, binding, types):
                 raise TimelineError("configuration_changed")
             return scan
         last = self.timelines._last_scan("account", account)
@@ -175,7 +184,7 @@ class XDigests:
         now = self.timelines.clock()
         reuse = bool(
             scan
-            and self._compatible(scan, binding)
+            and self._compatible(scan, binding, types)
             and (
                 (
                     scan["state"] == "complete"
@@ -194,10 +203,21 @@ class XDigests:
                     raise TimelineError("scan_in_progress")
                 self.timelines.stop(scan["id"])
             cursor = self.timelines._cursor(account, binding)
-            fresh = bool(cursor and not set(_TYPES) <= set(cursor["types"]))
+            fresh = bool(
+                cursor and self.timelines.cursor_requires_fresh(account, binding, types, cursor)
+            )
             identity = "digest." + uuid4().hex
             self.timelines.begin(
-                identity, "account", account, binding["revision"], fresh=fresh, max_pages=2
+                identity,
+                "account",
+                account,
+                binding["revision"],
+                fresh=fresh,
+                max_pages=2,
+                include_original="original" in types,
+                include_quotes="quoted" in types,
+                include_replies="replied_to" in types,
+                include_reposts="retweeted" in types,
             )
             scan = self.timelines._scan(identity)
         with self.store._write():
@@ -216,6 +236,8 @@ class XDigests:
         )
         complete = scan["state"] == "complete" and start is not None and start <= end - _WINDOW
         reasons = []
+        if progress.get("history_gap"):
+            reasons.append(progress["history_gap"])
         if progress.get("reason"):
             reasons.append(progress["reason"])
         if scan["state"] == "complete" and not complete:

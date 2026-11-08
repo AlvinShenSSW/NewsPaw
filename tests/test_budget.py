@@ -372,3 +372,50 @@ def test_dispatch_rejects_regressed_clock_after_new_period_exists(budget, meter)
     assert ledger.get("old")["state"] == "reserved"
     assert ledger.begin_attempt("fresh", now=new_time)["state"] == "inflight"
     ledger.release("old")
+
+
+def test_operation_breakdown_separates_search_images_text_and_x_reads(budget):
+    ledger, store = budget
+    reserve(ledger, "text.fixture", task="text", amount=12)
+    ledger.begin_attempt("text.fixture", now=NOW)
+    ledger.settle("text.fixture", units=7, cost_source="reported")
+    reserve(ledger, "search.fixture", task="search", amount=10)
+    ledger.begin_attempt("search.fixture", now=NOW)
+    ledger.settle("search.fixture", units=4, cost_source="usage_derived")
+    reserve(ledger, "image.fixture", task="image", amount=15, image=True, operation="image")
+    ledger.begin_attempt("image.fixture", now=NOW)
+    ledger.mark_unknown("image.fixture")
+    reserve(ledger, "vision.fixture", task="vision", amount=6, image=True, operation="vision")
+    ledger.begin_attempt("vision.fixture", now=NOW)
+    ledger.settle("vision.fixture", units=5, cost_source="reported")
+    reserve(ledger, "legacy.fixture", task="legacy", amount=2, image=True)
+    assert (
+        reserve(ledger, "legacy.fixture", task="legacy", amount=2, image=True, operation="vision")["state"]
+        == "reserved"
+    )
+    assert ledger.get("vision.fixture")["quote"] == UNKNOWN
+    reserve(ledger, "legacy.paper", task="legacy_paper", amount=8, image=True)
+    with pytest.raises(BudgetError, match="idempotency_conflict"):
+        reserve(ledger, "vision.fixture", task="vision", amount=6, image=True, operation="image")
+    ledger.reserve(
+        "x.fixture", "x", max_units=3, meter="x", provider="x",
+        quote={"known": True, "source": "x_read_cap"}, now=NOW,
+    )
+    with store._write():
+        store._db.execute(
+            "INSERT INTO web_search_requests VALUES ('request','{}','search.fixture','completed',?,NULL,NULL)",
+            (NOW.isoformat(),),
+        )
+        store._db.execute("INSERT INTO newspapers VALUES ('paper','normal','edition','{}','prepared',NULL)")
+        store._db.execute(
+            "INSERT INTO newspaper_effects VALUES ('legacy.paper','paper','inflight',NULL,NULL,NULL)"
+        )
+    periods = {row["meter"]: row for row in ledger.report()["periods"]}
+    split = periods["model"]["operations"]
+    assert split["text"] == {"known_settled": 7, "held": 0, "known_by_source": {"reported": 7}}
+    assert split["search"] == {"known_settled": 4, "held": 0, "known_by_source": {"usage_derived": 4}}
+    assert split["image"]["held"] == 23 and split["image"]["known_settled"] == 0
+    assert split["vision"]["known_settled"] == 5
+    assert split["unclassified_media"]["held"] == 2
+    assert periods["model"]["scopes"]["image"]["used"] == 30
+    assert periods["x"]["operations"]["x"]["held"] == 3

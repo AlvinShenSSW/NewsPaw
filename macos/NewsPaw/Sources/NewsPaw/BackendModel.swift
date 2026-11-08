@@ -51,7 +51,7 @@ struct BackendRPC {
         if !ok.boolValue {
             switch object["error"] as? String {
             case "unknown_operation": throw BackendFailure.incompatible
-            case "config_conflict": throw BackendFailure.conflict
+            case "config_conflict", "binding_changed": throw BackendFailure.conflict
             default: throw BackendFailure.rejected
             }
         }
@@ -85,6 +85,10 @@ struct AppConfig: Decodable {
     let sources: [Source]
     let accounts: [Account]
     let modelProfiles: [Profile]
+    let bots: [ConfiguredBot]?
+    let groupStyles: [String: String]?
+
+    struct ConfiguredBot: Decodable { let id: String; let adultAllowed: Bool }
 
     func displaySubscription(for categoryId: String) -> Subscription? {
         let matching = subscriptions.filter { $0.categoryId == categoryId }
@@ -93,6 +97,15 @@ struct AppConfig: Decodable {
 
     struct Category: Decodable, Identifiable {
         let id, name, partition: String
+        let primaryProfileId, backupProfileId: String?
+
+        init(id: String, name: String, partition: String, primaryProfileId: String? = nil, backupProfileId: String? = nil) {
+            self.id = id
+            self.name = name
+            self.partition = partition
+            self.primaryProfileId = primaryProfileId
+            self.backupProfileId = backupProfileId
+        }
     }
 
     struct Subscription: Decodable, Identifiable {
@@ -119,6 +132,7 @@ struct AppConfig: Decodable {
 
     struct Profile: Decodable, Identifiable {
         let id, partition, role, provider, model: String
+        let baseUrl: String?
         let capabilities: [String]
     }
 }
@@ -126,6 +140,8 @@ struct AppConfig: Decodable {
 struct BotStatus: Decodable, Identifiable {
     let id, name: String
     let verified, paired, paused: Bool
+    let generation: Int?
+    let status, username: String?
 
     var label: Phrase {
         if paused { return .paused }
@@ -166,6 +182,7 @@ final class AppModel {
     private(set) var config: AppConfig?
     private(set) var configRevision = 0
     private(set) var bots: [BotStatus] = []
+    var pendingModelProbes: [String: ModelProbeRequest] = [:]
     private(set) var uiLanguage: AppLanguage
     private(set) var busy = false
     private(set) var error: Phrase?
@@ -278,7 +295,7 @@ final class AppModel {
         var body = fields
         body["op"] = operation
         let data = try JSONSerialization.data(withJSONObject: body)
-        let extended = ["sources.discover", "sources.preview"].contains(operation)
+        let extended = ["sources.discover", "sources.preview", "models.probe", "bots.verify", "bots.test_send"].contains(operation)
         let socket = extended ? LocalSocket(path: rpc.socket.path, timeoutMilliseconds: 35_000) : rpc.socket
         return try await BackendRPC(socket: socket).send(data)
     }

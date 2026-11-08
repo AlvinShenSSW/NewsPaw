@@ -176,9 +176,15 @@ async def test_explicit_probe_is_idempotent_and_capability_specific(registry):
 
     service = probes(store, handler)
     assert records.status("normal_primary")["text"]["state"] == "untested"
-    result = await service.probe("probe1", "normal_primary", "text", 100)
+    revision = store.config_revision()
+    result = await service.probe("probe1", "normal_primary", "text", 100, revision=revision)
     assert result["status"] == "verified"
-    assert (await service.probe("probe1", "normal_primary", "text", 100)) == result
+    assert store.config_revision() > revision
+    assert (await service.probe("probe1", "normal_primary", "text", 100, revision=revision)) == result
+    with pytest.raises(ProviderError, match="probe_id_conflict"):
+        await service.probe("probe1", "normal_primary", "vision", 100, revision=revision)
+    with pytest.raises(ProviderError, match="config_conflict"):
+        await service.probe("new_probe", "normal_primary", "text", 100, revision=revision)
     assert len(calls) == 1
     states = records.status("normal_primary")
     assert states["text"]["state"] == "verified" and states["vision"]["state"] == "untested"
@@ -550,3 +556,19 @@ async def test_interrupted_reverification_removes_derived_capability_atomically(
     assert records.status("normal_primary")["text"]["state"] == "outcome_unknown"
     assert store.load_config()[1]["model_profiles"][0]["capabilities"] == []
     assert store.config_revision() == revision + 1
+
+
+def test_native_probe_rejects_stale_configuration_before_recording_intent(tmp_path):
+    from contextlib import closing
+
+    from newspaw.store import Store
+
+    with closing(Store(tmp_path / "state.db")) as store:
+        registry = ProfileRegistry(store)
+        revision, config = store.load_config()
+        config["model_profiles"][0]["model"] = "new-fixture-model"
+        store.save_config(config, expected_revision=revision)
+        with pytest.raises(ProviderError, match="config_conflict"):
+            registry.begin("stale.probe", "normal_primary", "text", 100, revision=revision)
+        assert registry.get("stale.probe") is None
+        assert store._db.execute("SELECT count(*) FROM budget_attempts").fetchone() == (0,)

@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from .app_config import default_config, upgrade_v1, upgrade_v2
 
-DATABASE_VERSION = 21
+DATABASE_VERSION = 22
 _LEGACY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -201,6 +201,9 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         from .telegram.commands import initialize as initialize_commands
 
         initialize_commands(db)
+        from .telegram.check_send import initialize as initialize_bot_tests
+
+        initialize_bot_tests(db)
         from .media.input_service import initialize as initialize_media_commands
 
         initialize_media_commands(db)

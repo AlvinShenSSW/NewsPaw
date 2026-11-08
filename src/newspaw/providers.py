@@ -553,7 +553,7 @@ class ProfileRegistry:
         ).fetchone()
         return json.loads(row[0]) if row else None
 
-    def begin(self, probe_id, profile_id, capability, hold):
+    def begin(self, probe_id, profile_id, capability, hold, *, revision=None):
         if (
             not isinstance(probe_id, str)
             or not _ID.fullmatch(probe_id)
@@ -571,6 +571,10 @@ class ProfileRegistry:
                 if existing[:3] != (profile_id, capability, hold):
                     raise ProviderError("probe_id_conflict")
                 return None, None, json.loads(existing[3])
+            if revision is not None and (
+                type(revision) is not int or revision != self.store.config_revision()
+            ):
+                raise ProviderError("config_conflict")
             entry, generation = self.profile(profile_id)
             result = dict(
                 probe_id=probe_id,
@@ -707,8 +711,10 @@ class ProbeService:
         self.stt_factory, self.stt_fixture = stt_factory, stt_fixture
         self.image_factory = image_factory
 
-    async def probe(self, probe_id, profile_id, capability, hold):
-        entry, generation, existing = self.registry.begin(probe_id, profile_id, capability, hold)
+    async def probe(self, probe_id, profile_id, capability, hold, *, revision=None):
+        entry, generation, existing = self.registry.begin(
+            probe_id, profile_id, capability, hold, revision=revision
+        )
         if entry is None:
             return existing
         stt_probe = (
@@ -776,6 +782,7 @@ class ProbeService:
                 partition=entry["partition"],
                 provider=entry["provider"],
                 image=image_probe,
+                operation=capability,
             )
             reserved = True
             self.budget.begin_attempt(attempt_id)

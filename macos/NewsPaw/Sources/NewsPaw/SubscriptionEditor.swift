@@ -109,7 +109,7 @@ struct CategorySubscriptionToggle: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 3) {
-            Toggle(title, isOn: Binding(get: { enabled }, set: prepare))
+            Toggle(title, isOn: Binding(get: { enabled }, set: { prepare($0) }))
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .accessibilityLabel(title)

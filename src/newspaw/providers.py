@@ -637,7 +637,8 @@ class ProfileRegistry:
             if profile["id"] not in profile_ids:
                 continue
             capabilities = [
-                cap for cap, state in self.status(profile["id"]).items()
+                cap
+                for cap, state in self.status(profile["id"]).items()
                 if state["state"] == "verified"
             ]
             if profile["capabilities"] != capabilities:
@@ -688,18 +689,20 @@ def _probe_image():
 
 
 class ProbeService:
-    def __init__(self, store, backend, *, adapter_factory=ProviderAdapter):
+    def __init__(self, store, backend, *, adapter_factory=ProviderAdapter, image_factory=None):
         self.store = store
         self.backend = backend
         self.registry = ProfileRegistry(store)
         self.budget = BudgetLedger(store)
         self.adapter_factory = adapter_factory
+        self.image_factory = image_factory
 
     async def probe(self, probe_id, profile_id, capability, hold):
         entry, generation, existing = self.registry.begin(probe_id, profile_id, capability, hold)
         if entry is None:
             return existing
-        if capability not in {"text", "vision"}:
+        image_probe = capability == "image" and self.image_factory is not None
+        if capability not in {"text", "vision"} and not image_probe:
             return self.registry.finish(
                 probe_id, {"status": "probe_unavailable", "error_kind": "adapter_not_implemented"}
             )
@@ -716,7 +719,9 @@ class ProbeService:
                 raise ProviderError("credential_missing")
             if not self.registry.matches(entry, generation):
                 raise ProviderError("configuration_changed")
-            adapter = self.adapter_factory(entry, key)
+            adapter = (
+                self.image_factory(entry, key) if image_probe else self.adapter_factory(entry, key)
+            )
             nonce = uuid4().hex
             request = ModelRequest(
                 entry["partition"],
@@ -737,7 +742,8 @@ class ProbeService:
                     validator=lambda text: text.strip().lower().rstrip(".") == "red",
                     reasoning_none=True,
                 )
-            adapter.payload(request)  # Validate before reserving or dispatching.
+            if not image_probe:
+                adapter.payload(request)  # Validate before reserving or dispatching.
             self.budget.reserve(
                 attempt_id,
                 attempt_id,
@@ -745,11 +751,26 @@ class ProbeService:
                 quote={"known": False, "source": "manual_hold"},
                 partition=entry["partition"],
                 provider=entry["provider"],
+                image=image_probe,
             )
             reserved = True
             self.budget.begin_attempt(attempt_id)
             begun = True
-            result = await adapter.generate(request)
+            if image_probe:
+                from .media.source_images import ImageError, normalize_photo
+
+                raster, usage = await adapter.generate(
+                    "Draw one small solid black circle centered on a clean white portrait page. No text."
+                )
+                try:
+                    normalize_photo(raster, "image/jpeg")
+                except ImageError:
+                    raise ProviderError(
+                        "invalid_generated_image", outcome="known", usage=usage
+                    ) from None
+                result = {"reported_model": None, "response_id": None, "usage": usage}
+            else:
+                result = await adapter.generate(request)
             return self.registry.finish(
                 probe_id,
                 {

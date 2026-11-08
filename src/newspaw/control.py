@@ -19,6 +19,9 @@ from pathlib import Path
 from .budget import BudgetError, BudgetLedger
 from .connectors.web_search import WebSearch
 from .credentials import CredentialError
+from .media.image_provider import ImageProvider
+from .media.newspaper import MacOCR
+from .media.paper_service import Newspapers
 from .media.source_images import AssetStore, SourceImages
 from .pipeline import Pipeline
 from .providers import ProbeService, ProfileRegistry, ProviderError
@@ -36,6 +39,8 @@ from .x.timelines import Timelines
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
     "schedule.status": (set(), {"limit"}),
+    "newspaper.policy": (set(), set()),
+    "newspaper.configure": ({"settings", "revision"}, set()),
     "schedule.configure": ({"settings", "revision"}, set()),
     "schedule.resolve": ({"occurrence_id", "action"}, set()),
     "delivery.status": ({"job_id"}, {"bot_id"}),
@@ -162,7 +167,9 @@ class ControlServer:
         self.directory = Path(directory).expanduser().absolute()
         self.path = self.directory / "control.sock"
         self.credentials = credentials
-        self.probes = ProbeService(credentials.store, credentials.backend)
+        self.probes = ProbeService(
+            credentials.store, credentials.backend, image_factory=ImageProvider
+        )
         self.bots = BotRegistry(credentials.store, credentials.backend)
         self.sources = SourceManager(credentials)
         self.web_search = WebSearch(credentials.store, credentials.backend)
@@ -170,10 +177,13 @@ class ControlServer:
         self.x = XDirectory(credentials, self.targets)
         self.x_posts = Timelines(self.x)
         assets = AssetStore(self.directory / "media")
+        ocr = MacOCR(Path(sys.executable).resolve().with_name("newspaw-ocr"))
+        self.newspapers = Newspapers(credentials.store, credentials.backend, assets, ocr)
         self.pipeline = Pipeline(
             credentials.store,
             credentials.backend,
             source_images=SourceImages(credentials.store, assets),
+            newspapers=self.newspapers,
             x_digests=XDigests(self.x_posts),
         )
         self.outbox = Outbox(self.pipeline, self.targets, asset_resolver=assets.read)
@@ -211,6 +221,7 @@ class ControlServer:
             self.pipeline.recover_interrupted()
             self.outbox.recover_interrupted()
             self.commands.recover_interrupted()
+            self.newspapers.recover_interrupted()
             self.x.recover_interrupted()
             self.x_posts.recover_interrupted()
             await self._server.start_serving()
@@ -255,6 +266,10 @@ class ControlServer:
         if not required <= keys or keys - required - optional:
             raise CredentialError("invalid_request")
         manager, store = self.credentials, self.credentials.store
+        if op == "newspaper.policy":
+            return self.newspapers.policy()
+        if op == "newspaper.configure":
+            return self.newspapers.configure(data["settings"], data["revision"])
         if op == "schedule.status":
             return self.scheduler.status(limit=data.get("limit", 25))
         if op == "schedule.configure":

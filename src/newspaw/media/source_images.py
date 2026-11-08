@@ -23,7 +23,7 @@ from ..transport import SafeHTTPError, checked_url, source_client
 _INPUT_MAX = 5 * 1024 * 1024
 _FILE_MAX = 2 * 1024 * 1024
 _PIXELS_MAX = 8_000_000
-_ASSET = re.compile(r"source_([a-f0-9]{64})")
+_ASSET = re.compile(r"(?:source|paper)_([a-f0-9]{64})")
 _FORMATS = {"image/jpeg": "JPEG", "image/png": "PNG", "image/webp": "WEBP"}
 _CAPTIONS = {
     "en": ("Source", "Photo credit", "Unavailable"),
@@ -123,15 +123,16 @@ class AssetStore:
         with self._directory() as directory:
             return self._read(directory, identity, match[1])
 
-    def put(self, data):
+    def put(self, data, *, kind="source"):
         if (
-            not isinstance(data, bytes)
+            kind not in {"source", "paper"}
+            or not isinstance(data, bytes)
             or not 1 <= len(data) <= _FILE_MAX
             or not data.startswith(b"\xff\xd8\xff")
         ):
             raise ImageError("media_unavailable")
         digest = hashlib.sha256(data).hexdigest()
-        identity = "source_" + digest
+        identity = kind + "_" + digest
         with self._directory(create=True) as directory:
             try:
                 self._read(directory, identity, digest)

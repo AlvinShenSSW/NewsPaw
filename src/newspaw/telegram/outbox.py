@@ -134,7 +134,9 @@ def _manifest(route, text, media):
         raise OutboxError("invalid_photo")
     for item in photos:
         photo = _photo(item)
-        if route.effective["partition"] != "normal" and photo["asset_id"].startswith("source_"):
+        if route.effective["partition"] != "normal" and photo["asset_id"].startswith(
+            ("source_", "paper_")
+        ):
             raise OutboxError("incompatible_photo_partition")
         parts.append(photo)
     if not parts or len(parts) > _MAX_PARTS or len(_json(parts).encode()) > 512 * 1024:

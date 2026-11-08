@@ -49,10 +49,10 @@ _CATALOG = (
         "partition": "adult",
         "origin": "user",
         "availability": "not_verified",
-        "validation": "adapter_required",
+        "validation": "preview_required",
         "evidence_date": "2026-11-07",
         "evidence_reference": "docs/source-strategy.md",
-        "historical_note": "Only one adult reference site confirmed; second source unknown.",
+        "historical_note": "Adult industry adapter available; publisher preview pending. Awaiting details for the second source.",
     },
     {
         "id": "bbc",

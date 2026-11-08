@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, fields, replace
 
-from newspaw.news import Article, NewsService, RetrievalReport
+from newspaw.news import KNOWN_AV_FEED, Article, NewsService, RetrievalReport
 
 # The publisher's /feed/ URL returned 404 during integration. This standard
 # WordPress RSS endpoint returned valid RSS 2.0; HTML scraping is unnecessary.
-DEFAULT_AV_FEEDS = ("https://fiu758.com/?feed=rss2",)
+DEFAULT_AV_FEEDS = (KNOWN_AV_FEED,)
 MAX_AV_ITEMS = 10
 
 
@@ -50,7 +50,7 @@ class AVNewsService:
             raise ValueError("AV collection requires at least one explicitly configured RSS feed")
         self.feeds = list(dict.fromkeys(selected_feeds))
         self.max_age_hours = max_age_hours
-        self._news = NewsService(feeds=self.feeds, max_age_hours=max_age_hours)
+        self._news = NewsService(feeds=self.feeds, max_age_hours=max_age_hours, _dedicated_av=True)
         self.last_report: AVRetrievalReport | None = None
         self.last_failed_sources = 0
 

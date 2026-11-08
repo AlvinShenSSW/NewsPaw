@@ -14,7 +14,14 @@ from uuid import uuid4
 import httpx
 
 from .migrations import check_version
-from .news import MAX_FEED_BYTES, Article, NewsError, eligible_articles, parse_evidence
+from .news import (
+    MAX_FEED_BYTES,
+    Article,
+    NewsError,
+    eligible_articles,
+    known_av_origin,
+    parse_evidence,
+)
 from .transport import SafeHTTPError, source_client
 
 
@@ -54,6 +61,8 @@ def _source(config, identity, kinds=frozenset({"rss", "atom"})):
         raise EvidenceError("unclassified_source")
     if source["kind"] not in kinds:
         raise EvidenceError("unsupported_source")
+    if source["kind"] in {"rss", "atom"} and known_av_origin(source["url"]):
+        raise EvidenceError("adult_source_requires_adapter")
     return source
 
 
@@ -89,7 +98,11 @@ def _selection(config, subscriptions, source_id, kinds=frozenset({"rss", "atom"}
                     if sub["source_ids"]
                     else category["id"] in source["category_ids"]
                 ):
-                    if not source["enabled"] or source["kind"] not in kinds:
+                    if (
+                        not source["enabled"]
+                        or source["kind"] not in kinds
+                        or (source["kind"] in {"rss", "atom"} and known_av_origin(source["url"]))
+                    ):
                         continue
                     source = _source(config, source["id"], kinds)
                     if (
@@ -502,6 +515,8 @@ class FeedCollector:
                         if v
                     }
                 for _ in range(4):
+                    if known_av_origin(url):
+                        raise EvidenceError("adult_source_requires_adapter")
                     async with self.client.stream("GET", url, headers=headers) as response:
                         status_code = response.status_code
                         if status_code == 304:

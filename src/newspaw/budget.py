@@ -260,11 +260,25 @@ class BudgetLedger:
         provider=None,
         account_id=None,
         image=False,
+        operation=None,
         task_limit=None,
         now=None,
     ):
         with self.store._write():
-            return self._reserve(attempt_id, task_id, max_units=max_units, quote=quote, meter=meter, partition=partition, provider=provider, account_id=account_id, image=image, task_limit=task_limit, now=now)
+            return self._reserve(
+                attempt_id,
+                task_id,
+                max_units=max_units,
+                quote=quote,
+                meter=meter,
+                partition=partition,
+                provider=provider,
+                account_id=account_id,
+                image=image,
+                operation=operation,
+                task_limit=task_limit,
+                now=now,
+            )
 
     def _reserve(
         self,
@@ -278,6 +292,7 @@ class BudgetLedger:
         provider=None,
         account_id=None,
         image=False,
+        operation=None,
         task_limit=None,
         now=None,
     ):
@@ -298,6 +313,12 @@ class BudgetLedger:
             or (meter == "x" and image)
         ):
             raise BudgetError("invalid_meter")
+        if operation is not None and (
+            meter != "model"
+            or not isinstance(operation, str)
+            or operation not in {"text", "search", "vision", "image", "stt"}
+        ):
+            raise BudgetError("invalid_operation")
         if not isinstance(quote, dict) or type(quote.get("known")) is not bool:
             raise BudgetError("invalid_quote")
         if quote == {"known": False, "source": "manual_hold"}:
@@ -330,6 +351,7 @@ class BudgetLedger:
         if existing:
             if (
                 any(existing[key] != value for key, value in frozen.items())
+                or (operation is not None and existing["operation"] not in (None, operation))
                 or self._task_limit(meter, task_id) != task_limit
             ):
                 raise BudgetError("idempotency_conflict")
@@ -370,7 +392,7 @@ class BudgetLedger:
                 int(image),
                 period,
                 max_units,
-                _json(quote),
+                _json(quote if operation is None else {**quote, "operation": operation}),
                 now.isoformat(),
             ),
         )
@@ -443,6 +465,7 @@ class BudgetLedger:
             return None
         result = dict(zip([field[0] for field in cursor.description], row, strict=True))
         result["quote"] = json.loads(result.pop("quote_json"))
+        result["operation"] = result["quote"].pop("operation", None)
         result["usage"] = json.loads(result.pop("usage_json"))
         return result
 
@@ -607,11 +630,19 @@ class BudgetLedger:
                     SUM(state='settled' AND settled_units IS NULL),
                     SUM(json_extract(quote_json,'$.known')=0),
                     COALESCE(SUM(MAX(0,COALESCE(settled_units,0)-reserved_units)),0),cost_source,
-                    CASE WHEN meter='x' THEN 'x'
-                         WHEN image=1 THEN 'image'
-                         WHEN EXISTS(SELECT 1 FROM web_search_requests w WHERE w.budget_id=budget_attempts.id)
-                              THEN 'search'
-                         ELSE 'text' END AS operation
+                    CASE WHEN meter='x' THEN 'x' ELSE COALESCE(
+                        json_extract(quote_json,'$.operation'),
+                        (SELECT 'search' FROM web_search_requests w WHERE w.budget_id=budget_attempts.id),
+                        (SELECT CASE WHEN budget_attempts.image=1 THEN 'image' ELSE 'vision' END
+                            FROM newspaper_effects n WHERE n.id=budget_attempts.id),
+                        (SELECT p.capability FROM model_probes p
+                            WHERE budget_attempts.id='probe.' || p.probe_id
+                            AND p.probe_id=substr(budget_attempts.id,7)),
+                        (SELECT m.capability FROM telegram_media_effects m WHERE m.id=budget_attempts.id),
+                        (SELECT 'vision' FROM model_attempts a
+                            WHERE budget_attempts.image=1 AND a.budget_id=budget_attempts.id),
+                        CASE WHEN image=1 THEN 'unclassified_media' ELSE 'text' END
+                    ) END AS operation
                 FROM budget_attempts WHERE period_id=? AND state!='released'
                 GROUP BY provider,partition,account_id,image,cost_source,operation
                 """,

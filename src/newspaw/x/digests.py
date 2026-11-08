@@ -214,10 +214,7 @@ class XDigests:
             if progress.get("covered_start")
             else None
         )
-        complete = (
-            scan["state"] == "complete" and start is not None and start <= anchor - _WINDOW < end
-        )
-        through = min(end, anchor)
+        complete = scan["state"] == "complete" and start is not None and start <= end - _WINDOW
         reasons = []
         if progress.get("reason"):
             reasons.append(progress["reason"])
@@ -235,7 +232,7 @@ class XDigests:
                 scan["scope"],
                 limit=200,
                 frozen_scan=scan["id"],
-                anchor=anchor,
+                anchor=end,
             )
             articles = [
                 article
@@ -264,7 +261,7 @@ class XDigests:
             x_coverage=dict(
                 author=handle,
                 from_time=covered_from.isoformat() if covered_from else None,
-                through_time=through.isoformat() if progress["pages"] > 0 else None,
+                through_time=end.isoformat() if progress["pages"] > 0 else None,
                 state=scan["state"],
             ),
         ), articles

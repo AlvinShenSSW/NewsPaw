@@ -64,6 +64,7 @@ def av_scopes(config, subscriptions, source_id=None):
             url=AV_ORIGIN,
             selected=selected,
             kinds=["web"],
+            evidence_scope="av_industry",
             subscriptions=subscriptions,
             source_id=source_id,
         )
@@ -255,8 +256,9 @@ class AVCollector:
         identity = self.evidence.begin(scope, _time(fixed))
         if identity is None:
             return None
-        articles, gaps = [], set()
-        error = None
+        articles, stale_articles, gaps = [], [], set()
+        error = detail_error = None
+        checked_detail = False
         try:
             async with asyncio.timeout(45):
                 landing = await self._get(scope, AV_ORIGIN, before_request)
@@ -273,44 +275,50 @@ class AVCollector:
                         break
                     seen.add(post_id)
                     url = AV_ORIGIN + "?p=" + post_id
+                    title = plain_text(candidate["title"], 300)
+                    excerpt = plain_text(candidate["excerpt"], 600)
+                    fact = industry_fact(title, excerpt)
+                    if fact is None:
+                        gaps.add("no_industry_fact")
+                        continue
                     try:
-                        title = plain_text(candidate["title"], 300)
-                        excerpt = plain_text(candidate["excerpt"], 600)
-                        fact = industry_fact(title, excerpt)
-                        if fact is None:
-                            gaps.add("no_industry_fact")
-                            continue
                         detail = await self._get(scope, url, before_request, identity=post_id)
-                        published = _published([*candidate["dates"], *detail.dates])
-                        if published is None:
-                            raise EvidenceError("missing_publication_date")
-                        now = _time(fixed)
-                        accepted, rejected = _content_status(
-                            [Article(title, url, AV_PUBLISHER, published[0])], {}, now, hours
-                        )[1:]
-                        if not accepted:
-                            gaps.update(rejected)
-                            continue
-                        articles.append(
-                            Article(
-                                title,
-                                url,
-                                AV_PUBLISHER,
-                                published[0],
-                                excerpt,
-                                fetched_at=now,
-                                feed_url=AV_ORIGIN,
-                                published_raw=published[1],
-                                language="ja",
-                                evidence_scope="av_industry_excerpt",
-                                metadata={"av_industry": fact},
-                            )
-                        )
                     except (EvidenceError, httpx.HTTPError) as exc:
                         reason = str(exc) if isinstance(exc, EvidenceError) else "network_error"
-                        gaps.add(reason)
                         if reason == "configuration_changed":
                             raise
+                        detail_error = detail_error or reason
+                        gaps.add(reason)
+                        continue
+                    checked_detail = True
+                    try:
+                        published = _published([*candidate["dates"], *detail.dates])
+                    except EvidenceError as exc:
+                        gaps.add(str(exc))
+                        continue
+                    if published is None:
+                        gaps.add("missing_publication_date")
+                        continue
+                    now = _time(fixed)
+                    article = Article(
+                        title,
+                        url,
+                        AV_PUBLISHER,
+                        published[0],
+                        excerpt,
+                        fetched_at=now,
+                        feed_url=AV_ORIGIN,
+                        published_raw=published[1],
+                        language="ja",
+                        evidence_scope="av_industry_excerpt",
+                        metadata={"av_industry": fact},
+                    )
+                    date_status, accepted, rejected = _content_status([article], {}, now, hours)
+                    gaps.update(rejected)
+                    if accepted:
+                        articles.append(article)
+                    elif date_status == "stale":
+                        stale_articles.append(article)
         except _Held:
             self.evidence.finish(
                 identity,
@@ -327,19 +335,29 @@ class AVCollector:
         except (EvidenceError, httpx.HTTPError, TimeoutError) as exc:
             error = str(exc) if isinstance(exc, EvidenceError) else "network_error"
             gaps.add(error)
+        if not checked_detail:
+            error = error or detail_error
+        status = (
+            "failed"
+            if error
+            else "fresh"
+            if articles
+            else "stale"
+            if stale_articles
+            else "no_eligible"
+        )
         return self.evidence.finish(
             identity,
             scope,
             dict(
-                status="failed" if error else "fresh" if articles else "no_eligible",
+                status=status,
                 accepted_count=len(articles),
                 error_kind=error,
                 coverage_complete=False,
                 coverage_gaps=sorted(gaps),
-                evidence_scope="av_industry",
             ),
             _time(fixed),
-            articles=articles if not error else None,
+            articles=(articles or stale_articles) if not error else None,
             rejected={},
             cache=False,
         )

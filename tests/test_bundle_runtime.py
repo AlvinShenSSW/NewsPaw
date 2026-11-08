@@ -1,4 +1,6 @@
+import runpy
 import sqlite3
+import subprocess
 from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,6 +11,52 @@ from newspaw.bundle_runtime import check_upgrade
 from newspaw.control import acquire_control_lock
 from newspaw.migrations import DATABASE_VERSION
 from newspaw.store import Store
+
+
+@pytest.mark.parametrize(
+    ("target", "runpath", "accepted"),
+    [
+        ("@rpath/fixture.dylib", "@loader_path/lib", True),
+        ("@rpath/fixture.dylib", "/build-machine/lib", False),
+        ("@rpath/missing.dylib", "@loader_path/lib", False),
+        ("@loader_path/lib/fixture.dylib", None, True),
+        ("@executable_path/lib/fixture.dylib", None, True),
+        ("@loader_path/../../../outside.dylib", None, False),
+    ],
+)
+def test_bundle_checks_macho_dependency_resolution(tmp_path, monkeypatch, target, runpath, accepted):
+    app = tmp_path / "Fixture.app"
+    contents = app / "Contents"
+    helpers = contents / "Helpers"
+    for path in (
+        contents / "MacOS" / "NewsPaw",
+        helpers / "NewsPawResident",
+        helpers / "Python" / "bin" / "python3.13",
+        helpers / "ffprobe",
+        helpers / "lib" / "fixture.dylib",
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
+    def output(args, **kwargs):
+        if args[0] == "/usr/bin/lipo":
+            import os
+
+            return os.uname().machine
+        if Path(args[-1]).name != "ffprobe":
+            return ""
+        commands = f"Load command 0\n  cmd LC_LOAD_DYLIB\n cmdsize 48\n name {target} (offset 24)\n"
+        if runpath:
+            commands += f"Load command 1\n cmd LC_RPATH\n cmdsize 48\n path {runpath} (offset 12)\n"
+        return commands
+
+    monkeypatch.setattr(subprocess, "check_output", output)
+    validate = runpy.run_path(str(Path(__file__).parents[1] / "packaging" / "validate_bundle.py"))["validate"]
+    if accepted:
+        validate(app)
+    else:
+        with pytest.raises(ValueError, match="dependency"):
+            validate(app)
 
 
 def test_upgrade_preflight_accepts_uninitialized_private_database(tmp_path):

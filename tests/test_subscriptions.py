@@ -128,6 +128,48 @@ def test_pause_delete_impact_uses_shared_scope_and_never_mutates(tmp_path):
         assert store.load_config() == (revision, config)
 
 
+async def test_pause_category_is_revision_checked_and_preserves_other_subscriptions(tmp_path):
+    from contextlib import closing
+
+    from test_credentials import FakeKeychain
+
+    from newspaw.credentials import CredentialError, CredentialManager
+    from newspaw.source_manager import SourceManager
+    from newspaw.store import Store
+    from newspaw.subscriptions import SubscriptionError, Subscriptions
+    from newspaw.telegram.registry import BotRegistry
+
+    with closing(Store(tmp_path / "state.db")) as store:
+        config, regional = regional_config()
+        split = {**regional, "id": "regional_entertainment", "times": ["21:00"]}
+        inactive = {**regional, "id": "regional_draft", "enabled": False}
+        foreign = next(row for row in config["subscriptions"] if row["category_id"] == "world")
+        foreign["enabled"] = True
+        config["subscriptions"].extend((split, inactive))
+        revision = store.save_config(config, expected_revision=1)
+        keychain = FakeKeychain()
+        manager = CredentialManager(store, keychain)
+        service = Subscriptions(manager, SourceManager(manager), BotRegistry(store, keychain))
+
+        with pytest.raises(CredentialError, match="config_conflict"):
+            await service.pause_category("japan", revision - 1)
+        with pytest.raises(SubscriptionError, match="unknown_category"):
+            await service.pause_category("unrecognized", revision)
+        assert store.load_config() == (revision, config)
+
+        assert await service.pause_category("japan", revision) == {
+            "revision": revision + 1,
+            "paused": 2,
+        }
+        for row in (regional, split):
+            row["enabled"] = False
+        assert store.load_config() == (revision + 1, config)
+        assert await service.pause_category("japan", revision + 1) == {
+            "revision": revision + 1,
+            "paused": 0,
+        }
+
+
 def test_weighted_order_prioritizes_existing_evidence_without_filling_gaps():
     from newspaw.editorial import _focus_order
 

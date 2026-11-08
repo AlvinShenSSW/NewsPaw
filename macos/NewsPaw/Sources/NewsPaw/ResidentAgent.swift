@@ -126,25 +126,23 @@ struct ResidentControls: View {
     private func label(_ key: ResidentCopy) -> String { key.text(model.uiLanguage) }
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 8) {
             if current != .notPackaged {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(label(.heading)).font(.headline).accessibilityAddTraits(.isHeader)
-                    Text(label(statusCopy)).foregroundStyle(.secondary)
-                    if let failure { Text(label(failure)).foregroundStyle(.secondary) }
-                    HStack {
-                        if current == .off {
-                            Button(label(.enable)) { Task { await change(enable: true) } }
-                        }
-                        if current == .approval || current == .on {
-                            Button(label(.disable)) { Task { await change(enable: false) } }
-                        }
-                        Button(label(.systemSettings)) { SMAppService.openSystemSettingsLoginItems() }
+                Text(label(.heading)).font(.headline).accessibilityAddTraits(.isHeader)
+                Text(label(statusCopy)).foregroundStyle(.secondary)
+                if let failure { Text(label(failure)).foregroundStyle(.secondary) }
+                HStack {
+                    if current == .off {
+                        Button(label(.enable)) { Task { await change(enable: true) } }
                     }
+                    if current == .approval || current == .on {
+                        Button(label(.disable)) { Task { await change(enable: false) } }
+                    }
+                    Button(label(.systemSettings)) { SMAppService.openSystemSettingsLoginItems() }
                 }
-                .disabled(busy)
             }
         }
+        .disabled(busy)
         .task {
             while !Task.isCancelled {
                 if !busy { current = agent.state }

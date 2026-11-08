@@ -8,7 +8,7 @@ mkdir -p /tmp/newspaw-package
 ./packaging/build-macos.sh /tmp/newspaw-package/NewsPaw.app
 ```
 
-For audio processing, pass `--ffmpeg /absolute/ffmpeg /absolute/license` with a redistributable executable for the same architecture. Its dependencies must resolve inside the app or to system libraries. The build records its checksum and license. When the repository contains the Apple Vision helper source, the build also places the helper next to the embedded interpreter.
+For audio processing, pass `--ffmpeg /absolute/ffmpeg /absolute/license` with a redistributable executable for the same architecture. Its dependencies must resolve inside the app or to system libraries. For an `@rpath` dependency, the referencing binary must declare a runpath that resolves it without searching a build-machine directory or relying on inherited runpaths. The build records its checksum and license. When the repository contains the Apple Vision helper source, the build also places the helper next to the embedded interpreter.
 
 The local build is for development inspection. For distribution, sign embedded executables and libraries and then the app with the appropriate Developer ID and hardened runtime. Submit the signed package with Apple's notary tooling and staple the result before claiming notarization. [Apple notarization requirements](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
 

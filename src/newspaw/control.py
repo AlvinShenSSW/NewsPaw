@@ -20,9 +20,11 @@ from .budget import BudgetError, BudgetLedger
 from .connectors.web_search import WebSearch
 from .credentials import CredentialError
 from .media.image_provider import ImageProvider
+from .media.input_service import MediaCommands
 from .media.newspaper import MacOCR
 from .media.paper_service import Newspapers
 from .media.source_images import AssetStore, SourceImages
+from .media.speech_provider import TranscriptionProvider
 from .pipeline import Pipeline
 from .providers import ProbeService, ProfileRegistry, ProviderError
 from .scheduler import Scheduler
@@ -39,6 +41,8 @@ from .x.timelines import Timelines
 MAX_FRAME = 8 * 1024 * 1024
 OPERATIONS = {
     "schedule.status": (set(), {"limit"}),
+    "media.policy": (set(), set()),
+    "media.configure": ({"settings", "revision"}, set()),
     "newspaper.policy": (set(), set()),
     "newspaper.configure": ({"settings", "revision"}, set()),
     "schedule.configure": ({"settings", "revision"}, set()),
@@ -167,8 +171,13 @@ class ControlServer:
         self.directory = Path(directory).expanduser().absolute()
         self.path = self.directory / "control.sock"
         self.credentials = credentials
+        self.media = MediaCommands(credentials.store, credentials.backend)
         self.probes = ProbeService(
-            credentials.store, credentials.backend, image_factory=ImageProvider
+            credentials.store,
+            credentials.backend,
+            stt_factory=TranscriptionProvider,
+            stt_fixture=self.media.speech.probe_wav,
+            image_factory=ImageProvider,
         )
         self.bots = BotRegistry(credentials.store, credentials.backend)
         self.sources = SourceManager(credentials)
@@ -188,7 +197,7 @@ class ControlServer:
         )
         self.outbox = Outbox(self.pipeline, self.targets, asset_resolver=assets.read)
         self.scheduler = Scheduler(self.pipeline, self.outbox)
-        self.commands = Commands(self.outbox)
+        self.commands = Commands(self.outbox, media=self.media)
         self._server = None
         self._lock_fd = None
         self._handlers = set()
@@ -221,6 +230,7 @@ class ControlServer:
             self.pipeline.recover_interrupted()
             self.outbox.recover_interrupted()
             self.commands.recover_interrupted()
+            self.media.recover_interrupted()
             self.newspapers.recover_interrupted()
             self.x.recover_interrupted()
             self.x_posts.recover_interrupted()
@@ -266,6 +276,10 @@ class ControlServer:
         if not required <= keys or keys - required - optional:
             raise CredentialError("invalid_request")
         manager, store = self.credentials, self.credentials.store
+        if op == "media.policy":
+            return self.media.policy()
+        if op == "media.configure":
+            return self.media.configure(data["settings"], data["revision"])
         if op == "newspaper.policy":
             return self.newspapers.policy()
         if op == "newspaper.configure":

@@ -689,20 +689,33 @@ def _probe_image():
 
 
 class ProbeService:
-    def __init__(self, store, backend, *, adapter_factory=ProviderAdapter, image_factory=None):
+    def __init__(
+        self,
+        store,
+        backend,
+        *,
+        adapter_factory=ProviderAdapter,
+        image_factory=None,
+        stt_factory=None,
+        stt_fixture=None,
+    ):
         self.store = store
         self.backend = backend
         self.registry = ProfileRegistry(store)
         self.budget = BudgetLedger(store)
         self.adapter_factory = adapter_factory
+        self.stt_factory, self.stt_fixture = stt_factory, stt_fixture
         self.image_factory = image_factory
 
     async def probe(self, probe_id, profile_id, capability, hold):
         entry, generation, existing = self.registry.begin(probe_id, profile_id, capability, hold)
         if entry is None:
             return existing
+        stt_probe = (
+            capability == "stt" and self.stt_factory is not None and self.stt_fixture is not None
+        )
         image_probe = capability == "image" and self.image_factory is not None
-        if capability not in {"text", "vision"} and not image_probe:
+        if capability not in {"text", "vision"} and not (stt_probe or image_probe):
             return self.registry.finish(
                 probe_id, {"status": "probe_unavailable", "error_kind": "adapter_not_implemented"}
             )
@@ -714,14 +727,25 @@ class ProbeService:
                 raise ProviderError("unsupported_provider")
             if entry["credential_ref"] is None:
                 raise ProviderError("credential_missing")
+            if stt_probe:
+                from .media.speech_provider import supported_stt_profile
+
+                if not supported_stt_profile(entry):
+                    raise ProviderError("stt_capability_unavailable")
+                audio = await self.stt_fixture()
             key = await asyncio.to_thread(self.backend.read, entry["credential_ref"])
             if key is None:
                 raise ProviderError("credential_missing")
             if not self.registry.matches(entry, generation):
                 raise ProviderError("configuration_changed")
-            adapter = (
-                self.image_factory(entry, key) if image_probe else self.adapter_factory(entry, key)
+            factory = (
+                self.stt_factory
+                if stt_probe
+                else self.image_factory
+                if image_probe
+                else self.adapter_factory
             )
+            adapter = factory(entry, key)
             nonce = uuid4().hex
             request = ModelRequest(
                 entry["partition"],
@@ -742,7 +766,7 @@ class ProbeService:
                     validator=lambda text: text.strip().lower().rstrip(".") == "red",
                     reasoning_none=True,
                 )
-            if not image_probe:
+            if not (stt_probe or image_probe):
                 adapter.payload(request)  # Validate before reserving or dispatching.
             self.budget.reserve(
                 attempt_id,
@@ -756,7 +780,12 @@ class ProbeService:
             reserved = True
             self.budget.begin_attempt(attempt_id)
             begun = True
-            if image_probe:
+            if stt_probe:
+                text, usage = await adapter.transcribe(audio)
+                if re.sub(r"[^a-z]", "", text.casefold()) != "newspawaudiotest":
+                    raise ProviderError("invalid_probe_output", outcome="known", usage=usage)
+                result = dict(reported_model=None, response_id=None, usage=usage)
+            elif image_probe:
                 from .media.source_images import ImageError, normalize_photo
 
                 raster, usage = await adapter.generate(

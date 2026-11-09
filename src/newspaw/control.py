@@ -49,6 +49,7 @@ from .x.timelines import Timelines
 from .x.video import Videos
 
 MAX_FRAME = 8 * 1024 * 1024
+AUTO_PROBE_HOLD = 10_000  # $0.01 for one short capability check (E10 contract §2).
 _LOG = logging.getLogger(__name__)
 # Only a bounded ASCII name may become an error domain; anything else stays "protocol".
 _OP_NAME = re.compile(r"[a-z][a-z0-9_]{0,31}(?:\.[a-z][a-z0-9_]{0,31}){0,3}")
@@ -156,6 +157,7 @@ OPERATIONS = {
     "bots.action": ({"bot_id", "action"}, {"generation"}),
     "bots.delete": ({"bot_id", "revision"}, set()),
     "models.status": ({"profile_id"}, set()),
+    "models.health": (set(), set()),
     "models.probe": ({"probe_id", "profile_id", "capability", "hold_units"}, {"revision"}),
     "budget.get": (set(), set()),
     "budget.save": ({"document", "revision"}, set()),
@@ -261,6 +263,7 @@ class ControlServer:
         self._handlers = set()
         self._socket_identity = None
         self._stop_requested = asyncio.Event()
+        self._background = set()
 
     async def start(self):
         if self._server is not None:
@@ -313,6 +316,11 @@ class ControlServer:
         await self.scheduler.close()
         if self._handlers:
             await asyncio.gather(*self._handlers, return_exceptions=True)
+        # After the last handler: none can start another background check now.
+        while self._background:
+            for task in tuple(self._background):
+                task.cancel()
+            await asyncio.gather(*self._background, return_exceptions=True)
         await self.bots.close()
         await self.pipeline.close()
         await self.credentials.drain()
@@ -326,6 +334,33 @@ class ControlServer:
         if self._lock_fd is not None:
             os.close(self._lock_fd)
             self._lock_fd = None
+
+    def _verify_soon(self, profile_id, capabilities):
+        """E10 contract §2: check a capability as soon as it becomes needed, in the background.
+
+        The probe ID is bound to the profile generation (which changes with the key), so a
+        repeated save or configure reuses the earlier result instead of paying again.
+        """
+
+        async def run():
+            registry = ProfileRegistry(self.credentials.store)
+            for capability in capabilities:
+                try:
+                    _, generation = registry.profile(profile_id)
+                    if registry.status(profile_id)[capability]["state"] == "verified":
+                        continue
+                    await self.probes.probe(
+                        f"auto.{profile_id}.{capability}.g{generation}",
+                        profile_id,
+                        capability,
+                        AUTO_PROBE_HOLD,
+                    )
+                except (CredentialError, BudgetError, ProviderError) as exc:
+                    _LOG.warning("Automatic %s check failed (%s)", capability, type(exc).__name__)
+
+        task = asyncio.create_task(run())
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
 
     async def wait_for_stop(self):
         await self._stop_requested.wait()
@@ -376,11 +411,25 @@ class ControlServer:
         if op == "media.policy":
             return self.media.policy()
         if op == "media.configure":
-            return self.media.configure(data["settings"], data["revision"])
+            result = self.media.configure(data["settings"], data["revision"])
+            for capability in ("vision", "stt"):
+                if result["settings"][capability + "_profile"] is not None:
+                    self._verify_soon(result["settings"][capability + "_profile"], [capability])
+            return result
         if op == "newspaper.policy":
             return self.newspapers.policy()
         if op == "newspaper.configure":
-            return self.newspapers.configure(data["settings"], data["revision"])
+            result = self.newspapers.configure(data["settings"], data["revision"])
+            settings = result["settings"]
+            if settings["enabled"]:
+                for role, capability in (
+                    ("generation_profile", "image"),
+                    ("backup_profile", "image"),
+                    ("vision_profile", "vision"),
+                ):
+                    if settings[role] is not None:
+                        self._verify_soon(settings[role], [capability])
+            return result
         if op == "schedule.status":
             return self.scheduler.status(limit=data.get("limit", 25))
         if op == "subscriptions.send_now":
@@ -576,6 +625,8 @@ class ControlServer:
             )
         if op == "bots.delete":
             return await self.bots.delete(data["bot_id"], manager, data["revision"])
+        if op == "models.health":
+            return {"profiles": self.pipeline.runner.health()}
         if op == "models.status":
             return ProfileRegistry(store).status(data["profile_id"])
         if op == "models.probe":
@@ -607,7 +658,12 @@ class ControlServer:
                 "explanation": route.explanation,
             }
         if op == "credentials.set":
-            return await manager.set(data["kind"], data["id"], data["value"], data["revision"])
+            result = await manager.set(data["kind"], data["id"], data["value"], data["revision"])
+            if data["kind"] == "model_profiles":
+                # Also after an unchanged save: the profile may have changed since the key
+                # was last checked. Verified and in-flight checks are reused, never repaid.
+                self._verify_soon(data["id"], ["text"])
+            return result
         if op == "credentials.remove":
             return await manager.remove(data["kind"], data["id"], data["revision"])
         if op == "credentials.status":

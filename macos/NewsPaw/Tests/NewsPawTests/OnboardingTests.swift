@@ -47,6 +47,9 @@ private final class SetupBackend {
 
     /// The next models.probe connection fails like a socket timeout (the backend keeps checking).
     var probeConnectionDrops = false
+    /// How many calls for one probe id answer "pending" before its result.
+    var probePendingCalls = 0
+    private var probeCalls: [String: Int] = [:]
 
     var client: BackendClient {
         BackendClient { [unowned self] body, _ in
@@ -54,7 +57,6 @@ private final class SetupBackend {
             let drop = await MainActor.run { () -> Bool in
                 guard isProbe, self.probeConnectionDrops else { return false }
                 self.probeConnectionDrops = false
-                self.probe = self.probeResult
                 return true
             }
             if drop { throw SocketFailure.timeout }
@@ -123,8 +125,12 @@ private final class SetupBackend {
             if probeReads > probeReadsBeforeResult { probe = probeResult }
             return ok(["text": probe])
         case "models.probe":
-            probe = probeResult
-            return ok(probeResult.filter { $0.key != "state" })
+            // The same probe id returns that check's record: pending until it finishes.
+            let id = request["probe_id"] as! String
+            probeCalls[id, default: 0] += 1
+            let record: [String: Any] = probeCalls[id]! > probePendingCalls ? probeResult : ["status": "pending"]
+            if record["status"] as? String != "pending" { probe = probeResult }
+            return ok(record.filter { $0.key != "state" })
         case "schedule.status": return ok(["revision": 1, "settings": ["enabled": true], "activated_at": NSNull(), "occurrences": []])
         case "newspaper.policy": return ok(["revision": 1, "settings": ["enabled": false, "generation_profile": NSNull()]])
         case "sources.catalog", "sources.list": return ok([])
@@ -393,8 +399,18 @@ private func connected(_ server: SetupBackend) async throws -> (AppModel, Onboar
     let (model, data, cleanup) = try await connected(server)
     defer { cleanup() }
     server.probeConnectionDrops = true
+    // An earlier check failed; the recheck still running must not be confused with it.
+    server.probe = ["state": "failed", "status": "failed", "error_kind": "authentication_failed"]
+    server.probePendingCalls = 2
 
     await data.recheck("normal_primary", model: model)
 
     #expect(data.failures["normal_primary"] == nil && data.keyReady("normal_primary"))
+}
+
+
+@Test func aCustomGatewayServingAPresetModelStaysCustom() {
+    #expect(ModelChoice.matching(provider: "openai", baseURL: "https://api.openai.com/v1/", model: "gpt-6-luna") == .luna)
+    #expect(ModelChoice.matching(provider: "openai", baseURL: "https://gateway.example/v1", model: "gpt-6-luna") == .custom)
+    #expect(ModelChoice.matching(provider: "mimo", baseURL: "https://api.xiaomimimo.com/v1", model: "mimo-v2.6-flash") == .mimo)
 }

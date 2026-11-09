@@ -51,6 +51,16 @@ enum ModelChoice: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The preset this profile is, only when provider, address and model all match; anything
+    /// else (e.g. a custom gateway serving a preset's model id) stays custom with its own values.
+    static func matching(provider: String, baseURL: String?, model: String) -> ModelChoice {
+        let normalized = baseURL.map { $0.hasSuffix("/") ? String($0.dropLast()) : $0 }
+        return allCases.first { choice in
+            guard let preset = choice.preset else { return false }
+            return preset.provider == provider && preset.baseURL == normalized && preset.model == model
+        } ?? .custom
+    }
+
     var title: Words {
         switch self {
         case .luna: L10n.Onboarding.luna
@@ -276,14 +286,24 @@ final class OnboardingData {
         defer { working.remove(profile) }
         failures[profile] = nil
         let probe = "probe_" + String(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(16))
+        let request: [String: Any] = ["probe_id": probe, "profile_id": profile, "capability": "text", "hold_units": 10_000]
         do {
             // `models.probe` runs the check and returns its finished result.
-            probes[profile] = try BackendRPC.decode(await model.client.call(.modelsProbe, [
-                "probe_id": probe, "profile_id": profile, "capability": "text", "hold_units": 10_000,
-            ]))
+            probes[profile] = try BackendRPC.decode(await model.client.call(.modelsProbe, request))
         } catch is SocketFailure {
-            // The connection gave up but the backend keeps checking; read its outcome instead.
-            await readProbe(profile, model: model)
+            // The connection gave up but the backend keeps checking. Asking again with the same
+            // probe id returns this check's own record (no second charge) — not an earlier one.
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: probeLimit)
+            while !Task.isCancelled, clock.now < deadline {
+                try? await Task.sleep(for: pollInterval)
+                if let state: ProbeState = try? BackendRPC.decode(await model.client.call(.modelsProbe, request)),
+                   state.settled {
+                    probes[profile] = state
+                    return
+                }
+            }
+            failures[profile] = BackendError(code: "probe_pending", domain: "models")
         } catch {
             failures[profile] = error as? BackendError ?? BackendError(code: "invalid_reply")
         }
@@ -632,7 +652,7 @@ private struct ModelStep: View {
         }
         .onAppear {
             if let profile = model.config?.modelProfiles.first(where: { $0.id == "normal_primary" }) {
-                choice = ModelChoice.allCases.first { $0.preset?.model == profile.model } ?? .custom
+                choice = ModelChoice.matching(provider: profile.provider, baseURL: profile.baseUrl, model: profile.model)
                 if choice == .custom {
                     customURL = profile.baseUrl ?? ""
                     customModel = profile.model

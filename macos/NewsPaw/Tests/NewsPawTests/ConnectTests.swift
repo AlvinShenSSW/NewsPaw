@@ -89,10 +89,33 @@ private final class ConnectBackend {
     func subscription(_ id: String) -> [String: Any]? { (document["subscriptions"] as? [[String: Any]])?.first { $0["id"] as? String == id } }
     func profileEntry(_ id: String) -> [String: Any]? { (document["model_profiles"] as? [[String: Any]])?.first { $0["id"] as? String == id } }
 
+    /// `models.probe` outlasts the socket deadline: the app sees a timeout while the backend
+    /// keeps running the check. Asking again with the same probe id returns that check's own
+    /// record (pending once, then this result) without starting another one.
+    var probeOutlastsSocket: [String: Any]?
+    private var droppedProbes: [String: Int] = [:]
+
     var client: BackendClient {
         BackendClient { [unowned self] body, _ in
-            let request = try JSONSerialization.jsonObject(with: body) as! [String: Any]
-            return await MainActor.run { self.answer(request) }
+            let reply = await MainActor.run { () -> Data? in
+                let request = try! JSONSerialization.jsonObject(with: body) as! [String: Any]
+                if request["op"] as? String == "models.probe", let result = self.probeOutlastsSocket,
+                   let profile = request["profile_id"] as? String, let id = request["probe_id"] as? String {
+                    self.requests.append(request)
+                    let asked = self.droppedProbes[id, default: 0]
+                    self.droppedProbes[id] = asked + 1
+                    switch asked {
+                    case 0: return nil
+                    case 1: return self.ok(["status": "pending"])
+                    default:
+                        self.checks[profile] = [result]
+                        return self.ok(result.filter { $0.key != "state" })
+                    }
+                }
+                return self.answer(request)
+            }
+            guard let reply else { throw SocketFailure.timeout }
+            return reply
         }
     }
 
@@ -211,6 +234,7 @@ private final class ConnectBackend {
             guard var bot = registry[id], bot.verified else { return refuse("bot_not_verified", "bots") }
             bot.generation += 1
             bot.paired = false
+            bot.paused = false
             bot.status = "awaiting_pair"
             registry[id] = bot
             statusReads = 0
@@ -222,6 +246,7 @@ private final class ConnectBackend {
             switch request["action"] as! String {
             case "pause": bot.paused = true; bot.status = "paused"
             case "resume": bot.paused = false; bot.status = "paired"
+            // Unpairing leaves a pause in place (registry.action).
             default: bot.paired = false; bot.status = "unpaired"
             }
             registry[id] = bot
@@ -741,4 +766,81 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
     #expect(Stamp.relative(morning, now: now, .zhHans, calendar: calendar) == "今天 08:12")
     #expect(Stamp.relative(evening, now: now, .en, calendar: calendar) == "yesterday 20:28")
     #expect(Stamp.relative(earlier, now: now, .ja, calendar: calendar) == "11-08")
+}
+
+// MARK: - Review regressions
+
+@Test @MainActor func aKeyCheckIsWaitedForLongerThanTheProviderTimeout() {
+    // providers.py gives a model call 90 seconds; giving up first leaves a check still running.
+    #expect(KeyChecks().probeLimit > .seconds(90))
+}
+
+@Test @MainActor func aStaleWaitingNoteGivesWayAndAnUnknownCheckIsNotRepeatedUnconfirmed() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.checks["normal_primary"] = [["state": "pending", "status": "pending"]]
+    data.keys.probeLimit = .milliseconds(30)
+    await data.saveKey("sk-synthetic-slow", profile: "normal_primary", model: model)
+    #expect(data.keys.failures["normal_primary"]?.code == "probe_pending")
+
+    // The provider never answered: the backend records an unknown outcome.
+    server.checks["normal_primary"] = [["state": "outcome_unknown", "status": "outcome_unknown", "error_kind": "outcome_unknown"]]
+    await data.load(model: model)
+    #expect(data.keys.failures["normal_primary"] == nil)
+    #expect(KeyStatus.of(credential: "available", probe: data.keys.probes["normal_primary"], health: nil, working: false).action == .confirmRecheck)
+
+    // A paid check of an unknown result runs only once the owner confirms it.
+    await data.recheck("normal_primary", model: model)
+    #expect(server.calls("models.probe").isEmpty)
+    await data.recheck("normal_primary", model: model, confirmed: true)
+    #expect(server.calls("models.probe").count == 1)
+}
+
+@Test @MainActor func aRecheckThatOutlastsTheSocketReadsTheRunningCheckBack() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk-synthetic-7Qx2", profile: "normal_primary", model: model)
+    server.probeOutlastsSocket = ["state": "failed", "status": "failed", "error_kind": "rate_limited"]
+
+    await data.recheck("normal_primary", model: model)
+
+    #expect(data.keys.failures["normal_primary"] == nil)
+    #expect(data.keys.probes["normal_primary"]?.errorKind == "rate_limited")
+    // Followed by its own probe id: one check, never a second paid one.
+    let ids = server.calls("models.probe").compactMap { $0["probe_id"] as? String }
+    #expect(ids.count == 3 && Set(ids).count == 1)
+}
+
+@Test @MainActor func aPausedBotThatLostItsPairingOffersPairingAgain() async throws {
+    let server = ConnectBackend(bots: [ConnectBackend.bot("b1")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.act("b1", "pause", model: model)
+    #expect(BotMenu.canResume(model.bots[0]) && !BotMenu.canPause(model.bots[0]))
+    await data.act("b1", "unbind", model: model)
+
+    let bot = model.bots[0]
+    #expect(bot.paused && !bot.paired)
+    #expect(BotState(bot) == .unpaired)
+    #expect(!BotMenu.canResume(bot) && !BotMenu.canPause(bot))
+
+    // A pairing code clears the pause (registry.pair_code).
+    await data.newCode("b1", model: model)
+    #expect(data.pairing("b1")?.pair != nil && server.registry["b1"]?.paused == false)
+}
+
+@Test func anEmptyTelegramUsernameReadsAsNone() throws {
+    let bot: BotStatus = try BackendRPC.decode(Data(#"{"id":"b","name":"News","verified":false,"paired":false,"paused":false,"status":"unverified","username":""}"#.utf8))
+    #expect(bot.username == nil)
+}
+
+@Test func aTestMessageThatWasNeverSentOffersToSendAgain() {
+    let test = TestSend(requestId: "test_1", generation: 3, state: "not_started", reason: nil)
+    #expect(TestDisplay.of(test, stillUnknown: false) == .notSent)
+}
+
+@Test func savingAFirstKeyShowsItIsBeingChecked() {
+    #expect(KeyStatus.of(credential: nil, probe: nil, health: nil, working: true) == .checking)
 }

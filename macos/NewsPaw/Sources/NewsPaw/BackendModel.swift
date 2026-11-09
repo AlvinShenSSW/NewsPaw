@@ -113,6 +113,21 @@ struct BotStatus: Decodable, Identifiable {
     let generation: Int?
     let status, username: String?
 
+    private enum Keys: String, CodingKey { case id, name, verified, paired, paused, generation, status, username }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: Keys.self)
+        id = try values.decode(String.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        verified = try values.decode(Bool.self, forKey: .verified)
+        paired = try values.decode(Bool.self, forKey: .paired)
+        paused = try values.decode(Bool.self, forKey: .paused)
+        generation = try values.decodeIfPresent(Int.self, forKey: .generation)
+        status = try values.decodeIfPresent(String.self, forKey: .status)
+        // A Bot Telegram never confirmed has the username "" (registry state), not none.
+        username = try values.decodeIfPresent(String.self, forKey: .username).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
     var label: Phrase {
         if paused { return .paused }
         if !verified { return .unverified }

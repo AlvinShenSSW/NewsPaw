@@ -30,7 +30,8 @@ enum BotState: Equatable {
 
     init(_ bot: BotStatus) {
         let status = bot.status ?? ""
-        if bot.paused {
+        // A pause outlives unpairing; such a Bot needs a new pairing (which clears the pause).
+        if bot.paused, bot.paired {
             self = .paused
         } else if status == "verifying" {
             self = .verifying
@@ -40,7 +41,7 @@ enum BotState: Equatable {
             self = .paired
         } else {
             switch status {
-            case "unpaired": self = .unpaired
+            case "unpaired", "paused": self = .unpaired
             case "pair_expired": self = .expired
             case "pair_attempts_exhausted": self = .problem(status)
             default: self = .waiting
@@ -71,6 +72,28 @@ enum BotState: Equatable {
     }
 }
 
+/// What the line under a Bot shows for its last test message.
+enum TestDisplay: Equatable {
+    case none, sent, sending, unknown, stillUnknown, notSent
+
+    static func of(_ test: TestSend?, stillUnknown: Bool) -> TestDisplay {
+        switch test?.state {
+        case "confirmed": .sent
+        case "outcome_unknown": stillUnknown ? .stillUnknown : .unknown
+        case "inflight": .sending
+        case "not_started": .notSent
+        default: .none
+        }
+    }
+}
+
+/// Which pause / resume items a Bot's menu offers: only a paired Bot can be paused or resumed
+/// (`registry.action` refuses to resume one that is not paired).
+enum BotMenu {
+    static func canPause(_ bot: BotStatus) -> Bool { bot.paired && !bot.paused }
+    static func canResume(_ bot: BotStatus) -> Bool { bot.paired && bot.paused }
+}
+
 /// What a model row shows (interaction-spec §6.2 table), from the key, its text check and
 /// the profile's cooldown.
 enum KeyStatus: Equatable {
@@ -89,8 +112,9 @@ enum KeyStatus: Equatable {
     /// - Parameters:
     ///   - credential: `available`, `missing` or a Keychain error for the stored reference; nil without one.
     static func of(credential: String?, probe: ProbeState?, health: ModelHealth?, working: Bool, now: Date = Date()) -> KeyStatus {
-        guard let credential, credential != "missing" else { return .missing }
+        // A first key being saved has no reference yet; it is already being checked.
         if working { return .checking }
+        guard let credential, credential != "missing" else { return .missing }
         guard credential == "available" else { return .keychain(credential) }
         guard let probe else { return .untested }
         switch probe.state {
@@ -479,10 +503,9 @@ private struct BotGroup: View {
 
     private var menu: some View {
         Menu {
-            if current.paused {
+            if BotMenu.canResume(current) {
                 Button(model.text(L10n.Connect.resume)) { Task { await data.act(bot.id, "resume", model: model) } }
-                    .disabled(!current.verified)
-            } else if current.verified {
+            } else if BotMenu.canPause(current) {
                 Button(model.text(L10n.Connect.pause)) { Task { await data.act(bot.id, "pause", model: model) } }
             }
             Button(model.text(L10n.Connect.replaceToken)) { data.replacingToken.insert(bot.id) }
@@ -559,18 +582,18 @@ private struct BotGroup: View {
         let language = model.uiLanguage
         if let failure = data.failures["test." + bot.id] {
             FailureNote(model: model, failure: failure) { Task { await data.sendTest(bot.id, model: model) } }
-        } else if let test = data.tests[bot.id] {
-            switch test.state {
-            case "confirmed":
+        } else {
+            switch TestDisplay.of(data.tests[bot.id], stillUnknown: data.stillUnknown.contains(bot.id)) {
+            case .sent:
                 Label(L10n.Connect.testSent(language, ["time": Stamp.clock(data.testedAt[bot.id] ?? Date())]), systemImage: "checkmark.circle.fill")
                     .font(.callout).foregroundStyle(.green)
-            case "outcome_unknown":
+            case .unknown, .stillUnknown, .notSent:
                 HStack(spacing: 8) {
                     Image(systemName: "questionmark.circle.fill").foregroundStyle(.orange).accessibilityHidden(true)
-                    Text(model.text(data.stillUnknown.contains(bot.id) ? L10n.Connect.testStillUnknown : L10n.Connect.testUnknown))
+                    Text(model.text(testNote))
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
-                    if data.stillUnknown.contains(bot.id) {
+                    if data.stillUnknown.contains(bot.id) || data.tests[bot.id]?.state == "not_started" {
                         Button(model.text(L10n.Connect.sendAgain)) { Task { await data.sendTest(bot.id, model: model) } }
                     } else {
                         Button(model.text(L10n.Connect.checkResult)) { Task { await data.checkTest(bot.id, model: model) } }
@@ -580,7 +603,7 @@ private struct BotGroup: View {
                 .padding(10)
                 .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                 .accessibilityElement(children: .combine)
-            case "inflight":
+            case .sending:
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
                     Text(model.text(L10n.Connect.sending)).foregroundStyle(.secondary)
@@ -588,9 +611,17 @@ private struct BotGroup: View {
                         .buttonStyle(.link)
                 }
                 .font(.callout)
-            default:
+            case .none:
                 EmptyView()
             }
+        }
+    }
+
+    private var testNote: Words {
+        switch TestDisplay.of(data.tests[bot.id], stillUnknown: data.stillUnknown.contains(bot.id)) {
+        case .notSent: L10n.Connect.testNotSent
+        case .stillUnknown: L10n.Connect.testStillUnknown
+        default: L10n.Connect.testUnknown
         }
     }
 
@@ -769,7 +800,8 @@ private struct ModelRow: View {
             }
             if let failure = data.keys.failures[profile.id] {
                 FailureNote(model: model, failure: failure) {
-                    if failure.code == "probe_pending" { Task { await data.recheck(profile.id, model: model) } } else { editing = true }
+                    // No result yet: the check may have been charged, so another one is confirmed first.
+                    if failure.code == "probe_pending" { confirmRetry = true } else { editing = true }
                 }
             }
         }

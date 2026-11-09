@@ -382,6 +382,7 @@ enum L10n {
         static let testUnknown = Words("Telegram 没有回应，测试消息可能已发出，也可能没有。", "Telegram did not answer; the test message may or may not have arrived.", "Telegram から応答がなく、テストメッセージが届いたか分かりません。")
         static let checkResult = Words("检查结果", "Check Result", "結果を確認")
         static let testStillUnknown = Words("还是不能确定。看看 Telegram 里有没有收到；没有就再发一次。", "Still unclear. See whether it arrived in Telegram; if not, send another.", "まだ分かりません。Telegram に届いたか確認し、届いていなければもう一度送ってください。")
+        static let testNotSent = Words("这条测试消息没有发出去。可以再发一次。", "This test message was not sent. You can send another.", "このテストメッセージは送信されませんでした。もう一度送れます。")
         static let sendAgain = Words("再发一次", "Send Again", "もう一度送信")
         static let more = Words("更多", "More", "その他")
         static let pause = Words("暂停", "Pause", "一時停止")
@@ -500,7 +501,7 @@ enum L10n {
         static let all: [Words] = [
             intro, todayAt, yesterdayAt, save, saving, botsTitle, addBot, noBots, receives, receivesNone, rename,
             statusUnverified, statusWaiting, statusPaired, statusPaused, statusUnpaired, statusProblem, sendTest,
-            sending, testSent, testUnknown, checkResult, testStillUnknown, sendAgain, more, pause, resume,
+            sending, testSent, testUnknown, checkResult, testStillUnknown, testNotSent, sendAgain, more, pause, resume,
             replaceToken, unpair, delete, unpairTitle, unpairBody, unpairButton, deleteTitle, deleteButton,
             deleteNone, deleteAffects, deleteNoTarget, deleteAccounts, needsPairing, unpairedNote, makeCode,
             pairAgain, adultAllowed, adultOnNote, adultOffNote, adultOffTitle, adultOffBody, adultOffButton,

@@ -246,15 +246,18 @@ final class KeyChecks {
     private(set) var working: Set<String> = []
     private(set) var failures: [String: BackendError] = [:]
 
-    /// How often a pending check is read back, and how long a check may take.
+    /// How often a pending check is read back, and how long a check may take: longer than the
+    /// 90 seconds a provider gets (`providers.py`), so a slow provider's result is still read.
     @ObservationIgnored var pollInterval: Duration = .seconds(2)
-    @ObservationIgnored var probeLimit: Duration = .seconds(90)
+    @ObservationIgnored var probeLimit: Duration = .seconds(120)
 
     /// Reads one profile's checks.
     func load(_ profile: String, model: AppModel) async {
         if let read: [String: ProbeState] = try? BackendRPC.decode(await model.client.call(.modelsStatus, ["profile_id": profile])) {
             states[profile] = read
             probes[profile] = read["text"]
+            // Once the check has an outcome, an earlier "no result yet" note no longer holds.
+            if read["text"]?.settled == true, failures[profile]?.code == "probe_pending" { failures[profile] = nil }
         }
     }
 

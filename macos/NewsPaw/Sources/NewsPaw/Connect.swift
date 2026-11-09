@@ -565,6 +565,10 @@ final class ConnectData {
         await load(model: model)
     }
 
+    /// Whether checking this key again could repeat a charge whose result never came back
+    /// (one rule for this page and the first-run window).
+    func needsConfirmation(_ profile: String) -> Bool { keys.needsConfirmation(profile) }
+
     /// Points a model at another OpenAI-compatible address or model ID, then checks its key.
     func saveEndpoint(_ profile: String, baseURL: String, modelId: String, model: AppModel) async {
         let baseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)

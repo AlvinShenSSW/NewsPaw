@@ -111,8 +111,13 @@ struct MainWindow: View {
         } detail: {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    if model.error != nil, let failure = model.lastFailure {
-                        FailureNote(model: model, failure: failure)
+                    if let error = model.error {
+                        if error != .stopFailed, let failure = model.lastFailure {
+                            FailureNote(model: model, failure: failure)
+                        } else {
+                            Label(model.text(error), systemImage: "exclamationmark.circle.fill")
+                                .foregroundStyle(.red)
+                        }
                     }
                     PageContent(model: model, page: model.page)
                 }

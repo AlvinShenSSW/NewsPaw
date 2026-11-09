@@ -294,12 +294,14 @@ final class AppModel {
             load: { [client] in try await client.schedulePolicy() },
             store: { [client] in try await client.configureSchedule($0, revision: $1) }
         )
+        error = nil
         if !(await editor.apply({ settings in
             var settings = settings
             settings["enabled"] = !paused
             return settings
         })) {
             lastFailure = editor.failure
+            error = .saveFailed
         }
         await loadSnapshot(generation: generation)
     }

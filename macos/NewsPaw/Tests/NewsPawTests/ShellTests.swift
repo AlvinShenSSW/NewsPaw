@@ -144,3 +144,24 @@ private final class Box<Value>: @unchecked Sendable {
     var value: Value
     init(_ value: Value) { self.value = value }
 }
+
+@Test @MainActor func aFailedPauseIsReportedWithItsCode() async throws {
+    let fixture = try FixtureSocket()
+    let running = #"{"ok":true,"result":{"protocol_version":1,"state":"running","operations":["setup.readiness"]}}"# + "\n"
+    let ready = #"{"ok":true,"result":{"complete":false,"next":"bot","scheduling_enabled":true,"steps":[]}}"# + "\n"
+    let configuration = #"{"ok":true,"result":{"revision":1,"document":{"ui_locale":"en","news_output_locale":"en","categories":[],"subscriptions":[],"sources":[],"accounts":[],"model_profiles":[]}}}"# + "\n"
+    let bots = #"{"ok":true,"result":[]}"# + "\n"
+    let policy = #"{"ok":true,"result":{"revision":3,"settings":{"enabled":true},"activated_at":null,"occurrences":[]}}"# + "\n"
+    let refused = #"{"ok":false,"error":"invalid_schedule_policy","error_detail":{"code":"invalid_schedule_policy","domain":"schedule","retryable":false}}"# + "\n"
+    let replies = fixture.serve([running, ready, configuration, bots, policy, refused, running, ready, configuration, bots])
+    let name = "NewsPawTests-" + UUID().uuidString
+    let defaults = try #require(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let model = AppModel(socket: LocalSocket(path: fixture.path), defaults: defaults)
+    await model.refresh()
+    #expect(!model.schedulingPaused)
+    await model.setPaused(true)
+    #expect(model.error == .saveFailed && model.lastFailure?.code == "invalid_schedule_policy")
+    #expect(model.text(.saveFailed).contains("invalid_schedule_policy"))
+    #expect(try await replies.value.count == 10)
+}

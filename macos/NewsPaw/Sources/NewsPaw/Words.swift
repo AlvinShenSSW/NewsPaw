@@ -181,6 +181,63 @@ enum L10n {
         static let all: [Words] = [title, keyRejected, keyRejectedNote, botWaiting, botWaitingNote, staleSource, staleSourceNote, capReached, capReachedNote, xUnlimited, xUnlimitedNote, noBackup, noBackupNote]
     }
 
+    enum Onboarding {
+        static let windowTitle = Words("设置 NewsPaw", "Set Up NewsPaw", "NewsPaw の設定")
+        static let openSetup = Words("首次设置…", "Setup Assistant…", "初期設定…")
+        static let telegramTitle = Words("连接 Telegram", "Connect Telegram", "Telegram を接続")
+        static let modelTitle = Words("模型 Key", "Model Key", "モデルのキー")
+        static let digestsTitle = Words("选择简报", "Choose Digests", "ダイジェストを選ぶ")
+        static let current = Words("当前步骤", "Current step", "現在のステップ")
+        static let stepDone = Words("已完成", "Done", "完了")
+        static let stepPending = Words("未完成", "Not done", "未完了")
+        static let skip = Words("先跳过，稍后在「接入」里填", "Skip for now; finish later in Connect", "今はスキップ（あとで「接続」で設定）")
+        static let finishLater = Words("先关闭，稍后再选", "Close and choose later", "閉じてあとで選ぶ")
+        static let back = Words("上一步", "Back", "戻る")
+        static let next = Words("继续", "Continue", "続ける")
+        static let finishAndSend = Words("完成并试发一期", "Finish and Send a Trial", "完了して試しに送る")
+        static let finishQuietly = Words("完成，等定时推送", "Finish and Wait for the Schedule", "完了して定時配信を待つ")
+        static let telegramIntro = Words("在 Telegram 里找 @BotFather 新建一个机器人，把它给你的 Token 粘贴到这里。", "In Telegram, ask @BotFather for a new bot and paste the token it gives you here.", "Telegram の @BotFather で新しいボットを作り、受け取ったトークンをここに貼り付けてください。")
+        static let howTo = Words("怎么做？", "How?", "方法")
+        static let tokenPlaceholder = Words("Bot Token", "Bot token", "ボットのトークン")
+        static let check = Words("验证", "Check", "確認")
+        static let checking = Words("正在验证…", "Checking…", "確認中…")
+        static let verified = Words("已验证 · {name}", "Verified · {name}", "確認済み · {name}")
+        static let sendThis = Words("在 Telegram 里打开 {name}，发送：", "Open {name} in Telegram and send:", "Telegram で {name} を開き、次を送ってください：")
+        static let copy = Words("复制", "Copy", "コピー")
+        static let expiresIn = Words("{minutes} 分 {seconds} 秒后失效 · 正在等你发送", "Expires in {minutes} min {seconds} s · waiting for you", "あと {minutes} 分 {seconds} 秒で期限切れ · 送信を待っています")
+        static let expired = Words("配对码过期了。", "The pairing code expired.", "ペアリングコードの期限が切れました。")
+        static let newCode = Words("重新生成", "New Code", "再発行")
+        static let paired = Words("已配对 · {time}", "Paired · {time}", "ペアリング済み · {time}")
+        static let moreBots = Words("这里只接一个机器人；还可以在「接入」里再加一个只收成人内容的机器人。", "This connects one Bot; you can add another, for adult content only, in Connect.", "ここでは 1 つだけ接続します。成人向け専用のボットは「接続」で追加できます。")
+        static let modelIntro = Words("NewsPaw 用你的模型 Key 挑选和整理新闻。保存后会自动发一条很短的测试消息。", "NewsPaw uses your model key to choose and write up news. Saving it sends one very short test message.", "NewsPaw はあなたのモデルのキーでニュースを選んでまとめます。保存すると短いテストメッセージを 1 回送ります。")
+        static let whichModel = Words("模型", "Model", "モデル")
+        static let luna = Words("GPT-6 Luna（OpenAI）· 推荐", "GPT-6 Luna (OpenAI) · Recommended", "GPT-6 Luna（OpenAI）· おすすめ")
+        static let mimo = Words("MiMo Flash（小米）", "MiMo Flash (Xiaomi)", "MiMo Flash（Xiaomi）")
+        static let custom = Words("自定义…", "Custom…", "カスタム…")
+        static let customURL = Words("API 地址（兼容 OpenAI）", "API address (OpenAI-compatible)", "API アドレス（OpenAI 互換）")
+        static let customModel = Words("模型 ID", "Model ID", "モデル ID")
+        static let keyPlaceholder = Words("API Key", "API key", "API キー")
+        static let paste = Words("粘贴", "Paste", "貼り付け")
+        static let saveAndCheck = Words("保存并测试", "Save and Check", "保存して確認")
+        static let checkingKey = Words("正在测试 Key…", "Checking the key…", "キーを確認中…")
+        static let keyPassed = Words("测试通过 · 刚才发了一条很短的测试消息，模型正常回复（{model}）", "Check passed · a very short test message got a normal reply ({model})", "確認できました · 短いテストメッセージに正常な返答がありました（{model}）")
+        static let checkAgain = Words("再测一次", "Check Again", "もう一度確認")
+        static let adultOptional = Words("我也想看 AV 产业 / X 成人博主 · 可选", "I also want AV industry / X adult accounts · optional", "AV 業界 / X 成人向けも見たい · 任意")
+        static let adultNote = Words("成人内容用单独的 DeepSeek Key，和普通新闻分开。", "Adult content uses a separate DeepSeek key, kept apart from ordinary news.", "成人向けは別の DeepSeek キーを使い、通常のニュースとは分けます。")
+        static let advanced = Words("高级：备用模型", "Advanced: backup model", "詳細：予備モデル")
+        static let backupNote = Words("主模型出错时改用 MiMo Flash。", "MiMo Flash is used when the main model fails.", "メインモデルが失敗したときは MiMo Flash を使います。")
+        static let costNote = Words("费用由你自己的模型账号承担。NewsPaw 默认每月最多花 $20，可在「接入」里改或清空。", "Costs are billed to your own model account. NewsPaw spends at most $20 a month by default; change or clear it in Connect.", "費用はあなたのモデルのアカウントに請求されます。既定では月 $20 までで、「接続」で変更・解除できます。")
+        static let sendTo = Words("会发到 {bot}", "Sent {bot}", "{bot} に送ります")
+        static let chooseLater = Words("有多个机器人：开启后在「简报」里选择发到哪个。", "Several Bots: choose where each digest goes on the Digests page.", "ボットが複数あります。送信先は「ダイジェスト」で選んでください。")
+        static let all: [Words] = [
+            windowTitle, openSetup, telegramTitle, modelTitle, digestsTitle, current, stepDone, stepPending, skip, finishLater,
+            back, next, finishAndSend, finishQuietly, telegramIntro, howTo, tokenPlaceholder, check, checking, verified,
+            sendThis, copy, expiresIn, expired, newCode, paired, moreBots, modelIntro, whichModel, luna, mimo, custom,
+            customURL, customModel, keyPlaceholder, paste, saveAndCheck, checkingKey, keyPassed, checkAgain, adultOptional,
+            adultNote, advanced, backupNote, costNote, sendTo, chooseLater,
+        ]
+    }
+
     enum Digests {
         static let intro = Words("每份简报按自己的时间发到你选的机器人。改动会自动保存。", "Each digest goes to the Bots you choose at its own times. Changes save automatically.", "ダイジェストはそれぞれの時刻に、選んだボットへ届きます。変更は自動で保存されます。")
         static let importOPML = Words("导入 OPML", "Import OPML", "OPML を読み込む")
@@ -307,6 +364,19 @@ enum FailureCopy {
     }
 
     static let table: [String: Entry] = [
+        "bot_not_verified": Entry(message: Words("Telegram 没有确认这个机器人。检查 Token 后再验证。", "Telegram did not confirm this bot. Check the token and try again.", "Telegram がこのボットを確認できませんでした。トークンを確認して再試行してください。"), action: L10n.Shell.retry),
+        "missing_token": Entry(message: Words("还没有填 Token。", "No token has been entered yet.", "トークンがまだ入力されていません。"), action: nil),
+        "probe_pending": Entry(message: Words("Key 测试还没有结果。稍后点「再测一次」。", "The key check has no result yet. Use Check Again in a moment.", "キーの確認結果がまだありません。少ししてから「もう一度確認」を押してください。"), action: L10n.Shell.retry),
+        "invalid_credential": Entry(message: Words("模型服务不接受这个 Key。复制完整 Key 再试。", "The model service did not accept this key. Copy the full key and try again.", "モデルサービスがこのキーを受け付けませんでした。完全なキーをコピーして再試行してください。"), action: L10n.Shell.retry),
+        "connection_failed": Entry(message: Words("连不上模型服务。检查网络或 API 地址。", "Could not reach the model service. Check the network or the API address.", "モデルサービスに接続できませんでした。ネットワークか API アドレスを確認してください。"), action: L10n.Shell.retry),
+        "credential_missing": Entry(message: Words("还没有保存 Key。", "No key is saved yet.", "キーがまだ保存されていません。"), action: nil),
+        "credential_unavailable": Entry(message: Words("读不到保存的 Key（钥匙串可能被锁定）。", "The saved key could not be read (the keychain may be locked).", "保存したキーを読めません（キーチェーンがロックされている可能性があります）。"), action: L10n.Shell.retry),
+        "invalid_endpoint": Entry(message: Words("这个 API 地址不能用。", "This API address cannot be used.", "この API アドレスは使えません。"), action: nil),
+        "unsupported_provider": Entry(message: Words("不支持这个模型服务。", "This model service is not supported.", "このモデルサービスには対応していません。"), action: nil),
+        "outcome_unknown": Entry(message: Words("测试消息已发出，但没收到确定结果。再测一次即可。", "The test message went out but no clear result came back. Check again.", "テストメッセージは送られましたが、結果がはっきりしません。もう一度確認してください。"), action: L10n.Shell.retry),
+        "budget_blocked": Entry(message: Words("本月预算不够做这次测试。到「接入」调整上限。", "This month's budget does not cover the check. Adjust the limit in Connect.", "今月の予算では確認できません。「接続」で上限を調整してください。"), action: nil),
+        "probe_unavailable": Entry(message: Words("这个模型服务暂时不能测试。", "This model service cannot be checked yet.", "このモデルサービスはまだ確認できません。"), action: nil),
+        "adapter_not_implemented": Entry(message: Words("这个模型服务暂时不能测试。", "This model service cannot be checked yet.", "このモデルサービスはまだ確認できません。"), action: nil),
         "subscription_not_ready": Entry(message: Words("这份简报还不能开启，下面是还缺的。", "This digest cannot turn on yet; what is missing is listed below.", "このダイジェストはまだオンにできません。足りないものを下に示します。"), action: nil),
         "source_preview_required": Entry(message: Words("有来源还没试采集成功，先在来源里点「试采集」。", "A source has not been tried successfully yet; use Try Now on it first.", "まだ試しに取得できていないソースがあります。先に「試しに取得」してください。"), action: nil),
         "preview_required": Entry(message: Words("这个来源要先试采集成功才能启用。", "This source has to be tried successfully before it can be turned on.", "このソースは試しに取得できてから有効にできます。"), action: nil),

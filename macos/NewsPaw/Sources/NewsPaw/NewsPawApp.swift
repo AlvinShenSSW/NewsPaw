@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class WindowLifetime: NSObject, NSApplicationDelegate {
     var revealSettings: (() -> Void)?
+    var openSetup: (() -> Void)?
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         guard !hasVisibleWindows, let revealSettings else { return true }
@@ -36,6 +37,10 @@ struct NewsPawApp: App {
                     action(id: "settings")
                     NSApp.activate()
                 }
+                lifetime.openSetup = {
+                    action(id: "onboarding")
+                    NSApp.activate()
+                }
             }
             .frame(minWidth: 900, minHeight: 600)
             .preferredColorScheme(developmentAppearance)
@@ -43,6 +48,9 @@ struct NewsPawApp: App {
         }
         .defaultSize(width: 1180, height: 820)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button(model.text(L10n.Onboarding.openSetup)) { lifetime.openSetup?() }
+            }
             CommandGroup(replacing: .appSettings) {
                 Button(model.text(L10n.Page.settings)) {
                     model.page = .settings
@@ -64,6 +72,13 @@ struct NewsPawApp: App {
                     .keyboardShortcut("r")
             }
         }
+
+        Window(model.text(L10n.Onboarding.windowTitle), id: "onboarding") {
+            OnboardingWindow(model: model)
+                .preferredColorScheme(developmentAppearance)
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
 
         MenuBarExtra {
             ServiceMenu(model: model)
@@ -142,6 +157,10 @@ struct MainWindow: View {
             }
         }
         .onAppear { registerOpen?(openWindow) }
+        // First launch with setup unfinished: open the setup window once (interaction-spec §3).
+        .onChange(of: model.shouldOfferOnboarding, initial: true) { _, offer in
+            if offer { openWindow(id: "onboarding") }
+        }
     }
 }
 

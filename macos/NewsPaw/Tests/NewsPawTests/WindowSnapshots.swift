@@ -27,6 +27,13 @@ private let environment = ProcessInfo.processInfo.environment
         await model.refresh()
         #expect(model.connection == .connected)
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            if environment["NEWSPAW_UI_SETUP"] != nil {
+                for step in OnboardingData.Step.allCases {
+                    let image = try await render(OnboardingWindow(model: model, step: step), appearance: appearance, size: NSSize(width: 760, height: 580))
+                    let suffix = appearance == .aqua ? "light" : "dark"
+                    try image.write(to: folder.appendingPathComponent("setup-\(step.rawValue + 1)-\(language.rawValue)-\(suffix).png"))
+                }
+            }
             for page in pages {
                 model.page = page
                 let image = try await render(MainWindow(model: model), appearance: appearance)
@@ -45,8 +52,7 @@ private let environment = ProcessInfo.processInfo.environment
 }
 
 @MainActor
-private func render<Content: View>(_ content: Content, appearance: NSAppearance.Name) async throws -> Data {
-    let size = NSSize(width: 1180, height: 820)
+private func render<Content: View>(_ content: Content, appearance: NSAppearance.Name, size: NSSize = NSSize(width: 1180, height: 820)) async throws -> Data {
     let host = NSHostingView(rootView: content.frame(width: size.width, height: size.height))
     let window = NSWindow(
         contentRect: NSRect(origin: .zero, size: size),

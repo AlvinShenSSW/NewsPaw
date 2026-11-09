@@ -508,7 +508,7 @@ class Timelines:
                 reason=str(exc),
             )
             return None
-        self.budget._begin_attempt(budget_id)
+        self.budget._begin_attempt(budget_id, now=self.clock())
         self._record(row, step, "inflight", budget_id=budget_id)
         return budget_id
 

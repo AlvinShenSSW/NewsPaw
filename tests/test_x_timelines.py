@@ -51,7 +51,7 @@ async def setup(system, responder):
         assert route in {path, "/2/lists/456/tweets"}
         return await responder(request, ordinal)
 
-    x, requests = directory(system, responses)
+    x, requests = directory(system, responses, clock=lambda: NOW)
     item = (await x.add_account("fixture", store.config_revision()))["account"]
     await x.verify(item["id"], "directory.verify", store.config_revision())
     revision, config = store.load_config()
@@ -146,7 +146,9 @@ async def test_confirmed_pages_and_prior_cursor_survive_unknown_and_restart(syst
         new_credentials = CredentialManager(reopened, credentials.backend)
         registry = BotRegistry(reopened, credentials.backend)
         new_targets = TargetManager(new_credentials, registry)
-        new_x = XDirectory(new_credentials, new_targets, client_factory=x.client_factory)
+        new_x = XDirectory(
+            new_credentials, new_targets, client_factory=x.client_factory, clock=x.clock
+        )
         recovered = Timelines(new_x, clock=lambda: NOW)
         recovered.recover_interrupted()
         assert await recovered.advance("increment", "increment.lost") == lost

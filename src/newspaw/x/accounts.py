@@ -36,6 +36,10 @@ def _now():
     return datetime.now(UTC).isoformat()
 
 
+def _utc():
+    return datetime.now(UTC)
+
+
 def initialize(db):
     db.execute(
         """CREATE TABLE IF NOT EXISTS x_identities (
@@ -94,10 +98,11 @@ def _draft(identity, name, partition=None):
 
 
 class XDirectory:
-    def __init__(self, credentials, targets, *, client_factory=XClient):
+    def __init__(self, credentials, targets, *, client_factory=XClient, clock=_utc):
         self.credentials, self.targets = credentials, targets
         self.store, self.db = credentials.store, credentials.store._db
         self.client_factory = client_factory
+        self.clock = clock
         self.budget = BudgetLedger(self.store)
 
     def _identity(self, identity):
@@ -496,6 +501,7 @@ class XDirectory:
             attempts = op["attempts"]
             task = "xmeta." + hashlib.sha256(identity.encode()).hexdigest()
             budget_id = f"{task}.{len(attempts) + 1}"
+            now = self.clock()
             self.budget._reserve(
                 budget_id,
                 task,
@@ -504,8 +510,9 @@ class XDirectory:
                 meter="x",
                 partition=context["partition"],
                 account_id=context["scope"] if context["kind"] == "account" else None,
+                now=now,
             )
-            self.budget._begin_attempt(budget_id)
+            self.budget._begin_attempt(budget_id, now=now)
             attempts.append(dict(id=budget_id, state="inflight", started_at=_now()))
             self._save_attempts(identity, attempts)
         try:

@@ -156,8 +156,12 @@ final class AppModel {
     var page: Page = .overview
     var schedulingPaused: Bool { readiness.map { !$0.schedulingEnabled } ?? false }
 
-    init(socket: LocalSocket, defaults: UserDefaults = .standard) {
-        self.client = BackendClient(socket: socket)
+    convenience init(socket: LocalSocket, defaults: UserDefaults = .standard) {
+        self.init(client: BackendClient(socket: socket), defaults: defaults)
+    }
+
+    init(client: BackendClient, defaults: UserDefaults = .standard) {
+        self.client = client
         self.defaults = defaults
         let stored = defaults.string(forKey: Self.languageKey).flatMap(AppLanguage.init(rawValue:))
         self.uiLanguage = stored ?? .zhHans
@@ -335,21 +339,25 @@ final class AppModel {
     }
 
     /// Queues one extra edition of a digest now (R03 `subscriptions.send_now`).
-    func sendNow(_ subscriptionId: String?) async {
-        guard let subscriptionId, connection == .connected else { return }
+    @discardableResult
+    func sendNow(_ subscriptionId: String?) async -> Bool {
+        guard let subscriptionId, connection == .connected else { return false }
+        var sent = false
         do {
             _ = try await client.call(.sendNow, ["subscription_id": subscriptionId])
             error = nil
+            sent = true
         } catch {
             switch error {
             case let failure as BackendError: lastFailure = failure
             case is SocketFailure: lastFailure = BackendError(code: "backend_unreachable")
             default: lastFailure = BackendError(code: "invalid_reply")
             }
-            retryLast = { [weak self] in await self?.sendNow(subscriptionId) }
+            retryLast = { [weak self] in _ = await self?.sendNow(subscriptionId) }
             self.error = .saveFailed
         }
         await refresh()
+        return sent
     }
 
     /// Pauses or resumes every scheduled delivery (the menu-bar and Settings switch).

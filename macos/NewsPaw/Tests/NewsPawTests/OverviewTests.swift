@@ -27,7 +27,13 @@ private final class ScriptedBackend {
     func calls(_ op: String) -> [[String: Any]] { requests.filter { $0["op"] as? String == op } }
 }
 
-private func occurrence(_ id: String, status: String, reason: String? = nil, date: String, time: String = "08:00", job: String? = "job1", offset: String = "+00:00") -> String {
+/// This Mac's UTC offset as "+09:00", so fixture times fall on the fixture's local day.
+private let localOffset: String = {
+    let seconds = TimeZone.current.secondsFromGMT()
+    return String(format: "%@%02d:%02d", seconds < 0 ? "-" : "+", abs(seconds) / 3600, abs(seconds) % 3600 / 60)
+}()
+
+private func occurrence(_ id: String, status: String, reason: String? = nil, date: String, time: String = "08:00", job: String? = "job1", offset: String = localOffset) -> String {
     let reason = reason.map { "\"\($0)\"" } ?? "null"
     let job = job.map { "\"\($0)\"" } ?? "null"
     return #"{"id":"\#(id)","scope_id":"s","slot":1,"civil_date":"\#(date)","target_at":"\#(date)T\#(time):00\#(offset)","prepare_at":"\#(date)T07:45:00+00:00","cutoff_at":"\#(date)T14:00:00+00:00","status":"\#(status)","reason":\#(reason),"generation":1,"job_id":\#(job),"updated_at":"\#(date)T08:01:00+00:00","subscription_id":"sub_world","account_id":null}"#
@@ -286,4 +292,45 @@ private func realisticDelivery(_ server: ScriptedBackend, parts: String) {
     let row = try! BackendRPC.decode(Data(occurrence("r", status: "rescheduled", reason: "schedule_changed", date: "2026-11-10").utf8)) as Occurrence
     #expect(OccurrenceState(row, paused: false, abandoned: false) == .skipped)
     #expect(OccurrenceRow.skipNote(status: "rescheduled", reason: "schedule_changed") == L10n.Overview.retimed)
+}
+
+@Test @MainActor func aSkipOnOneBotDoesNotHideAnotherBotsUnknownPart() async {
+    let now = Date()
+    let server = backend(now: now, rows: [occurrence("two", status: "partial", date: fixtureDay(0, from: now))])
+    server.responder = { request in
+        guard request["op"] as? String == "delivery.status" else { return nil }
+        switch request["bot_id"] as? String {
+        case "bot1": return #"{"ok":true,"result":{"targets":{"bot1":{"parts":[{"ordinal":0,"state":"skipped","resolution":{"action":"skip"}}]}}}}"#
+        case "bot2": return #"{"ok":true,"result":{"targets":{"bot2":{"parts":[{"ordinal":0,"state":"outcome_unknown"}]}}}}"#
+        default: return #"{"ok":true,"result":{"targets":{"bot1":{},"bot2":{}}}}"#
+        }
+    }
+    let data = OverviewData()
+    await data.load(server.client, now: now)
+    #expect(data.abandoned.isEmpty && data.unknownParts == ["two"])
+}
+
+@Test @MainActor func aPartialEditionWithNothingUnknownOffersNoRecovery() async {
+    let now = Date()
+    let server = backend(now: now, rows: [occurrence("stopped", status: "partial", reason: "owner_stopped_remaining", date: fixtureDay(0, from: now))])
+    realisticDelivery(server, parts: #"[{"ordinal":0,"state":"delivered"},{"ordinal":1,"state":"skipped"}]"#)
+    let data = OverviewData()
+    await data.load(server.client, now: now)
+    #expect(data.unknownParts.isEmpty && data.abandoned.isEmpty)
+}
+
+@Test func aDeliveryRetryIsOfferedOnlyWhileTheEditionIsOpen() {
+    func row(_ status: String) -> Occurrence {
+        try! BackendRPC.decode(Data(occurrence("x", status: status, reason: "delivery_outcome_unknown", date: "2026-11-10").utf8))
+    }
+    #expect(OverviewData.canRetryDelivery(row("waiting")) && OverviewData.canRetryDelivery(row("late")))
+    #expect(!OverviewData.canRetryDelivery(row("outcome_unknown")) && !OverviewData.canRetryDelivery(row("partial")))
+}
+
+@Test func editionsAreGroupedByTheirLocalDay() {
+    let row = try! BackendRPC.decode(Data(occurrence("utc", status: "planned", date: "2026-11-09", time: "23:30", offset: "+00:00").utf8)) as Occurrence
+    let local = OverviewData.day(OverviewData.date("2026-11-09T23:30:00+00:00")!)
+    #expect(OverviewData.localDay(row) == local)
+    let untimed = try! BackendRPC.decode(Data(#"{"id":"n","scope_id":"s","slot":1,"civil_date":"2026-11-09","target_at":null,"prepare_at":null,"cutoff_at":null,"status":"skipped","reason":null,"generation":1,"job_id":null,"updated_at":"2026-11-09T08:01:00+00:00","subscription_id":"sub_world","account_id":null}"#.utf8)) as Occurrence
+    #expect(OverviewData.localDay(untimed) == "2026-11-09")
 }

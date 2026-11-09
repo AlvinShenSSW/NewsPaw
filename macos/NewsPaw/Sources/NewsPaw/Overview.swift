@@ -83,6 +83,8 @@ final class OverviewData {
     private(set) var today: [Occurrence] = []
     private(set) var week: [Occurrence] = []
     private(set) var abandoned: Set<String> = []
+    /// Editions with a delivery part whose outcome is unknown (the only parts recovery can act on).
+    private(set) var unknownParts: Set<String> = []
     private(set) var spending: Spending?
     private(set) var staleSources: [(name: String, days: Int)] = []
     private(set) var failure: BackendError?
@@ -103,19 +105,26 @@ final class OverviewData {
             let rows = try BackendRPC.decode(schedule) as ScheduleRows
             let day = Self.day(now)
             let start = Self.day(Calendar.current.date(byAdding: .day, value: -6, to: now) ?? now)
-            today = rows.occurrences.filter { $0.civilDate == day }.sorted(by: Self.byTarget)
-            week = rows.occurrences.filter { $0.civilDate >= start && $0.civilDate < day }
-                .sorted { $0.civilDate != $1.civilDate ? $0.civilDate > $1.civilDate : Self.byTarget($1, $0) }
+            today = rows.occurrences.filter { Self.localDay($0) == day }.sorted(by: Self.byTarget)
+            week = rows.occurrences.filter { Self.localDay($0) >= start && Self.localDay($0) < day }
+                .sorted { Self.localDay($0) != Self.localDay($1) ? Self.localDay($0) > Self.localDay($1) : Self.byTarget($1, $0) }
             var skipped: Set<String> = []
+            var unknown: Set<String> = []
             for row in today + week where Self.mayHaveSkippedParts(row) {
                 guard let job = row.jobId else { continue }
                 do {
-                    if try await Self.abandoned(job, client) { skipped.insert(row.id) }
+                    let parts = try await Self.parts(job, client).flatMap(\.1)
+                    let open = parts.contains { $0.state == "outcome_unknown" }
+                    if open { unknown.insert(row.id) }
+                    // Abandoned only once no part is left unresolved: a skip on one Bot must not
+                    // hide another Bot's part that is still unknown.
+                    if !open, parts.contains(where: { $0.resolution?.action == "skip" }) { skipped.insert(row.id) }
                 } catch let error as BackendError where error.code == "missing_delivery" {
                     // Stopped before delivery: there is nothing to skip, and nothing to show as failed.
                 }
             }
             abandoned = skipped
+            unknownParts = unknown
             spending = Self.spending(try BackendRPC.decode(await client.call(.budgetGet)), now: now)
             let sources: [SourceHealth] = try BackendRPC.decode(await client.call(.sourcesList))
             staleSources = sources.compactMap { item in
@@ -233,8 +242,16 @@ final class OverviewData {
         return result
     }
 
-    private static func abandoned(_ job: String, _ client: BackendClient) async throws -> Bool {
-        try await parts(job, client).contains { $0.1.contains { $0.resolution?.action == "skip" } }
+    /// The day an edition belongs to on this Mac: its target time in the local time zone (a
+    /// digest's own `civil_date` is in the digest's zone), else its civil date.
+    nonisolated static func localDay(_ row: Occurrence) -> String {
+        row.targetAt.flatMap(date).map(day) ?? row.civilDate
+    }
+
+    /// The scheduler still sends a retried part only while its edition is open; after the
+    /// catch-up window it is terminal and a retry would never run.
+    nonisolated static func canRetryDelivery(_ row: Occurrence) -> Bool {
+        ["waiting", "late", "delivering", "preparing"].contains(row.status)
     }
 
     /// Target-time order across time zones: compare instants, not the offset strings.
@@ -458,7 +475,7 @@ struct OccurrenceRow: View {
     var body: some View {
         let state = OccurrenceState(row, paused: model.schedulingPaused, abandoned: data.abandoned.contains(row.id))
         HStack(spacing: 12) {
-            Text((showDate ? String(row.civilDate.suffix(5)) + " " : "") + OverviewData.clock(row.targetAt))
+            Text((showDate ? String(OverviewData.localDay(row).suffix(5)) + " " : "") + OverviewData.clock(row.targetAt))
                 .font(.body.weight(.semibold)).monospacedDigit()
                 .frame(width: showDate ? 96 : 48, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
@@ -487,11 +504,18 @@ struct OccurrenceRow: View {
         case .modelUnknown:
             Button(model.text(L10n.Overview.retry)) { act(.retryModel) }
         case .deliveryUnknown, .partial:
-            Menu(model.text(L10n.Overview.checkAndResend)) {
-                Button(model.text(L10n.Overview.retry)) { act(.retryDelivery) }
-                Button(model.text(L10n.Overview.stopResending)) { act(.stopResending) }
+            // Only unknown parts can be retried or skipped; a retry runs only while the edition is open.
+            if data.unknownParts.contains(row.id) {
+                if OverviewData.canRetryDelivery(row) {
+                    Menu(model.text(L10n.Overview.checkAndResend)) {
+                        Button(model.text(L10n.Overview.retry)) { act(.retryDelivery) }
+                        Button(model.text(L10n.Overview.stopResending)) { act(.stopResending) }
+                    }
+                    .fixedSize()
+                } else {
+                    Button(model.text(L10n.Overview.stopResending)) { act(.stopResending) }
+                }
             }
-            .fixedSize()
         case .held:
             Button(model.text(L10n.Overview.continueHeld)) { act(.continueHeld) }
             Button(model.text(L10n.Overview.stopHeld)) { act(.stopHeld) }
@@ -524,7 +548,8 @@ struct OccurrenceRow: View {
         case .modelUnknown:
             return model.text(L10n.Overview.modelUnknownNote)
         case .deliveryUnknown, .partial:
-            return model.text(L10n.Overview.deliveryUnknownNote)
+            if !data.unknownParts.contains(row.id) { return model.text(L10n.Overview.partialSettledNote) }
+            return model.text(OverviewData.canRetryDelivery(row) ? L10n.Overview.deliveryUnknownNote : L10n.Overview.retryExpiredNote)
         case .abandoned:
             return model.text(L10n.Overview.abandonedNote)
         case .held:

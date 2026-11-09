@@ -8,6 +8,7 @@ enum Operation: String, CaseIterable, Sendable {
     case setupReadiness = "setup.readiness"
     case configGet = "config.get"
     case configSave = "config.save"
+    case configChangesSince = "config.changes_since"
     case botsList = "bots.list"
     case scheduleStatus = "schedule.status"
     case scheduleConfigure = "schedule.configure"
@@ -158,6 +159,12 @@ struct BackendClient {
     func config() async throws -> ConfigSnapshot { try BackendRPC.decode(await call(.configGet)) }
     func bots() async throws -> [BotStatus] { try BackendRPC.decode(await call(.botsList)) }
 
+    /// What changed in the configuration since `revision` (R05); `history_unavailable` when
+    /// that revision is older than the backend keeps, in which case reload everything.
+    func changes(since revision: Int) async throws -> ConfigChanges {
+        try BackendRPC.decode(await call(.configChangesSince, ["revision": revision]))
+    }
+
     /// The stored configuration as a mutable document, so unknown fields survive a save.
     func configDocument() async throws -> (revision: Int, document: [String: Any]) {
         try Self.record(await call(.configGet), field: "document")
@@ -186,4 +193,17 @@ struct BackendClient {
         }
         return (revision.intValue, document)
     }
+}
+
+struct ConfigChanges: Decodable, Equatable, Sendable {
+    struct Change: Decodable, Equatable, Sendable {
+        let field: String?
+        let collection: String?
+        let id: String?
+        let fields: [String]?
+        let added: Bool?
+        let removed: Bool?
+    }
+    let revision: Int
+    let changes: [Change]
 }

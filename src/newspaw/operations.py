@@ -69,6 +69,7 @@ _SETTINGS_DEFAULTS = {
 }
 _INITIAL_TABLES = {
     "app_configuration",
+    "app_configuration_history",
     "migration_info",
     "budget_policy",
     "schedule_policy",

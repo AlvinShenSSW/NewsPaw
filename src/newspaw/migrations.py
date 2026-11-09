@@ -18,7 +18,7 @@ from .app_config import (
     upgrade_v1,
 )
 
-DATABASE_VERSION = 24
+DATABASE_VERSION = 25
 _LEGACY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -243,7 +243,8 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         from .scheduler import initialize as initialize_scheduler
 
         initialize_scheduler(db)
-        if version:
+        if version and version < 24:
+            # Once only: on a later upgrade it would turn back on a schedule the owner paused.
             _upgrade_schedule(db)
         from .telegram.commands import initialize as initialize_commands
 
@@ -272,6 +273,9 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         from .x.video import initialize as initialize_x_video
 
         initialize_x_video(db, zone)
+        from .config_history import initialize as initialize_config_history
+
+        initialize_config_history(db)
         db.execute(f"PRAGMA user_version={DATABASE_VERSION}")
         db.commit()
     except BaseException:

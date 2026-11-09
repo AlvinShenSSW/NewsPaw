@@ -1115,3 +1115,17 @@ async def test_an_export_from_before_policies_still_imports(two_controls):
         },
     )
     assert applied["ok"] and target.operations._current_policies() == before
+
+
+async def test_config_changes_since_reports_a_background_bump(control):
+    server, store = control
+    revision, document = store.load_config()
+    document["news_output_locale"] = "en"
+    store.save_config(document, expected_revision=revision)
+    reply = await request(server, {"op": "config.changes_since", "revision": revision})
+    assert reply == {
+        "ok": True,
+        "result": {"revision": revision + 1, "changes": [{"field": "news_output_locale"}]},
+    }
+    gone = await raw_request(server, {"op": "config.changes_since", "revision": 99})
+    assert gone["error"] == "invalid_revision" and gone["error_detail"]["domain"] == "config"

@@ -345,3 +345,11 @@ private final class Box<Value>: @unchecked Sendable {
     #expect(model.lastFailure?.code == "invalid_reply")
     #expect(try await replies.value.count == 13)
 }
+
+
+@Test @MainActor func configChangesDecodeFieldsAndItems() async throws {
+    let reply = #"{"ok":true,"result":{"revision":7,"changes":[{"field":"ui_locale"},{"collection":"subscriptions","id":"sub_world","fields":["times"]},{"collection":"sources","id":"s1","added":true}]}}"#
+    let changes = try await client(replying: reply).changes(since: 5)
+    #expect(changes.revision == 7 && changes.changes.count == 3)
+    #expect(changes.changes[1].fields == ["times"] && changes.changes[2].added == true)
+}

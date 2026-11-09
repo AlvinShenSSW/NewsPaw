@@ -22,6 +22,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .budget import BudgetError, BudgetLedger
+from .config_history import changes_since
 from .connectors.web_search import WebSearch
 from .credentials import CredentialError
 from .errors import code_of, detail
@@ -180,6 +181,7 @@ OPERATIONS = {
     "budget.save": ({"document", "revision"}, set()),
     "config.get": (set(), set()),
     "config.save": ({"document", "revision"}, set()),
+    "config.changes_since": ({"revision"}, set()),
     "route.preview": ({"subscription_id"}, {"account_id", "style"}),
     "credentials.set": ({"kind", "id", "value", "revision"}, set()),
     "credentials.remove": ({"kind", "id", "revision"}, set()),
@@ -419,6 +421,8 @@ class ControlServer:
             self._stop_requested.set()
         if op == "requests.status":
             return self._request_status(data["request"])
+        if op == "config.changes_since":
+            return changes_since(self.credentials.store, data["revision"])
         if op in {"service.status", "service.stop"}:
             return {
                 "protocol_version": 1,

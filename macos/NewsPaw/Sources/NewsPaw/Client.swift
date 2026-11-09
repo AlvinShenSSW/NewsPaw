@@ -146,6 +146,7 @@ struct BackendClient {
               let revision = object["revision"] as? NSNumber,
               CFGetTypeID(revision) != CFBooleanGetTypeID(),
               revision.intValue > 0,
+              revision.doubleValue == Double(revision.intValue),
               let document = object[field] as? [String: Any] else {
             throw BackendFailure.invalidReply
         }

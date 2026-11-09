@@ -144,6 +144,8 @@ final class AppModel {
     private(set) var readiness: Readiness?
     /// The last failure from any request, so every view can say what happened.
     private(set) var lastFailure: BackendError?
+    /// Repeats the shell action that produced `lastFailure` (language or pause).
+    @ObservationIgnored private(set) var retryLast: (@MainActor () async -> Void)?
     var pendingModelProbes: [String: ModelProbeRequest] = [:]
     private(set) var uiLanguage: AppLanguage
     private(set) var busy = false
@@ -259,6 +261,7 @@ final class AppModel {
         }
         if !saved, let failure = editor.failure {
             lastFailure = failure
+            retryLast = { [weak self] in await self?.saveLocale(field, value) }
             error = failure.isConflict ? .conflict : .saveFailed
             if failure.code == "backend_unreachable" { clear(.offline) }
         }
@@ -274,6 +277,9 @@ final class AppModel {
         lastFailure = nil
         do {
             return try await client.send(operation, fields)
+        } catch let failure as SocketFailure {
+            lastFailure = BackendError(code: "backend_unreachable")
+            throw failure
         } catch let failure as BackendError {
             lastFailure = failure
             // Keep the cases those views already distinguish.
@@ -302,6 +308,7 @@ final class AppModel {
         })) {
             lastFailure = editor.failure
             error = .saveFailed
+            retryLast = { [weak self] in await self?.setPaused(paused) }
         }
         await loadSnapshot(generation: generation)
     }

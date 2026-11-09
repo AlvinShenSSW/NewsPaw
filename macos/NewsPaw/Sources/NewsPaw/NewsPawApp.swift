@@ -113,7 +113,9 @@ struct MainWindow: View {
                 VStack(alignment: .leading, spacing: 18) {
                     if let error = model.error {
                         if error != .stopFailed, let failure = model.lastFailure {
-                            FailureNote(model: model, failure: failure)
+                            FailureNote(model: model, failure: failure, action: model.retryLast.map { retry in
+                                { Task { await retry() } }
+                            })
                         } else {
                             Label(model.text(error), systemImage: "exclamationmark.circle.fill")
                                 .foregroundStyle(.red)

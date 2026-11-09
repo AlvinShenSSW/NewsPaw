@@ -165,3 +165,34 @@ private final class Box<Value>: @unchecked Sendable {
     #expect(model.text(.saveFailed).contains("invalid_schedule_policy"))
     #expect(try await replies.value.count == 10)
 }
+
+@Test @MainActor func recordsRejectNonIntegerRevisions() {
+    #expect(throws: BackendFailure.invalidReply) {
+        _ = try BackendClient.record(Data(#"{"revision":1.5,"document":{}}"#.utf8), field: "document")
+    }
+    #expect((try? BackendClient.record(Data(#"{"revision":2,"document":{}}"#.utf8), field: "document"))?.revision == 2)
+}
+
+@Test @MainActor func aLostBackendIsNamedInLegacyViewsAndAShellRetryIsOffered() async throws {
+    let fixture = try FixtureSocket()
+    let running = #"{"ok":true,"result":{"protocol_version":1,"state":"running","operations":["setup.readiness"]}}"# + "\n"
+    let ready = #"{"ok":true,"result":{"complete":false,"next":"bot","scheduling_enabled":true,"steps":[]}}"# + "\n"
+    let configuration = #"{"ok":true,"result":{"revision":1,"document":{"ui_locale":"en","news_output_locale":"en","categories":[],"subscriptions":[],"sources":[],"accounts":[],"model_profiles":[]}}}"# + "\n"
+    let bots = #"{"ok":true,"result":[]}"# + "\n"
+    let policy = #"{"ok":true,"result":{"revision":3,"settings":{"enabled":true},"activated_at":null,"occurrences":[]}}"# + "\n"
+    let refused = #"{"ok":false,"error":"rate_limited","error_detail":{"code":"rate_limited","domain":"schedule","retryable":true}}"# + "\n"
+    let replies = fixture.serve([running, ready, configuration, bots, policy, refused, running, ready, configuration, bots])
+    let name = "NewsPawTests-" + UUID().uuidString
+    let defaults = try #require(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let model = AppModel(socket: LocalSocket(path: fixture.path), defaults: defaults)
+    await model.refresh()
+    await model.setPaused(true)
+    #expect(model.retryLast != nil)
+    #expect(FailureCopy.entry(for: try #require(model.lastFailure)).action != nil)
+    #expect(try await replies.value.count == 10)
+    // The fixture has stopped answering: a legacy request now names the lost backend.
+    await #expect(throws: SocketFailure.self) { _ = try await model.request("sources.list", fields: [:]) }
+    #expect(model.lastFailure?.code == "backend_unreachable")
+    #expect(model.text(.saveFailed) == FailureCopy.message(for: BackendError(code: "backend_unreachable"), .en))
+}

@@ -215,6 +215,8 @@ struct BudgetSummary: Equatable {
 struct XCheck: Equatable {
     let state: String
     let observedAt: String?
+    /// The X key reference the check was made with.
+    var reference: String? = nil
 }
 
 // MARK: - State and actions
@@ -273,6 +275,7 @@ final class ConnectData {
     func load(model: AppModel, now: Date = Date()) async {
         let client = model.client
         failures["load"] = nil
+        syncReceipts(model.bots)
         do {
             let report: CredentialReport = try BackendRPC.decode(await client.call(.credentialsStatus))
             // While a key is being stored the backend does not read the Keychain; keep the last view.
@@ -296,6 +299,8 @@ final class ConnectData {
         }
         if let accounts = try? await client.call(.xAccountsList) {
             xCheck = Self.xCheck(accounts, reference: model.config?.xApi?.credentialRef)
+        } else if xCheck?.reference != model.config?.xApi?.credentialRef {
+            xCheck = nil
         }
         loaded = true
     }
@@ -330,11 +335,51 @@ final class ConnectData {
         // An account checked with an earlier key reads `credential_changed`; it says nothing about this key.
         let checked = directory.accounts.filter { $0.observedAt != nil && !["unverified", "credential_changed"].contains($0.state) }
         guard let newest = checked.max(by: { ($0.observedAt ?? "") < ($1.observedAt ?? "") }) else { return nil }
-        return XCheck(state: newest.state, observedAt: newest.observedAt)
+        return XCheck(state: newest.state, observedAt: newest.observedAt, reference: reference)
     }
 
     /// The last four characters of the key behind a reference, when the Keychain returned it.
     func tail(_ reference: String?) -> String? { reference.flatMap { tails[$0] } }
+
+    /// The X account check that speaks for this key: one made with another key says nothing.
+    func xCheck(for reference: String?) -> XCheck? {
+        guard let xCheck, reference != nil, xCheck.reference == reference else { return nil }
+        return xCheck
+    }
+
+    /// The failure of the last test-message action, for the Bot as it is now.
+    func testFailure(_ id: String, generation: Int?) -> BackendError? {
+        if let sent = testGenerations[id], let generation, sent != generation { return nil }
+        return failures["test." + id]
+    }
+
+    /// The binding generation each Bot's last test action was made at.
+    private(set) var testGenerations: [String: Int] = [:]
+
+    /// A new token or pairing makes the last test's receipt, its failure and its note obsolete;
+    /// they go together, so nothing of the earlier binding is shown or retried.
+    func syncReceipts(_ bots: [BotStatus]) {
+        for (id, sent) in testGenerations {
+            guard let current = bots.first(where: { $0.id == id })?.generation, current != sent else { continue }
+            dropReceipt(id)
+        }
+    }
+
+    private func dropReceipt(_ id: String) {
+        tests[id] = nil
+        testedAt[id] = nil
+        testGenerations[id] = nil
+        failures["test." + id] = nil
+        stillUnknown.remove(id)
+    }
+
+    /// The cooldown row of the profile's current generation; one from an earlier key or model
+    /// does not apply (`model_runner._health_block` reads the current generation only).
+    func currentHealth(_ profile: String) -> ModelHealth? {
+        guard let row = health[profile] else { return nil }
+        guard let generation = keys.generations[profile] else { return row }
+        return row.generation == generation ? row : nil
+    }
 
     /// `available`, `missing`, or the Keychain error for a stored reference; nil without one.
     func credentialState(_ reference: String?) -> String? {
@@ -420,7 +465,9 @@ final class ConnectData {
     /// While it is unknown whether the last message arrived, retrying reads that message's
     /// receipt again (same request id); only a message known not to have arrived is sent anew.
     func retryTest(_ id: String, model: AppModel) async {
-        if ["outcome_unknown", "inflight"].contains(tests[id]?.state ?? "") {
+        syncReceipts(model.bots)
+        let current = model.bots.first { $0.id == id }?.generation
+        if ["outcome_unknown", "inflight"].contains(receipt(id, generation: current)?.state ?? "") {
             await checkTest(id, model: model)
         } else {
             await sendTest(id, model: model)
@@ -450,6 +497,7 @@ final class ConnectData {
         let pairing = ensurePairing(id, model: model)
         await pairing.connect(token: token, model: model)
         if pairing.failure == nil { replacingToken.remove(id) }
+        syncReceipts(model.bots)
     }
 
     // MARK: Bots: test message
@@ -467,6 +515,7 @@ final class ConnectData {
         var request: TestSend?
         do {
             let status: BotStatus = try BackendRPC.decode(await model.client.call(.botsStatus, ["bot_id": id]))
+            testGenerations[id] = status.generation
             let identity = BackendClient.requestId("test")
             request = TestSend(requestId: identity, generation: status.generation ?? 0, state: "inflight", reason: nil)
             let result: TestSend = try BackendRPC.decode(await model.client.call(.botsTestSend, [

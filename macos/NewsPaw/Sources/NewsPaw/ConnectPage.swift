@@ -86,7 +86,9 @@ struct LimitField: Equatable {
     }
     /// What to save when the field is left: only an edit that differs from what is stored.
     func pendingSave(stored: String) -> String? { edited && text != stored ? text : nil }
-    mutating func saved() { edited = false }
+    /// A save of `value` finished: the field is clean only if it still holds that value; a newer
+    /// edit typed meanwhile stays pending and is saved next.
+    mutating func saved(_ value: String) { if text == value { edited = false } }
     /// Drops an edit (after a refused save) and shows the stored value again.
     mutating func reset(_ value: String) {
         edited = false
@@ -619,7 +621,7 @@ private struct BotGroup: View {
 
     @ViewBuilder private var testLine: some View {
         let language = model.uiLanguage
-        if let failure = data.failures["test." + bot.id] {
+        if let failure = data.testFailure(bot.id, generation: current.generation) {
             // An unresolved receipt is read again; a new message only after a definite failure.
             FailureNote(model: model, failure: failure) { Task { await data.retryTest(bot.id, model: model) } }
         } else {
@@ -831,7 +833,7 @@ private struct ModelRow: View {
     private var provider: String { ModelNames.provider(profile.provider, model.uiLanguage) }
     private var status: KeyStatus {
         KeyStatus.of(credential: data.credentialState(profile.credentialRef), probe: data.keys.probes[profile.id],
-                     health: data.health[profile.id], working: data.keys.isChecking(profile.id, model: model))
+                     health: data.currentHealth(profile.id), working: data.keys.isChecking(profile.id, model: model))
     }
 
     var body: some View {
@@ -1264,12 +1266,20 @@ private struct SpendingSection: View {
 
     private func saveMonthly() {
         guard let stored = storedMonthly, let value = monthly.pendingSave(stored: stored) else { return }
-        Task { if await data.saveMonthlyLimit(value, model: model) { monthly.saved() } }
+        Task {
+            guard await data.saveMonthlyLimit(value, model: model) else { return }
+            monthly.saved(value)
+            if monthly.edited, focus != .monthly { saveMonthly() }
+        }
     }
 
     private func saveDaily() {
         guard let stored = storedDaily, let value = daily.pendingSave(stored: stored) else { return }
-        Task { if await data.saveDailyReads(value, model: model) { daily.saved() } }
+        Task {
+            guard await data.saveDailyReads(value, model: model) else { return }
+            daily.saved(value)
+            if daily.edited, focus != .daily { saveDaily() }
+        }
     }
 
     private var monthlyRow: some View {
@@ -1438,8 +1448,9 @@ private struct XSection: View {
         guard let reference, let credential = data.credentialState(reference), credential != "missing" else { return .missing }
         if data.isBusy("x") { return .working }
         if credential != "available" { return .keychain(credential) }
-        switch data.xCheck?.state {
-        case "ready", "protected": return .verified(data.xCheck?.observedAt.flatMap(OverviewData.date))
+        let check = data.xCheck(for: reference)
+        switch check?.state {
+        case "ready", "protected": return .verified(check?.observedAt.flatMap(OverviewData.date))
         case "authentication_failed": return .rejected(401)
         case "permission_denied": return .rejected(403)
         default: return .saved

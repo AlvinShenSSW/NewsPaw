@@ -115,6 +115,11 @@ private final class ConnectBackend {
     var dropNextTestSend = false
     /// `config.save` commits, then its reply is lost.
     var dropNextConfigSaveReply = false
+    /// X accounts as `x.accounts.list` reports them (with the key reference they were checked with).
+    var xAccounts: [[String: Any]] = []
+    var xListFails = false
+    /// Reads a dropped-reply probe answers `pending` before its result.
+    var probePendingReads = 1
     /// `targets.delete_bot` fails (the store could not commit).
     var deleteFails = false
     /// The next `bots.test_status` reply is lost (connection dropped).
@@ -156,7 +161,7 @@ private final class ConnectBackend {
                     if asked == 0 { self.probeBorn[id] = self.generation(profile) }
                     switch asked {
                     case 0: return nil
-                    case 1: return self.ok(["status": "pending"])
+                    case _ where asked <= self.probePendingReads: return self.ok(["status": "pending"])
                     // A check started for an earlier key or model finishes stale (ProfileRegistry.finish).
                     case _ where self.probeBorn[id] != self.generation(profile):
                         return self.ok(["status": "stale"])
@@ -441,8 +446,15 @@ private final class ConnectBackend {
             if let profile = settings["stt_profile"] as? String { startAutomatic(profile, "stt") }
             return ok(["revision": mediaRevision, "settings": media])
         case "x.accounts.list":
+            if xListFails { return refuse("internal_error", "x") }
             let ref = (document["x_api"] as? [String: Any])?["credential_ref"]
-            return ok(["revision": revision, "credential_configured": ref is String, "accounts": []])
+            // An account checked with an earlier key reads credential_changed (XDirectory._account_status).
+            let accounts = xAccounts.map { account -> [String: Any] in
+                var account = account
+                if account["checked_with"] as? String != ref as? String { account["state"] = "credential_changed" }
+                return account
+            }
+            return ok(["revision": revision, "credential_configured": ref is String, "accounts": accounts])
         default: return refuse("unknown_operation")
         }
     }
@@ -1227,7 +1239,7 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
     // A background reload does not overwrite what is being typed.
     field.load("20")
     #expect(field.text == "35" && field.pendingSave(stored: "20") == "35")
-    field.saved()
+    field.saved("35")
     field.load("35")
     #expect(field.pendingSave(stored: "35") == nil)
 }
@@ -1335,4 +1347,107 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
     #expect(server.bots.first?["adult_allowed"] as? Bool == true)
     #expect(await data.setAdult("b1", false, model: model, revision: model.configRevision) == .done)
     #expect(server.bots.first?["adult_allowed"] as? Bool == false)
+}
+
+// MARK: - Kimi review (cycle 6)
+
+@Test @MainActor func aTimedOutCheckStaysOpenUntilThatSameProbeHasAnOutcome() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk-synthetic-7Qx2", profile: "normal_primary", model: model)
+    // An older check of this key failed; that row stays the newest finished one.
+    server.checks["normal_primary"] = [["state": "failed", "status": "failed", "error_kind": "rate_limited"]]
+    await data.load(model: model)
+    data.keys.probeLimit = .milliseconds(60)
+    server.probeOutlastsSocket = ["state": "verified", "status": "verified"]
+    server.probePendingReads = 1_000
+
+    await data.recheck("normal_primary", model: model)
+    let started = try #require(server.calls("models.probe").first?["probe_id"] as? String)
+    #expect(data.keys.failures["normal_primary"]?.code == "probe_pending")
+
+    // The older finished row does not end the wait, so no second paid check starts.
+    await data.load(model: model)
+    #expect(data.keys.failures["normal_primary"]?.code == "probe_pending" && data.needsConfirmation("normal_primary"))
+    server.probePendingReads = 0
+    await data.recheck("normal_primary", model: model)
+    let ids = Set(server.calls("models.probe").compactMap { $0["probe_id"] as? String })
+    #expect(ids == [started])
+    #expect(data.keys.failures["normal_primary"] == nil && data.keys.probes["normal_primary"]?.passed == true)
+}
+
+@Test @MainActor func aNewBindingDropsTheEarlierReceiptItsFailureAndItsNote() async throws {
+    let server = ConnectBackend(bots: [ConnectBackend.bot("b1")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.testOutcome = ("outcome_unknown", "outcome_unknown")
+    await data.sendTest("b1", model: model)
+    await data.checkTest("b1", model: model)
+    server.dropNextTestStatus = true
+    await data.checkTest("b1", model: model)
+    #expect(data.stillUnknown.contains("b1") && data.failures["test.b1"] != nil)
+
+    await data.replaceToken("b1", token: "123456:another-token", model: model)
+    await model.refresh()
+    await data.load(model: model)
+    let generation = model.bots[0].generation
+    #expect(data.testFailure("b1", generation: generation) == nil && !data.stillUnknown.contains("b1"))
+    #expect(data.receipt("b1", generation: generation) == nil)
+
+    // Retrying is a new message for the new binding, never a read of the old receipt.
+    let checks = server.calls("bots.test_status").count
+    server.testOutcome = ("confirmed", nil)
+    server.registry["b1"]?.paired = true
+    server.registry["b1"]?.status = "paired"
+    await data.retryTest("b1", model: model)
+    #expect(server.calls("bots.test_status").count == checks && server.calls("bots.test_send").count == 2)
+}
+
+@Test func anEditMadeWhileASaveIsRunningIsKeptForTheNextSave() {
+    var field = LimitField()
+    field.load("20")
+    field.type("35")
+    let submitted = field.pendingSave(stored: "20")
+    #expect(submitted == "35")
+    field.type("40")
+    field.saved("35")
+    #expect(field.text == "40" && field.pendingSave(stored: "35") == "40")
+    field.saved("40")
+    #expect(field.pendingSave(stored: "40") == nil)
+}
+
+@Test @MainActor func anXCheckMadeWithAnEarlierKeyDoesNotSpeakForTheNewOne() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveXKey("x-synthetic-AAAA", model: model)
+    let first = try #require(model.config?.xApi?.credentialRef)
+    server.xAccounts = [["state": "ready", "observed_at": "2026-11-09T20:28:00+00:00", "checked_with": first]]
+    await data.load(model: model)
+    #expect(data.xCheck(for: first)?.state == "ready")
+
+    // A new key, and the next read of the accounts fails.
+    server.xListFails = true
+    await data.saveXKey("x-synthetic-BBBB", model: model)
+    let second = try #require(model.config?.xApi?.credentialRef)
+    #expect(second != first && data.xCheck(for: second) == nil)
+}
+
+@Test @MainActor func aCooldownFromAnEarlierKeyDoesNotApply() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk-synthetic-first", profile: "normal_primary", model: model)
+    let until = ISO8601DateFormatter().string(from: Date().addingTimeInterval(600))
+    server.health = [["profile_id": "normal_primary", "generation": server.generation("normal_primary"), "failures": 3,
+                      "cooldown_until": until, "error_kind": "rate_limited", "checked_at": "2999-01-01T00:00:00+00:00"]]
+    await data.load(model: model)
+    #expect(data.currentHealth("normal_primary") != nil)
+
+    await data.saveKey("sk-synthetic-second", profile: "normal_primary", model: model)
+    #expect(data.currentHealth("normal_primary") == nil)
+    let status = KeyStatus.of(credential: "available", probe: data.keys.probes["normal_primary"],
+                              health: data.currentHealth("normal_primary"), working: false)
+    #expect(status == .verified)
 }

@@ -341,6 +341,10 @@ final class KeyChecks {
     private(set) var failures: [String: BackendError] = [:]
     /// Each profile's current generation, as `models.status` reports it.
     private(set) var generations: [String: Int] = [:]
+    /// Checks that gave no result in time, by key: the "no result yet" note belongs to that check
+    /// and ends only when it has an outcome or the key / model changed, never because an older
+    /// finished check is on record.
+    private(set) var timedOut: [String: PendingProbe] = [:]
 
     /// How often a pending check is read back, and how long a check may take: longer than the
     /// 90 seconds a provider gets (`providers.py`), so a slow provider's result is still read.
@@ -359,8 +363,12 @@ final class KeyChecks {
             states[profile] = read
             probes[profile] = read["text"]
             if let generation = read.values.compactMap(\.generation).first { generations[profile] = generation }
-            // Once the check has an outcome, an earlier "no result yet" note no longer holds.
-            if read["text"]?.settled == true, failures[profile]?.code == "probe_pending" { failures[profile] = nil }
+            for (key, check) in timedOut where check.profile == profile {
+                let changed = check.generation != nil && generations[profile] != nil && check.generation != generations[profile]
+                // The automatic check after a save is the first finished check of its new generation.
+                let answered = check.id == nil && !changed && read[check.capability]?.settled == true
+                if changed || answered { clearTimeout(key) }
+            }
         }
     }
 
@@ -379,7 +387,7 @@ final class KeyChecks {
             let pending = PendingProbe(id: nil, profile: profile, capability: "text", generation: generations[profile])
             model.pendingProbes[pending.key] = pending
             await readProbe(profile, model: model)
-            if !Task.isCancelled { release(pending, model: model) }
+            if !Task.isCancelled { finishWaiting(pending, model: model) }
         } catch {
             failures[profile] = BackendError.wrapping(error)
         }
@@ -427,7 +435,7 @@ final class KeyChecks {
         defer { working.remove(pending.key) }
         if pending.id == nil {
             await readProbe(pending.profile, model: model)
-            if !Task.isCancelled { release(pending, model: model) }
+            if !Task.isCancelled { finishWaiting(pending, model: model) }
             return
         }
         let clock = ContinuousClock()
@@ -443,6 +451,7 @@ final class KeyChecks {
                 }
                 if state.settled {
                     guard model.pendingProbes[pending.key]?.token == pending.token else { return }
+                    clearTimeout(pending.key)
                     await load(pending.profile, model: model)
                     record(state, profile: pending.profile, capability: pending.capability)
                     release(pending, model: model)
@@ -454,7 +463,19 @@ final class KeyChecks {
         }
         guard !Task.isCancelled, model.pendingProbes[pending.key]?.token == pending.token else { return }
         release(pending, model: model)
+        timedOut[pending.key] = pending
         failures[pending.key] = BackendError(code: "probe_pending", domain: "models")
+    }
+
+    /// After waiting through `models.status`: a check still without an outcome is remembered.
+    private func finishWaiting(_ pending: PendingProbe, model: AppModel) {
+        if failures[pending.key]?.code == "probe_pending" { timedOut[pending.key] = pending }
+        release(pending, model: model)
+    }
+
+    private func clearTimeout(_ key: String) {
+        timedOut[key] = nil
+        if failures[key]?.code == "probe_pending" { failures[key] = nil }
     }
 
     /// Clears a pending check, unless a newer one has taken its place.
@@ -514,6 +535,20 @@ final class KeyChecks {
             // It was started for an earlier key or model and will end stale: check the current one.
             model.pendingProbes[key] = nil
             if failures[key]?.code == "probe_pending" { failures[key] = nil }
+        }
+        // A check that gave no result in time is asked about again by its own id (no new charge);
+        // the backend's automatic check is named by its deterministic id.
+        if var waited = timedOut[key], waited.generation == nil || waited.generation == generations[profile] {
+            if waited.id == nil, let generation = waited.generation ?? generations[profile] {
+                waited = PendingProbe(id: "auto.\(profile).\(capability).g\(generation)", profile: profile,
+                                      capability: capability, generation: generation)
+            }
+            if waited.id != nil {
+                clearTimeout(key)
+                model.pendingProbes[key] = waited
+                await follow(waited, model: model)
+                return
+            }
         }
         guard confirmed || !needsConfirmation(profile, capability: capability) else { return }
         failures[key] = nil

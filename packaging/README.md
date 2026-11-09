@@ -14,7 +14,7 @@ The local build is for development inspection. For distribution, sign embedded e
 
 ## Login and upgrades
 
-Use Delivery & Service to register the per-user login item and review its actual system approval. Settings and the worker are separate processes. The worker holds the same private data-directory lock as the legacy launcher. When upgrading from the legacy LaunchAgent, stop it using its existing installation before registering the packaged worker.
+Use Delivery & Service to register the per-user login item and review its actual system approval. Settings and the worker are separate processes. The worker holds the private data-directory lock (`agent.lock`), the same file the removed `.env` prototype locked. When upgrading from that prototype's LaunchAgent (`io.newspaw.agent`), stop it before registering the packaged worker: run `newspaw service uninstall` from the old installation, or `launchctl bootout gui/$(id -u)/io.newspaw.agent` and remove `~/Library/LaunchAgents/io.newspaw.agent.plist`. Current versions no longer ship that command, and registration refuses to proceed while the old agent is loaded.
 
 For a version upgrade, stop and unregister the previous packaged worker, keep the previous app available, then open the candidate app and register its login item. Registration first checks the installed data on a private copy. The worker migrates the original in its existing transaction before starting scheduled or Telegram work. If that migration fails, the prior schema remains in place. After a successful migration, keep using a compatible app version so durable delivery receipts and unknown attempts remain intact.
 

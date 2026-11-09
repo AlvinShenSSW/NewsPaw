@@ -766,9 +766,13 @@ class ControlServer:
         finished = sorted(
             (entry[2], handle) for handle, entry in self._requests.items() if entry[2] is not None
         )
+        # Only finished results count toward the cap; running operations are never evicted and
+        # do not push a finished result out.
+        kept = len(finished)
         for when, handle in finished:
-            if now - when > REQUEST_KEEP or len(self._requests) >= REQUEST_LIMIT:
+            if now - when > REQUEST_KEEP or kept > REQUEST_LIMIT:
                 del self._requests[handle]
+                kept -= 1
 
     def _request_status(self, handle):
         self._prune_requests()

@@ -1279,3 +1279,28 @@ def test_an_exported_newspaper_missing_a_model_is_turned_off():
         {"newspaper": {**paper, "vision_profile": "normal_primary"}}, {"normal_primary"}
     )["newspaper"]
     assert kept["enabled"] is True
+
+
+async def test_a_finished_result_is_kept_while_others_are_still_running(control, monkeypatch):
+    from newspaw import control as module
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.01)
+    monkeypatch.setattr(module, "REQUEST_LIMIT", 2)
+    gates = {f"s{index}": asyncio.Event() for index in range(4)}
+
+    async def preview(source_id):
+        await gates[source_id].wait()
+        return source_id
+
+    monkeypatch.setattr(server.sources, "preview", preview)
+    handles = {}
+    for source_id in gates:
+        reply = await raw_request(server, {"op": "sources.preview", "source_id": source_id})
+        handles[source_id] = reply["result"]["request"]
+    gates["s0"].set()
+    await asyncio.sleep(0.05)
+    done = await raw_request(server, {"op": "requests.status", "request": handles["s0"]})
+    assert done == {"ok": True, "result": "s0"}
+    for gate in gates.values():
+        gate.set()

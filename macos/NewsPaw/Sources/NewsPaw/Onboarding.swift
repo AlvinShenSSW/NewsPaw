@@ -102,6 +102,16 @@ final class OnboardingData {
                 probes[profile] = states["text"]
             }
         }
+        for profile in ["normal_primary", "adult_primary"] {
+            // A saved key whose check is still running (e.g. the window was reopened right after
+            // saving): keep reading until it has an outcome.
+            let saved = model.config?.modelProfiles.first { $0.id == profile }?.credentialRef != nil
+            if saved, probes[profile]?.settled != true, !working.contains(profile) {
+                working.insert(profile)
+                await readProbe(profile, model: model)
+                working.remove(profile)
+            }
+        }
     }
 
     // MARK: Step 1
@@ -271,6 +281,9 @@ final class OnboardingData {
             probes[profile] = try BackendRPC.decode(await model.client.call(.modelsProbe, [
                 "probe_id": probe, "profile_id": profile, "capability": "text", "hold_units": 10_000,
             ]))
+        } catch is SocketFailure {
+            // The connection gave up but the backend keeps checking; read its outcome instead.
+            await readProbe(profile, model: model)
         } catch {
             failures[profile] = error as? BackendError ?? BackendError(code: "invalid_reply")
         }
@@ -657,7 +670,16 @@ private struct KeyRow: View {
                     Text(model.text(L10n.Onboarding.checkingKey)).foregroundStyle(.secondary)
                 }
             } else if let failure = data.failures[profile] {
-                FailureNote(model: model, failure: failure) { Task { await save() } }
+                // With the key field empty (a key saved earlier), retrying means checking it again.
+                FailureNote(model: model, failure: failure) {
+                    Task {
+                        if key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            await data.recheck(profile, model: model)
+                        } else {
+                            await save()
+                        }
+                    }
+                }
             } else if let probe = data.probes[profile], probe.settled {
                 if probe.passed {
                     HStack(spacing: 6) {

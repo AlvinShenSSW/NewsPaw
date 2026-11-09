@@ -45,8 +45,19 @@ private final class SetupBackend {
     func calls(_ op: String) -> [[String: Any]] { requests.filter { $0["op"] as? String == op } }
     var bots: [[String: Any]] { document["bots"] as? [[String: Any]] ?? [] }
 
+    /// The next models.probe connection fails like a socket timeout (the backend keeps checking).
+    var probeConnectionDrops = false
+
     var client: BackendClient {
         BackendClient { [unowned self] body, _ in
+            let isProbe = (try JSONSerialization.jsonObject(with: body) as! [String: Any])["op"] as? String == "models.probe"
+            let drop = await MainActor.run { () -> Bool in
+                guard isProbe, self.probeConnectionDrops else { return false }
+                self.probeConnectionDrops = false
+                self.probe = self.probeResult
+                return true
+            }
+            if drop { throw SocketFailure.timeout }
             let request = try JSONSerialization.jsonObject(with: body) as! [String: Any]
             return await MainActor.run { self.answer(request) }
         }
@@ -359,4 +370,31 @@ private func connected(_ server: SetupBackend) async throws -> (AppModel, Onboar
     for code in ["authentication_failed", "model_unavailable", "permission_denied", "provider_failed", "protocol_error", "invalid_probe_output"] {
         #expect(FailureCopy.entry(for: BackendError(code: code, domain: "models")).action != nil, "no retry for \(code)")
     }
+}
+
+
+@Test @MainActor func reopeningWhileASavedKeyIsStillCheckingWaitsForItsResult() async throws {
+    let server = SetupBackend()
+    var profiles = server.document["model_profiles"] as! [[String: Any]]
+    profiles[0]["credential_ref"] = "keychain:00000000-0000-0000-0000-000000000001"
+    server.document["model_profiles"] = profiles
+    server.probe = ["state": "stale"]
+    server.probeReadsBeforeResult = 2
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    await data.start(model: model)
+
+    #expect(data.keyReady("normal_primary"))
+}
+
+@Test @MainActor func aRecheckWhoseConnectionDropsReadsTheBackendsResult() async throws {
+    let server = SetupBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.probeConnectionDrops = true
+
+    await data.recheck("normal_primary", model: model)
+
+    #expect(data.failures["normal_primary"] == nil && data.keyReady("normal_primary"))
 }

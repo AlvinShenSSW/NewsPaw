@@ -526,10 +526,27 @@ struct DigestsPage: View {
     @State private var importing = false
     @State private var importFailure: BackendError?
 
+    init(model: AppModel, config: AppConfig, expanded: String? = nil) {
+        self.model = model
+        self.config = config
+        _expanded = State(initialValue: expanded)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(model.text(L10n.Digests.intro)).font(.callout).foregroundStyle(.secondary)
             if let importFailure { FailureNote(model: model, failure: importFailure) }
+            if model.usableBots(for: "world").isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "paperplane").foregroundStyle(.secondary).accessibilityHidden(true)
+                    Text(model.text(L10n.Digests.needsBot))
+                    Spacer()
+                    Button(model.text(L10n.Digests.completeSetup)) { model.page = .connect }
+                }
+                .font(.callout)
+                .padding(10)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            }
             ForEach(ordered) { subscription in
                 DigestRow(model: model, data: data, subscription: subscription,
                           expanded: Binding(get: { expanded == subscription.id },
@@ -694,7 +711,7 @@ private struct DigestRow: View {
                 }
                 .accessibilityElement(children: .combine)
             }
-            if missing != nil {
+            if missing == L10n.Digests.needsAdultSetup {
                 Button(model.text(L10n.Digests.completeSetup)) { model.page = .connect }.buttonStyle(.link)
             }
             if data.working.contains(subscription.id) { ProgressView().controlSize(.small) }
@@ -902,6 +919,8 @@ private struct DigestEditor: View {
                     .labelsHidden()
                     .datePickerStyle(.stepperField)
                     .environment(\.timeZone, TimeZone(identifier: "UTC")!)
+                    // 24-hour, matching the "08:30" in summaries and Telegram.
+                    .environment(\.locale, Locale(identifier: "en_GB"))
                     if times.count > 1 {
                         Button {
                             times.remove(at: index)

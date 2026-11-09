@@ -32,6 +32,13 @@ private let environment = ProcessInfo.processInfo.environment
                 let image = try await render(MainWindow(model: model), appearance: appearance)
                 let suffix = appearance == .aqua ? "light" : "dark"
                 try image.write(to: folder.appendingPathComponent("\(page.rawValue)-\(language.rawValue)-\(suffix).png"))
+                // The digests page again with its first digest open for editing.
+                if page == .digests, let config = model.config, let first = config.subscriptions.first(where: \.enabled) ?? config.subscriptions.first {
+                    let open = ScrollView { DigestsPage(model: model, config: config, expanded: first.id).padding(24) }
+                        .background(Color(nsColor: .windowBackgroundColor))
+                    let image = try await render(open, appearance: appearance)
+                    try image.write(to: folder.appendingPathComponent("digests-open-\(language.rawValue)-\(suffix).png"))
+                }
             }
         }
     }

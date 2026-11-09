@@ -196,7 +196,10 @@ final class FixtureSocket {
     let name = "NewsPawTests-" + UUID().uuidString
     let defaults = try #require(UserDefaults(suiteName: name))
     defer { defaults.removePersistentDomain(forName: name) }
-    let model = AppModel(socket: LocalSocket(path: fixture.path), defaults: defaults)
+    // The held poll stays open for the whole save (up to four more round trips); on a slow
+    // runner that outlasts the 1.8 s default deadline, the poll gives up and its reply
+    // has nowhere to go. A longer deadline keeps the test about ordering, not speed.
+    let model = AppModel(socket: LocalSocket(path: fixture.path, timeoutMilliseconds: 10_000), defaults: defaults)
     await model.refresh()
     let stale = Task { await model.refresh() }
     for await _ in received {}

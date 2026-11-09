@@ -18,6 +18,16 @@ enum Operation: String, CaseIterable, Sendable {
     case deliveryStatus = "delivery.status"
     case deliveryResolve = "delivery.resolve"
     case sendNow = "subscriptions.send_now"
+    case newspaperPolicy = "newspaper.policy"
+    case subscriptionsSave = "subscriptions.save"
+    case subscriptionsPreview = "subscriptions.preview"
+    case sourcesCatalog = "sources.catalog"
+    case sourcesDiscover = "sources.discover"
+    case sourcesSave = "sources.save"
+    case sourcesDelete = "sources.delete"
+    case sourcesPreview = "sources.preview"
+    case sourcesImpact = "sources.impact"
+    case sourcesImportOPML = "sources.import_opml"
 
     /// Socket deadline for an operation name, the one place the app sets timeouts.
     /// Network-bound operations wait for their bounded backend work; everything else

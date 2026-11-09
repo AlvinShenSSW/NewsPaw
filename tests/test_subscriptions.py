@@ -213,3 +213,56 @@ async def test_drafts_without_model_overrides_keep_the_saved_ones(tmp_path):
         saved = next(s for s in store.load_config()[1]["subscriptions"] if s["id"] == sub["id"])
         assert saved["max_items"] == 3 and saved["backup_profile_id"] == "normal_backup"
         assert saved["primary_profile_id"] is None
+
+
+def test_a_backup_without_a_key_does_not_block_the_route():
+    config, sub = configured()
+    for profile in config["model_profiles"]:
+        if profile["id"] == "normal_backup":
+            profile["credential_ref"] = None
+    route = resolve_route(config, 1, sub["id"])
+    assert "missing_backup_credential" not in route.blockers
+    assert route.effective["backup"]["id"] == "normal_backup"
+    for profile in config["model_profiles"]:
+        if profile["id"] == "normal_primary":
+            profile["credential_ref"] = None
+    assert "missing_primary_credential" in resolve_route(config, 1, sub["id"]).blockers
+
+
+async def test_a_digest_turns_on_with_a_checked_main_model_and_no_backup_key(tmp_path, monkeypatch):
+    from contextlib import closing
+
+    from test_credentials import FakeKeychain
+
+    from newspaw.credentials import CredentialManager
+    from newspaw.source_manager import SourceManager
+    from newspaw.store import Store
+    from newspaw.subscriptions import Subscriptions
+    from newspaw.telegram.registry import BotRegistry
+
+    with closing(Store(tmp_path / "state.db")) as store:
+        config, sub = configured()
+        for profile in config["model_profiles"]:
+            if profile["id"] == "normal_backup":
+                profile["credential_ref"] = None
+        sub["enabled"] = False
+        revision = store.save_config(config, expected_revision=1)
+        keychain = FakeKeychain()
+        manager = CredentialManager(store, keychain)
+        registry = BotRegistry(store, keychain)
+        service = Subscriptions(manager, SourceManager(manager), registry)
+        states = {"normal_primary": "verified", "normal_backup": "untested"}
+        monkeypatch.setattr(
+            service.profiles, "status", lambda profile_id: {"text": {"state": states[profile_id]}}
+        )
+        monkeypatch.setattr(service.sources, "_ready", lambda source: True)
+        monkeypatch.setattr(registry, "snapshot", lambda bot_id: type("B", (), {"owner_id": 123})())
+        draft = {key: value for key, value in sub.items() if key != "enabled"}
+        draft["source_mode"] = "category"
+        preview = service.preview(draft, revision)
+        assert preview["blockers"] == []
+        assert preview["profiles"]["backup"]["status"] == "untested"
+        result = await service.save(draft, revision, enable=True)
+        assert result["enabled"]
+        states["normal_primary"] = "failed"
+        assert "primary_unverified" in service.preview(draft, result["revision"])["blockers"]

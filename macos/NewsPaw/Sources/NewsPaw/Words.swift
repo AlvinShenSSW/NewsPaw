@@ -180,6 +180,123 @@ enum L10n {
 
         static let all: [Words] = [title, keyRejected, keyRejectedNote, botWaiting, botWaitingNote, staleSource, staleSourceNote, capReached, capReachedNote, xUnlimited, xUnlimitedNote, noBackup, noBackupNote]
     }
+
+    enum Digests {
+        static let intro = Words("每份简报按自己的时间发到你选的机器人。改动会自动保存。", "Each digest goes to the Bots you choose at its own times. Changes save automatically.", "ダイジェストはそれぞれの時刻に、選んだボットへ届きます。変更は自動で保存されます。")
+        static let importOPML = Words("导入 OPML", "Import OPML", "OPML を読み込む")
+        static let importSummary = Words("新增 {added} 个来源，{existing} 个已存在，跳过 {rejected} 个。", "{added} new sources, {existing} already here, {rejected} skipped.", "新しいソース {added} 件、既存 {existing} 件、スキップ {rejected} 件。")
+        static let importInto = Words("加到", "Add to", "追加先")
+        static let importNote = Words("导入的来源都是待验证，在简报里试采集后启用。", "Imported sources wait for a trial; try them in the digest to turn them on.", "読み込んだソースは未確認です。ダイジェストで試しに取得してから有効にします。")
+        static let done = Words("完成", "Done", "完了")
+        static let later = Words("稍后", "Later", "あとで")
+        static let add = Words("添加", "Add", "追加")
+        static let adult = Words("成人", "Adult", "成人向け")
+        static let completeSetup = Words("去接入补齐", "Finish in Connect", "接続で設定する")
+        static let enabled = Words("开启", "On", "オン")
+        static let edit = Words("编辑", "Edit", "編集")
+        static let collapse = Words("收起", "Close", "閉じる")
+        static let offTitle = Words("关闭「{name}」？", "Turn off \u{201C}{name}\u{201D}?", "「{name}」をオフにしますか？")
+        static let turnOff = Words("关闭", "Turn Off", "オフにする")
+        static let offBody = Words("来源和设置都会保留。", "Its sources and settings are kept.", "ソースと設定はそのまま残ります。")
+        static let offBodyToday = Words("今天 {time} 的那期不会发；来源和设置都会保留。", "Today's {time} edition will not be sent; its sources and settings are kept.", "今日 {time} の回は送られません。ソースと設定はそのまま残ります。")
+        static let offPrefix = Words("关闭中", "Off", "オフ")
+        static let needsAdultSetup = Words("需要成人模型 Key 和一个允许成人内容的机器人", "Needs an adult model key and a Bot that allows adult content", "成人向けモデルのキーと、成人向けを許可したボットが必要です")
+        static let needsBot = Words("需要先接入一个 Telegram 机器人", "Connect a Telegram Bot first", "先に Telegram ボットを接続してください")
+        static let noTarget = Words("还没选机器人", "no Bot chosen", "ボット未選択")
+        static let offSummary = Words("关闭中 · 开启后每天 {times} · {sources}", "Off · when on, every day at {times} · {sources}", "オフ · オンにすると毎日 {times} · {sources}")
+        static let sourceCount = Words("{count} 个来源", "{count} sources", "ソース {count} 件")
+        static let recommendedCount = Words("推荐 {count} 个来源", "{count} recommended sources", "おすすめソース {count} 件")
+        static let everyDay = Words("每天 {times}", "Every day at {times}", "毎日 {times}")
+        static let next = Words("下一期 {when}", "next {when}", "次回 {when}")
+        static let today = Words("今天 {time}", "today {time}", "今日 {time}")
+        static let tomorrow = Words("明天 {time}", "tomorrow {time}", "明日 {time}")
+        static let botCount = Words("{count} 个机器人", "{count} Bots", "ボット {count} 件")
+        static let times = Words("发送时间", "Send at", "送信時刻")
+        static let sendTo = Words("发送到", "Send to", "送信先")
+        static let count = Words("每期条数", "Items", "件数")
+        static let upTo = Words("最多 {count} 条", "Up to {count}", "最大 {count} 件")
+        static let countNote = Words("新闻不够时少发，不凑数。", "Fewer when there is less news; never padded.", "ニュースが少ない日は少なめに送り、水増ししません。")
+        static let style = Words("样式", "Style", "スタイル")
+        static let styleText = Words("文字 + 链接", "Text + links", "テキスト + リンク")
+        static let styleImage = Words("带来源配图", "With source images", "ソース画像つき")
+        static let stylePaper = Words("AI 报纸", "AI newspaper", "AI 新聞")
+        static let paperNeedsSetup = Words("需要先在「接入 › 附加能力」开启生图", "Turn on image generation in Connect › Extras first", "先に「接続 › 追加機能」で画像生成をオンにしてください")
+        static let goConnect = Words("去开启", "Turn On", "オンにする")
+        static let ratio = Words("国内 / 娱乐", "Domestic / Entertainment", "国内 / エンタメ")
+        static let domestic = Words("国内 {value}%", "Domestic {value}%", "国内 {value}%")
+        static let entertainment = Words("娱乐 {value}%", "Entertainment {value}%", "エンタメ {value}%")
+        static let domesticTag = Words("国内", "Domestic", "国内")
+        static let entertainmentTag = Words("娱乐", "Entertainment", "エンタメ")
+        static let advanced = Words("高级", "Advanced", "詳細")
+        static let removeTitle = Words("移除「{name}」？", "Remove \u{201C}{name}\u{201D}?", "「{name}」を削除しますか？")
+        static let remove = Words("移除", "Remove", "削除")
+        static let removeBody = Words("这个来源会从所有简报中移除。", "The source is removed from every digest.", "このソースはすべてのダイジェストから削除されます。")
+        static let removeTurnsOff = Words("移除后这些简报会因为没有来源而关闭：{names}", "These digests will turn off because they have no other source: {names}", "ほかにソースがないため、次のダイジェストがオフになります：{names}")
+        static let splitTitle = Words("把「{name}」拆成两份？", "Split \u{201C}{name}\u{201D} in two?", "「{name}」を 2 つに分けますか？")
+        static let split = Words("拆成两份", "Split in Two", "2 つに分ける")
+        static let splitBody = Words("各自有时间和机器人；现有来源按国内 / 娱乐分配。新的一份先关闭。", "Each gets its own times and Bots; sources are divided by domestic / entertainment. The new one starts off.", "それぞれに時刻とボットを設定できます。ソースは国内 / エンタメで分けます。新しい方はオフで始まります。")
+        static let mergeTitle = Words("并回「{name}」？", "Merge back into \u{201C}{name}\u{201D}?", "「{name}」に戻しますか？")
+        static let merge = Words("并回", "Merge Back", "戻す")
+        static let mergeInto = Words("并回「{name}」", "Merge Back into \u{201C}{name}\u{201D}", "「{name}」に戻す")
+        static let mergeBody = Words("这一份会删除，它的推送记录保留；剩下的一份重新使用全部来源。", "This one is deleted and its delivery history kept; the remaining one uses all sources again.", "こちらは削除され、配信履歴は残ります。残る方はすべてのソースを使います。")
+        static let removeTime = Words("删除这个时间", "Remove This Time", "この時刻を削除")
+        static let addTime = Words("＋ 加一个时间", "+ Add a Time", "＋ 時刻を追加")
+        static let zone = Words("时区 {zone} · 改", "Time zone {zone} · Change", "タイムゾーン {zone} · 変更")
+        static let followsSystem = Words("（跟随系统）", " (system)", "（システム）")
+        static let addBot = Words("先接入一个机器人", "Connect a Bot first", "先にボットを接続")
+        static let botNotAdult = Words("不接收成人内容", "Does not take adult content", "成人向けを受け取らない")
+        static let botNotPaired = Words("还没配对", "Not paired yet", "未ペアリング")
+        static let onlyBot = Words("只有一个可用机器人时会自动选中。", "With only one usable Bot, it is chosen automatically.", "使えるボットが 1 つだけのときは自動で選ばれます。")
+        static let sourcesTitle = Words("来源 · {count} 个启用", "Sources · {count} on", "ソース · {count} 件オン")
+        static let fromCatalog = Words("从推荐目录添加", "Add from Catalog", "おすすめから追加")
+        static let pasteLink = Words("粘贴链接", "Paste a Link", "リンクを貼り付け")
+        static let noSources = Words("还没有来源。开启简报会自动带入推荐来源。", "No sources yet. Turning the digest on brings in recommended ones.", "ソースはまだありません。オンにするとおすすめが入ります。")
+        static let catalogEmpty = Words("推荐目录里的来源都已添加。", "Every catalog source is already added.", "おすすめのソースはすべて追加済みです。")
+        static let notReadable = Words("还不会读这个网站", "Cannot read this site yet", "このサイトはまだ読めません")
+        static let pastePlaceholder = Words("网站或 RSS 链接", "Website or RSS link", "サイトまたは RSS のリンク")
+        static let reading = Words("正在读取…", "Reading…", "読み込み中…")
+        static let identify = Words("识别", "Identify", "確認")
+        static let primaryModel = Words("主模型", "Main model", "メインモデル")
+        static let backupModel = Words("备用模型", "Backup model", "予備モデル")
+        static let defaultModel = Words("跟随默认", "Default", "デフォルト")
+        static let pauseThis = Words("暂停这份简报", "Pause This Digest", "このダイジェストを一時停止")
+        static let sent = Words("已发送", "Sent", "送信済み")
+        static let view = Words("查看", "View", "見る")
+        static let preview = Words("预览这期会选什么", "Preview This Edition", "今回の内容をプレビュー")
+        static let previewReady = Words("将从 {sources} 个来源选最多 {count} 条，{bots}", "Up to {count} items from {sources} sources, {bots}", "{sources} 件のソースから最大 {count} 件、{bots}")
+        static let send = Words("发送", "Send", "送信")
+        static let trialResult = Words("取到 {count} 条，最新 {time}", "Got {count} items, latest {time}", "{count} 件取得、最新 {time}")
+        static let unverified = Words("待验证", "Not tried yet", "未確認")
+        static let unreadable = Words("读不到", "Unreadable", "読めません")
+        static let staleDays = Words("{days} 天没更新", "No update for {days} days", "{days} 日更新なし")
+        static let healthy = Words("正常", "Healthy", "正常")
+        static let unknownHealth = Words("还没有记录", "No record yet", "記録なし")
+        static let tryThenEnable = Words("试采集后启用", "Try, Then Turn On", "試してからオン")
+        static let tryNow = Words("试采集", "Try Now", "試しに取得")
+        static let more = Words("更多", "More", "その他")
+        static let latest = Words("最近 {time}", "latest {time}", "最新 {time}")
+        static let searchZone = Words("搜索时区", "Search time zones", "タイムゾーンを検索")
+        static let systemZone = Words("跟随系统（{zone}）", "Use system ({zone})", "システムに合わせる（{zone}）")
+        static let adultOnly = Words("成人内容，只能加到成人简报", "Adult content; only for an adult digest", "成人向け。成人向けダイジェストにのみ追加できます")
+        static let notAdult = Words("普通内容，不能加到成人简报", "Ordinary content; not for an adult digest", "通常のコンテンツ。成人向けダイジェストには追加できません")
+        static let mutedFocus = Words("比例为 0%，在「国内 / 娱乐」里调整", "Set to 0% by the domestic / entertainment ratio", "「国内 / エンタメ」の比率が 0% です")
+        static let unfiled = Words("{count} 个导入的来源还没归入简报", "{count} imported sources are not in a digest yet", "読み込んだソース {count} 件がまだダイジェストに入っていません")
+        static let fileThem = Words("归入简报…", "Add to a Digest…", "ダイジェストに追加…")
+        static let fileTitle = Words("归入简报", "Add to a Digest", "ダイジェストに追加")
+        static let botPaused = Words("已暂停", "Paused", "一時停止中")
+        static let all: [Words] = [
+            intro, importOPML, importSummary, importInto, importNote, done, later, add, adult, completeSetup, enabled, edit, collapse,
+            offTitle, turnOff, offBody, offBodyToday, offPrefix, needsAdultSetup, needsBot, noTarget, offSummary, sourceCount,
+            recommendedCount, everyDay, next, today, tomorrow, botCount, times, sendTo, count, upTo, countNote, style, styleText,
+            styleImage, stylePaper, paperNeedsSetup, goConnect, ratio, domestic, entertainment, domesticTag, entertainmentTag,
+            advanced, removeTitle, remove, removeBody, removeTurnsOff, splitTitle, split, splitBody, mergeTitle, merge, mergeInto,
+            mergeBody, removeTime, addTime, zone, followsSystem, addBot, botNotAdult, botNotPaired, onlyBot, sourcesTitle,
+            fromCatalog, pasteLink, noSources, catalogEmpty, notReadable, pastePlaceholder, reading, identify, primaryModel,
+            backupModel, defaultModel, pauseThis, sent, view, preview, previewReady, send, trialResult, unverified, unreadable,
+            staleDays, healthy, unknownHealth, tryThenEnable, tryNow, more, latest, searchZone, systemZone,
+            unfiled, fileThem, fileTitle, botPaused, adultOnly, notAdult, mutedFocus,
+        ]
+    }
 }
 
 /// "What happened. What to do." for a backend code (interaction-spec §2.4).
@@ -190,6 +307,41 @@ enum FailureCopy {
     }
 
     static let table: [String: Entry] = [
+        "subscription_not_ready": Entry(message: Words("这份简报还不能开启，下面是还缺的。", "This digest cannot turn on yet; what is missing is listed below.", "このダイジェストはまだオンにできません。足りないものを下に示します。"), action: nil),
+        "source_preview_required": Entry(message: Words("有来源还没试采集成功，先在来源里点「试采集」。", "A source has not been tried successfully yet; use Try Now on it first.", "まだ試しに取得できていないソースがあります。先に「試しに取得」してください。"), action: nil),
+        "preview_required": Entry(message: Words("这个来源要先试采集成功才能启用。", "This source has to be tried successfully before it can be turned on.", "このソースは試しに取得できてから有効にできます。"), action: nil),
+        "source_disabled": Entry(message: Words("这份简报用到的来源有的被关掉了。勾选它或从列表里去掉。", "A source this digest uses is turned off. Turn it on or remove it from the list.", "このダイジェストのソースにオフのものがあります。オンにするか一覧から外してください。"), action: nil),
+        "no_ready_bot": Entry(message: Words("还没有可以发送的机器人。在「发送到」里选一个已配对的机器人。", "No Bot can receive it yet. Choose a paired Bot under Send to.", "送信できるボットがありません。「送信先」でペアリング済みのボットを選んでください。"), action: nil),
+        "primary_unverified": Entry(message: Words("主模型的 Key 还没测试通过。去「接入」重新测试。", "The main model's key has not passed its check. Check it again in Connect.", "メインモデルのキーがまだ確認できていません。「接続」で再確認してください。"), action: nil),
+        "backup_unverified": Entry(message: Words("备用模型的 Key 还没测试通过。去「接入」重新测试，或在高级里改回默认。", "The backup model's key has not passed its check. Check it in Connect, or switch back to Default under Advanced.", "予備モデルのキーがまだ確認できていません。「接続」で再確認するか、詳細でデフォルトに戻してください。"), action: nil),
+        "schedule_missing": Entry(message: Words("还没有发送时间，至少加一个。", "There is no send time yet; add at least one.", "送信時刻がありません。1 つ以上追加してください。"), action: nil),
+        "invalid_subscription_draft": Entry(message: Words("这次改动后台不接受，没有保存。", "The backend did not accept this change; nothing was saved.", "この変更はバックエンドに受け付けられず、保存されませんでした。"), action: nil),
+        "missing_subscription": Entry(message: Words("这份简报已经不存在了（可能在别处删除了）。", "This digest no longer exists (it may have been removed elsewhere).", "このダイジェストはもうありません（別の場所で削除された可能性があります）。"), action: nil),
+        "missing_source": Entry(message: Words("这个来源已经不存在了（可能在别处删除了）。", "This source no longer exists (it may have been removed elsewhere).", "このソースはもうありません（別の場所で削除された可能性があります）。"), action: nil),
+        "duplicate_source": Entry(message: Words("这个来源已经添加过了。", "This source is already added.", "このソースは追加済みです。"), action: nil),
+        "unclassified_source": Entry(message: Words("这个来源还没归入简报，先归入再试采集。", "This source is not in a digest yet; add it to one before trying it.", "このソースはまだダイジェストに入っていません。先に追加してください。"), action: nil),
+        "adult_source_requires_adapter": Entry(message: Words("这是成人站点，只能加到成人简报里。", "This is an adult site; it can only be added to an adult digest.", "成人向けサイトのため、成人向けダイジェストにのみ追加できます。"), action: nil),
+        "invalid_opml": Entry(message: Words("这个文件不是能读的 OPML。", "This file is not an OPML file NewsPaw can read.", "このファイルは読み込める OPML ではありません。"), action: nil),
+        "discovery_failed": Entry(message: Words("没能从这个链接识别出新闻源。", "Could not find a news feed at this link.", "このリンクからニュースソースを見つけられませんでした。"), action: nil),
+        "failed": Entry(message: Words("读取失败。", "Reading failed.", "読み込みに失敗しました。"), action: L10n.Shell.retry),
+        "http_error": Entry(message: Words("网站返回了错误。", "The site returned an error.", "サイトがエラーを返しました。"), action: L10n.Shell.retry),
+        "network_error": Entry(message: Words("连不上这个网站。", "Could not reach the site.", "サイトに接続できませんでした。"), action: L10n.Shell.retry),
+        "interrupted": Entry(message: Words("读取被中断了，再试一次。", "Reading was interrupted; try again.", "読み込みが中断されました。もう一度お試しください。"), action: L10n.Shell.retry),
+        "collection_held": Entry(message: Words("这个网站的读取暂时被暂停，稍后再试。", "Reading this site is on hold for now; try again later.", "このサイトの読み込みは一時的に止まっています。あとで再試行してください。"), action: L10n.Shell.retry),
+        "cancelled": Entry(message: Words("读取被取消了。", "Reading was cancelled.", "読み込みがキャンセルされました。"), action: L10n.Shell.retry),
+        "configuration_changed": Entry(message: Words("读取期间来源设置变了，再试一次。", "The source changed while it was being read; try again.", "読み込み中にソースの設定が変わりました。もう一度お試しください。"), action: L10n.Shell.retry),
+        "identity_changed": Entry(message: Words("读取期间来源设置变了，再试一次。", "The source changed while it was being read; try again.", "読み込み中にソースの設定が変わりました。もう一度お試しください。"), action: L10n.Shell.retry),
+        "redirect_rejected": Entry(message: Words("网站跳转到了不安全的地址，已停止。", "The site redirected somewhere unsafe, so reading stopped.", "サイトが安全でない場所へ転送したため停止しました。"), action: nil),
+        "too_many_redirects": Entry(message: Words("网站跳转次数太多。", "The site redirected too many times.", "サイトの転送が多すぎます。"), action: nil),
+        "private_address": Entry(message: Words("这个地址指向内网，不能读取。", "This address points to a private network and cannot be read.", "このアドレスは内部ネットワークを指しているため読み込めません。"), action: nil),
+        "tls_hostname_mismatch": Entry(message: Words("网站的安全证书和地址不符。", "The site's security certificate does not match its address.", "サイトの証明書がアドレスと一致しません。"), action: nil),
+        "response_too_large": Entry(message: Words("网站返回的内容太大。", "The site returned too much data.", "サイトのデータが大きすぎます。"), action: nil),
+        "oversized_feed": Entry(message: Words("这个订阅源太大了。", "This feed is too large.", "このフィードは大きすぎます。"), action: nil),
+        "parse_limit": Entry(message: Words("这个订阅源太复杂，读不完。", "This feed is too complex to read completely.", "このフィードは複雑すぎて読み切れません。"), action: nil),
+        "invalid_html": Entry(message: Words("网页内容读不懂。", "The page could not be understood.", "ページの内容を解釈できませんでした。"), action: nil),
+        "unsupported_encoding": Entry(message: Words("网站用的文字编码不支持。", "The site uses a text encoding NewsPaw does not support.", "サイトの文字コードに対応していません。"), action: nil),
+        "invalid_publication_date": Entry(message: Words("条目的发布时间读不懂。", "The entries' publication dates could not be read.", "記事の公開日時を読み取れませんでした。"), action: nil),
+        "preview_incomplete": Entry(message: Words("读到了网站，但还没有可用的条目，暂时不能启用。", "The site was read, but it has no usable entries yet, so it cannot be turned on.", "サイトは読めましたが、使える記事がまだないため有効にできません。"), action: L10n.Shell.retry),
         "invalid_token": Entry(message: Words("Telegram 不认这个 Token。请到 @BotFather 复制完整 Token 再试。", "Telegram did not accept this token. Copy the full token from @BotFather and try again.", "Telegram がこのトークンを受け付けませんでした。@BotFather から完全なトークンをコピーしてやり直してください。"), action: Words("重新粘贴", "Paste Again", "貼り直す")),
         "webhook_conflict": Entry(message: Words("这个机器人正被别的程序用 webhook 接管。关掉那边后再验证。", "Another program controls this bot through a webhook. Turn that off, then check again.", "別のプログラムが Webhook でこのボットを使っています。そちらを止めてから再確認してください。"), action: Words("重新验证", "Check Again", "再確認")),
         "duplicate_bot": Entry(message: Words("这个机器人已经添加过了。", "This bot is already added.", "このボットは追加済みです。"), action: nil),

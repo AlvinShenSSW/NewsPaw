@@ -85,7 +85,7 @@ X 账号    普通 | 成人 分段；添加行；账号列表；汇总卡；读�
 
 ### 1.3 后台轮询与数据流
 
-- `AppModel` 每 3 秒：`service.status` → `setup.readiness`（新增）→ `config.get`（仅 revision 变化时取全量）→ `bots.list`。
+- `AppModel` 每 3 秒：`service.status` → `setup.readiness`（新增）→ `config.get` → `bots.list`。`config.get` 每轮都取（本机 socket，单人配置体积小），用它返回的 `revision` 判断是否有变化。
 - 各页按需：简报页 `sources.list` + `schedule.status`；接入页 `models.status` × N + `credentials.status` + `budget.get`；X 页 `x.accounts.list` + `x.lists.list` + `x.posts.coverage`；概览 `schedule.status(today)` + `delivery.status(today)` + `budget.get`。
 - 长任务一律用 `request_id` + `*.status` 轮询（R05），UI 显示行内 `ProgressView` 小圆圈 + 文案「正在…」，≥ 10 秒显示「仍在进行，可以先做别的」。
 
@@ -129,7 +129,8 @@ X 账号    普通 | 成人 分段；添加行；账号列表；汇总卡；读�
 | `provider_timeout` | {供应商} 没有在 30 秒内回应。 | 再测一次 |
 | `outcome_unknown`（模型） | 这次调用发出去了但没收到结果，可能已经扣费。确认后再试一次。 | 检查并重试 |
 | `outcome_unknown`（投递） | Telegram 没有回应，这期可能已发出，也可能没有。 | 检查并补发 |
-| `budget_exhausted` | 本月已到 ${cap} 上限，推送已暂停。 | 调整上限 |
+| `monthly_limit` | 本月已到 ${cap} 上限，推送已暂停。 | 调整上限 |
+| `image_limit`、`provider_limit`、`partition_limit`、`account_limit`、`daily_limit` | 已达到{生图月额 / {供应商} 月额 / {分区} X 读取额 / @{账号} 读取额 / X 每日读取}上限。 | 查看上限（跳到「接入 › 费用」对应行） |
 | `unsafe_url` | 这个链接指向内网或带有凭据，不能添加。 | — |
 | `unsupported_source` | 还不会读这个网站，只能先存为待验证。 | 试采集 |
 | `source_stale` | {来源} 已 {N} 天没有新条目。 | 试采集 |
@@ -174,7 +175,7 @@ X 账号    普通 | 成人 分段；添加行；账号列表；汇总卡；读�
 | 结果行 | 绿点「测试通过」+「刚才发了一条很短的测试消息，模型正常回复（{model} · {秒} · 约 ${cost}）」+ `再测一次`；失败按 §2.4 |
 | 折叠 1 | 「我也想看 AV 产业 / X 成人博主 · 可选」→ 展开 DeepSeek Key 字段，同样自动探测 |
 | 折叠 2 | 「高级：自定义 API 地址 / 备用模型」 |
-| 费用说明 | 一行 12pt：费用由你自己的账号承担…默认每月最多 $20 |
+| 费用说明 | 一行 12pt：费用由你自己的账号承担…默认每月最多 $20（contract §2；可在「接入」改或清空） |
 
 ### 步骤 3 · 选择简报
 
@@ -182,7 +183,7 @@ X 账号    普通 | 成人 分段；添加行；账号列表；汇总卡；读�
 |---|---|
 | 列表 | 9 个简报，每行：图标、名称、一句说明、默认时间、开关；默认勾选 世界新闻、日本 |
 | 发送到 | 自动选中唯一已配对的普通 Bot；成人简报行灰显并说明「需要成人模型 Key 和允许成人的机器人」 |
-| 底部 | 「完成」（默认）→ 关闭窗口，打开主窗口概览；可选 `立即试发一期` 对第一份勾选的简报触发 §5.6 |
+| 底部 | 主按钮 `完成并试发一期`（默认）→ 对第一份勾选的简报触发 §5.6，关闭窗口，打开概览；次按钮 `完成，等定时推送` → 只关闭窗口。两种都写 `onboardingSeen`；清单第 4 步在第一份简报（试发或定时）到达后完成 |
 
 完成或跳过都写 UserDefaults `onboardingSeen = true`；readiness 仍未完成时概览清单接管。
 
@@ -210,14 +211,16 @@ X 账号    普通 | 成人 分段；添加行；账号列表；汇总卡；读�
 | no_news / skipped | 灰「已跳过」 | 「没有合格的新条目」 | — |
 | paused | 灰「已暂停」 | 「全部推送已暂停」 | `恢复`（跳设置） |
 | partial | 黄「部分发送」 | 「3 / 5 段已到达」 | `检查并补发` |
-| outcome_unknown | 黄「结果未知」 | 「Telegram 没有回应，这期可能已发出，也可能没有。」 | `检查并补发` → `delivery.resolve` |
-| blocked / held | 红「未能发送」 | 具体 reason 文案（§2.4） | 对应 fix |
+| outcome_unknown，reason `model_outcome_unknown` | 黄「结果未知」 | 「写简报的模型调用发出去了但没收到结果，可能已经扣费。」 | `确认后重试` → 确认框说明可能重复扣费 → `jobs.resume(acknowledge_duplicate_charge: true)` |
+| outcome_unknown（投递 part） | 黄「结果未知」 | 「Telegram 没有回应，这期可能已发出，也可能没有。」 | `检查并补发` → 确认框说明可能重复 → `delivery.resolve(action: retry, acknowledge_duplicate_send: true)`；`已收到` → `delivery.resolve(action: confirm)` |
+| held（reason `partial_assignment_changed`） | 黄「等你决定」 | 「这期已发出一部分，之后发送对象变了。」 | `继续发剩下的` → `schedule.resolve(continue)`；`停止` → `schedule.resolve(stop)` |
+| blocked、cancelled；target blocked / revoked | 红「未能发送」 | 具体 reason 文案（§2.4） | reason 对应的修复按钮 |
 
 右上「最近 7 天 ›」展开为同格式 7 天列表（同页，不新开窗）。
 
 ### 4.4 本月费用（`budget.get`）
 
-24pt `$3.42` + 「/ 上限 $20」或「/ 不限」；进度条（无上限时不显示）；说明「文字 $3.10 · 报纸生图 $0.32 · 11 月 1 日起」；分隔后「X 今日读取 84 / 200 条」。含 unpriced 时追加「其中 N 次未计价」。到限时整卡黄边 + `调整上限`。
+24pt `$3.42` + 「/ 上限 $20」（新库默认）或「/ 不限」；进度条（无上限时不显示）；说明「文字 $3.10 · 报纸生图 $0.32 · 11 月 1 日起」；分隔后「X 今日读取 84 / 200 条」。含 unpriced 时追加「其中 N 次未计价」。到限时整卡黄边 + `调整上限`。
 
 ### 4.5 需要注意
 
@@ -330,6 +333,7 @@ X 账号    普通 | 成人 分段；添加行；账号列表；汇总卡；读�
 - 「每月最多花」`TextField` 美元整数，可空（占位「不限」）；说明「到上限后停发并在概览里提醒；留空表示不限。」
 - 进度行「本月已用 $3.42 · 文字 $3.10 · 报纸 $0.32 · 11 月 1 日起」。
 - 「X 每天最多读取」`TextField` 条数 + 「今天已读 84 条」。
+- 「其他上限」行：仅当生图月额、供应商额、X 分区 / 账号额任一非空时出现，逐项列出（如「生图每月最多 $5」）并各带 `清除`；对应 reason（`image_limit`、`provider_limit`、`partition_limit`、`account_limit`）按 §2.4 显示。
 - 说明行「用量按模型返回的 token 数计价；没有价格信息的模型会标为「未计价」，不会因此停发。」
 - 不出现：hold、价格表、cycle_day、供应商额。
 
@@ -424,7 +428,7 @@ List 行：方形图标、名称 · N 个成员、「成员全部并入汇总 ·
 
 ## 10. 验收清单（跨 issue，端到端）
 
-1. 全新数据目录 → 首次设置窗口 → 不离开窗口完成配对、Key、两份简报 → 关闭窗口 → 概览无清单、今天的推送出现两行等待中。
+1. 全新数据目录 → 首次设置窗口 → 不离开窗口完成配对、Key、两份简报 → `完成并试发一期` → 手机收到一期 → 概览无清单、今天的推送出现两行。另走一遍 `完成，等定时推送`：概览只剩第 4 步「发一期试试」，第一份定时简报到达后清单消失。
 2. 把系统时间推到 08:00 → 概览行变「已发送」，Telegram（假服务器）收到一条。
 3. 拔网线后触发一期 → 概览出现「结果未知」+ `检查并补发` → 恢复网络点击 → 变为「已发送」且 Telegram 只收到一条。
 4. 在 Telegram 里用命令改时间 → App 3 秒内刷新；同时在 App 改同一字段 → 出现「用我的 / 用它的」，不出现任何 revision 字样。

@@ -262,6 +262,18 @@ final class OverviewData {
     }
 
     /// Each target Bot's parts for a job: the summary names the Bots, then each is read alone.
+    /// Whether the owner chose not to resend and nothing is left unknown (the overview's rule),
+    /// for other pages that show an edition's state.
+    static func isAbandoned(_ row: Occurrence, client: BackendClient) async throws -> Bool {
+        guard mayHaveSkippedParts(row), let job = row.jobId else { return false }
+        do {
+            let parts = try await Self.parts(job, client).flatMap(\.1)
+            return !parts.contains { $0.state == "outcome_unknown" } && parts.contains { $0.resolution?.action == "skip" }
+        } catch let error as BackendError where error.code == "missing_delivery" {
+            return false
+        }
+    }
+
     private static func parts(_ job: String, _ client: BackendClient) async throws -> [(String, [DeliveryStatus.Part])] {
         let summary: DeliveryStatus = try BackendRPC.decode(await client.call(.deliveryStatus, ["job_id": job]))
         var result: [(String, [DeliveryStatus.Part])] = []

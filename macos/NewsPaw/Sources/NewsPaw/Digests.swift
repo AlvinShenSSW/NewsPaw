@@ -31,7 +31,8 @@ struct CatalogEntry: Decodable, Identifiable, Equatable {
 }
 
 struct Discovery: Decodable {
-    struct Choice: Decodable, Equatable { let url, kind: String; let name: String? }
+    /// `partition`/`categoryIds` are the backend's classification hints (e.g. an adult publisher).
+    struct Choice: Decodable, Equatable { let url, kind: String; let name, partition: String?; let categoryIds: [String]? }
     let choices: [Choice]
 }
 
@@ -90,6 +91,8 @@ final class DigestsData {
     private(set) var sources: [SourceItem] = []
     private(set) var catalog: [CatalogEntry] = []
     private(set) var today: [String: Occurrence] = [:]
+    /// Today's editions the owner chose not to resend (as on the overview).
+    private(set) var abandoned: Set<String> = []
     private(set) var newspaperReady = false
     private(set) var working: Set<String> = []
     private(set) var failures: [String: BackendError] = [:]
@@ -131,6 +134,9 @@ final class DigestsData {
                 // The row shows the edition that matters now: the next one still to come, else the last.
                 earlier.status == "planned" ? earlier : later
             }
+            var skipped: Set<String> = []
+            for row in today.values where try await OverviewData.isAbandoned(row, client: client) { skipped.insert(row.id) }
+            abandoned = skipped
             struct Paper: Decodable {
                 struct Settings: Decodable { let enabled: Bool; let generationProfile: String? }
                 let settings: Settings
@@ -381,13 +387,22 @@ final class DigestsData {
     }
 
     /// The digests a removal would turn off, named in the confirmation (`sources.impact`).
-    func loadImpact(_ id: String, model: AppModel) async {
+    /// Reads what removing a source would turn off; the confirmation opens only once this is known.
+    func loadImpact(_ id: String, model: AppModel) async -> Bool {
         impacts[id] = nil
-        guard let impact: Impact = try? BackendRPC.decode(await model.client.call(.sourcesImpact, ["source_id": id, "action": "delete"])) else { return }
+        let impact: Impact
+        do {
+            impact = try BackendRPC.decode(await model.client.call(.sourcesImpact, ["source_id": id, "action": "delete"]))
+        } catch {
+            failures[id] = error as? BackendError ?? BackendError(code: "invalid_reply")
+            return false
+        }
+        failures[id] = nil
         // Turned off, or (for a digest following its category) left on with nothing to collect.
         impacts[id] = impact.subscriptions
             .filter { $0.wasEnabled && (!$0.enabled || $0.blockers.contains("no_sources")) }
             .map { model.digestTitle($0.id) }
+        return true
     }
 
     func removeSource(_ id: String, model: AppModel) async {
@@ -442,14 +457,8 @@ final class DigestsData {
     /// entertainment sources, the original keeps the rest, and the copy starts off.
     func split(_ subscription: AppConfig.Subscription, model: AppModel) async -> String? {
         let id = "sub_" + String(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(20))
-        let items = listed(subscription)
-        // A digest's own list names only sources that are on: a listed source that is off blocks
-        // it (`source_disabled`). Sources still off stay in the category, ready to be added.
-        let entertainment = items.filter { $0.source.focus == "entertainment" && $0.source.enabled }.map(\.id)
-        let rest = items.filter { $0.source.focus != "entertainment" && $0.source.enabled }
-        // An enabled digest must keep a source it can actually read; otherwise both follow the category.
-        let keepsUsable = !subscription.enabled || rest.contains { $0.previewReady }
-        let restIds = keepsUsable ? rest.map(\.id) : []
+        // Which sources passed a try (not part of the configuration document).
+        let ready = Set(sources.filter(\.previewReady).map(\.id))
         let title = model.digestTitle(subscription.id)
         let names = (title, title + " · " + model.text(L10n.Digests.entertainmentTag))
         let editor = EditorState(client: model.client)
@@ -459,6 +468,20 @@ final class DigestsData {
             guard let index = subscriptions.firstIndex(where: { $0["id"] as? String == subscription.id }) else {
                 throw BackendError(code: "missing_subscription")
             }
+            // Chosen from the newest stored sources (not the page's earlier snapshot): a digest's
+            // own list names only sources that are on, since a listed source that is off blocks it
+            // (`source_disabled`); sources still off stay in the category, ready to be added.
+            let category = subscription.categoryId
+            let own = Set(subscriptions[index]["source_ids"] as? [String] ?? [])
+            let candidates = (document["sources"] as? [[String: Any]] ?? []).filter { source in
+                guard source["enabled"] as? Bool == true, let sid = source["id"] as? String else { return false }
+                return (source["category_ids"] as? [String] ?? []).contains(category) || own.contains(sid)
+            }
+            let entertainment = candidates.filter { $0["focus"] as? String == "entertainment" }.compactMap { $0["id"] as? String }
+            let rest = candidates.filter { $0["focus"] as? String != "entertainment" }.compactMap { $0["id"] as? String }
+            // An enabled digest must keep a source it can actually read; otherwise both follow the category.
+            let keepsUsable = !subscription.enabled || rest.contains { ready.contains($0) }
+            let restIds = keepsUsable ? rest : []
             var copy = subscriptions[index]
             copy["id"] = id
             copy["name"] = names.1
@@ -805,7 +828,7 @@ private struct DigestRow: View {
             }
             Spacer(minLength: 8)
             if let occurrence = data.today[subscription.id] {
-                let state = OccurrenceState(occurrence, paused: model.schedulingPaused, abandoned: false)
+                let state = OccurrenceState(occurrence, paused: model.schedulingPaused, abandoned: data.abandoned.contains(occurrence.id))
                 HStack(spacing: 5) {
                     Circle().fill(state.dot).frame(width: 8, height: 8).accessibilityHidden(true)
                     Text(model.text(state.title)).font(.caption)
@@ -1177,8 +1200,7 @@ private struct DigestEditor: View {
             ForEach(items) { item in
                 Divider()
                 SourceRow(model: model, data: data, item: item, subscription: subscription) {
-                    removing = item
-                    Task { await data.loadImpact(item.id, model: model) }
+                    Task { if await data.loadImpact(item.id, model: model) { removing = item } }
                 }
             }
         }
@@ -1234,11 +1256,17 @@ private struct DigestEditor: View {
                         Text(choice.kind.uppercased()).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button(model.text(L10n.Digests.add)) {
-                        showPaste = false
-                        Task {
-                            await data.addSource(name: choice.name ?? choice.url, url: choice.url, kind: choice.kind, focus: nil,
-                                                 to: subscription, model: model)
+                    // A source classified for the other kind of content cannot join this digest.
+                    if let partition = choice.partition, partition != (adult ? "adult" : "normal") {
+                        Text(model.text(partition == "adult" ? L10n.Digests.adultOnly : L10n.Digests.notAdult))
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Button(model.text(L10n.Digests.add)) {
+                            showPaste = false
+                            Task {
+                                await data.addSource(name: choice.name ?? choice.url, url: choice.url, kind: choice.kind, focus: nil,
+                                                     to: subscription, model: model)
+                            }
                         }
                     }
                 }
@@ -1383,6 +1411,7 @@ private struct SourceRow: View {
     let remove: () -> Void
 
     private var unverified: Bool { !item.previewReady && !item.source.enabled }
+    private var muted: Bool { item.source.focus.map { subscription.focusWeights?[$0] == 0 } ?? false }
     private var unsupported: Bool { ["unsupported_source", "unsupported"].contains(data.failures[item.id]?.code ?? "") }
 
     var body: some View {
@@ -1392,7 +1421,9 @@ private struct SourceRow: View {
                 set: { on in Task { await data.toggle(item, in: subscription, on, model: model) } }
             ))
             .toggleStyle(.checkbox).labelsHidden()
-            .disabled(unverified || unsupported || data.working.contains(item.id))
+            // A focus weighted 0% is muted by the ratio slider, not by this switch.
+            .disabled(unverified || unsupported || muted || data.working.contains(item.id))
+            .help(muted ? model.text(L10n.Digests.mutedFocus) : "")
             Text(String(item.source.name.prefix(1)).uppercased())
                 .font(.caption.bold()).foregroundStyle(.secondary)
                 .frame(width: 26, height: 26)

@@ -465,6 +465,42 @@ private func connected(_ server: DigestBackend) async throws -> (AppModel, () ->
     let (model, cleanup) = try await connected(server)
     defer { cleanup() }
     let data = DigestsData()
-    await data.loadImpact("nhk", model: model)
+    #expect(await data.loadImpact("nhk", model: model))
     #expect(data.impacts["nhk"] == [model.digestTitle("sub_japan")])
+}
+
+
+@Test @MainActor func splittingUsesTheNewestSourcesNotThePagesSnapshot() async throws {
+    let server = DigestBackend(
+        subscriptions: [subscription("sub_japan", enabled: true, bots: ["bot1"])],
+        sources: [source("nhk", focus: "domestic"), source("asahi", focus: "domestic"), source("oricon", focus: "entertainment")]
+    )
+    server.ready = ["nhk", "asahi", "oricon"]
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    await data.load(model.client)
+    // Turned off in another window after this page loaded.
+    var sources = server.document["sources"] as! [[String: Any]]
+    sources[1]["enabled"] = false
+    server.document["sources"] = sources
+    server.revision += 1
+    let digest = try #require(model.config?.subscriptions.first)
+    _ = try #require(await data.split(digest, model: model))
+    #expect(server.subscription("sub_japan")?["source_ids"] as? [String] == ["nhk"])
+}
+
+@Test @MainActor func aSourceIsRemovedOnlyAfterItsImpactIsKnown() async throws {
+    let server = DigestBackend(subscriptions: [subscription("sub_japan")], sources: [source("nhk", focus: "domestic")])
+    server.impactReply = ["unexpected": true]
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    #expect(!(await data.loadImpact("nhk", model: model)))
+    #expect(data.failures["nhk"]?.code == "invalid_reply" && data.impacts["nhk"] == nil)
+}
+
+@Test func pastedLinksKeepTheirClassification() throws {
+    let found = try BackendRPC.decode(Data(#"{"kind":"web","choices":[{"url":"https://example.av","kind":"web","name":"AV","partition":"adult","category_ids":["av"]}]}"#.utf8)) as Discovery
+    #expect(found.choices.first?.partition == "adult" && found.choices.first?.categoryIds == ["av"])
 }

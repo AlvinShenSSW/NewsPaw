@@ -277,6 +277,9 @@ enum L10n {
         static let latest = Words("最近 {time}", "latest {time}", "最新 {time}")
         static let searchZone = Words("搜索时区", "Search time zones", "タイムゾーンを検索")
         static let systemZone = Words("跟随系统（{zone}）", "Use system ({zone})", "システムに合わせる（{zone}）")
+        static let adultOnly = Words("成人内容，只能加到成人简报", "Adult content; only for an adult digest", "成人向け。成人向けダイジェストにのみ追加できます")
+        static let notAdult = Words("普通内容，不能加到成人简报", "Ordinary content; not for an adult digest", "通常のコンテンツ。成人向けダイジェストには追加できません")
+        static let mutedFocus = Words("比例为 0%，在「国内 / 娱乐」里调整", "Set to 0% by the domestic / entertainment ratio", "「国内 / エンタメ」の比率が 0% です")
         static let unfiled = Words("{count} 个导入的来源还没归入简报", "{count} imported sources are not in a digest yet", "読み込んだソース {count} 件がまだダイジェストに入っていません")
         static let fileThem = Words("归入简报…", "Add to a Digest…", "ダイジェストに追加…")
         static let fileTitle = Words("归入简报", "Add to a Digest", "ダイジェストに追加")
@@ -291,7 +294,7 @@ enum L10n {
             fromCatalog, pasteLink, noSources, catalogEmpty, notReadable, pastePlaceholder, reading, identify, primaryModel,
             backupModel, defaultModel, pauseThis, sent, view, preview, previewReady, send, trialResult, unverified, unreadable,
             staleDays, healthy, unknownHealth, tryThenEnable, tryNow, more, latest, searchZone, systemZone,
-            unfiled, fileThem, fileTitle, botPaused,
+            unfiled, fileThem, fileTitle, botPaused, adultOnly, notAdult, mutedFocus,
         ]
     }
 }

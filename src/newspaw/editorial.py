@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 from .av_rules import AV_CONTRACT, AV_PUBLISHER, industry_copy
 from .evidence import EvidenceError, EvidenceStore
-from .news import canonical_url, known_av_origin
+from .newsparse import canonical_url, known_av_origin
 from .providers import ModelRequest, ProfileRegistry
 from .routing import RouteBlocked, RouteSnapshot, RouteStale
 

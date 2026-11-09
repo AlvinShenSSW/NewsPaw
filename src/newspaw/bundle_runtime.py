@@ -73,10 +73,9 @@ def main(args=None):
             import feedparser
             import httpx
             import keyring
-            import openai
             import PIL
 
-            for module in (PIL, feedparser, httpx, keyring, openai):
+            for module in (PIL, feedparser, httpx, keyring):
                 if not Path(module.__file__).resolve().is_relative_to(prefix):
                     raise ValueError("runtime_not_bundled")
             result = {"state": "bundled", "python": list(sys.version_info[:3])}

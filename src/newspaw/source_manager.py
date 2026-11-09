@@ -23,7 +23,7 @@ from .connectors.av import AV_ORIGIN, AVCollector, av_supported
 from .connectors.web import WEB_ALIASES, WEB_SITES, WebCollector, web_supported
 from .credentials import CredentialError
 from .evidence import EvidenceError, EvidenceStore, FeedCollector
-from .news import (
+from .newsparse import (
     MAX_FEED_BYTES,
     NewsError,
     eligible_articles,

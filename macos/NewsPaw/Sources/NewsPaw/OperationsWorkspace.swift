@@ -76,10 +76,11 @@ private struct RestorePreview: Decodable {
     let omitted: [String: Int]
 }
 
-private struct CleanupPreview: Decodable {
-    let logCandidates, attemptCandidates, snapshotCandidates, auditCandidates, mediaCandidates: Int
+/// `ops.cleanup` (R13 removed the legacy `audit_candidates` count with the old tables).
+struct CleanupPreview: Decodable {
+    let logCandidates, attemptCandidates, snapshotCandidates, mediaCandidates: Int
     let mediaDeferred: Bool
-    var count: Int { logCandidates + attemptCandidates + snapshotCandidates + auditCandidates + mediaCandidates }
+    var count: Int { logCandidates + attemptCandidates + snapshotCandidates + mediaCandidates }
 }
 
 private struct BackupVerification: Decodable {

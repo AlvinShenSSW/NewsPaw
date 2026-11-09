@@ -471,7 +471,7 @@ async def test_repeated_source_shared_only_within_partition(configured):
 async def test_rss_and_api_source_selection_coexist(configured):
     from copy import deepcopy
 
-    from test_news import rss
+    from test_newsparse import rss
 
     from newspaw.evidence import FeedCollector
 
@@ -505,7 +505,7 @@ def test_old_article_snapshot_hash_and_decoding_stay_compatible():
     import json
 
     from newspaw.evidence import _decode_articles, _encode_articles
-    from newspaw.news import Article
+    from newspaw.newsparse import Article
 
     article = Article("Title", "https://example.com/a", "source", summary="Excerpt")
     expected = hashlib.sha256(

@@ -13,7 +13,7 @@ from xml.etree import ElementTree
 import httpx
 
 from ..evidence import EvidenceError, _content_status, _selection, _time
-from ..news import MAX_FEED_BYTES, Article, NewsError, _published, check_news_xml, plain_text
+from ..newsparse import MAX_FEED_BYTES, Article, NewsError, _published, check_news_xml, plain_text
 from ..transport import SafeHTTPError, checked_url, source_client
 
 CNN = "https://edition.cnn.com/sitemap/news.xml"

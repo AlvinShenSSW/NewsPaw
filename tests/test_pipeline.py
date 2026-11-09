@@ -509,9 +509,12 @@ async def test_api_collection_is_correlated_with_partial_rss_failure(database):
 
 
 def test_schema_upgrade_keeps_legacy_receipts_without_enqueuing(tmp_path):
+    from test_migrations import add_v050_legacy_tables
+
     path = tmp_path / "state.db"
     with closing(Store(path)) as original:
-        original.set("last_slot", "legacy-daily")
+        add_v050_legacy_tables(original._db)
+        original._db.execute("INSERT INTO settings VALUES ('last_slot', 'legacy-daily')")
         original._db.execute(
             "INSERT INTO deliveries_v2(chat_id,scope,article_key) VALUES (123,'news','article')"
         )
@@ -520,7 +523,7 @@ def test_schema_upgrade_keeps_legacy_receipts_without_enqueuing(tmp_path):
                DROP INDEX feed_attempts_collection; PRAGMA user_version=11;"""
         )
     with closing(Store(path)) as upgraded:
-        assert upgraded.get("last_slot") == "legacy-daily"
+        assert upgraded._db.execute("SELECT value FROM settings").fetchall() == [("legacy-daily",)]
         assert upgraded._db.execute(
             "SELECT chat_id,scope,article_key FROM deliveries_v2"
         ).fetchall() == [(123, "news", "article")]

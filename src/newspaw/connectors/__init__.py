@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urljoin, urlsplit
 import httpx
 
 from ..evidence import _content_status, _retry_after, _selection, _time
-from ..news import Article, eligible_articles, plain_text
+from ..newsparse import Article, eligible_articles, plain_text
 from ..transport import SafeHTTPError, source_client
 
 KINDS = {"github", "huggingface"}

@@ -3,7 +3,6 @@ import os
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
-from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -100,6 +99,33 @@ def test_private_backup_is_verified_without_exposing_any_restore_action(tmp_path
             ops.verify_backup("../" + backup.name)
 
 
+@pytest.mark.parametrize("legacy_in", ["live", "backup"])
+def test_backup_verification_ignores_tables_of_the_removed_env_bot(tmp_path, legacy_in):
+    """Upgraded v0.5.0 databases keep the old bot's tables; new ones never have them."""
+    import sqlite3
+
+    from test_migrations import add_v050_legacy_tables
+
+    from newspaw.migrations import _backup
+
+    directory = tmp_path / "private"
+    path = directory / "state.db"
+    with closing(Store(path)) as store:
+        if legacy_in == "live":
+            backup = _backup(path)
+            add_v050_legacy_tables(store._db)
+        else:
+            add_v050_legacy_tables(store._db)
+            backup = _backup(path)
+            with closing(sqlite3.connect(path)) as live:
+                live.executescript(
+                    "DROP TABLE briefs; DROP TABLE collections; DROP TABLE deliveries_v2;"
+                    "DROP TABLE deliveries; DROP TABLE settings;"
+                )
+        ops = Operations(store, directory)
+        assert ops.verify_backup(backup.name)["integrity"] == "ok"
+
+
 def test_configuration_aba_disables_fresh_restore(tmp_path):
     from newspaw.app_config import default_config
 
@@ -140,7 +166,7 @@ def test_rotated_log_cleanup_skips_active_files_and_symlinks(tmp_path):
 
 def test_cleanup_preserves_readiness_and_only_removes_eligible_orphans(tmp_path):
     from newspaw.evidence import EvidenceStore, feed_scopes
-    from newspaw.news import Article
+    from newspaw.newsparse import Article
 
     now = datetime(2026, 11, 8, 2, tzinfo=UTC)
     old = now - timedelta(days=10)
@@ -212,6 +238,11 @@ def test_independent_policy_or_legacy_state_disables_portable_restore(tmp_path, 
     from newspaw.budget import BudgetLedger
 
     with closing(Store(tmp_path / "state.db")) as store:
+        if independent_change == "legacy":
+            # An upgraded v0.5.0 database keeps the removed bot's tables.
+            from test_migrations import add_v050_legacy_tables
+
+            add_v050_legacy_tables(store._db)
         ops = Operations(store, tmp_path)
         portable = ops.export_settings()
         preview = ops.preview_import(portable)
@@ -277,22 +308,32 @@ def test_export_refuses_document_that_would_exceed_own_import_limit(tmp_path):
 def test_control_reads_actual_service_log_location(tmp_path):
     from test_credentials import FakeKeychain
 
-    from newspaw.control import ControlServer
+    from newspaw.control import ControlServer, prepare_logs, service_log_directory
     from newspaw.credentials import CredentialManager
-    from newspaw.service import build_plist
 
     home = tmp_path / "home"
-    service = build_plist(tmp_path, tmp_path / "config", home)
-    stdout = Path(service["StandardOutPath"])
-    stdout.parent.mkdir(parents=True, mode=0o700)
+    prepare_logs(service_log_directory(home))
+    stdout = home / "Library/Logs/NewsPaw/stdout.log"
+    assert stdout.parent.stat().st_mode & 0o777 == 0o700
+    assert (stdout.parent / "stderr.log").stat().st_mode & 0o777 == 0o600
     stdout.write_bytes(b"fixture")
-    stdout.chmod(0o600)
     data = tmp_path / "data"
     with closing(Store(data / "state.db")) as store:
         server = ControlServer(
             data, CredentialManager(store, FakeKeychain()), log_directory=stdout.parent
         )
         assert server.operations.support_snapshot()["business"]["log_bytes"] == 7
+
+
+def test_log_preparation_refuses_a_linked_log_file(tmp_path):
+    from newspaw.control import prepare_logs
+
+    logs = tmp_path / "Logs"
+    logs.mkdir()
+    (tmp_path / "elsewhere.log").write_bytes(b"")
+    (logs / "stdout.log").symlink_to(tmp_path / "elsewhere.log")
+    with pytest.raises(OSError):
+        prepare_logs(logs)
 
 
 @pytest.mark.parametrize(

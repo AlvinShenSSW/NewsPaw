@@ -18,44 +18,26 @@
 
 ## 本地开发
 
-需要 Python 3.12+、[uv](https://docs.astral.sh/uv/)；语音处理另需 ffmpeg，本机语音播报使用 macOS `say`。
+需要 Python 3.12+、[uv](https://docs.astral.sh/uv/)；原生界面需要 Swift 工具链。语音与视频处理另需 ffmpeg。
 
 ```sh
 uv sync
 uv run pytest -q
 uv run ruff check .
+swift test --package-path macos/NewsPaw
 uv run newspaw --help
 ```
 
-开发原型提供不依赖模型或 Telegram 凭据的采集诊断：
+后台只有一个入口：`newspaw control --data-dir <私有数据目录>`。它运行本机后台与仅限当前用户的 Unix socket 配置接口；Mac App 的登录项（`NewsPawResident`）以 `python -m newspaw control` 启动它，默认数据目录为 `~/Library/Application Support/NewsPaw`。配置、来源、模型、Bot 与调度都通过原生设置界面写入后台，凭据存放在 macOS Keychain。打包与安装见 [packaging/README.md](packaging/README.md)。
 
-```sh
-uv run newspaw search '人工智能' --limit 3
-uv run newspaw collect --json
-uv run newspaw audit --json
-```
+早期基于 `.env` 的单 Bot 原型（`newspaw init / doctor / run / service / search / collect / audit`、`/pair` 配对和全局推送时间）已经删除。仍保留一次性的显式导入：后台的 `legacy.preferences` 与 `legacy.secrets` 操作读取用户指定的旧 `.env` 文件（以及旧数据库中旧 bot 保存的主题与时间），把非秘密偏好导入为默认关闭的订阅，把 Telegram Token 与模型 Key 写入 Keychain；不删除旧 `.env`，也不自动启用订阅或推送。原生界面尚未提供这一入口。
 
-这些命令只采集并保存证据，不发送消息。出版商来源配置在 `sources.toml`，无映射主题的发现方式明确记录为 Google News RSS；不是调用某个网页搜索 API。缺失、无时区、过期或未来的发布时间不会混入新鲜新闻。
-
-## 可选的 Telegram 原型
-
-```sh
-uv run newspaw init
-# 编辑本机 .env，填写 Telegram token 和需要的模型 API key。
-uv run newspaw doctor
-uv run newspaw run
-```
-
-在 bot 私聊发送 `/pair <本机 .env 中的 PAIRING_CODE>` 配对唯一主人；或先填写 `TELEGRAM_OWNER_ID`。凭据不要提交到 GitHub。首次配对前不向任何聊天推送。
-
-当前 bot 支持 `/news`、`/search`、`/topics`、`/schedule`、`/voice on|off`、`/pause`、`/resume` 和 `/status`，以及普通新闻的文字、图片和语音请求。**它目前仍采用单 Bot 和全局推送时间；目标的多 Bot 分类分配、分主题时间、X 日更、AV 模型路由、完整投递队列与 AI 报纸尚未接入 bot。** 独立采集/模型适配模块的存在不代表这些产品功能已经完成。
-
-开发者可使用 `newspaw service install|start|stop|status|uninstall` 管理原型 LaunchAgent。`install` 会实际启动服务；配置正确并完成前台验证后再使用。正式版本将改用原生设置界面、Keychain 与应用内的后台服务管理。
+如果曾用旧原型的 `newspaw service install` 安装过 LaunchAgent（`io.newspaw.agent`），请在更新代码前用旧版本执行 `newspaw service uninstall`，或手动执行 `launchctl bootout gui/$(id -u)/io.newspaw.agent` 并删除 `~/Library/LaunchAgents/io.newspaw.agent.plist`。新版本不再提供该命令，旧 LaunchAgent 若继续运行只会反复启动失败；App 在它仍被加载时也会拒绝注册新的登录项。
 
 常驻仅在用户登录、Mac 唤醒且联网时能够工作。网络超时的发送结果可能不确定，不能保证严格恰好一次投递。模型和 Telegram 联调需要真实凭据；当前自动测试使用模拟接口，不代表线上账户已验证。
 
 ## 数据与隐私
 
-`.env`、`data/`、运行数据库、日志与虚拟环境不进入版本控制。证据记录保留最近 200 次采集；发送回执独立保存。原始媒体只用于请求处理，不保存为长期素材。
+`.env`、`data/`、运行数据库、日志与虚拟环境不进入版本控制。数据库、日志与媒体目录使用本机私有权限。采集证据、生成的媒体与日志由后台的清理操作按各自边界清理，仍被待发任务引用的证据不会被删除；投递回执独立保存。原始媒体只用于请求处理，不保存为长期素材。
 
-普通摘要只基于提供的标题与摘录，不声称读完全文或完成独立事实核查。AV 适配器限制为非露骨产业信息，处理失败时不跨服务自动回退，也不回传原始推广文案。
+普通摘要只基于提供的标题与摘录，不声称读完全文或完成独立事实核查。AV 产业内容只走专用适配器和成人模型组，处理失败时不跨组回退，也不回传原始推广文案。

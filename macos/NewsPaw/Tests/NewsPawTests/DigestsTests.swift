@@ -14,6 +14,9 @@ private final class DigestBackend {
     /// Changes the stored document once, just before the next subscriptions.save is checked,
     /// as another window would.
     var backgroundChange: (([String: Any]) -> [String: Any])?
+    /// The same, before the next sources.save of an existing source.
+    var sourceBackgroundChange: (([String: Any]) -> [String: Any])?
+    var impactReply: [String: Any] = ["subscriptions": []]
 
     init(subscriptions: [[String: Any]], sources: [[String: Any]] = [], bots: [[String: Any]] = [["id": "bot1", "adult_allowed": false]]) {
         document = [
@@ -73,7 +76,12 @@ private final class DigestBackend {
         case "sources.list":
             return ok(sources.map { ["source": $0, "health": NSNull(), "preview_ready": ready.contains($0["id"] as! String)] })
         case "sources.save":
-            if stale { return refuse("config_conflict") }
+            if let change = sourceBackgroundChange {
+                sourceBackgroundChange = nil
+                document = change(document)
+                revision += 1
+            }
+            if request["revision"] as? Int != revision { return refuse("config_conflict") }
             let source = request["source"] as! [String: Any]
             return commit { document["sources"] = sources.filter { $0["id"] as? String != source["id"] as? String } + [source] }
         case "sources.preview":
@@ -109,6 +117,8 @@ private final class DigestBackend {
         case "subscriptions.preview":
             let draft = request["draft"] as! [String: Any]
             return ok(["blockers": (draft["bot_ids"] as? [String] ?? []).isEmpty ? ["no_ready_bot"] : [], "bots": draft["bot_ids"] ?? [], "sources": []])
+        case "sources.impact":
+            return ok(impactReply)
         case "config.save":
             if stale { return refuse("config_conflict") }
             return commit { document = request["document"] as! [String: Any] }
@@ -374,7 +384,11 @@ private func connected(_ server: DigestBackend) async throws -> (AppModel, () ->
     let data = DigestsData()
     #expect(!(await data.save("sub_japan", model: model, enable: true)))
     #expect(data.failures["sub_japan"] != nil && data.previews["sub_japan"] != nil)
-    data.configurationChanged()
+    // Not cleared by a revision it was already checked against…
+    data.configurationChanged(to: server.revision)
+    #expect(data.failures["sub_japan"] != nil && data.previews["sub_japan"] != nil)
+    // …but by a later one.
+    data.configurationChanged(to: server.revision + 1)
     #expect(data.failures["sub_japan"] == nil && data.previews["sub_japan"] == nil)
 }
 
@@ -408,4 +422,49 @@ private func connected(_ server: DigestBackend) async throws -> (AppModel, () ->
     #expect(!(await data.save("sub_japan", model: model, enable: true) { var d = $0; d["max_items"] = 8; return d }))
     let attempt = try #require(server.calls("subscriptions.preview").last?["draft"] as? [String: Any])
     #expect(attempt["max_items"] as? Int == 8)
+}
+
+
+@Test @MainActor func splittingLeavesSourcesThatAreOffOutOfTheOriginalsList() async throws {
+    let server = DigestBackend(
+        subscriptions: [subscription("sub_japan", enabled: true, bots: ["bot1"])],
+        sources: [source("nhk", focus: "domestic"), source("draft", focus: "domestic", enabled: false), source("oricon", focus: "entertainment")]
+    )
+    server.ready = ["nhk", "oricon"]
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    await data.load(model.client)
+    let digest = try #require(model.config?.subscriptions.first)
+    _ = try #require(await data.split(digest, model: model))
+    #expect(server.subscription("sub_japan")?["source_ids"] as? [String] == ["nhk"])
+}
+
+@Test @MainActor func turningASourceOnKeepsAChangeMadeToItElsewhere() async throws {
+    let server = DigestBackend(subscriptions: [subscription("sub_japan")], sources: [source("nhk", focus: "domestic", enabled: false)])
+    server.ready = ["nhk"]
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    server.sourceBackgroundChange = { document in
+        var document = document
+        var sources = document["sources"] as! [[String: Any]]
+        sources[0]["name"] = "NHK News"
+        document["sources"] = sources
+        return document
+    }
+    try await data.setSource("nhk", enabled: true, model: model)
+    #expect(server.source("nhk")?["enabled"] as? Bool == true && server.source("nhk")?["name"] as? String == "NHK News")
+}
+
+@Test @MainActor func removingTheLastSourceWarnsAboutADigestLeftWithNothing() async throws {
+    let server = DigestBackend(subscriptions: [subscription("sub_japan", enabled: true, bots: ["bot1"])], sources: [source("nhk", focus: "domestic")])
+    server.impactReply = ["subscriptions": [
+        ["id": "sub_japan", "name": "", "was_enabled": true, "enabled": true, "blockers": ["no_sources"]],
+    ]]
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    await data.loadImpact("nhk", model: model)
+    #expect(data.impacts["nhk"] == [model.digestTitle("sub_japan")])
 }

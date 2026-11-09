@@ -70,7 +70,7 @@ private struct Trial: Decodable {
 }
 
 private struct Impact: Decodable {
-    struct Subscription: Decodable { let id: String; let wasEnabled, enabled: Bool }
+    struct Subscription: Decodable { let id: String; let wasEnabled, enabled: Bool; let blockers: [String] }
     let subscriptions: [Subscription]
 }
 
@@ -105,10 +105,17 @@ final class DigestsData {
 
     /// A refusal and its blockers describe the configuration they were made against; once the
     /// configuration changes they may no longer hold, so they are dropped.
-    func configurationChanged() {
-        for (id, failure) in failures where failure.code == "subscription_not_ready" { failures[id] = nil }
-        previews = [:]
+    func configurationChanged(to revision: Int) {
+        // A refusal checked against this revision or later still holds (the turn-on flow saves
+        // sources first, so the model may catch up only after the refusal was recorded).
+        for (id, failure) in failures where failure.code == "subscription_not_ready" && (refusedAt[id] ?? 0) < revision {
+            failures[id] = nil
+            previews[id] = nil
+        }
     }
+
+    /// The configuration revision each refusal's blockers were checked against.
+    private var refusedAt: [String: Int] = [:]
 
     func isBusy(_ id: String) -> Bool { working.contains(id) || working.contains("on." + id) }
 
@@ -209,6 +216,7 @@ final class DigestsData {
             previews[id] = try BackendRPC.decode(await model.client.call(.subscriptionsPreview, [
                 "draft": draft ?? Self.draft(stored), "revision": current.revision,
             ]))
+            refusedAt[id] = current.revision
         } catch let error as BackendError {
             failures[id] = error
         } catch {
@@ -335,15 +343,14 @@ final class DigestsData {
     }
 
     func setSource(_ id: String, enabled: Bool, model: AppModel) async throws {
-        let current = try await model.client.configDocument()
-        guard var source = (current.document["sources"] as? [[String: Any]])?.first(where: { $0["id"] as? String == id }) else {
-            throw BackendError(code: "missing_source", domain: "sources")
+        try await saveSource(id, model: model) { source in
+            var source = source
+            source["enabled"] = enabled
+            return source
         }
-        source["enabled"] = enabled
-        try await saveSource(source, model: model)
     }
 
-    /// Saves one source against the newest revision, retrying once after a conflict.
+    /// Saves a new source (no stored record yet) against the newest revision.
     private func saveSource(_ source: [String: Any], model: AppModel) async throws {
         for attempt in 0..<2 {
             let revision = try await model.client.configDocument().revision
@@ -356,11 +363,31 @@ final class DigestsData {
         }
     }
 
+    /// Applies `change` to the newest stored record of a source and saves it; after a conflict
+    /// the record is read again and the change re-applied, so a change made elsewhere survives.
+    private func saveSource(_ id: String, model: AppModel, change: ([String: Any]) -> [String: Any]) async throws {
+        for attempt in 0..<2 {
+            let current = try await model.client.configDocument()
+            guard let stored = (current.document["sources"] as? [[String: Any]])?.first(where: { $0["id"] as? String == id }) else {
+                throw BackendError(code: "missing_source", domain: "sources")
+            }
+            do {
+                _ = try await model.client.call(.sourcesSave, ["source": change(stored), "revision": current.revision])
+                return
+            } catch let error as BackendError where error.isConflict && attempt == 0 {
+                continue
+            }
+        }
+    }
+
     /// The digests a removal would turn off, named in the confirmation (`sources.impact`).
     func loadImpact(_ id: String, model: AppModel) async {
         impacts[id] = nil
         guard let impact: Impact = try? BackendRPC.decode(await model.client.call(.sourcesImpact, ["source_id": id, "action": "delete"])) else { return }
-        impacts[id] = impact.subscriptions.filter { $0.wasEnabled && !$0.enabled }.map { model.digestTitle($0.id) }
+        // Turned off, or (for a digest following its category) left on with nothing to collect.
+        impacts[id] = impact.subscriptions
+            .filter { $0.wasEnabled && (!$0.enabled || $0.blockers.contains("no_sources")) }
+            .map { model.digestTitle($0.id) }
     }
 
     func removeSource(_ id: String, model: AppModel) async {
@@ -416,10 +443,12 @@ final class DigestsData {
     func split(_ subscription: AppConfig.Subscription, model: AppModel) async -> String? {
         let id = "sub_" + String(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(20))
         let items = listed(subscription)
-        let entertainment = items.filter { $0.source.focus == "entertainment" }.map(\.id)
-        let rest = items.filter { $0.source.focus != "entertainment" }
+        // A digest's own list names only sources that are on: a listed source that is off blocks
+        // it (`source_disabled`). Sources still off stay in the category, ready to be added.
+        let entertainment = items.filter { $0.source.focus == "entertainment" && $0.source.enabled }.map(\.id)
+        let rest = items.filter { $0.source.focus != "entertainment" && $0.source.enabled }
         // An enabled digest must keep a source it can actually read; otherwise both follow the category.
-        let keepsUsable = !subscription.enabled || rest.contains { $0.source.enabled && $0.previewReady }
+        let keepsUsable = !subscription.enabled || rest.contains { $0.previewReady }
         let restIds = keepsUsable ? rest.map(\.id) : []
         let title = model.digestTitle(subscription.id)
         let names = (title, title + " · " + model.text(L10n.Digests.entertainmentTag))
@@ -600,8 +629,12 @@ struct DigestsPage: View {
             }
         }
         .task(id: model.configRevision) {
-            data.configurationChanged()
-            await data.load(model.client)
+            data.configurationChanged(to: model.configRevision)
+            // Deliveries and source checks change without a configuration change.
+            while !Task.isCancelled {
+                await data.load(model.client)
+                try? await Task.sleep(for: .seconds(15))
+            }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -1386,7 +1419,8 @@ private struct SourceRow: View {
                 if unsupported {
                     Button(model.text(L10n.Digests.remove), action: remove)
                 } else if unverified {
-                    Button(model.text(L10n.Digests.tryThenEnable)) { Task { await data.trial(item.id, model: model) } }
+                    // Through the digest: a split digest also adds it to its own list.
+                    Button(model.text(L10n.Digests.tryThenEnable)) { Task { await data.toggle(item, in: subscription, true, model: model) } }
                 } else {
                     Button(model.text(L10n.Digests.tryNow)) { Task { await data.trial(item.id, model: model) } }.buttonStyle(.link)
                 }

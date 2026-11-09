@@ -102,7 +102,10 @@ private struct XNotice: View {
 }
 
 /// What the owner does about a failure, when the copy offers an action.
-@MainActor private func fix(_ failure: BackendError, model: AppModel, retry: @escaping () -> Void) -> () -> Void {
+/// What the owner does about a failure, when the copy offers an action: fix the X key or a
+/// limit in Connect, else `retry` — which repeats the failed step. Without a step to repeat there
+/// is no button (a button that only hides the note would be a lie).
+@MainActor private func fix(_ failure: BackendError, model: AppModel, retry: (() -> Void)?) -> (() -> Void)? {
     let keyProblems: Set<String> = ["credential_missing", "authentication_failed", "permission_denied", "x_limit", "partition_limit", "account_limit"]
     return keyProblems.contains(failure.code) ? { model.page = .connect } : retry
 }
@@ -179,8 +182,12 @@ private struct XAddRow: View {
                 "name": name.allSatisfy(\.isNumber) ? name : "@" + name, "kind": kindName(other, model),
             ]))
         case let .failed(failure, draft):
+            FailureNote(model: model, failure: failure, action: fix(failure, model: model, retry: draft.map { draft in
+                { Task { await data.retryAdd(draft, partition: partition, model: model) } }
+            }))
+        case let .listFailed(failure, id):
             FailureNote(model: model, failure: failure, action: fix(failure, model: model) {
-                if let draft { Task { await data.retryAdd(draft, partition: partition, model: model) } }
+                Task { await data.retryList(id, model: model) }
             })
         case let .list(id):
             if let list = data.lists.first(where: { $0.id == id }) {
@@ -271,6 +278,7 @@ private struct XAccountRow: View {
     let account: XAccountItem
     @State private var editing = false
     @State private var confirmRemove = false
+    @State private var confirmJoin = false
     @State private var moving: XPartitionImpact?
 
     private var state: XAccountState { XAccountState(account.state) }
@@ -308,10 +316,7 @@ private struct XAccountRow: View {
             }
             ForEach(["route.", "verify.", "move.", "remove."], id: \.self) { prefix in
                 if let failure = data.failures[prefix + account.id] {
-                    FailureNote(model: model, failure: failure, action: fix(failure, model: model) {
-                        data.dismiss(prefix + account.id)
-                        if prefix == "verify." { Task { await data.reverify(account.id, model: model) } }
-                    })
+                    FailureNote(model: model, failure: failure, action: fix(failure, model: model, retry: retry(prefix)))
                 }
             }
             if data.slow.contains("verify." + account.id) {
@@ -321,6 +326,12 @@ private struct XAccountRow: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 8)
         .background(background, in: RoundedRectangle(cornerRadius: 6))
+        .confirmationDialog(L10n.XAccounts.joinTitle(model.uiLanguage, ["handle": "@" + account.handle]), isPresented: $confirmJoin) {
+            Button(model.text(L10n.XAccounts.inDigest), role: .destructive) { Task { await data.joinDigest(account.id, model: model) } }
+            Button(model.text(L10n.Shell.cancel), role: .cancel) {}
+        } message: {
+            Text(L10n.XAccounts.rulesDropped(model.uiLanguage, ["count": String(data.rulesOn(account.id))]))
+        }
         .confirmationDialog(L10n.XAccounts.removeTitle(model.uiLanguage, ["handle": "@" + account.handle]), isPresented: $confirmRemove) {
             Button(model.text(L10n.XAccounts.remove), role: .destructive) { Task { await data.remove(account.id, model: model) } }
             Button(model.text(L10n.Shell.cancel), role: .cancel) {}
@@ -344,6 +355,16 @@ private struct XAccountRow: View {
         }
     }
 
+    /// "Try Again" repeats what failed: the last digest change, or the read. A refused move or
+    /// removal has nothing to repeat without asking again, so it offers no button.
+    private func retry(_ prefix: String) -> (() -> Void)? {
+        switch prefix {
+        case "route.": { Task { await data.retryRoute(account.id, model: model) } }
+        case "verify.": { Task { await data.reverify(account.id, model: model) } }
+        default: nil
+        }
+    }
+
     private var background: Color {
         if data.highlighted == account.id { return Color.accentColor.opacity(0.10) }
         if state == .protected { return Color.orange.opacity(0.07) }
@@ -364,13 +385,14 @@ private struct XAccountRow: View {
             if let read = activity.lastRead {
                 parts.append(L10n.XAccounts.lastRead(language, ["when": Stamp.relative(read, language)]))
             }
-            parts.append(L10n.XAccounts.newToday(language, ["count": String(activity.newToday)]))
+            parts.append(L10n.XAccounts.newToday(language, ["count": String(activity.newToday) + (activity.capped ? "+" : "")]))
         } else if account.observedAt == nil {
             parts.append(model.text(L10n.XAccounts.notReadYet))
         }
         if account.sendsAlone, let recipients = recipients, !recipients.isEmpty {
             parts.append(model.recipientsLine(recipients))
         }
+        if account.subscriptionId == nil { parts.append(model.text(L10n.XAccounts.notInDigest)) }
         return parts.joined(separator: " · ")
     }
 
@@ -390,8 +412,14 @@ private struct XAccountRow: View {
                 .popover(isPresented: $editing, arrowEdge: .bottom) {
                     XAlonePopover(model: model, data: data, account: account, digest: digest) { editing = false }
                 }
-            segment(model.text(L10n.XAccounts.inDigest), selected: !account.sendsAlone) {
-                if account.sendsAlone { Task { await data.joinDigest(account.id, model: model) } }
+            segment(model.text(L10n.XAccounts.inDigest), selected: account.inDigest) {
+                guard !account.inDigest else { return }
+                // Alert rules on an account sent alone go with that choice: ask first.
+                if account.sendsAlone, data.rulesOn(account.id) > 0 {
+                    confirmJoin = true
+                } else {
+                    Task { await data.joinDigest(account.id, model: model) }
+                }
             }
         }
         .padding(2)
@@ -422,11 +450,7 @@ private struct XAccountRow: View {
                 ForEach(XPostType.all, id: \.self) { type in
                     Toggle(model.text(typeWord(type)), isOn: Binding(
                         get: { account.types.contains(type) },
-                        set: { on in
-                            var types = Set(account.types)
-                            if on { types.insert(type) } else { types.remove(type) }
-                            Task { await data.setPostTypes(account.id, types, model: model) }
-                        }
+                        set: { on in Task { await data.setPostType(account.id, type, on: on, model: model) } }
                     ))
                     .disabled(account.types == [type])
                 }
@@ -597,6 +621,7 @@ private struct XListRow: View {
 
     var body: some View {
         let pending = data.pending(list)
+        let outside = data.notInDigest(list)
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
                 Avatar(text: list.name ?? "L", adult: list.partition == "adult", square: true)
@@ -606,19 +631,26 @@ private struct XListRow: View {
                         Text("· " + L10n.XAccounts.memberCount(model.uiLanguage, ["count": String(list.members.count)]))
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    Text(model.text(list.partition == "adult" ? L10n.XAccounts.listNoteAdult : L10n.XAccounts.listNote))
+                    // Says "all members are in the digest" only when they are.
+                    Text(model.text(!outside.isEmpty ? L10n.XAccounts.listNoteOutside
+                                    : list.partition == "adult" ? L10n.XAccounts.listNoteAdult : L10n.XAccounts.listNote))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
                 Spacer(minLength: 8)
-                if pending.isEmpty {
-                    StatusDot(color: stateColor, text: model.text(stateWords), busy: data.isBusy("list." + list.id))
-                } else {
+                if !pending.isEmpty {
                     StatusDot(color: .orange, text: L10n.XAccounts.pendingMembers(model.uiLanguage, ["count": String(pending.count)]),
                               busy: data.isBusy("list." + list.id))
                     Button(model.text(L10n.XAccounts.view)) { showing = true }
                         .popover(isPresented: $showing, arrowEdge: .bottom) {
                             XMembersPopover(model: model, data: data, list: list)
                         }
+                } else if !outside.isEmpty {
+                    StatusDot(color: .orange, text: L10n.XAccounts.membersOutside(model.uiLanguage, ["count": String(outside.count)]),
+                              busy: data.isBusy("list." + list.id))
+                    Button(model.text(L10n.XAccounts.inDigest)) { Task { await data.adoptMembers(list.id, key: "list." + list.id, model: model) } }
+                        .disabled(data.isBusy("list." + list.id))
+                } else {
+                    StatusDot(color: stateColor, text: model.text(stateWords), busy: data.isBusy("list." + list.id))
                 }
                 Menu {
                     Button(model.text(L10n.XAccounts.readMembers)) { Task { await data.refreshList(list.id, model: model) } }
@@ -710,6 +742,7 @@ private struct XWaitingRow: View {
     let model: AppModel
     let data: XAccountsData
     let account: XAccountItem
+    @State private var confirmRemove = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -723,7 +756,7 @@ private struct XWaitingRow: View {
                 if data.isBusy("member." + account.id) { ProgressView().controlSize(.small) }
                 Button(model.text(L10n.XAccounts.normalKind)) { Task { await data.choose(account.id, partition: "normal", model: model) } }
                 Button(model.text(L10n.XAccounts.adultKind)) { Task { await data.choose(account.id, partition: "adult", model: model) } }
-                Button(model.text(L10n.XAccounts.remove)) { Task { await data.remove(account.id, model: model) } }
+                Button(model.text(L10n.XAccounts.remove)) { confirmRemove = true }
             }
             .disabled(data.isBusy("member." + account.id))
             if let failure = data.failures["member." + account.id] ?? data.failures["remove." + account.id] {
@@ -732,6 +765,12 @@ private struct XWaitingRow: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 8)
+        .confirmationDialog(L10n.XAccounts.removeTitle(model.uiLanguage, ["handle": "@" + account.handle]), isPresented: $confirmRemove) {
+            Button(model.text(L10n.XAccounts.remove), role: .destructive) { Task { await data.remove(account.id, model: model) } }
+            Button(model.text(L10n.Shell.cancel), role: .cancel) {}
+        } message: {
+            Text(model.text(L10n.XAccounts.removeBody))
+        }
     }
 }
 

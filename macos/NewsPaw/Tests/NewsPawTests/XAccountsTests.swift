@@ -52,6 +52,8 @@ private final class XBackend {
     var posts: [String: [String]] = [:]
     private(set) var requests: [[String: Any]] = []
     private var serial = 0
+    /// Refuses the next request of an operation with this code, once.
+    var failNext: [String: String] = [:]
     /// Per-operation delays before the reply is computed (to overlap requests).
     var delays: [String: [Duration]] = [:]
 
@@ -161,6 +163,8 @@ private final class XBackend {
     private func answer(_ request: [String: Any]) -> Data? {
         requests.append(request)
         let op = request["op"] as! String
+        // A one-off refusal of the next request of this operation (e.g. a storage failure).
+        if let code = failNext.removeValue(forKey: op) { return refuse(code) }
         let stale = (request["revision"] as? Int).map { $0 != revision } ?? false
         let id = request["account_id"] as? String ?? ""
         switch op {
@@ -331,6 +335,12 @@ private final class XBackend {
             if stale { return refuse("config_conflict", "x") }
             let listId = request["list_id"] as! String
             guard var list = lists[listId] else { return refuse("missing_list") }
+            if let readFailure {
+                // _failure(): a failed read of a List records its state; members stay as they were.
+                list["state"] = readFailure
+                lists[listId] = list
+                return ok(["request_id": request["request_id"]!, "state": readFailure, "reason": readFailure, "retry_after": NSNull()])
+            }
             if privateLists.contains(listId) {
                 list["state"] = "private"
                 lists[listId] = list
@@ -637,13 +647,15 @@ private func connected(_ server: XBackend) async throws -> (AppModel, XAccountsD
     let (model, data, cleanup) = try await connected(server)
     defer { cleanup() }
 
-    await data.setPostTypes("a1", ["original", "replied_to"], model: model)
+    await data.setPostType("a1", "replied_to", on: true, model: model)
+    await data.setPostType("a1", "quoted", on: false, model: model)
     let route = try #require(server.calls("x.accounts.route").last)
     #expect(route["post_types"] as? [String] == ["original", "replied_to"] && route["priority"] as? String == "special")
     #expect(server.stored("a1")?["times"] as? [String] == ["21:30"])
 
-    await data.setPostTypes("a1", [], model: model)
-    #expect(server.calls("x.accounts.route").count == 1)
+    // Nothing to change sends nothing.
+    await data.setPostType("a1", "original", on: true, model: model)
+    #expect(server.calls("x.accounts.route").count == 2)
     #expect(typesText(["quoted", "original"], .zhHans) == "原帖 + 引用")
 }
 
@@ -775,7 +787,8 @@ private func connected(_ server: XBackend) async throws -> (AppModel, XAccountsD
     defer { cleanup() }
 
     await data.add("https://x.com/i/lists/42", partition: "adult", model: model)
-    guard case let .failed(failure, _) = data.outcome else { Issue.record("no failure"); return }
+    guard case let .listFailed(failure, list) = data.outcome else { Issue.record("no failure"); return }
+    #expect(list == "42")
     #expect(failure == BackendError(code: "private", domain: "x"))
     #expect(FailureCopy.message(for: failure, .en).contains("private"))
     #expect(server.calls("x.lists.add").first?["default_adult"] as? Bool == true)
@@ -913,4 +926,132 @@ private func connected(_ server: XBackend) async throws -> (AppModel, XAccountsD
     let slots = OverviewData.upcoming(try #require(model.config).subscriptions, accounts: try #require(model.config).accounts, existing: [],
                                       now: Date())
     for slot in slots where slot.accountId == "own" { #expect(model.targetsLine(slot.subscriptionId, accountId: slot.accountId) == "→ @bot2") }
+}
+
+// MARK: - Review cycle 1
+
+@Test @MainActor func adoptingAnAdultListJoinsItsMembersToTheAdultDigest() async throws {
+    let server = XBackend()
+    server.listMembers["777"] = [("night_a", "201"), ("night_b", "202")]
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    await data.add("https://x.com/i/lists/777", partition: "adult", model: model)
+    #expect(data.outcome == .list("777"))
+    // The backend makes adult List members adult right away, but in no digest yet.
+    let list = try #require(data.lists.first)
+    #expect(data.pending(list).isEmpty && data.notInDigest(list).count == 2)
+    #expect(data.accounts(in: "adult").allSatisfy { !$0.inDigest && !$0.sendsAlone })
+
+    await data.adoptMembers("777", model: model)
+    for handle in ["night_a", "night_b"] {
+        let account = try #require(server.stored(handle: handle))
+        #expect(account["partition"] as? String == "adult" && account["subscription_id"] as? String == "sub_xa")
+    }
+    let adopted = try #require(data.lists.first)
+    #expect(data.notInDigest(adopted).isEmpty && data.accounts(in: "adult").allSatisfy(\.inDigest))
+    #expect(data.outcome == nil && data.accounts(in: "normal").isEmpty)
+}
+
+@Test @MainActor func aDraftWhoseDigestChoiceFailedJoinsItOnRetry() async throws {
+    let server = XBackend()
+    server.users["sama"] = .init(remote: "5")
+    server.failNext["x.accounts.route"] = "storage_failed"
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    await data.add("sama", partition: "normal", model: model)
+    let id = try #require(server.stored(handle: "sama")?["id"] as? String)
+    guard case let .failed(_, draft) = data.outcome else { Issue.record("no failure"); return }
+    #expect(draft == id && server.stored(id)?["subscription_id"] is NSNull)
+    #expect(data.account(id)?.inDigest == false)
+
+    await data.retryAdd(id, partition: "normal", model: model)
+    #expect(server.stored(id)?["subscription_id"] as? String == "sub_x" && data.outcome == .added(id))
+    #expect(data.account(id)?.inDigest == true)
+}
+
+@Test @MainActor func anAccountInNoDigestJoinsItFromTheRow() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "sama", subscription: nil, remote: "1")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    #expect(data.account("a1")?.inDigest == false && data.account("a1")?.sendsAlone == false)
+
+    await data.joinDigest("a1", model: model)
+    #expect(server.stored("a1")?["subscription_id"] as? String == "sub_x" && data.account("a1")?.inDigest == true)
+}
+
+@Test @MainActor func aMoveWhoseDigestChoiceFailedCanBeRetried() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "elonmusk", remote: "1")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    let impact = try #require(await data.loadImpact("a1", model: model))
+    server.failNext["x.accounts.route"] = "storage_failed"
+    #expect(await data.move("a1", to: "adult", impact: impact, model: model))
+    #expect(server.stored("a1")?["partition"] as? String == "adult" && server.stored("a1")?["subscription_id"] is NSNull)
+    #expect(data.failures["route.a1"]?.code == "storage_failed")
+
+    await data.retryRoute("a1", model: model)
+    #expect(server.stored("a1")?["subscription_id"] as? String == "sub_xa" && data.failures["route.a1"] == nil)
+}
+
+@Test @MainActor func joiningTheDigestAsksFirstOnlyWhenRulesWouldGo() async throws {
+    let server = XBackend(accounts: [
+        XBackend.account("a1", "elonmusk", priority: "special", remote: "1", times: ["21:30"]),
+        XBackend.account("a2", "karpathy", priority: "special", remote: "2", times: ["09:00"]),
+    ])
+    server.alerts["rules"] = [["subscription_id": "sub_x", "account_id": "a1", "phrase": "launch"]]
+    let (_, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    #expect(data.rulesOn("a1") == 1 && data.rulesOn("a2") == 0)
+}
+
+@Test @MainActor func aFailedListReadCanBeReadAgain() async throws {
+    let server = XBackend()
+    server.listMembers["888"] = [("alice", "101")]
+    server.readFailure = "rate_limited"
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    await data.add("https://x.com/i/lists/888", partition: "normal", model: model)
+    #expect(data.outcome == .listFailed(BackendError(code: "rate_limited", domain: "x"), "888"))
+
+    server.readFailure = nil
+    await data.retryList("888", model: model)
+    #expect(data.outcome == .list("888") && server.calls("x.lists.refresh").count == 2)
+}
+
+@Test @MainActor func twoQuickPostTypeChangesBothStick() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "elonmusk", remote: "1")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    server.delays["x.accounts.route"] = [.milliseconds(150)]
+    async let first: Void = data.setPostType("a1", "replied_to", on: true, model: model)
+    try await Task.sleep(for: .milliseconds(20))
+    async let second: Void = data.setPostType("a1", "retweeted", on: true, model: model)
+    _ = await (first, second)
+    #expect(server.stored("a1")?["post_types"] as? [String] == XPostType.all)
+
+    // The last kind cannot be turned off.
+    await data.setPostType("a1", "original", on: false, model: model)
+    await data.setPostType("a1", "quoted", on: false, model: model)
+    await data.setPostType("a1", "replied_to", on: false, model: model)
+    await data.setPostType("a1", "retweeted", on: false, model: model)
+    #expect(server.stored("a1")?["post_types"] as? [String] == ["retweeted"])
+}
+
+@Test @MainActor func todaysPostsAreCountedRarelyAndWithASmallLimit() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "elonmusk", remote: "1"), XBackend.account("a2", "sama", remote: "2")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    #expect(server.calls("x.posts.list").count == 2)
+    #expect(server.calls("x.posts.list").allSatisfy { ($0["limit"] as? Int ?? 0) <= XAccountsData.postsLimit })
+
+    // The 10-second page refresh does not count them again.
+    await data.load(model: model)
+    await data.load(model: model)
+    #expect(server.calls("x.posts.list").count == 2)
+    #expect(FailureCopy.table["x.partial_response"] != nil)
 }

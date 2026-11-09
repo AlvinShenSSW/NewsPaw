@@ -600,6 +600,10 @@ enum L10n {
         static let listUnread = Words("还没读取成员", "Members not read yet", "メンバー未読み取り")
         static let listPrivate = Words("私密 List，读不到", "Private List; can't read", "非公開リストのため読み取れません")
         static let listIncomplete = Words("成员没读完整", "Members incomplete", "メンバーの読み取りが不完全")
+        static let notInDigest = Words("还没并入汇总", "not in the digest yet", "まだまとめに入っていません")
+        static let joinTitle = Words("把 {handle} 并入汇总？", "Put {handle} in the digest?", "{handle} をまとめに入れますか？")
+        static let membersOutside = Words("{count} 个成员还没并入汇总", "{count} members not in the digest", "まとめに入っていないメンバー {count} 人")
+        static let listNoteOutside = Words("成员要并入汇总后才会被读取", "Members are read once they are in the digest", "メンバーはまとめに入ると読み取られます")
         static let membersTitle = Words("「{name}」的新成员", "New members of \u{201C}{name}\u{201D}", "「{name}」の新メンバー")
         static let membersNote = Words("选普通或成人后并入那一类的汇总；忽略的成员不会被读取。", "Ordinary or adult adds a member to that digest; ignored members are not read.", "一般か成人向けを選ぶとそのまとめに入ります。無視したメンバーは読み取りません。")
         static let ignore = Words("忽略", "Ignore", "無視")
@@ -656,6 +660,7 @@ enum L10n {
             advancedNote, alerts, alertsNote, alertsNeedRule, rulePlaceholder, ruleScope, ruleDigest, addRule, removeRule, video,
             videoNote, videoNeedsModels, videoBudget, perDayMoney, noVideos, inspect, inspectTitle, inspectBody, viewResult,
             videoDone, videoPartial, transcript, partitionLimits, partitionLimitsNote, partitionLimitLabel,
+            notInDigest, joinTitle, membersOutside, listNoteOutside,
         ]
     }
 }
@@ -802,6 +807,7 @@ enum FailureCopy {
         "x.interrupted": Entry(message: Words("读取被中断了，再试一次。", "The read was interrupted; try again.", "読み取りが中断されました。もう一度お試しください。"), action: L10n.Shell.retry),
         "x.cancelled": Entry(message: Words("读取被取消了，再试一次。", "The read was cancelled; try again.", "読み取りがキャンセルされました。もう一度お試しください。"), action: L10n.Shell.retry),
         "x.partial": Entry(message: Words("只读到了部分成员（最多 100 个），再读一次。", "Only some members were read (100 at most); read them again.", "メンバーの一部しか読み取れませんでした（最大 100 人）。もう一度読み取ってください。"), action: L10n.Shell.retry),
+        "x.partial_response": Entry(message: Words("只读到了部分成员（最多 100 个），再读一次。", "Only some members were read (100 at most); read them again.", "メンバーの一部しか読み取れませんでした（最大 100 人）。もう一度読み取ってください。"), action: L10n.Shell.retry),
         "x.account_limit": Entry(message: Words("最多只能添加 200 个账号。先移除一些再添加。", "At most 200 accounts can be added. Remove some first.", "追加できるアカウントは最大 200 件です。先にいくつか削除してください。"), action: nil),
         "x_still_running": Entry(message: Words("X 还没回应。读完后结果会出现在列表里。", "X has not answered yet. The result appears in the list once it is read.", "X からまだ応答がありません。読み取りが終わると一覧に表示されます。"), action: nil),
         "x_limit": Entry(message: Words("今天的 X 读取已到上限。调高「每天最多读取」，或明天再试。", "Today's X reads are used up. Raise the reads per day, or try tomorrow.", "今日の X 読み取り上限に達しました。上限を上げるか、明日再試行してください。"), action: nil),

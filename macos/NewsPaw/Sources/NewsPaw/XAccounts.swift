@@ -18,6 +18,9 @@ struct XAccountItem: Decodable, Identifiable, Equatable {
     var types: [String] { postTypes ?? XPostType.defaults }
     /// "单独发": its own digest at its own time (routing.py `special`).
     var sendsAlone: Bool { priority == "special" && subscriptionId != nil }
+    /// "并入汇总": in a digest and not sent alone. An account in no digest yet (a List member
+    /// just taken in, or a draft whose digest choice failed) is neither.
+    var inDigest: Bool { subscriptionId != nil && priority != "special" }
 }
 
 /// One X List (`x.lists.list`). `current` is false until its members were read with the current key.
@@ -67,6 +70,8 @@ struct XPartitionImpact: Decodable, Equatable {
 struct XActivity: Equatable {
     var lastRead: Date?
     var newToday = 0
+    /// Today's count reached the read limit (`XAccountsData.postsLimit`): "50+".
+    var capped = false
 }
 
 /// One opt-in alert rule (`x.alerts.save`): a phrase within one X digest, or one of its
@@ -193,6 +198,8 @@ enum XAddOutcome: Equatable {
     case failed(BackendError, String?)
     /// A List was read: its members can be taken into the digest.
     case list(String)
+    /// Reading a List's members failed; it is kept and can be read again.
+    case listFailed(BackendError, String)
 }
 
 extension BackendClient {
@@ -299,6 +306,18 @@ final class XAccountsData {
     /// How long a read that outlived its socket deadline is followed before the page lets go.
     @ObservationIgnored var followLimit: Duration = .seconds(120)
     @ObservationIgnored private var queues: [String: Task<Void, Never>] = [:]
+    /// The last change sent for each account, so "Try Again" repeats it against the fresh state.
+    @ObservationIgnored private var lastRoutes: [String: RouteFields] = [:]
+    /// Today's post counts are local but not free (one `x.posts.list` per account): they are
+    /// read again only when the readable accounts change or after this long.
+    @ObservationIgnored var activityInterval: Duration = .seconds(600)
+    @ObservationIgnored private var activityRead: (at: ContinuousClock.Instant, accounts: Set<String>)?
+
+    /// Posts read per account to count today's (shown as "50+" when reached).
+    static let postsLimit = 50
+
+    /// Fields of one `x.accounts.route` from the account's fresh state and its digest; nil sends nothing.
+    typealias RouteFields = (XAccountItem, String) -> [String: Any]?
     @ObservationIgnored private let defaults: UserDefaults
 
     static let ignoredKey = "x.ignoredMembers"
@@ -330,6 +349,16 @@ final class XAccountsData {
         let ids = Set(list.members.map(\.accountId))
         return accounts.filter { ids.contains($0.id) && $0.partition == nil && !ignored.contains($0.id) }
     }
+
+    /// A List's members of its own kind that are in no digest yet (an adult List's members are
+    /// adult from the start, but join the digest only when taken in).
+    func notInDigest(_ list: XListItem) -> [XAccountItem] {
+        let ids = Set(list.members.map(\.accountId))
+        return accounts.filter { ids.contains($0.id) && $0.partition == list.partition && $0.subscriptionId == nil && !ignored.contains($0.id) }
+    }
+
+    /// Alert rules on this account (they go if it stops being sent alone).
+    func rulesOn(_ id: String) -> Int { alerts?.rules.filter { $0.accountId == id }.count ?? 0 }
 
     // MARK: Loading
 
@@ -368,7 +397,13 @@ final class XAccountsData {
                 newspaperReady = paper.settings.enabled && paper.settings.generationProfile != nil
             }
         }
-        await loadActivity(client, now: now)
+        let readable = Set(accounts.filter(\.canCollect).map(\.id))
+        if let last = activityRead, last.accounts == readable, ContinuousClock.now - last.at < activityInterval {
+            activity = activity.filter { readable.contains($0.key) }
+        } else {
+            await loadActivity(client, now: now)
+            activityRead = (ContinuousClock.now, readable)
+        }
         loaded = true
     }
 
@@ -389,9 +424,11 @@ final class XAccountsData {
                 entry.lastRead = (coverage.latest?.observedAt ?? coverage.latest?.throughTime).flatMap(OverviewData.date)
             }
             var request = scope
-            request["limit"] = 200
+            request["limit"] = Self.postsLimit
             if let data = try? await client.call(.xPostsList, request), let posts: [Post] = try? BackendRPC.decode(data) {
+                // Newest first: today's posts are the first ones.
                 entry.newToday = posts.filter { OverviewData.date($0.publishedAt).map(OverviewData.day) == day }.count
+                entry.capped = entry.newToday >= Self.postsLimit
             }
             next[account.id] = entry
         }
@@ -448,13 +485,7 @@ final class XAccountsData {
             }
             draft = added.account.id
             // Joins the digest of its kind first, so it is never left outside both choices.
-            if let digest = model.config?.xDigest(partition), added.account.subscriptionId == nil {
-                _ = try await client.revisioned { revision in
-                    try await client.call(.xAccountsRoute, [
-                        "account_id": added.account.id, "subscription_id": digest.id, "priority": "normal", "revision": revision,
-                    ])
-                }
-            }
+            try await joinOwnDigest(added.account.id, model: model)
             let reply = try await verify(added.account.id, key: "add", model: model)
             await settle(reply, draft: added.account.id, handle: name, partition: partition, model: model)
         } catch {
@@ -514,13 +545,30 @@ final class XAccountsData {
         await reload(model)
     }
 
-    /// Reads the add row's draft again after a failed read.
+    /// Puts an account of a kind that is in no digest into its kind's X digest. Nothing is sent
+    /// when it is already in one (or sent alone).
+    private func joinOwnDigest(_ id: String, model: AppModel) async throws {
+        let client = model.client
+        _ = try await client.revisioned { revision -> Data? in
+            struct Directory: Decodable { let accounts: [XAccountItem] }
+            let directory: Directory = try BackendRPC.decode(await client.call(.xAccountsList))
+            guard let account = directory.accounts.first(where: { $0.id == id }), account.subscriptionId == nil,
+                  let partition = account.partition, let digest = model.config?.xDigest(partition) else { return nil }
+            return try await client.call(.xAccountsRoute, [
+                "account_id": id, "subscription_id": digest.id, "priority": "normal", "revision": revision,
+            ])
+        }
+    }
+
+    /// Finishes adding the add row's draft after a failure: it joins its digest if that step
+    /// failed, and is read again.
     func retryAdd(_ id: String, partition: String, model: AppModel) async {
         guard let handle = account(id)?.handle, !working.contains("add") else { return }
         working.insert("add")
         defer { working.remove("add") }
         outcome = nil
         do {
+            try await joinOwnDigest(id, model: model)
             let reply = try await verify(id, key: "add", model: model)
             await settle(reply, draft: id, handle: handle, partition: partition, model: model)
         } catch {
@@ -612,6 +660,7 @@ final class XAccountsData {
     }
 
     /// "并入汇总": the account joins its kind's X digest (and loses its own time, Bots and style).
+    /// Alert rules on it go too; the page asks first when there are any (`rulesOn`).
     func joinDigest(_ id: String, model: AppModel) async {
         await route(id, model: model) { _, digest in
             ["subscription_id": digest, "priority": "normal"]
@@ -629,26 +678,40 @@ final class XAccountsData {
         }
     }
 
-    /// Which posts of the account are read (at least one kind).
-    func setPostTypes(_ id: String, _ types: Set<String>, model: AppModel) async {
-        guard !types.isEmpty else { return }
+    /// Turns reading one kind of post on or off, applied to the account's newest stored types
+    /// (two quick changes both stick). The last kind is never turned off.
+    func setPostType(_ id: String, _ type: String, on: Bool, model: AppModel) async {
         await route(id, model: model) { account, digest in
-            ["subscription_id": digest, "priority": account.sendsAlone ? "special" : "normal",
-             "post_types": XPostType.all.filter(types.contains)]
+            var types = Set(account.types)
+            if on { types.insert(type) } else { types.remove(type) }
+            guard !types.isEmpty, types != Set(account.types) else { return nil }
+            return ["subscription_id": digest, "priority": account.sendsAlone ? "special" : "normal",
+                    "post_types": XPostType.all.filter(types.contains)]
+        }
+    }
+
+    /// Repeats the account's last change that failed, against its fresh state; an account in
+    /// no digest joins its kind's digest.
+    func retryRoute(_ id: String, model: AppModel) async {
+        if let fields = lastRoutes[id] {
+            await route(id, model: model, fields: fields)
+        } else {
+            await joinDigest(id, model: model)
         }
     }
 
     /// `x.accounts.route` against the account's newest stored state. The digest is the one it is
     /// in, else the X digest of its own kind; never one of the other kind.
-    private func route(_ id: String, model: AppModel, fields: @escaping (XAccountItem, String) -> [String: Any]) async {
+    private func route(_ id: String, model: AppModel, fields: @escaping RouteFields) async {
         let key = "route." + id
+        lastRoutes[id] = fields
         await queued(id) { [self] in
             working.insert(key)
             defer { working.remove(key) }
             failures[key] = nil
             let client = model.client
             do {
-                _ = try await client.revisioned { revision in
+                _ = try await client.revisioned { revision -> Data? in
                     struct Directory: Decodable { let accounts: [XAccountItem] }
                     let directory: Directory = try BackendRPC.decode(await client.call(.xAccountsList))
                     guard let account = directory.accounts.first(where: { $0.id == id }), let partition = account.partition else {
@@ -657,12 +720,13 @@ final class XAccountsData {
                     guard let digest = account.subscriptionId ?? model.config?.xDigest(partition)?.id else {
                         throw BackendError(code: "incompatible_subscription", domain: "x")
                     }
-                    var request = fields(account, digest)
+                    guard var request = fields(account, digest) else { return nil }
                     request["account_id"] = id
                     request["revision"] = revision
                     return try await client.call(.xAccountsRoute, request)
                 }
                 savedAt[key] = Date()
+                lastRoutes[id] = nil
             } catch {
                 failures[key] = BackendError.wrapping(error)
             }
@@ -714,17 +778,8 @@ final class XAccountsData {
         }
         impacts[id] = nil
         await model.refresh()
-        if let digest = model.config?.xDigest(partition) {
-            do {
-                _ = try await client.revisioned { revision in
-                    try await client.call(.xAccountsRoute, ["account_id": id, "subscription_id": digest.id, "priority": "normal", "revision": revision])
-                }
-            } catch {
-                failures[key] = BackendError.wrapping(error)
-            }
-        }
-        await reload(model)
-        await pruneRules(model: model)
+        // Then it joins the new kind's digest; a failure there is the row's, with "Try Again".
+        await joinDigest(id, model: model)
         return true
     }
 
@@ -770,17 +825,35 @@ final class XAccountsData {
                 outcome = .otherPartition(list.name ?? list.id, list.partition)
                 return
             }
-            let reply = try await readMembers(list.id, key: "add", model: model)
-            if let failure = reply.failure {
-                outcome = .failed(failure, nil)
-            } else if reply.state == "running" {
-                outcome = .failed(BackendError(code: "x_still_running", domain: "x"), nil)
-            } else {
-                outcome = .list(list.id)
-            }
+            try await settleList(list.id, model: model)
         } catch {
             outcome = .failed(BackendError.wrapping(error), nil)
         }
+        await reload(model)
+    }
+
+    private func settleList(_ id: String, model: AppModel) async throws {
+        do {
+            let reply = try await readMembers(id, key: "add", model: model)
+            if let failure = reply.failure {
+                outcome = .listFailed(failure, id)
+            } else if reply.state == "running" {
+                outcome = .listFailed(BackendError(code: "x_still_running", domain: "x"), id)
+            } else {
+                outcome = .list(id)
+            }
+        } catch {
+            outcome = .listFailed(BackendError.wrapping(error), id)
+        }
+    }
+
+    /// Reads the add row's List again after a failed read.
+    func retryList(_ id: String, model: AppModel) async {
+        guard !working.contains("add") else { return }
+        working.insert("add")
+        defer { working.remove("add") }
+        outcome = nil
+        try? await settleList(id, model: model)
         await reload(model)
     }
 
@@ -817,13 +890,12 @@ final class XAccountsData {
         await reload(model)
     }
 
-    /// Takes a List's members into the List's kind and its X digest (the add row's "Add").
-    func adoptMembers(_ listId: String, model: AppModel) async {
+    /// Takes a List's members into the List's kind and its X digest (the add row's "Add", or the
+    /// List row's "In Digest" for members still outside it).
+    func adoptMembers(_ listId: String, key: String = "add", model: AppModel) async {
         guard let list = lists.first(where: { $0.id == listId }) else { return }
-        let ids = pending(list).map(\.id) + accounts(in: list.partition).filter { account in
-            account.subscriptionId == nil && list.members.contains { $0.accountId == account.id }
-        }.map(\.id)
-        if await classify(ids, as: list.partition, key: "add", model: model) { outcome = nil }
+        let ids = (pending(list) + notInDigest(list)).map(\.id)
+        if await classify(ids, as: list.partition, key: key, model: model), key == "add" { outcome = nil }
     }
 
     /// The owner's choice for one new List member: ordinary, adult, or not at all.
@@ -836,8 +908,9 @@ final class XAccountsData {
         _ = await classify([id], as: partition, key: "member." + id, model: model)
     }
 
-    /// Puts accounts that are in no kind yet into `partition` and its X digest, in one saved
-    /// change. An account someone classified meanwhile is left as it is (never moved here).
+    /// Puts accounts that are in no kind yet, or already of `partition` but in no digest, into
+    /// `partition` and its X digest, in one saved change. An account of the other kind is left as
+    /// it is (never moved here), and one already in a digest keeps its choice.
     @discardableResult
     private func classify(_ ids: [String], as partition: String, key: String, model: AppModel) async -> Bool {
         guard !ids.isEmpty else { return true }
@@ -849,7 +922,8 @@ final class XAccountsData {
         let saved = await editor.apply { document in
             var document = document
             document["accounts"] = (document["accounts"] as? [[String: Any]] ?? []).map { entry in
-                guard let id = entry["id"] as? String, wanted.contains(id), entry["partition"] is NSNull || entry["partition"] == nil else {
+                let kind = entry["partition"] as? String
+                guard let id = entry["id"] as? String, wanted.contains(id), kind == nil || kind == partition else {
                     return entry
                 }
                 var entry = entry

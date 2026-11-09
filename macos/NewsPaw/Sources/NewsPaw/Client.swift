@@ -11,6 +11,13 @@ enum Operation: String, CaseIterable, Sendable {
     case botsList = "bots.list"
     case scheduleStatus = "schedule.status"
     case scheduleConfigure = "schedule.configure"
+    case scheduleResolve = "schedule.resolve"
+    case budgetGet = "budget.get"
+    case sourcesList = "sources.list"
+    case jobsResume = "jobs.resume"
+    case deliveryStatus = "delivery.status"
+    case deliveryResolve = "delivery.resolve"
+    case sendNow = "subscriptions.send_now"
 
     /// Socket deadline for an operation name, the one place the app sets timeouts.
     /// Network-bound operations wait for their bounded backend work; everything else

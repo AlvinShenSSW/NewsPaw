@@ -87,11 +87,14 @@ struct AppConfig: Decodable {
     struct Account: Decodable, Identifiable {
         let id, handle, priority: String
         let partition, subscriptionId: String?
+        let remoteId: String?
+        let times: [String]?
     }
 
     struct Profile: Decodable, Identifiable {
         let id, partition, role, provider, model: String
         let baseUrl: String?
+        let credentialRef: String?
         let capabilities: [String]
     }
 }
@@ -329,6 +332,24 @@ final class AppModel {
     private func replaceFailure(_ failure: BackendError?) {
         lastFailure = failure
         retryLast = nil
+    }
+
+    /// Queues one extra edition of a digest now (R03 `subscriptions.send_now`).
+    func sendNow(_ subscriptionId: String?) async {
+        guard let subscriptionId, connection == .connected else { return }
+        do {
+            _ = try await client.call(.sendNow, ["subscription_id": subscriptionId])
+            error = nil
+        } catch {
+            switch error {
+            case let failure as BackendError: lastFailure = failure
+            case is SocketFailure: lastFailure = BackendError(code: "backend_unreachable")
+            default: lastFailure = BackendError(code: "invalid_reply")
+            }
+            retryLast = { [weak self] in await self?.sendNow(subscriptionId) }
+            self.error = .saveFailed
+        }
+        await refresh()
     }
 
     /// Pauses or resumes every scheduled delivery (the menu-bar and Settings switch).

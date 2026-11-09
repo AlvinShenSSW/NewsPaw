@@ -680,6 +680,10 @@ async def test_saving_a_model_key_checks_text_once_per_key(control, monkeypatch)
     probe_id, profile, capability, hold = calls[0]
     assert (profile, capability, hold) == ("normal_primary", "text", 10_000)
     assert probe_id.startswith("auto.normal_primary.text.g")
+    # models.status names the generation, so the app can follow this automatic check by id.
+    status = await request(server, {"op": "models.status", "profile_id": "normal_primary"})
+    generations = {entry["generation"] for entry in status["result"].values()}
+    assert generations == {int(probe_id.rsplit(".g", 1)[1])}
     bot = await request(
         server,
         {

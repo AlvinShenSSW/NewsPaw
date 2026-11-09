@@ -237,6 +237,31 @@ async def test_bot_rotation_clears_binding_and_retains_other_bot(credentials):
     assert bot["telegram_id"] is None and bot["chat_id"] is None
 
 
+async def test_status_names_each_available_key_by_its_last_four_characters(credentials):
+    manager, store, backend = credentials
+    await manager.set("model_profiles", "normal_primary", "sk-synthetic-7Qx2", 1)
+    await manager.set("model_profiles", "normal_backup", "short", 2)
+    await manager.set("x_api", "x", "x-synthetic-Rk2m", 3)
+    config = store.load_config()[1]
+    primary, backup = (p["credential_ref"] for p in config["model_profiles"][:2])
+    x_ref = config["x_api"]["credential_ref"]
+    missing = "keychain:00000000-0000-0000-0000-000000000009"
+    revision, config = store.load_config()
+    config["model_profiles"][2]["credential_ref"] = missing
+    store.save_config(config, expected_revision=revision)
+
+    result = await manager.status()
+
+    assert result["tails"] == {primary: "7Qx2", x_ref: "Rk2m"}
+    assert result["references"][missing] == "missing" and missing not in result["tails"]
+    # A value too short to keep most of it hidden is reported without a tail.
+    assert result["references"][backup] == "available" and backup not in result["tails"]
+    assert all(len(tail) <= 4 for tail in result["tails"].values())
+    backend.failure = "read"
+    failed = await manager.status()
+    assert failed["tails"] == {} and set(failed["references"].values()) == {"keychain_denied"}
+
+
 def test_native_adapter_does_not_expose_backend_error(monkeypatch):
     from newspaw.credentials import MacKeychain
 

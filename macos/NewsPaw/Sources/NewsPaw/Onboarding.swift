@@ -3,40 +3,7 @@ import Foundation
 import Observation
 import SwiftUI
 
-// MARK: - Backend shapes
-
-struct PairingCode: Decodable, Equatable {
-    let code: String
-    let expiresAt: Double
-    var expires: Date { Date(timeIntervalSince1970: expiresAt) }
-}
-
-/// One capability's check: a `models.status` entry (`state`) or a `models.probe` result (`status`).
-struct ProbeState: Decodable, Equatable {
-    let state: String
-    let errorKind: String?
-    let reportedModel: String?
-
-    init(state: String, errorKind: String? = nil, reportedModel: String? = nil) {
-        self.state = state
-        self.errorKind = errorKind
-        self.reportedModel = reportedModel
-    }
-
-    private enum Keys: String, CodingKey { case state, status, errorKind, reportedModel }
-
-    init(from decoder: Decoder) throws {
-        let values = try decoder.container(keyedBy: Keys.self)
-        state = try values.decodeIfPresent(String.self, forKey: .state) ?? values.decode(String.self, forKey: .status)
-        errorKind = try values.decodeIfPresent(String.self, forKey: .errorKind)
-        reportedModel = try values.decodeIfPresent(String.self, forKey: .reportedModel)
-    }
-
-    /// The check has an outcome for the current key. `stale` is a result for an earlier key
-    /// (the new key's check has not finished yet), so it still counts as waiting.
-    var settled: Bool { !["pending", "untested", "stale"].contains(state) }
-    var passed: Bool { state == "verified" }
-}
+// MARK: - Model presets
 
 /// The model presets the first-run window offers (the defaults in `app_config.default_config`).
 enum ModelChoice: String, CaseIterable, Identifiable {
@@ -79,13 +46,10 @@ final class OnboardingData {
     enum Step: Int, CaseIterable { case telegram, model, digests }
 
     var step: Step = .telegram
-    // Step 1
-    private(set) var botId: String?
-    private(set) var bot: BotStatus?
-    private(set) var pair: PairingCode?
-    private(set) var pairedAt: Date?
-    // Step 2
-    private(set) var probes: [String: ProbeState] = [:]
+    /// Step 1: one Bot, token to paired.
+    let pairing = BotPairing()
+    /// Step 2: model keys and their checks.
+    let keys = KeyChecks()
     // Step 3
     var chosen: Set<String> = ["sub_world", "sub_japan"]
     private(set) var sentTrial = false
@@ -93,145 +57,78 @@ final class OnboardingData {
     /// saved for it, so Continue waits.
     var modelUnsaved = false
 
-    private(set) var working: Set<String> = []
-    private(set) var failures: [String: BackendError] = [:]
+    private var finishing = false
+    private var digestFailures: [String: BackendError] = [:]
     /// Why a chosen digest could not turn on (`subscriptions.preview` blockers).
     private(set) var blockers: [String: [String]] = [:]
 
-    /// How often pairing and key checks are read back, and how long a key check may take.
-    var pollInterval: Duration = .seconds(2)
-    var probeLimit: Duration = .seconds(90)
+    var botId: String? { pairing.botId }
+    var bot: BotStatus? { pairing.bot }
+    var pair: PairingCode? { pairing.pair }
+    var pairedAt: Date? { pairing.pairedAt }
+    var probes: [String: ProbeState] { keys.probes }
 
-    var botReady: Bool { bot?.paired == true }
+    /// Every step's failure in one place: "bot", a profile id, a digest id or "trial".
+    var failures: [String: BackendError] {
+        var all = keys.failures.merging(digestFailures) { _, own in own }
+        all["bot"] = pairing.failure
+        return all
+    }
+
+    /// What is in progress: "bot", a profile id or "finish".
+    var working: Set<String> {
+        var all = keys.working
+        if pairing.working { all.insert("bot") }
+        if finishing { all.insert("finish") }
+        return all
+    }
+
+    /// How often pairing and key checks are read back, and how long a key check may take.
+    var pollInterval: Duration {
+        get { pairing.pollInterval }
+        set {
+            pairing.pollInterval = newValue
+            keys.pollInterval = newValue
+        }
+    }
+    var probeLimit: Duration {
+        get { keys.probeLimit }
+        set { keys.probeLimit = newValue }
+    }
+
+    var botReady: Bool { pairing.paired }
     func keyReady(_ profile: String) -> Bool { probes[profile]?.passed == true }
 
     /// Picks up where an earlier visit stopped: the first Bot and the key checks already made.
     func start(model: AppModel) async {
-        if botId == nil, let first = model.config?.bots?.first?.id { botId = first }
-        if let botId { bot = try? BackendRPC.decode(await model.client.call(.botsStatus, ["bot_id": botId])) }
+        if let first = model.config?.bots?.first?.id { pairing.adopt(first) }
         // A Bot paired on an earlier visit shows as paired, without inventing when.
+        await pairing.load(model: model)
         for profile in ["normal_primary", "adult_primary"] {
-            if let states: [String: ProbeState] = try? BackendRPC.decode(await model.client.call(.modelsStatus, ["profile_id": profile])) {
-                probes[profile] = states["text"]
-            }
+            await keys.load(profile, model: model)
         }
         for profile in ["normal_primary", "adult_primary"] {
             // A saved key whose check is still running (e.g. the window was reopened right after
             // saving): keep reading until it has an outcome.
             let saved = model.config?.modelProfiles.first { $0.id == profile }?.credentialRef != nil
-            if saved, probes[profile]?.settled != true, !working.contains(profile) {
-                working.insert(profile)
-                await readProbe(profile, model: model)
-                working.remove(profile)
-            }
+            if saved, probes[profile]?.settled != true { await keys.follow(profile, model: model) }
         }
+        // Checks started on an earlier visit (or on the Connect page) are followed by their own id.
+        await keys.resume(model: model)
     }
 
     // MARK: Step 1
 
     /// Saves the token, checks it with Telegram and issues a pairing code.
-    func connect(token: String, model: AppModel) async {
-        let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty, !working.contains("bot") else { return }
-        working.insert("bot")
-        defer { working.remove("bot") }
-        failures["bot"] = nil
-        pair = nil
-        do {
-            let id = try await ensureBot(model: model)
-            try await setCredential(kind: "bots", id: id, value: token, model: model)
-            let current: BotStatus = try BackendRPC.decode(await model.client.call(.botsStatus, ["bot_id": id]))
-            bot = try BackendRPC.decode(await model.client.call(.botsVerify, ["bot_id": id, "generation": current.generation ?? 0]))
-            guard bot?.verified == true else {
-                throw BackendError(code: Self.botProblem(bot?.status), domain: "bots")
-            }
-            try await issueCode(model: model)
-        } catch {
-            failures["bot"] = error as? BackendError ?? BackendError(code: error is SocketFailure ? "backend_unreachable" : "invalid_reply")
-        }
-        await model.refresh()
-    }
+    func connect(token: String, model: AppModel) async { await pairing.connect(token: token, model: model) }
 
     /// A new pairing code (also after the old one expired).
-    func newCode(model: AppModel) async {
-        working.insert("bot")
-        defer { working.remove("bot") }
-        failures["bot"] = nil
-        do { try await issueCode(model: model) } catch {
-            failures["bot"] = error as? BackendError ?? BackendError(code: "invalid_reply")
-        }
-    }
+    func newCode(model: AppModel) async { await pairing.newCode(model: model) }
 
-    private func issueCode(model: AppModel) async throws {
-        guard let botId else { return }
-        // Read the Bot's current generation first: a code issued earlier whose reply was lost has
-        // already moved it on, and the stale one would be refused (binding_changed) forever.
-        bot = try BackendRPC.decode(await model.client.call(.botsStatus, ["bot_id": botId]))
-        pair = try BackendRPC.decode(await model.client.call(.botsPairCode, ["bot_id": botId, "generation": bot?.generation ?? 0]))
-        bot = try BackendRPC.decode(await model.client.call(.botsStatus, ["bot_id": botId]))
-    }
+    nonisolated static func botProblem(_ status: String?) -> String { BotPairing.problem(status) }
 
-    /// The Bot's own status when it names a problem (`bots.verify` records the error kind
-    /// there), else a generic "not confirmed".
-    nonisolated static func botProblem(_ status: String?) -> String {
-        guard let status, FailureCopy.table[status] != nil else { return "bot_not_verified" }
-        return status
-    }
-
-    /// Reads the Bot until the owner has sent the pairing code (stops when paired, when the
-    /// code expires, when the backend ends pairing, or when the task is cancelled).
     func waitForPairing(model: AppModel, now: @escaping () -> Date = Date.init) async {
-        guard let botId, pair != nil else { return }
-        while !Task.isCancelled, !botReady, let pair, now() < pair.expires {
-            try? await Task.sleep(for: pollInterval)
-            guard !Task.isCancelled else { return }
-            if let status: BotStatus = try? BackendRPC.decode(await model.client.call(.botsStatus, ["bot_id": botId])) {
-                bot = status
-                // Too many wrong codes, or the token stopped working: waiting cannot succeed.
-                if status.status == "pair_attempts_exhausted" || !status.verified {
-                    failures["bot"] = BackendError(code: status.verified ? "pair_attempts_exhausted" : Self.botProblem(status.status), domain: "bots")
-                    self.pair = nil
-                    return
-                }
-            }
-        }
-        if botReady {
-            pairedAt = pairedAt ?? now()
-            pair = nil
-            await model.refresh()
-        }
-    }
-
-    /// The window's Bot: the first configured one, else a new entry without a token.
-    private func ensureBot(model: AppModel) async throws -> String {
-        if let botId { return botId }
-        let id = "bot_" + String(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(12))
-        let editor = EditorState(client: model.client)
-        let saved = await editor.apply { document in
-            var document = document
-            var bots = document["bots"] as? [[String: Any]] ?? []
-            bots.append([
-                "id": id, "name": "Telegram", "credential_ref": NSNull(), "telegram_id": NSNull(), "chat_id": NSNull(),
-                "verified": false, "paired": false, "adult_allowed": false,
-            ])
-            document["bots"] = bots
-            return document
-        }
-        guard saved else { throw editor.failure ?? BackendError(code: "invalid_reply") }
-        botId = id
-        return id
-    }
-
-    private func setCredential(kind: String, id: String, value: String, model: AppModel) async throws {
-        for attempt in 0..<2 {
-            let revision = try await model.client.configDocument().revision
-            do {
-                _ = try await model.client.call(.credentialsSet, ["kind": kind, "id": id, "value": value, "revision": revision])
-                return
-            } catch let error as BackendError where error.isConflict && attempt == 0 {
-                continue
-            }
-        }
+        await pairing.waitForPairing(model: model, now: now)
     }
 
     // MARK: Step 2
@@ -239,80 +136,33 @@ final class OnboardingData {
     /// Saves a key (and, for the main model, the chosen model); the backend checks a saved key
     /// on its own (R04), and this reads the result back.
     func saveKey(_ key: String, profile: String, choice: ModelChoice?, customURL: String = "", customModel: String = "", model: AppModel) async {
-        let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty, !working.contains(profile) else { return }
-        working.insert(profile)
-        defer { working.remove(profile) }
-        failures[profile] = nil
-        probes[profile] = nil
-        do {
-            if let choice {
-                let preset = choice.preset ?? ("openai", customURL.trimmingCharacters(in: .whitespaces), customModel.trimmingCharacters(in: .whitespaces))
-                let editor = EditorState(client: model.client)
-                let saved = await editor.apply { document in
-                    var document = document
-                    document["model_profiles"] = (document["model_profiles"] as? [[String: Any]] ?? []).map { entry in
-                        guard entry["id"] as? String == profile else { return entry }
-                        var entry = entry
-                        entry["provider"] = preset.0
-                        entry["base_url"] = preset.1
-                        entry["model"] = preset.2
-                        return entry
-                    }
-                    return document
+        await keys.save(key, profile: profile, model: model) {
+            guard let choice else { return }
+            let preset = choice.preset ?? ("openai", customURL.trimmingCharacters(in: .whitespaces), customModel.trimmingCharacters(in: .whitespaces))
+            let editor = EditorState(client: model.client)
+            let saved = await editor.apply { document in
+                var document = document
+                document["model_profiles"] = (document["model_profiles"] as? [[String: Any]] ?? []).map { entry in
+                    guard entry["id"] as? String == profile else { return entry }
+                    var entry = entry
+                    entry["provider"] = preset.0
+                    entry["base_url"] = preset.1
+                    entry["model"] = preset.2
+                    return entry
                 }
-                guard saved else { throw editor.failure ?? BackendError(code: "invalid_reply") }
+                return document
             }
-            try await setCredential(kind: "model_profiles", id: profile, value: key, model: model)
-            await readProbe(profile, model: model)
-        } catch {
-            failures[profile] = error as? BackendError ?? BackendError(code: error is SocketFailure ? "backend_unreachable" : "invalid_reply")
+            guard saved else { throw editor.failure ?? BackendError(code: "invalid_reply") }
         }
-        await model.refresh()
     }
 
     /// Reads the key check until it has an outcome.
-    func readProbe(_ profile: String, model: AppModel) async {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: probeLimit)
-        while !Task.isCancelled, clock.now < deadline {
-            if let states: [String: ProbeState] = try? BackendRPC.decode(await model.client.call(.modelsStatus, ["profile_id": profile])),
-               let text = states["text"] {
-                probes[profile] = text
-                if text.settled { return }
-            }
-            try? await Task.sleep(for: pollInterval)
-        }
-        if probes[profile]?.settled != true { failures[profile] = BackendError(code: "probe_pending", domain: "models") }
-    }
+    func readProbe(_ profile: String, model: AppModel) async { await keys.readProbe(profile, model: model) }
 
-    /// Runs the key check again for the same saved key.
-    func recheck(_ profile: String, model: AppModel) async {
-        working.insert(profile)
-        defer { working.remove(profile) }
-        failures[profile] = nil
-        let probe = "probe_" + String(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(16))
-        let request: [String: Any] = ["probe_id": probe, "profile_id": profile, "capability": "text", "hold_units": 10_000]
-        do {
-            // `models.probe` runs the check and returns its finished result.
-            probes[profile] = try BackendRPC.decode(await model.client.call(.modelsProbe, request))
-        } catch is SocketFailure {
-            // The connection gave up but the backend keeps checking. Asking again with the same
-            // probe id returns this check's own record (no second charge) — not an earlier one.
-            let clock = ContinuousClock()
-            let deadline = clock.now.advanced(by: probeLimit)
-            while !Task.isCancelled, clock.now < deadline {
-                try? await Task.sleep(for: pollInterval)
-                if let state: ProbeState = try? BackendRPC.decode(await model.client.call(.modelsProbe, request)),
-                   state.settled {
-                    probes[profile] = state
-                    return
-                }
-            }
-            failures[profile] = BackendError(code: "probe_pending", domain: "models")
-        } catch {
-            failures[profile] = error as? BackendError ?? BackendError(code: "invalid_reply")
-        }
+    /// Runs the key check again for the same saved key. An earlier check whose outcome is
+    /// unknown (or still running) may have been charged, so it runs again only once confirmed.
+    func recheck(_ profile: String, model: AppModel, confirmed: Bool = false) async {
+        await keys.recheck(profile, model: model, confirmed: confirmed)
     }
 
     // MARK: Step 3
@@ -320,44 +170,44 @@ final class OnboardingData {
     /// Turns on the chosen digests (each brings in its recommended sources and the only Bot)
     /// and, when asked, sends a trial of the first one. Returns whether every chosen digest is on.
     func finish(sendTrial: Bool, model: AppModel) async -> Bool {
-        working.insert("finish")
-        defer { working.remove("finish") }
+        finishing = true
+        defer { finishing = false }
         let digests = DigestsData()
         await digests.load(model.client)
-        failures["trial"] = nil
+        digestFailures["trial"] = nil
         guard let order = model.config?.subscriptions.map(\.id) else {
-            failures["trial"] = BackendError(code: "backend_unreachable")
+            digestFailures["trial"] = BackendError(code: "backend_unreachable")
             return false
         }
         var allOn = true
         for id in order where chosen.contains(id) {
-            failures[id] = nil
+            digestFailures[id] = nil
             // The configuration can vanish mid-way (the backend went away during a refresh):
             // that is a failure to report, not a digest that is already on.
             guard let config = model.config else {
-                failures[id] = BackendError(code: "backend_unreachable")
+                digestFailures[id] = BackendError(code: "backend_unreachable")
                 allOn = false
                 continue
             }
             guard let subscription = config.subscriptions.first(where: { $0.id == id }), !subscription.enabled else { continue }
             blockers[id] = nil
             if !(await digests.turnOn(subscription, model: model)) {
-                failures[id] = digests.failures[id] ?? digests.failures[subscription.categoryId] ?? BackendError(code: "subscription_not_ready")
+                digestFailures[id] = digests.failures[id] ?? digests.failures[subscription.categoryId] ?? BackendError(code: "subscription_not_ready")
                 blockers[id] = digests.previews[id]?.blockers
                 allOn = false
             }
         }
-        failures["trial"] = nil
+        digestFailures["trial"] = nil
         // The last save's refresh can find the backend gone: a requested trial needs a configuration.
         guard let config = model.config else {
-            failures["trial"] = BackendError(code: "backend_unreachable")
+            digestFailures["trial"] = BackendError(code: "backend_unreachable")
             return false
         }
         let ordinary = Set(config.categories.filter { $0.partition == "normal" }.map(\.id))
         if sendTrial, let first = config.subscriptions.first(where: { chosen.contains($0.id) && $0.enabled && ordinary.contains($0.categoryId) }) {
             sentTrial = await model.sendNow(first.id)
             if !sentTrial {
-                failures["trial"] = model.lastFailure ?? BackendError(code: "invalid_reply")
+                digestFailures["trial"] = model.lastFailure ?? BackendError(code: "invalid_reply")
                 return false
             }
         }
@@ -524,7 +374,6 @@ private struct StepBar: View {
 private struct TelegramStep: View {
     let model: AppModel
     let data: OnboardingData
-    @State private var token = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -534,102 +383,9 @@ private struct TelegramStep: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Link(model.text(L10n.Onboarding.howTo), destination: URL(string: "https://core.telegram.org/bots/features#botfather")!)
             }
-            if data.bot?.verified != true || data.failures["bot"] != nil {
-                HStack(spacing: 8) {
-                    SecureField(model.text(L10n.Onboarding.tokenPlaceholder), text: $token)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { Task { await data.connect(token: token, model: model) } }
-                        .onChange(of: token) { old, new in
-                            // A paste (a jump of many characters) checks right away.
-                            if new.count - old.count > 20 { Task { await data.connect(token: new, model: model) } }
-                        }
-                    Button(model.text(L10n.Onboarding.check)) { Task { await data.connect(token: token, model: model) } }
-                        .disabled(token.trimmingCharacters(in: .whitespaces).isEmpty || data.working.contains("bot"))
-                }
-            }
-            if data.working.contains("bot") {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text(model.text(L10n.Onboarding.checking)).foregroundStyle(.secondary)
-                }
-            }
-            if let failure = data.failures["bot"] {
-                FailureNote(model: model, failure: failure) {
-                    Task {
-                        if data.bot?.verified == true { await data.newCode(model: model) } else { await data.connect(token: token, model: model) }
-                    }
-                }
-            }
-            if let bot = data.bot, bot.verified {
-                Label(L10n.Onboarding.verified(model.uiLanguage, ["name": bot.username.map { "@" + $0 } ?? bot.name]), systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            }
-            if data.botReady {
-                pairedBlock
-            } else if let pair = data.pair {
-                PairBlock(model: model, data: data, pair: pair, username: data.bot?.username)
-            } else if data.bot?.verified == true, data.failures["bot"] == nil, !data.working.contains("bot") {
-                // Verified on an earlier visit but never paired: a fresh code continues from here.
-                HStack(spacing: 10) {
-                    Text(model.text(L10n.Onboarding.notPaired)).foregroundStyle(.secondary)
-                    Button(model.text(L10n.Onboarding.newCode)) { Task { await data.newCode(model: model) } }
-                        .keyboardShortcut(.defaultAction)
-                }
-            }
+            BotConnectForm(model: model, pairing: data.pairing)
             Text(model.text(L10n.Onboarding.moreBots)).font(.caption).foregroundStyle(.secondary)
         }
-    }
-
-    private var pairedBlock: some View {
-        Label(data.pairedAt.map { L10n.Onboarding.paired(model.uiLanguage, ["time": $0.formatted(date: .omitted, time: .shortened)]) }
-                ?? model.text(L10n.Onboarding.pairedEarlier),
-              systemImage: "checkmark.seal.fill")
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-            .foregroundStyle(.green)
-    }
-}
-
-private struct PairBlock: View {
-    let model: AppModel
-    let data: OnboardingData
-    let pair: PairingCode
-    let username: String?
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            let left = Int(pair.expires.timeIntervalSince(context.date))
-            VStack(alignment: .leading, spacing: 10) {
-                Text(L10n.Onboarding.sendThis(model.uiLanguage, ["name": username.map { "@" + $0 } ?? "Bot"]))
-                HStack(spacing: 10) {
-                    Text("/pair " + pair.code)
-                        .font(.system(.title3, design: .monospaced).weight(.semibold))
-                        .textSelection(.enabled)
-                        .lineLimit(1).minimumScaleFactor(0.6)
-                    Button(model.text(L10n.Onboarding.copy)) {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString("/pair " + pair.code, forType: .string)
-                    }
-                }
-                if left > 0 {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text(L10n.Onboarding.expiresIn(model.uiLanguage, ["minutes": String(left / 60), "seconds": String(left % 60)]))
-                            .foregroundStyle(.secondary).monospacedDigit()
-                    }
-                } else {
-                    HStack {
-                        Text(model.text(L10n.Onboarding.expired)).foregroundStyle(.orange)
-                        Button(model.text(L10n.Onboarding.newCode)) { Task { await data.newCode(model: model) } }
-                    }
-                }
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-        }
-        .task(id: pair) { await data.waitForPairing(model: model) }
     }
 }
 
@@ -715,9 +471,10 @@ private struct KeyRow: View {
     let save: () async -> Void
     @State private var confirmRecheck = false
 
-    /// A check whose outcome is unknown may already have been charged; checking again asks first.
+    /// A check whose outcome is unknown may already have been charged; checking again asks first
+    /// (the same rule as the Connect page, decided by `KeyChecks.needsConfirmation`).
     private func recheck() {
-        if data.probes[profile]?.state == "outcome_unknown" {
+        if data.keys.needsConfirmation(profile) {
             confirmRecheck = true
         } else {
             Task { await data.recheck(profile, model: model) }
@@ -774,7 +531,7 @@ private struct KeyRow: View {
             }
         }
         .confirmationDialog(model.text(L10n.Overview.retryModelTitle), isPresented: $confirmRecheck) {
-            Button(model.text(L10n.Onboarding.checkAgain)) { Task { await data.recheck(profile, model: model) } }
+            Button(model.text(L10n.Onboarding.checkAgain)) { Task { await data.recheck(profile, model: model, confirmed: true) } }
             Button(model.text(L10n.Shell.cancel), role: .cancel) {}
         } message: {
             Text(model.text(L10n.Overview.retryModelBody))

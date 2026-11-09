@@ -544,6 +544,9 @@ class ProfileRegistry:
                     if row[0] == generation and row[1] == identity(entry)
                     else "stale",
                 }
+            # The profile's current generation: the app names the automatic check
+            # (`auto.<profile>.<capability>.g<generation>`) and ties pending checks to it.
+            result[capability]["generation"] = generation
         return result
 
     def get(self, probe_id):

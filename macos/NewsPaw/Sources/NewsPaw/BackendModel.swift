@@ -45,8 +45,16 @@ struct AppConfig: Decodable {
     let modelProfiles: [Profile]
     let bots: [ConfiguredBot]?
     let groupStyles: [String: String]?
+    let xApi: XConnection?
 
-    struct ConfiguredBot: Decodable { let id: String; let adultAllowed: Bool }
+    struct ConfiguredBot: Decodable {
+        let id: String
+        let adultAllowed: Bool
+        let name: String?
+        let credentialRef: String?
+    }
+
+    struct XConnection: Decodable { let credentialRef: String? }
 
     func displaySubscription(for categoryId: String) -> Subscription? {
         let matching = subscriptions.filter { $0.categoryId == categoryId }
@@ -105,6 +113,21 @@ struct BotStatus: Decodable, Identifiable {
     let generation: Int?
     let status, username: String?
 
+    private enum Keys: String, CodingKey { case id, name, verified, paired, paused, generation, status, username }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: Keys.self)
+        id = try values.decode(String.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        verified = try values.decode(Bool.self, forKey: .verified)
+        paired = try values.decode(Bool.self, forKey: .paired)
+        paused = try values.decode(Bool.self, forKey: .paused)
+        generation = try values.decodeIfPresent(Int.self, forKey: .generation)
+        status = try values.decodeIfPresent(String.self, forKey: .status)
+        // A Bot Telegram never confirmed has the username "" (registry state), not none.
+        username = try values.decodeIfPresent(String.self, forKey: .username).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
     var label: Phrase {
         if paused { return .paused }
         if !verified { return .unverified }
@@ -145,11 +168,13 @@ final class AppModel {
     private(set) var configRevision = 0
     private(set) var bots: [BotStatus] = []
     private(set) var readiness: Readiness?
+    /// Key checks started from the app that have no outcome yet, by `KeyChecks.key`; kept here so
+    /// they outlive the page that started them (see `PendingProbe`).
+    var pendingProbes: [String: PendingProbe] = [:]
     /// The last failure from any request, so every view can say what happened.
     private(set) var lastFailure: BackendError?
     /// Repeats the shell action that produced `lastFailure` (language or pause).
     @ObservationIgnored private(set) var retryLast: (@MainActor () async -> Void)?
-    var pendingModelProbes: [String: ModelProbeRequest] = [:]
     private(set) var uiLanguage: AppLanguage
     private(set) var busy = false
     private(set) var error: Phrase?

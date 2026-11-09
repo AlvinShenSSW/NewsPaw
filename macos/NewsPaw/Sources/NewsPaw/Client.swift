@@ -31,9 +31,22 @@ enum Operation: String, CaseIterable, Sendable {
     case botsStatus = "bots.status"
     case botsVerify = "bots.verify"
     case botsPairCode = "bots.pair_code"
+    case botsAction = "bots.action"
+    case botsTestSend = "bots.test_send"
+    case botsTestStatus = "bots.test_status"
+    case targetsBotImpact = "targets.bot_impact"
+    case targetsDeleteBot = "targets.delete_bot"
+    case targetsAdultPermission = "targets.adult_permission"
     case credentialsSet = "credentials.set"
+    case credentialsStatus = "credentials.status"
     case modelsStatus = "models.status"
     case modelsProbe = "models.probe"
+    case modelsHealth = "models.health"
+    case budgetSave = "budget.save"
+    case newspaperConfigure = "newspaper.configure"
+    case mediaPolicy = "media.policy"
+    case mediaConfigure = "media.configure"
+    case xAccountsList = "x.accounts.list"
 
     /// Socket deadline for an operation name, the one place the app sets timeouts.
     /// Network-bound operations wait for their bounded backend work; everything else

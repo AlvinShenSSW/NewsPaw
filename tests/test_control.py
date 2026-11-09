@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import socket
+import sqlite3
 import tempfile
 from pathlib import Path
 
@@ -9,7 +10,7 @@ import pytest
 from test_credentials import FakeKeychain
 
 from newspaw.control import ControlServer, peer_uid
-from newspaw.credentials import CredentialManager
+from newspaw.credentials import CredentialError, CredentialManager
 from newspaw.store import Store
 
 
@@ -26,13 +27,20 @@ async def control():
         store.close()
 
 
-async def request(server, data):
+async def raw_request(server, data):
     reader, writer = await asyncio.open_unix_connection(server.path, limit=8 * 1024 * 1024)
     writer.write(json.dumps(data, ensure_ascii=False).encode() + b"\n")
     await writer.drain()
     reply = json.loads(await reader.readline())
     writer.close()
     await writer.wait_closed()
+    return reply
+
+
+async def request(server, data):
+    """Wire reply without the structured detail, which has its own tests."""
+    reply = await raw_request(server, data)
+    reply.pop("error_detail", None)
     return reply
 
 
@@ -336,12 +344,18 @@ async def test_public_search_is_independently_disabled_by_default(control):
     server, store = control
     original = store.config_revision()
     assert (await request(server, {"op": "sources.search.policy"}))["result"] == {
-        "revision": 1, "profile_id": None, "state": "disabled"
+        "revision": 1,
+        "profile_id": None,
+        "state": "disabled",
     }
     assert await request(
-        server, {
-            "op": "sources.search.run", "subscription_id": "sub_world",
-            "request_id": "lookup", "revision": 1, "hold_units": 100_000,
+        server,
+        {
+            "op": "sources.search.run",
+            "subscription_id": "sub_world",
+            "request_id": "lookup",
+            "revision": 1,
+            "hold_units": 100_000,
         },
     ) == {"ok": False, "error": "search_not_configured"}
     assert store.config_revision() == original
@@ -396,8 +410,10 @@ async def test_explicit_service_stop_acknowledges_and_releases_private_endpoint(
                         await asyncio.sleep(0.01)
                     else:
                         break
+            assert status["ok"] and "service.stop" in status["result"].pop("operations")
             assert status == {"ok": True, "result": {"protocol_version": 1, "state": "running"}}
             stopped = await request(endpoint, {"op": "service.stop"})
+            stopped["result"].pop("operations")
             assert stopped == {"ok": True, "result": {"protocol_version": 1, "state": "stopping"}}
             await asyncio.wait_for(running, 3)
             assert not endpoint.path.exists()
@@ -425,7 +441,9 @@ async def test_jobs_are_readable_and_controllable_through_private_socket(control
     assert (await request(server, {"op": "jobs.cancel", "job_id": job_id}))["result"]["cancelled"]
     audit = (await request(server, {"op": "jobs.audit", "job_id": job_id}))["result"]
     assert [event["action"] for event in audit] == ["created", "pause", "resume", "cancel"]
-    assert (await request(server, {"op": "jobs.advance", "job_id": job_id}))["error"] == "unknown_operation"
+    assert (await request(server, {"op": "jobs.advance", "job_id": job_id}))[
+        "error"
+    ] == "unknown_operation"
 
 
 async def test_outbox_rpc_exposes_status_and_resolution_without_dispatch(control):
@@ -434,13 +452,21 @@ async def test_outbox_rpc_exposes_status_and_resolution_without_dispatch(control
     assert reply == {"ok": False, "error": "missing_delivery"}
     bad = await request(
         server,
-        {"op": "delivery.resolve", "job_id": "job.missing", "bot_id": "bot1", "ordinal": -1, "action": "retry"},
+        {
+            "op": "delivery.resolve",
+            "job_id": "job.missing",
+            "bot_id": "bot1",
+            "ordinal": -1,
+            "action": "retry",
+        },
     )
     assert bad == {"ok": False, "error": "invalid_resolution"}
     assert await request(
         server, {"op": "delivery.requeue_target", "job_id": "job.missing", "bot_id": "bot1"}
     ) == {"ok": False, "error": "missing_delivery"}
-    assert (await request(server, {"op": "delivery.advance", "job_id": "job.missing"}))["error"] == "unknown_operation"
+    assert (await request(server, {"op": "delivery.advance", "job_id": "job.missing"}))[
+        "error"
+    ] == "unknown_operation"
 
 
 async def test_schedule_policy_defaults_disabled_and_updates_independently(control):
@@ -450,8 +476,12 @@ async def test_schedule_policy_defaults_disabled_and_updates_independently(contr
     assert not current["settings"]["enabled"] and current["occurrences"] == []
     assert current["settings"]["catchup_minutes"] == 360
     edited = await request(
-        server, {"op": "schedule.configure", "settings": {**current["settings"], "catchup_minutes": 0},
-                 "revision": current["revision"]},
+        server,
+        {
+            "op": "schedule.configure",
+            "settings": {**current["settings"], "catchup_minutes": 0},
+            "revision": current["revision"],
+        },
     )
     assert edited["ok"] and edited["result"]["revision"] == current["revision"] + 1
     assert store.config_revision() == config_revision
@@ -468,7 +498,78 @@ async def test_x_control_creates_local_draft_without_network_or_credentials(cont
     assert account["handle"] == "fixture" and not account["can_collect"]
     outcome = await request(
         server,
-        {"op": "x.accounts.verify", "account_id": account["id"], "request_id": "ui.verify.1", "revision": store.config_revision()},
+        {
+            "op": "x.accounts.verify",
+            "account_id": account["id"],
+            "request_id": "ui.verify.1",
+            "revision": store.config_revision(),
+        },
     )
     assert outcome["result"]["state"] == "credential_missing"
     assert outcome["result"]["attempts"] == []
+
+
+async def test_failures_carry_structured_detail_with_domain_and_field(control):
+    server, _ = control
+    missing = await raw_request(server, {"op": "models.probe", "profile_id": "normal_primary"})
+    assert missing["error"] == "invalid_request"
+    assert missing["error_detail"] == {
+        "code": "invalid_request",
+        "domain": "models",
+        "retryable": False,
+        "field": "capability",
+    }
+    extra = await raw_request(server, {"op": "config.get", "unexpected": 1})
+    assert extra["error_detail"]["field"] == "unexpected"
+    unknown = await raw_request(server, {"op": "shell"})
+    assert unknown["error_detail"] == {
+        "code": "unknown_operation",
+        "domain": "protocol",
+        "retryable": False,
+    }
+    stale = await raw_request(server, {"op": "budget.save", "document": {}, "revision": 99})
+    assert stale["error_detail"]["domain"] == "budget"
+
+
+@pytest.mark.parametrize(
+    ("raised", "code"),
+    [
+        (KeyError("secret-token-value"), "internal_error"),
+        (sqlite3.OperationalError("disk I/O secret-token-value"), "internal_error"),
+        (ValueError("route_blocked"), "route_blocked"),
+        (ValueError("Invalid secret-token-value"), "invalid_request"),
+        (CredentialError("rate_limited"), "rate_limited"),
+    ],
+)
+async def test_unexpected_failures_are_internal_and_logged_without_message(
+    control, monkeypatch, caplog, raised, code
+):
+    server, _ = control
+
+    def fail():
+        raise raised
+
+    monkeypatch.setattr(server.operations, "diagnostics", fail)
+    with caplog.at_level("WARNING", logger="newspaw.control"):
+        reply = await raw_request(server, {"op": "ops.diagnostics"})
+    assert reply["error"] == code
+    assert reply["error_detail"]["domain"] == "ops"
+    assert reply["error_detail"]["retryable"] is (code == "rate_limited")
+    assert "secret-token-value" not in json.dumps(reply) + caplog.text
+    if code == "internal_error":
+        assert type(raised).__name__ in caplog.text
+
+
+async def test_status_lists_operations_and_readiness_is_served(control):
+    server, _ = control
+    status = await request(server, {"op": "service.status"})
+    assert status["result"]["protocol_version"] == 1
+    assert "setup.readiness" in status["result"]["operations"]
+    ready = await request(server, {"op": "setup.readiness"})
+    assert ready["ok"] and ready["result"]["next"] == "bot"
+    assert [s["step"] for s in ready["result"]["steps"]] == [
+        "bot",
+        "model",
+        "digest",
+        "first_delivery",
+    ]

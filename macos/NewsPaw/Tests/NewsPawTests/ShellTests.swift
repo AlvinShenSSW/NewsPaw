@@ -304,3 +304,11 @@ private final class Box<Value>: @unchecked Sendable {
     #expect(model.lastFailure?.code == "invalid_reply")
     #expect(try await replies.value.count == 13)
 }
+
+
+@Test func theCleanupPreviewDecodesTheBackendsReply() throws {
+    // The reply ops.cleanup gives today (captured from the backend on a fresh database).
+    let reply = #"{"apply":false,"x":{},"log_bytes":0,"log_candidates":2,"log_removed":0,"attempt_candidates":3,"snapshot_candidates":1,"media_candidates":4,"media_removed":0,"media_deferred":false}"#
+    let preview = try BackendRPC.decode(Data(reply.utf8)) as CleanupPreview
+    #expect(preview.count == 10 && !preview.mediaDeferred)
+}

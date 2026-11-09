@@ -20,7 +20,7 @@
 | `service._prepare_logs / service_log_directory` | 移到 `control.py`，名为 `prepare_logs / service_log_directory` | `serve_control` 在 `NEWSPAW_BUNDLED_RESIDENT=1` 时用它们建立私有日志；这是打包后台的现行路径 |
 | `cli.py` | 只保留 `control --data-dir`；删除 `init / doctor / run / service / search / collect / audit` 与 `--config` | search/collect/audit 依赖 `.env` `Settings`、`NewsService`、`Store.save_collection / get_audit`（旧 `collections / briefs` 表），无法在不改核心采集的前提下保留，因此一并删除。无其他诊断命令；`bundle_runtime` 的 self-check / check-upgrade 是独立模块入口，未改 |
 | `Store` | 删除 `get / set / unseen / mark_sent / save_collection / prune_audit / save_brief / mark_brief / get_collection / get_audit` 及审计常量与脱敏辅助函数 | 只被旧栈使用 |
-| `Operations.cleanup` | 删除对 `collections` 的 `audit_candidates` 修剪 | 新库没有该表；升级库的旧表不再写入（原有写入已限制最多 200 条）。Swift 与文档未使用 `audit_candidates` |
+| `Operations.cleanup` | 删除对 `collections` 的 `audit_candidates` 修剪 | 新库没有该表；升级库的旧表不再写入（原有写入已限制最多 200 条）。Swift 的 `CleanupPreview` 原本要求 `auditCandidates`，已一并删除并加了按真实回复解码的测试 |
 | `.env.example`、`sources.toml`、`.gitignore` 中的 `!.env.example` | 删除 | 只服务 `newspaw init` 和旧 `Settings` |
 | 依赖 | 删除 `python-telegram-bot`、`openai`（`uv lock` 同步移除 apscheduler、pydantic、tqdm 等传递依赖）；`bundle_runtime` self-check 不再检查 `openai` | `grep` 证据：`telegram.ext` 只在 `bot.py`；`openai` 只在 `ai.py` 与 self-check。`python-dotenv` 保留：`credentials.read_legacy` 与 `app_config.import_preferences` 仍用它解析旧 `.env` |
 | 测试 | 删除 `test_bot / test_config / test_schedule / test_service / test_grok / test_ai / test_av`；`test_news` 改名 `test_newsparse`，只保留解析测试；`test_av_industry` 删除两个 `NewsService` / `NewsBot` 用例；`test_store` 只保留权限测试并新增"新库无旧表" | — |

@@ -1,0 +1,46 @@
+# R11 — X 账号页（#89）
+
+冻结契约：issue #89 验收项 + `docs/planning/ux-redesign/interaction-spec.md` §7（界面行为以 §0–§2 为准），数据默认值与词表见 `contract.md`。依赖 R05（读取轮询）、R06（`BackendClient`、`EditorState`、`Words`、`FailureNote`）。叠在 R10（接入页）上；X API Key 行留在接入页，本页不重复。
+
+## 实现
+
+- `XAccounts.swift`：`XAccountsData`（`@MainActor @Observable`）保存本页读到的状态并执行所有动作。账号改动走后端带 revision 的 X 操作（`x.accounts.add / route / classify / remove`），通过新的 `BackendClient.revisioned` 读最新 revision、冲突重试一次（R10 的 `ConnectData` 也改用它）；同一账号的改动排队按顺序执行（同 R09 简报保存队列）。读取上限、提醒、视频策略走 `EditorState`。
+- `XAccountsPage.swift`：§7 全部就地完成，没有 sheet；破坏性操作用 `confirmationDialog`；状态点都带文字；图标按钮有 `accessibilityLabel`。每次 config revision 变化和每 10 秒重读一次。
+- §7.1 工具栏：`Picker(.segmented)`「普通账号 · N / 成人博主 · N」。列表、List、汇总卡、提醒规则只显示当前一类，成人账号只在成人一侧显示、添加和路由。缺 X Key 时顶部黄色说明 + `去接入`，添加禁用；成人一侧缺成人模型 Key 时同样提示，列表可浏览、添加禁用。
+- §7.2 添加行：识别 `@用户名`、x.com 主页链接和 `x.com/i/lists/…` 链接。用户名先在本地查重（大小写不敏感，同 `add_account`）：已在本类 → 高亮「已经在列表里了」；在另一类 → 说明在哪一类，不跨类移动、不读取。否则 `x.accounts.add`（带本类 partition）→ `x.accounts.route` 并入本类 X 汇总 → `x.accounts.verify`（1 次读取，新 request_id）。结果内联：可读 → 高亮「已加入」；受保护 →「设了保护，读不到它的帖子」+ `仍然添加` / `放弃`（`x.accounts.remove`）；不存在（`unavailable`）→ 红字，草稿自动删除；`duplicate`（同一 X 账号换了用户名）→ 删除草稿、高亮原账号；其他失败 → `FailureNote`（按 reason 的文案 + 一个动作：重试 / 去接入），草稿保留可重试。读取超过 socket 期限时用同一 request_id 跟读 `x.operation` 直到有结果（最多 120 秒），不会报「后台没有回应」也不会重复读取；超过 10 秒显示「仍在进行，可以先做别的」。
+- List：`x.lists.add`（本类，成人一侧 `default_adult:true`）→ `x.lists.refresh` → 「「名称」· N 个成员，默认整体并入汇总；新成员会先问你是哪一类」+ `添加`（把还没有类别的成员一次 `config.save` 归入本类并并入汇总；别人同时归过类的成员不动）。List 行：方形图标、名称 · N 个成员、说明、状态（成员已读取 / 还没读取 / 私密 / 需要重新验证 / 读不到…）；有待确认成员时显示「N 个新成员待确认」+ `查看` Popover，每个成员选 `普通账号` / `成人博主` / `忽略`；`⋯` → 重新读取成员（最多 5 次读取）。
+- §7.3 账号行：字母头像（成人紫色）、`@handle`、11pt 摘要（帖子类型 · 「昨天 23:10 读到」 · 「今天 N 条新帖」，单独发时加「→ @bot」；取自本地 `x.posts.coverage` / `x.posts.list`，不访问 X）、状态（可读 / 读不到 / 账号不存在或已停用 / 需要重新验证 / X Key 没有读取权限 / X Key 无效 / 待验证）、两段式「单独发 · 21:30 / 并入汇总」、`⋯`。受保护和不存在的账号用 `移除` 代替两段式（同 mockup）。「需要重新验证 / 待验证」旁有 `重新验证`；Key 问题旁有 `去接入`。
+  - 单独发 → Popover：时间（24 小时 stepper）、发送到（本类可用的已配对 Bot 复选，默认继承汇总的 Bot）、样式（文字 / 配图 / AI 报纸，报纸需已开启生图）。保存为 `x.accounts.route priority:special overrides:{times:[HH:MM], bot_ids, style}`；Bot 与样式和汇总相同时存 `null`（继续继承，汇总改了也跟着变）。
+  - 并入汇总 → 立即 `x.accounts.route priority:normal`。
+  - `⋯`：帖子类型（原帖 / 引用 / 回复 / 转帖，至少留一种，`post_types`）、重新读取账号资料（1 次读取）、改为另一类…（先 `x.accounts.partition_impact`，确认框列出：离开哪份汇总 → 哪些 Bot、单独发停止且时间 / Bot / 样式清除、帖子类型复位、已读帖子留在原类、正在准备的期次数、会一起删除的提醒规则；确认后用影响对应的 revision `x.accounts.classify`，再并入新一类汇总；期间配置被改则重读影响并再问一次）、移除…（确认框列出单独发会停止及会删除的提醒规则）。
+- §7.4 汇总卡：「每天 20:30 → @bot」（关闭时前缀「关闭中」）、「N 个并入汇总的账号 + M 个 List · 文字 + 链接」、`在简报里改`（`AppModel.openDigest` → 简报页打开并展开该 X 简报）。读取上限卡：「每天最多读取」整数输入（空 = 不限）+「条 / 天 · 今天已读 84」+ 进度条，数据与写回都是 `budget.get / budget.save` 的 x 计量（与接入页共用 `BudgetSummary`、`BudgetChange`、`budgetEditor()`，不另存一份）。
+- §7.5 高级（`DisclosureGroup`，展开状态存 UserDefaults）：
+  - 大事件即时提醒：开关 + 本类规则列表（关键词 · 整个汇总 / @单独发账号）+ 加一条规则。没有规则时开关禁用；开启时若每日条数为 0 则设为 3。删掉最后一条规则时同时关闭。
+  - 视频内容检查（只在普通一侧，`x.video` 只处理普通内容）：开关 + 「每天最多花 $N」+ 最近可检查的视频（`x.video.candidates`，最多 5 条）各带 `检查`（先确认可能产生费用）或 `看结果`，结果折叠显示画面观察和转写原文。没有能看图且能转写的普通模型时开关禁用并指向「接入 › 附加能力」。
+  - 普通 / 成人各自限额：两个整数输入（`budget.x.partition_limits`），各显示今天已读。
+- 限额输入只在主人真的改过文字后才保存：离屏渲染发现字段一出现就可能拿到键盘焦点，若按「失焦即保存」会把还没载入的空值存成「不限」。
+- 简报页：X 简报行的摘要改为「N 个账号并入汇总 · M 个单独发」（读同一份 config），切换单独发 / 并入汇总后立即反映。
+- 概览（R08-26）：特别账号的等待中 / 准备中 / 暂停行，发送对象按 `routing.py resolve_route` 的规则取账号自己的 `bot_ids`（非空时），否则取汇总的；行标题加「· @handle」以区分。
+- 删除旧视图 `XWorkspace.swift`、`XFeatures.swift`（含 sheet、字符串 op、微美元 hold 输入、手填时区）与 `XSettingsTests.swift`；`SettingsSupport.swift` 只留设置页仍在用的 `ConnectionCopy.schedule` 与 `ProtectedSettings`，删掉 `SettingsRevision`、`boundedUnits`。
+- `Operation` 新增本页用到的 19 个 X 操作；`FailureCopy` 新增本页可能遇到的错误码与读取结果，并支持「domain.code」键：同一个 code 在不同服务含义不同时（X 的 401 / 403 / 429、`x.accounts.add` 的 200 个账号上限 vs. 预算的单账号读取上限）各有各的文案。
+
+## 依据仓库证据修正契约
+
+- **添加不读取 X。** `x.accounts.add` 只建草稿（或返回同名账号），`partition` 可选、`subscription_id` 为空，不会进任何汇总；读取由 `x.accounts.verify` 完成。所以「添加」= add → route（并入本类汇总）→ verify 三步；读到「不存在」时删除草稿，不留残余。spec §9 说的「accounts.add 轮询」实际是 verify / lists.refresh 的 request_id + `x.operation`。
+- **没有账号名称。** `x_identities` 与 X 客户端只返回 remote_id、handle、protected，mockup 的「· Elon Musk」无法显示，行只写 `@handle`。
+- **「单独发 / 并入汇总」= priority + 覆盖。** `set_route` 在 priority 改变时清空 `bot_ids / times / style`；`include_in_aggregate` 本页不暴露（保持后端原值）。单独发总是写明确的时间（spec 示例「单独发 · 21:30」），Bot 与样式与汇总相同时存 `null` 继承。
+- **提醒规则会挡住以后的提醒保存。** `x.alerts.save` 每次都校验全部规则，账号规则要求该账号仍是单独发（`invalid_alert_scope`），而移除 / 改类 / 并入汇总都不会清理规则。所以这三种操作后会删除指向不再单独发账号的规则（确认框里写明），否则提醒设置将再也存不进去。
+- **改类后要重新入汇总。** `targets.account_partition` 把 `subscription_id` 置空、`bot_ids` 置 `[]`；本页随后把它并入新一类的 X 汇总，否则它在新一类里两个选项都不是。
+- **List 成员的「忽略」没有后端状态。** 后端没有忽略成员的字段（删除账号会在下次读取 List 时重建），所以「忽略」只记在本机 UserDefaults（`x.ignoredMembers`），不读取、不入汇总。普通 List 的新成员 `partition` 为空，成人 List（`default_adult`）的新成员直接是成人，因此「待确认」只出现在普通 List。没有删除 List 的操作，本页也不提供。
+- **List 读取有上限。** `refresh_list` 最多 4 页 × 25 个成员 + 1 次 List 资料；超过即 `partial`，文案说明「最多 100 个」。
+- **读取失败的原因。** 预算拦截时 `state` 是 `budget_blocked`、`reason` 是 `x_limit / partition_limit / account_limit / task_limit`，文案按 reason；X 的 429 是 `rate_limited`，网络失败是 `outcome_unknown`（可能已计入额度）。
+- **提醒开启需要每日条数 > 0、视频开启需要模型和金额。** `x/alerts.py _valid` 要求开启时有规则且 `daily_limit ≥ 1`（默认 0）；`x/video.py configure` 要求开启时每项金额 ≥ 1、各至少一个看图与转写模型（转写只支持 OpenAI 官方地址，且模型的 `capabilities` 要已通过测试）。开启时只填补为 0 的项：提醒每天 3 条；视频每天 5 个、$1.00，看图 / 转写每次 $0.05（同 contract §2 图片 / 语音提问的预留）。视频检查只针对普通内容（`candidates` 只取 `partition='normal'`），所以只在普通一侧显示。
+- **概览发送对象。** `resolve_route` 对特别账号用 `special.bot_ids`（非 `null` 时）否则用订阅的；R08 的 `targetsLine` 只看订阅，已按此修正。
+
+## 验证
+
+- `swift test --package-path macos/NewsPaw` 与 `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 swift test …`：170 个测试通过（删除旧 `XSettingsTests` 4 个，新增 `XAccountsTests` 27 个）。`XAccountsTests` 的内存后台按真实语义实现（add 只建草稿 / 同名返回原账号、用户名格式、200 上限；verify 按 request_id 记录且可重放，记录 ready / protected / unavailable / duplicate / 读取失败 / 预算拦截；route 的 priority 复位与覆盖校验、成人 Bot 校验；classify 清空汇总；partition_impact；lists.add / refresh 建成员草稿；alerts / video 的整份设置校验含 `invalid_alert_scope`；所有改动校验 revision），覆盖：可读账号内联加入本类汇总、受保护的仍然添加 / 放弃、不存在不留草稿、已有用户名不读取且不跨类、改名后的同一账号不重复、读取失败的 X 专属文案与重试（新 request_id）、读取上限原因、读取超过 socket 期限后跟读 `x.operation`、缺 Key 的提示动作、添加框识别、单独发 / 并入汇总即时保存且汇总计数变化（Bot / 样式继承存 null）、同一账号快速两次改动按顺序保存、帖子类型至少一种、成人账号选非成人 Bot 被拒并显示、改类先看影响再按该 revision 执行并入新汇总、期间配置被改则重读影响、移除和并入汇总时删除失效提醒规则、List 读取并整体并入、新成员逐个选择与忽略、私密 List、读取上限与 `budget.get` x 计量一致（含分类限额、空 = 不限、非整数被拒且不发请求）、提醒需要规则与每日条数、视频开启默认值 / 金额校验 / 检查、状态词与颜色、三语文案不含内部词、新错误码都有文案、概览特别账号发送对象（R08-26）。
+- `uv run pytest -q`：808 passed, 1 skipped；`uv run ruff check .` 通过（本 issue 未改 Python）。
+- 离屏截图（隔离后台，无真实 Key、无 Bot、无账号）：`xAccounts-*`、新增 `xAccounts-normal-open-*`、`xAccounts-adult-open-*`（高级展开）× 三语 × 浅 / 深色，以及 `digests-*`。据截图修正了空列表框宽度、「每天 20:30 · 还没选机器人」分隔符和上面说的限额字段焦点问题。
+
+未做：真实 X / Telegram 联调（需要真实凭据，按约定单独启用）；隔离后台没有 X Key、账号、List 和 Bot，账号行、两段式、Popover、List 行和确认框只由单元测试覆盖，未截图核对；工具栏分段控件不在离屏渲染范围内（侧栏同为已知现象），成人一侧用初始参数单独截图。

@@ -476,7 +476,8 @@ private struct XAccountRow: View {
         }
         .padding(2)
         .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
-        .disabled(digest == nil || data.isBusy("route." + account.id))
+        // Busy while any change to this row runs (a move, a removal), not only a send choice.
+        .disabled(digest == nil || working)
         .fixedSize()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(model.text(L10n.XAccounts.sendChoice))

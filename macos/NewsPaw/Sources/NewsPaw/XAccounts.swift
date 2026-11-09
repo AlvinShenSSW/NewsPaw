@@ -528,9 +528,19 @@ final class XAccountsData {
         do {
             struct Added: Decodable { let revision: Int; let account: XAccountItem }
             var sent = 0
-            let added: Added = try await client.revisioned { revision in
-                sent = revision
-                return try BackendRPC.decode(await client.call(.xAccountsAdd, ["handle": name, "revision": revision, "partition": partition]))
+            let added: Added
+            do {
+                added = try await client.revisioned { revision in
+                    sent = revision
+                    return try BackendRPC.decode(await client.call(.xAccountsAdd, ["handle": name, "revision": revision, "partition": partition]))
+                }
+            } catch let error where !(error is BackendError) {
+                // The reply may be lost after the backend made the draft: the fresh list says.
+                // Only a fresh draft of this kind (no digest, never read) is taken as ours.
+                guard let fresh = await freshAccounts(client),
+                      let found = fresh.first(where: { $0.handle.lowercased() == name.lowercased() }) else { throw error }
+                let ours = found.partition == partition && found.subscriptionId == nil && found.remoteId == nil
+                added = Added(revision: ours ? sent + 1 : sent, account: found)
             }
             // `add_account` returns an account it already has unchanged (same revision): one this
             // page had not read yet. It is not a draft: no digest change and no read of X.
@@ -546,14 +556,26 @@ final class XAccountsData {
                 return
             }
             draft = added.account.id
-            // Joins the digest of its kind first, so it is never left outside both choices.
-            try await joinOwnDigest(added.account.id, model: model)
-            let reply = try await verify(added.account.id, key: "add", model: model)
-            await settle(reply, draft: added.account.id, handle: name, partition: partition, model: model)
+            await finishDraft(added.account.id, handle: name, partition: partition, model: model)
         } catch {
             outcome = .failed(BackendError.wrapping(error), draft)
         }
         await reload(model)
+    }
+
+    /// The rest of adding a draft, in the account's queue (so a row change made meanwhile is
+    /// applied after it): join the digest of its kind first, so it is never left outside both
+    /// choices, then read it once and say what was found.
+    private func finishDraft(_ id: String, handle: String, partition: String, model: AppModel) async {
+        await queued(id) { [self] in
+            do {
+                try await joinOwnDigest(id, model: model)
+                let reply = try await verify(id, key: "add", model: model)
+                await settle(reply, draft: id, handle: handle, partition: partition, model: model)
+            } catch {
+                outcome = .failed(BackendError.wrapping(error), id)
+            }
+        }
     }
 
     /// What the add row says once the read answered.
@@ -606,7 +628,7 @@ final class XAccountsData {
         guard case let .cleanupFailed(_, draft, then) = outcome, !working.contains("add") else { return }
         working.insert("add")
         defer { working.remove("add") }
-        await removeDraft(draft, then: then, model: model)
+        await queued(draft) { [self] in await removeDraft(draft, then: then, model: model) }
         await reload(model)
     }
 
@@ -621,11 +643,13 @@ final class XAccountsData {
         guard !working.contains("add") else { return }
         working.insert("add")
         defer { working.remove("add") }
-        do {
-            try await removeAccount(id, model: model)
-            outcome = nil
-        } catch {
-            failures["add"] = BackendError.wrapping(error)
+        await queued(id) { [self] in
+            do {
+                try await removeAccount(id, model: model)
+                outcome = nil
+            } catch {
+                failures["add"] = BackendError.wrapping(error)
+            }
         }
         await reload(model)
     }
@@ -633,6 +657,16 @@ final class XAccountsData {
     /// Puts an account of a kind that is in no digest into its kind's X digest. Nothing is sent
     /// when it is already in one (or sent alone).
     private func joinOwnDigest(_ id: String, model: AppModel) async throws {
+        let client = model.client
+        do {
+            try await sendJoin(id, model: model)
+        } catch let error where !(error is BackendError) {
+            // A lost reply: done if the fresh list shows it in a digest.
+            guard let fresh = await freshAccounts(client), fresh.first(where: { $0.id == id })?.subscriptionId != nil else { throw error }
+        }
+    }
+
+    private func sendJoin(_ id: String, model: AppModel) async throws {
         let client = model.client
         _ = try await client.revisioned { revision -> Data? in
             struct Directory: Decodable { let accounts: [XAccountItem] }
@@ -652,13 +686,7 @@ final class XAccountsData {
         working.insert("add")
         defer { working.remove("add") }
         outcome = nil
-        do {
-            try await joinOwnDigest(id, model: model)
-            let reply = try await verify(id, key: "add", model: model)
-            await settle(reply, draft: id, handle: handle, partition: partition, model: model)
-        } catch {
-            outcome = .failed(BackendError.wrapping(error), id)
-        }
+        await finishDraft(id, handle: handle, partition: partition, model: model)
         await reload(model)
     }
 
@@ -747,9 +775,7 @@ final class XAccountsData {
     /// "并入汇总": the account joins its kind's X digest (and loses its own time, Bots and style).
     /// Alert rules on it go too; the page asks first when there are any (`rulesOn`).
     func joinDigest(_ id: String, model: AppModel) async {
-        await route(id, model: model) { _, digest in
-            ["subscription_id": digest, "priority": "normal"]
-        }
+        await route(id, model: model, fields: Self.joinFields)
     }
 
     /// "单独发": its own digest at `time`, to `bots` (nil: the digest's Bots) in `style`
@@ -785,37 +811,69 @@ final class XAccountsData {
     /// `x.accounts.route` against the account's newest stored state. The digest is the one it is
     /// in, else the X digest of its own kind; never one of the other kind.
     private func route(_ id: String, model: AppModel, change: UUID = UUID(), fields: @escaping RouteFields) async {
-        let key = "route." + id
-        await queued(id) { [self] in
-            working.insert(key)
-            defer { working.remove(key) }
-            failures[key] = nil
-            let client = model.client
-            do {
-                _ = try await client.revisioned { revision -> Data? in
-                    struct Directory: Decodable { let accounts: [XAccountItem] }
-                    let directory: Directory = try BackendRPC.decode(await client.call(.xAccountsList))
-                    guard let account = directory.accounts.first(where: { $0.id == id }), let partition = account.partition else {
-                        throw BackendError(code: "missing_account", domain: "x")
-                    }
-                    guard let digest = account.subscriptionId ?? model.config?.xDigest(partition)?.id else {
-                        throw BackendError(code: "incompatible_subscription", domain: "x")
-                    }
-                    guard var request = fields(account, digest) else { return nil }
-                    request["account_id"] = id
-                    request["revision"] = revision
-                    return try await client.call(.xAccountsRoute, request)
-                }
-                savedAt[key] = Date()
-                if failedRoutes[id]?.change == change { failedRoutes[id] = nil }
-            } catch {
-                failures[key] = BackendError.wrapping(error)
-                failedRoutes[id] = FailedRoute(change: change, fields: fields)
-            }
-            await reload(model)
-            await pruneRules(for: [id], model: model)
-        }
+        await queued(id) { [self] in await routeNow(id, model: model, change: change, fields: fields) }
     }
+
+    /// The body of `route`, for work already running in the account's queue.
+    private func routeNow(_ id: String, model: AppModel, change: UUID = UUID(), fields: @escaping RouteFields) async {
+        let key = "route." + id
+        working.insert(key)
+        defer { working.remove(key) }
+        failures[key] = nil
+        let client = model.client
+        do {
+            _ = try await client.revisioned { revision -> Data? in
+                struct Directory: Decodable { let accounts: [XAccountItem] }
+                let directory: Directory = try BackendRPC.decode(await client.call(.xAccountsList))
+                guard let account = directory.accounts.first(where: { $0.id == id }), let partition = account.partition else {
+                    throw BackendError(code: "missing_account", domain: "x")
+                }
+                guard let digest = account.subscriptionId ?? model.config?.xDigest(partition)?.id else {
+                    throw BackendError(code: "incompatible_subscription", domain: "x")
+                }
+                guard var request = fields(account, digest) else { return nil }
+                request["account_id"] = id
+                request["revision"] = revision
+                return try await client.call(.xAccountsRoute, request)
+            }
+            savedAt[key] = Date()
+            if failedRoutes[id]?.change == change { failedRoutes[id] = nil }
+        } catch {
+            failures[key] = BackendError.wrapping(error)
+            failedRoutes[id] = FailedRoute(change: change, fields: fields)
+        }
+        await reload(model)
+        await pruneRules(for: [id], model: model)
+    }
+
+    /// A failure that does not say whether the backend made the change (the reply was lost or
+    /// unreadable). After such a failure the page reads the stored state and decides from it.
+    nonisolated static func uncertain(_ failure: BackendError?) -> Bool {
+        ["backend_unreachable", "invalid_reply"].contains(failure?.code ?? "")
+    }
+
+    /// Records a settings save. A failure whose reply was lost counts as saved when the state
+    /// read back afterwards (`reload`) shows the change (`applied`).
+    private func settle(_ key: String, editor: EditorState, saved: Bool, model: AppModel, applied: (() -> Bool)?) async -> Bool {
+        await reload(model)
+        if saved || (Self.uncertain(editor.failure) && applied?() == true) {
+            failures[key] = nil
+            savedAt[key] = editor.savedAt ?? Date()
+            return true
+        }
+        failures[key] = editor.failure
+        return false
+    }
+
+    /// The accounts as the backend has them now; nil when that cannot be read.
+    private func freshAccounts(_ client: BackendClient) async -> [XAccountItem]? {
+        struct Directory: Decodable { let accounts: [XAccountItem] }
+        let directory: Directory? = try? BackendRPC.decode(await client.call(.xAccountsList))
+        return directory?.accounts
+    }
+
+    /// The join fields of "并入汇总".
+    private static let joinFields: RouteFields = { _, digest in ["subscription_id": digest, "priority": "normal"] }
 
     // MARK: Kind of content and removal
 
@@ -835,8 +893,10 @@ final class XAccountsData {
     }
 
     /// Moves an account to the other kind of content, against the configuration the owner saw
-    /// the impact of; then it joins that kind's X digest. A change made meanwhile shows the
-    /// impact again instead of moving on a stale view.
+    /// the impact of; then it joins that kind's X digest. Both steps run in the account's queue,
+    /// so a send choice made meanwhile is applied after them and stays. A change made meanwhile
+    /// shows the impact again instead of moving on a stale view. A reply lost after the backend
+    /// moved it is settled from the fresh account list, and the join still follows.
     @discardableResult
     func move(_ id: String, to partition: String, impact: XPartitionImpact, model: AppModel) async -> Bool {
         let key = "move." + id
@@ -844,28 +904,35 @@ final class XAccountsData {
         working.insert(key)
         defer { working.remove(key) }
         failures[key] = nil
-        let client = model.client
-        do {
-            _ = try await client.call(.xAccountsClassify, ["account_id": id, "partition": partition, "revision": impact.revision])
-        } catch let error as BackendError where error.isConflict {
-            // The owner confirmed an impact that no longer holds: read it again and ask again.
-            await loadImpact(id, model: model)
-            failures[key] = error
-            await reload(model)
-            return false
-        } catch {
-            failures[key] = BackendError.wrapping(error)
-            await reload(model)
-            return false
+        var moved = false
+        await queued(id) { [self] in
+            let client = model.client
+            do {
+                _ = try await client.call(.xAccountsClassify, ["account_id": id, "partition": partition, "revision": impact.revision])
+            } catch let error as BackendError where error.isConflict {
+                // The owner confirmed an impact that no longer holds: read it again and ask again.
+                await loadImpact(id, model: model)
+                failures[key] = error
+                await reload(model)
+                return
+            } catch {
+                guard let fresh = await freshAccounts(client), fresh.first(where: { $0.id == id })?.partition == partition else {
+                    failures[key] = BackendError.wrapping(error)
+                    await reload(model)
+                    return
+                }
+            }
+            impacts[id] = nil
+            moved = true
+            await model.refresh()
+            // Then it joins the new kind's digest; a failure there is the row's, with "Try Again".
+            await routeNow(id, model: model, fields: Self.joinFields)
         }
-        impacts[id] = nil
-        await model.refresh()
-        // Then it joins the new kind's digest; a failure there is the row's, with "Try Again".
-        await joinDigest(id, model: model)
-        return true
+        return moved
     }
 
-    /// Removes an account from NewsPaw (its own digest and alerts on it stop).
+    /// Removes an account from NewsPaw (its own digest and alerts on it stop). Runs in the
+    /// account's queue, after any change still being saved.
     @discardableResult
     func remove(_ id: String, model: AppModel) async -> Bool {
         let key = "remove." + id
@@ -873,23 +940,35 @@ final class XAccountsData {
         working.insert(key)
         defer { working.remove(key) }
         failures[key] = nil
-        do {
-            try await removeAccount(id, model: model)
-            if highlighted == id { highlighted = nil }
-            await reload(model)
-            await pruneRules(for: [id], model: model)
-            return true
-        } catch {
-            failures[key] = BackendError.wrapping(error)
-            await reload(model)
-            return false
+        var removed = false
+        await queued(id) { [self] in
+            do {
+                try await removeAccount(id, model: model)
+                removed = true
+                if highlighted == id { highlighted = nil }
+                await reload(model)
+                await pruneRules(for: [id], model: model)
+            } catch {
+                failures[key] = BackendError.wrapping(error)
+                await reload(model)
+            }
         }
+        return removed
     }
 
+    /// `x.accounts.remove`, idempotent: an account already gone (`missing_account`, or a reply
+    /// lost after the backend removed it, as the fresh list shows) counts as removed.
     private func removeAccount(_ id: String, model: AppModel) async throws {
         let client = model.client
-        _ = try await client.revisioned { revision in
-            try await client.call(.xAccountsRemove, ["account_id": id, "revision": revision])
+        do {
+            _ = try await client.revisioned { revision in
+                try await client.call(.xAccountsRemove, ["account_id": id, "revision": revision])
+            }
+        } catch let error as BackendError where error.code == "missing_account" {
+            return
+        } catch {
+            if let fresh = await freshAccounts(client), !fresh.contains(where: { $0.id == id }) { return }
+            throw error
         }
     }
 
@@ -898,10 +977,18 @@ final class XAccountsData {
     private func addList(_ value: String, partition: String, model: AppModel) async {
         let client = model.client
         do {
-            let list: XListItem = try await client.revisioned { revision in
-                try BackendRPC.decode(await client.call(.xListsAdd, [
-                    "value": value, "partition": partition, "revision": revision, "default_adult": partition == "adult",
-                ]))
+            let list: XListItem
+            do {
+                list = try await client.revisioned { revision in
+                    try BackendRPC.decode(await client.call(.xListsAdd, [
+                        "value": value, "partition": partition, "revision": revision, "default_adult": partition == "adult",
+                    ]))
+                }
+            } catch let error where !(error is BackendError) {
+                // A lost reply: the List is there if the backend added it.
+                let known: [XListItem]? = try? BackendRPC.decode(await client.call(.xListsList))
+                guard let id = Self.listId(value), let found = known?.first(where: { $0.id == id }) else { throw error }
+                list = found
             }
             if list.partition != partition {
                 outcome = .otherPartition(list.name ?? list.id, list.partition)
@@ -937,6 +1024,12 @@ final class XAccountsData {
         outcome = nil
         await settleList(id, model: model)
         await reload(model)
+    }
+
+    /// The List id in a link, as `x/client.py list_id` reads it (x.com/i/lists/<id>).
+    nonisolated static func listId(_ value: String) -> String? {
+        guard let match = value.range(of: "/i/lists/[1-9][0-9]{0,18}/?$", options: .regularExpression) else { return nil }
+        return value[match].split(separator: "/").last.map(String.init)
     }
 
     /// Reads a List's name and members (up to 4 pages of 25, one read each, plus one for the List).
@@ -1021,9 +1114,13 @@ final class XAccountsData {
             }
             return document
         }
-        failures[key] = saved ? nil : editor.failure
         await reload(model)
-        return saved
+        // A lost reply: done when every account asked for is now in a digest, or of the other kind.
+        let done = saved || (Self.uncertain(editor.failure) && accounts.filter { wanted.contains($0.id) }.allSatisfy { account in
+            account.partition != nil && (account.partition != partition || account.subscriptionId != nil)
+        })
+        failures[key] = done ? nil : editor.failure
+        return done
     }
 
     // MARK: Reads per day
@@ -1034,7 +1131,7 @@ final class XAccountsData {
             failures["budget.daily"] = BackendError(code: "invalid_count", domain: "budget")
             return false
         }
-        return await saveBudget("budget.daily", model: model, change: BudgetChange.dailyReads(value))
+        return await saveBudget("budget.daily", model: model, change: BudgetChange.dailyReads(value)) { $0.dailyReads == value }
     }
 
     @discardableResult
@@ -1044,7 +1141,9 @@ final class XAccountsData {
             failures[key] = BackendError(code: "invalid_count", domain: "budget")
             return false
         }
-        return await saveBudget(key, model: model, change: BudgetChange.partitionReads(partition, value))
+        return await saveBudget(key, model: model, change: BudgetChange.partitionReads(partition, value)) { budget in
+            budget.limits.first { $0.kind == .partition(partition) }?.value == value
+        }
     }
 
     /// The reads-per-day limit of one kind of content, when one is set.
@@ -1052,20 +1151,14 @@ final class XAccountsData {
         budget?.limits.first { $0.kind == .partition(partition) }
     }
 
-    private func saveBudget(_ key: String, model: AppModel, change: @escaping EditorState.Change) async -> Bool {
+    private func saveBudget(_ key: String, model: AppModel, change: @escaping EditorState.Change,
+                            applied: @escaping (BudgetSummary) -> Bool) async -> Bool {
         guard !working.contains(key) else { return false }
         working.insert(key)
         defer { working.remove(key) }
         let editor = model.client.budgetEditor()
         let saved = await editor.apply(change)
-        if saved {
-            failures[key] = nil
-            savedAt[key] = editor.savedAt
-        } else {
-            failures[key] = editor.failure
-        }
-        await reload(model)
-        return saved
+        return await settle(key, editor: editor, saved: saved, model: model) { self.budget.map(applied) ?? false }
     }
 
     // MARK: Alerts
@@ -1081,24 +1174,24 @@ final class XAccountsData {
     static let defaultAlertsPerDay = 3
 
     func setAlerts(_ on: Bool, model: AppModel) async {
-        await saveAlerts(model: model) { settings in
+        await saveAlerts(model: model, change: { settings in
             var settings = settings
             settings["enabled"] = on
             if on, (settings["daily_limit"] as? Int ?? 0) == 0 { settings["daily_limit"] = Self.defaultAlertsPerDay }
             return settings
-        }
+        }, applied: { $0.enabled == on })
     }
 
     func addRule(_ rule: XAlertRule, model: AppModel) async -> Bool {
-        await saveAlerts(model: model) { settings in
+        await saveAlerts(model: model, change: { settings in
             var settings = settings
             settings["rules"] = (settings["rules"] as? [[String: Any]] ?? []) + [rule.fields]
             return settings
-        }
+        }, applied: { $0.rules.contains(rule) })
     }
 
     func removeRule(_ rule: XAlertRule, model: AppModel) async {
-        await saveAlerts(model: model) { settings in
+        await saveAlerts(model: model, change: { settings in
             var settings = settings
             let rules = (settings["rules"] as? [[String: Any]] ?? []).filter { entry in
                 !(entry["subscription_id"] as? String == rule.subscriptionId && entry["account_id"] as? String == rule.accountId
@@ -1108,7 +1201,7 @@ final class XAccountsData {
             // Alerts cannot stay on without a rule (x/alerts.py `_valid`).
             if rules.isEmpty { settings["enabled"] = false }
             return settings
-        }
+        }, applied: { !$0.rules.contains(rule) })
     }
 
     /// `x.alerts.save` checks every stored rule, so a rule on an account that is no longer sent
@@ -1181,20 +1274,18 @@ final class XAccountsData {
     }
 
     @discardableResult
-    private func saveAlerts(_ key: String = "alerts", model: AppModel, change: @escaping EditorState.Change) async -> Bool {
+    private func saveAlerts(_ key: String = "alerts", model: AppModel, change: @escaping EditorState.Change,
+                            applied: ((XAlertPolicy) -> Bool)? = nil) async -> Bool {
         guard !working.contains(key) else { return false }
         working.insert(key)
         defer { working.remove(key) }
         let editor = alertsEditor(model.client)
         let saved = await editor.apply(change)
-        if saved {
-            failures[key] = nil
-            savedAt[key] = editor.savedAt
-        } else {
-            failures[key] = editor.failure
+        // A lost reply on the rule cleanup stays pending: its next run reads the stored rules.
+        return await settle(key, editor: editor, saved: saved, model: model) {
+            guard let applied, let alerts = self.alerts else { return false }
+            return applied(alerts)
         }
-        await reload(model)
-        return saved
     }
 
     // MARK: Video
@@ -1218,7 +1309,7 @@ final class XAccountsData {
     ]
 
     func setVideo(_ on: Bool, model: AppModel) async {
-        await saveVideo("video", model: model) { settings in
+        await saveVideo("video", model: model, applied: { $0.enabled == on }) { settings in
             var settings = settings
             settings["enabled"] = on
             if on {
@@ -1250,7 +1341,7 @@ final class XAccountsData {
             failures["video.budget"] = BackendError(code: "invalid_video_amount", domain: "x")
             return false
         }
-        return await saveVideo("video.budget", model: model) { settings in
+        return await saveVideo("video.budget", model: model, applied: { $0.dailyModelLimit == value }) { settings in
             var settings = settings
             settings["daily_model_limit"] = value
             return settings
@@ -1258,7 +1349,8 @@ final class XAccountsData {
     }
 
     @discardableResult
-    private func saveVideo(_ key: String, model: AppModel, change: @escaping EditorState.Change) async -> Bool {
+    private func saveVideo(_ key: String, model: AppModel, applied: @escaping (XVideoPolicy) -> Bool,
+                           change: @escaping EditorState.Change) async -> Bool {
         guard !working.contains(key) else { return false }
         working.insert(key)
         defer { working.remove(key) }
@@ -1269,14 +1361,7 @@ final class XAccountsData {
         )
         let config = model.config
         let saved = await editor.apply { Self.usableVideoModels(try change($0), config: config) }
-        if saved {
-            failures[key] = nil
-            savedAt[key] = editor.savedAt
-        } else {
-            failures[key] = editor.failure
-        }
-        await reload(model)
-        return saved
+        return await settle(key, editor: editor, saved: saved, model: model) { self.video.map(applied) ?? false }
     }
 
     /// Checks one video (may use X reads and model budget; the owner confirms first). A check

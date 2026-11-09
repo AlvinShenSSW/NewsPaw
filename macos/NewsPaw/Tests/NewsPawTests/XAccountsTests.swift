@@ -52,6 +52,8 @@ private final class XBackend {
     var posts: [String: [String]] = [:]
     private(set) var requests: [[String: Any]] = []
     private var serial = 0
+    /// Operations whose next reply is lost after the backend handled the request, once each.
+    var dropReply: Set<String> = []
     /// Runs once just before the next `x.alerts.save` is checked.
     var beforeAlertsSave: ((XBackend) -> Void)?
     /// Refuses any request this returns a code for (e.g. only route requests carrying post types).
@@ -119,7 +121,11 @@ private final class XBackend {
             let request = try JSONSerialization.jsonObject(with: body) as! [String: Any]
             let op = request["op"] as! String
             if let delay = await MainActor.run(body: { self.nextDelay(op) }) { try await Task.sleep(for: delay) }
-            let reply = await MainActor.run { () -> Data? in self.answer(request) }
+            let reply = await MainActor.run { () -> Data? in
+                let answer = self.answer(request)
+                // The backend committed, but its reply is lost (socket deadline).
+                return self.dropReply.remove(op) != nil ? nil : answer
+            }
             guard let reply else { throw SocketFailure.timeout }
             return reply
         }
@@ -1337,4 +1343,122 @@ private func connected(_ server: XBackend) async throws -> (AppModel, XAccountsD
     server.revision += 1
     await data.load(model: model)
     #expect(data.activity["a2"]?.newToday == nil)
+}
+
+// MARK: - Review cycle 4 (Kimi round 4)
+
+@Test @MainActor func aRemovalWhoseReplyWasLostStillCleansUpItsRules() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "elonmusk", priority: "special", remote: "1", times: ["21:30"])])
+    server.alerts["rules"] = [["subscription_id": "sub_x", "account_id": "a1", "phrase": "launch"]]
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    server.dropReply = ["x.accounts.remove"]
+    #expect(await data.remove("a1", model: model))
+    #expect(server.stored("a1") == nil && data.failures["remove.a1"] == nil)
+    #expect((server.alerts["rules"] as! [[String: Any]]).isEmpty && !data.hasPendingRuleCleanup)
+}
+
+@Test @MainActor func aMoveWhoseReplyWasLostStillJoinsTheNewKindsDigest() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "elonmusk", priority: "special", remote: "1", times: ["21:30"])])
+    server.alerts["rules"] = [["subscription_id": "sub_x", "account_id": "a1", "phrase": "launch"]]
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    let impact = try #require(await data.loadImpact("a1", model: model))
+    server.dropReply = ["x.accounts.classify"]
+    #expect(await data.move("a1", to: "adult", impact: impact, model: model))
+    let moved = try #require(server.stored("a1"))
+    #expect(moved["partition"] as? String == "adult" && moved["subscription_id"] as? String == "sub_xa" && data.failures["move.a1"] == nil)
+    #expect((server.alerts["rules"] as! [[String: Any]]).isEmpty)
+}
+
+@Test @MainActor func anAddWhoseReplyWasLostContinuesWithTheDraftItMade() async throws {
+    let server = XBackend()
+    server.users["sama"] = .init(remote: "5")
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    server.dropReply = ["x.accounts.add"]
+    await data.add("sama", partition: "normal", model: model)
+    let id = try #require(server.stored(handle: "sama")?["id"] as? String)
+    #expect(data.outcome == .added(id) && server.stored(id)?["subscription_id"] as? String == "sub_x")
+    #expect(server.accounts.count == 1)
+}
+
+@Test @MainActor func removingADraftThatIsAlreadyGoneFinishesWithTheIntendedResult() async throws {
+    let server = XBackend()
+    server.failNext["x.accounts.remove"] = "storage_failed"
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    await data.add("nobody_here", partition: "normal", model: model)
+    guard case let .cleanupFailed(_, draft, _) = data.outcome else { Issue.record("no cleanup failure"); return }
+    // Removed meanwhile (another window, or a removal whose reply was lost).
+    server.document["accounts"] = server.accounts.filter { $0["id"] as? String != draft }
+    server.revision += 1
+
+    await data.retryCleanup(model: model)
+    #expect(data.outcome == .missing("nobody_here"))
+}
+
+@Test @MainActor func aSendModeChosenDuringAMoveIsTheOneThatStays() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "elonmusk", remote: "1")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    let impact = try #require(await data.loadImpact("a1", model: model))
+    server.delays["x.accounts.classify"] = [.milliseconds(150)]
+    async let moving = data.move("a1", to: "adult", impact: impact, model: model)
+    try await Task.sleep(for: .milliseconds(20))
+    async let alone: Void = data.sendAlone("a1", time: "23:00", bots: nil, style: nil, model: model)
+    _ = await (moving, alone)
+    let account = try #require(server.stored("a1"))
+    #expect(account["partition"] as? String == "adult" && account["subscription_id"] as? String == "sub_xa")
+    #expect(account["priority"] as? String == "special" && account["times"] as? [String] == ["23:00"])
+}
+
+@Test @MainActor func lostRepliesOnSettingsSavesAreSettledFromWhatTheBackendHas() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "elonmusk", priority: "special", remote: "1", times: ["21:30"])])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    server.dropReply = ["x.alerts.save"]
+    #expect(await data.addRule(XAlertRule(subscriptionId: "sub_x", accountId: nil, phrase: "launch"), model: model))
+    #expect(data.failures["alerts"] == nil)
+
+    server.dropReply = ["budget.save"]
+    #expect(await data.saveDailyReads("120", model: model))
+    #expect(data.failures["budget.daily"] == nil)
+    server.dropReply = ["budget.save"]
+    #expect(await data.savePartitionReads("adult", "30", model: model))
+    #expect(data.failures["budget.adult"] == nil)
+
+    server.dropReply = ["x.video.save"]
+    await data.setVideo(true, model: model)
+    #expect(data.failures["video"] == nil && server.video["enabled"] as? Bool == true)
+    server.dropReply = ["x.video.save"]
+    #expect(await data.saveVideoBudget("2", model: model))
+    #expect(data.failures["video.budget"] == nil)
+
+    // A save the backend did not make still says so.
+    server.failNext["budget.save"] = "storage_failed"
+    #expect(!(await data.saveDailyReads("90", model: model)))
+    #expect(data.failures["budget.daily"]?.code == "storage_failed")
+}
+
+@Test @MainActor func lostRepliesWhenTakingInAListAreSettled() async throws {
+    let server = XBackend()
+    server.listMembers["321"] = [("alice", "101"), ("bob", "102")]
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    server.dropReply = ["x.lists.add"]
+    await data.add("https://x.com/i/lists/321", partition: "normal", model: model)
+    #expect(data.outcome == .list("321"))
+
+    server.dropReply = ["config.save"]
+    await data.adoptMembers("321", model: model)
+    #expect(data.outcome == nil && data.failures["add"] == nil)
+    #expect(server.stored(handle: "alice")?["subscription_id"] as? String == "sub_x")
 }

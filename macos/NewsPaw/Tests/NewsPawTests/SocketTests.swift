@@ -4,7 +4,7 @@ import Foundation
 import Testing
 @testable import NewsPaw
 
-private final class FixtureSocket {
+final class FixtureSocket {
     private let directory: URL
     let path: String
     private var fd: Int32
@@ -170,26 +170,29 @@ private final class FixtureSocket {
     #expect(model.config == nil)
 }
 
-@Test(arguments: [false, true])
-@MainActor func languageSaveReloadsWhileAnOldPollIsStillPending(conflict: Bool) async throws {
+@Test(arguments: [0, 1, 2])
+@MainActor func languageSaveMergesABackgroundRevisionAndReportsOnlyARepeatedConflict(conflicts: Int) async throws {
     let fixture = try FixtureSocket()
     let running = #"{"ok":true,"result":{"protocol_version":1,"state":"running"}}"# + "\n"
     let stopping = #"{"ok":true,"result":{"protocol_version":1,"state":"stopping"}}"# + "\n"
     let emptyBots = #"{"ok":true,"result":[]}"# + "\n"
-    let save = conflict
-        ? #"{"ok":false,"error":"config_conflict"}"# + "\n"
-        : #"{"ok":true,"result":{}}"# + "\n"
+    let conflict = #"{"ok":false,"error":"config_conflict","error_detail":{"code":"config_conflict","domain":"config","retryable":false}}"# + "\n"
+    let saved = #"{"ok":true,"result":{}}"# + "\n"
     func config(_ locale: AppLanguage, revision: Int) -> String {
         #"{"ok":true,"result":{"revision":\#(revision),"document":{"ui_locale":"en","news_output_locale":"\#(locale.rawValue)","categories":[],"subscriptions":[],"sources":[],"accounts":[],"model_profiles":[]}}}"# + "\n"
     }
-    let newLocale: AppLanguage = conflict ? .en : .ja
+    // Each save attempt reads the newest document first; only a second conflict in a row
+    // is reported (interaction-spec §2.3).
+    var attempts: [String] = []
+    for attempt in 0..<min(conflicts + 1, 2) {
+        attempts += [config(.zhHans, revision: 1 + attempt), attempt < conflicts ? conflict : saved]
+    }
+    let newLocale: AppLanguage = conflicts >= 2 ? .zhHans : .ja
     let (received, markReceived) = AsyncStream<Void>.makeStream()
     let release = DispatchSemaphore(value: 0)
-    let replies = fixture.serve([
-        running, config(.zhHans, revision: 1), emptyBots,
-        stopping, config(.zhHans, revision: 1), save,
-        running, config(newLocale, revision: 2), emptyBots,
-    ], heldReply: .init(index: 3, received: markReceived, release: release))
+    let script = [running, config(.zhHans, revision: 1), emptyBots, stopping]
+        + attempts + [running, config(newLocale, revision: 3), emptyBots]
+    let replies = fixture.serve(script, heldReply: .init(index: 3, received: markReceived, release: release))
     let name = "NewsPawTests-" + UUID().uuidString
     let defaults = try #require(UserDefaults(suiteName: name))
     defer { defaults.removePersistentDomain(forName: name) }
@@ -199,12 +202,12 @@ private final class FixtureSocket {
     for await _ in received {}
     await model.chooseNewsLanguage(.ja)
     #expect(model.config?.newsOutputLocale == newLocale)
-    #expect(model.error == (conflict ? .conflict : nil))
+    #expect(model.error == (conflicts >= 2 ? .conflict : nil))
     release.signal()
     await stale.value
     #expect(model.connection == .connected)
     #expect(model.config?.newsOutputLocale == newLocale)
-    #expect(try await replies.value.count == 9)
+    #expect(try await replies.value.count == script.count)
 }
 
 @Test @MainActor func modelProbeRetainsReceiptIdentityWhenStatusRefreshDisconnects() async throws {
@@ -258,7 +261,7 @@ private final class FixtureSocket {
         throw SocketFailure.invalidPath
     }
     let socket = LocalSocket(path: path)
-    let rpc = BackendRPC(socket: socket)
+    let client = BackendClient(socket: socket)
     let name = "NewsPawTests-" + UUID().uuidString
     let defaults = try #require(UserDefaults(suiteName: name))
     defer { defaults.removePersistentDomain(forName: name) }
@@ -267,7 +270,7 @@ private final class FixtureSocket {
     #expect(model.connection == .connected)
     await model.chooseNewsLanguage(.ja)
     await model.chooseDisplayLanguage(.en)
-    let config: ConfigSnapshot = try BackendRPC.decode(await rpc.get("config.get"))
+    let config = try await client.config()
     #expect(config.document.newsOutputLocale == .ja)
     #expect(config.document.uiLocale == .en)
     #expect(model.uiLanguage == .en)

@@ -1,0 +1,146 @@
+import Foundation
+import Testing
+
+@testable import NewsPaw
+
+@MainActor
+private func client(replying reply: String, sent: (@Sendable (Data, Int?) -> Void)? = nil) -> BackendClient {
+    BackendClient { body, timeout in
+        sent?(body, timeout)
+        return Data(reply.utf8)
+    }
+}
+
+@Test @MainActor func structuredFailuresKeepCodeDomainFieldAndRetryability() async throws {
+    let reply = #"{"ok":false,"error":"invalid_request","error_detail":{"code":"invalid_request","domain":"models","retryable":false,"field":"capability"}}"#
+    await #expect(throws: BackendError(code: "invalid_request", domain: "models", field: "capability", retryable: false)) {
+        _ = try await client(replying: reply).call(.configGet)
+    }
+    let older = #"{"ok":false,"error":"rate_limited"}"#
+    await #expect(throws: BackendError(code: "rate_limited")) {
+        _ = try await client(replying: older).call(.configGet)
+    }
+    await #expect(throws: BackendFailure.invalidReply) {
+        _ = try await client(replying: #"{"ok":1,"result":{}}"#).call(.configGet)
+    }
+}
+
+@Test @MainActor func operationTimeoutsAreSetInOnePlace() async throws {
+    let seen = Box<[Int?]>([])
+    let probe = client(replying: #"{"ok":true,"result":{}}"#) { _, timeout in seen.value.append(timeout) }
+    _ = try await probe.send("models.probe", [:])
+    _ = try await probe.call(.configGet)
+    _ = try await probe.send("x.video.inspect", [:])
+    #expect(seen.value == [35_000, nil, 155_000])
+}
+
+@Test @MainActor func statusAndReadinessDecodeFromTheBackendShape() async throws {
+    let status = try await client(replying: #"{"ok":true,"result":{"protocol_version":1,"state":"running","operations":["setup.readiness"]}}"#).status()
+    #expect(status.operations == ["setup.readiness"])
+    let older = try await client(replying: #"{"ok":true,"result":{"protocol_version":1,"state":"running"}}"#).status()
+    #expect(older.operations == nil)
+    let readiness = try await client(replying: #"""
+        {"ok":true,"result":{"complete":false,"next":"model","scheduling_enabled":true,"steps":[
+         {"step":"bot","state":"done","blocker_code":null,"entity_id":"bot1","fix_op":null},
+         {"step":"model","state":"pending","blocker_code":"model_unverified","entity_id":"normal_primary","fix_op":"models.probe"}]}}
+        """#).readiness()
+    #expect(readiness.next == "model" && readiness.schedulingEnabled)
+    #expect(readiness.steps.map(\.done) == [true, false])
+    #expect(readiness.steps[1].blockerCode == "model_unverified")
+}
+
+@Test @MainActor func editorMergesOneBackgroundRevisionChange() async {
+    var revision = 4
+    var stored: [String: Any] = ["max_items": 5, "name": "World"]
+    var loads = 0
+    let editor = EditorState(
+        load: {
+            loads += 1
+            return (revision, stored)
+        },
+        store: { document, expected in
+            if loads == 1 {
+                // A Telegram command renamed the digest between our read and our write.
+                revision = 5
+                stored["name"] = "World (renamed)"
+                throw BackendError(code: "config_conflict", domain: "config")
+            }
+            #expect(expected == 5)
+            stored = document
+        },
+        clock: { Date(timeIntervalSince1970: 1) }
+    )
+    let saved = await editor.apply { var d = $0; d["max_items"] = 8; return d }
+    #expect(saved && editor.failure == nil && loads == 2)
+    #expect(stored["max_items"] as? Int == 8 && stored["name"] as? String == "World (renamed)")
+    #expect(editor.savedAt == Date(timeIntervalSince1970: 1))
+}
+
+@Test @MainActor func editorReportsARepeatedConflictAndDoesNotRetryOtherFailures() async {
+    var loads = 0
+    let conflicted = EditorState(
+        load: { loads += 1; return (1, [:]) },
+        store: { _, _ in throw BackendError(code: "config_conflict") }
+    )
+    #expect(!(await conflicted.apply { $0 }))
+    #expect(conflicted.failure?.code == "config_conflict" && loads == 2)
+
+    loads = 0
+    let rejected = EditorState(
+        load: { loads += 1; return (1, [:]) },
+        store: { _, _ in throw BackendError(code: "invalid_token", domain: "bots") }
+    )
+    #expect(!(await rejected.apply { $0 }))
+    #expect(rejected.failure?.code == "invalid_token" && loads == 1)
+
+    let offline = EditorState(load: { throw SocketFailure.disconnected }, store: { _, _ in })
+    #expect(!(await offline.apply { $0 }))
+    #expect(offline.failure?.code == "backend_unreachable")
+}
+
+@Test func everyWordHasAllThreeLanguages() {
+    let groups = L10n.Shell.all + L10n.Page.all + L10n.Setup.all
+        + FailureCopy.table.values.flatMap { [$0.message] + ($0.action.map { [$0] } ?? []) }
+        + [FailureCopy.conflict.message, FailureCopy.fallback]
+    for words in groups {
+        for language in AppLanguage.allCases {
+            #expect(!words(language).trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        #expect(words.zh != words.en)
+    }
+}
+
+@Test func failureCopyNamesWhatHappenedAndWhatToDo() {
+    let unknown = BackendError(code: "something_new", domain: "bots", retryable: true)
+    #expect(FailureCopy.message(for: unknown, .en).contains("something_new"))
+    #expect(FailureCopy.entry(for: unknown).action == L10n.Shell.retry)
+    #expect(FailureCopy.entry(for: BackendError(code: "schedule_policy_changed")).message == FailureCopy.conflict.message)
+    #expect(FailureCopy.message(for: BackendError(code: "invalid_token"), .zhHans).contains("@BotFather"))
+    for language in AppLanguage.allCases {
+        #expect(!language.text(.saveFailed).contains("语言"))
+    }
+}
+
+@Test @MainActor func legacyViewsShowTheActualFailureInsteadOfAGenericSentence() async throws {
+    let fixture = try FixtureSocket()
+    let running = #"{"ok":true,"result":{"protocol_version":1,"state":"running"}}"# + "\n"
+    let configuration = #"{"ok":true,"result":{"revision":1,"document":{"ui_locale":"en","news_output_locale":"en","categories":[],"subscriptions":[],"sources":[],"accounts":[],"model_profiles":[]}}}"# + "\n"
+    let bots = #"{"ok":true,"result":[]}"# + "\n"
+    let rejected = #"{"ok":false,"error":"invalid_token","error_detail":{"code":"invalid_token","domain":"bots","retryable":false}}"# + "\n"
+    let conflict = #"{"ok":false,"error":"config_conflict","error_detail":{"code":"config_conflict","domain":"config","retryable":false}}"# + "\n"
+    let replies = fixture.serve([running, configuration, bots, rejected, conflict])
+    let name = "NewsPawTests-" + UUID().uuidString
+    let defaults = try #require(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let model = AppModel(socket: LocalSocket(path: fixture.path), defaults: defaults)
+    await model.refresh()
+    await #expect(throws: BackendError.self) { _ = try await model.request("bots.verify", fields: ["bot_id": "b"]) }
+    #expect(model.text(.saveFailed) == FailureCopy.message(for: BackendError(code: "invalid_token"), .en))
+    await #expect(throws: BackendFailure.conflict) { _ = try await model.request("config.save", fields: [:]) }
+    #expect(try await replies.value.count == 5)
+}
+
+private final class Box<Value>: @unchecked Sendable {
+    var value: Value
+    init(_ value: Value) { self.value = value }
+}

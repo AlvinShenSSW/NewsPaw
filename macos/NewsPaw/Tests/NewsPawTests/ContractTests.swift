@@ -2,26 +2,30 @@ import Foundation
 import Testing
 @testable import NewsPaw
 
-@Test func eachLanguageContainsTheFiveApprovedSections() {
-    #expect(SettingsPage.allCases.count == 5)
+@Test func eachLanguageNamesTheFiveRedesignedPagesDistinctly() {
+    #expect(Page.allCases.map(\.rawValue) == ["overview", "digests", "xAccounts", "connect", "settings"])
     for language in AppLanguage.allCases {
-        let titles = SettingsPage.allCases.map { language.text($0.title) }
+        let titles = Page.allCases.map { $0.title(language) }
         #expect(Set(titles).count == 5)
         #expect(titles.allSatisfy { !$0.isEmpty })
-        #expect(language.text(.quitSettings) != language.text(.stopBackend))
-        #expect(language.text(.offline) != language.text(.connected))
+        #expect(L10n.Shell.quitWindow(language) != L10n.Shell.stopBackend(language))
+        #expect(L10n.Shell.notRunning(language) != L10n.Shell.running(language))
     }
 }
 
-@Test func selectingNewsLanguagePreservesOtherConfigFields() throws {
-    let reply = Data(#"{"revision":7,"document":{"ui_locale":"zh-Hans","news_output_locale":"en","future":{"enabled":true}}}"#.utf8)
-    let request = try LocaleEdit.request(from: reply, field: .news, value: .ja)
-    let value = try #require(JSONSerialization.jsonObject(with: request) as? [String: Any])
-    let document = try #require(value["document"] as? [String: Any])
-    #expect(value["revision"] as? Int == 7)
-    #expect(document["ui_locale"] as? String == "zh-Hans")
-    #expect(document["news_output_locale"] as? String == "ja")
-    #expect((document["future"] as? [String: Bool])?["enabled"] == true)
+@Test @MainActor func savingALanguageKeepsUnknownConfigFields() async throws {
+    var stored: [String: Any] = ["ui_locale": "zh-Hans", "news_output_locale": "en", "future": ["enabled": true]]
+    let editor = EditorState(
+        load: { (7, stored) },
+        store: { document, revision in
+            #expect(revision == 7)
+            stored = document
+        }
+    )
+    #expect(await editor.apply { var d = $0; d["news_output_locale"] = "ja"; return d })
+    #expect(stored["ui_locale"] as? String == "zh-Hans")
+    #expect(stored["news_output_locale"] as? String == "ja")
+    #expect((stored["future"] as? [String: Bool])?["enabled"] == true)
 }
 
 @Test func missingSocketDoesNotLookConnected() async {

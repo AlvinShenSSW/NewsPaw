@@ -25,38 +25,29 @@ enum AppLanguage: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-enum SettingsPage: String, CaseIterable, Identifiable {
-    case subscriptions, accounts, models, delivery, language
+/// The five sidebar pages (interaction-spec §1.1).
+enum Page: String, CaseIterable, Identifiable {
+    case overview, digests, xAccounts, connect, settings
 
     var id: String { rawValue }
 
-    var title: Phrase {
+    var title: Words {
         switch self {
-        case .subscriptions: .subscriptions
-        case .accounts: .accounts
-        case .models: .models
-        case .delivery: .delivery
-        case .language: .language
-        }
-    }
-
-    var subtitle: Phrase {
-        switch self {
-        case .subscriptions: .subscriptionsNote
-        case .accounts: .accountsNote
-        case .models: .modelsNote
-        case .delivery: .deliveryNote
-        case .language: .languageNote
+        case .overview: L10n.Page.overview
+        case .digests: L10n.Page.digests
+        case .xAccounts: L10n.Page.xAccounts
+        case .connect: L10n.Page.connect
+        case .settings: L10n.Page.settings
         }
     }
 
     var symbol: String {
         switch self {
-        case .subscriptions: "newspaper"
-        case .accounts: "at"
-        case .models: "sparkles"
-        case .delivery: "paperplane"
-        case .language: "character.bubble"
+        case .overview: "house.fill"
+        case .digests: "newspaper.fill"
+        case .xAccounts: "xmark"
+        case .connect: "link"
+        case .settings: "gearshape.fill"
         }
     }
 }
@@ -104,7 +95,7 @@ enum Phrase {
         case .newsLanguage: ("新闻输出语言", "News output language", "ニュースの出力言語")
         case .displayLocal: ("界面语言保存在这台 Mac。", "Display language is saved on this Mac.", "表示言語はこの Mac に保存されます。")
         case .newsUnavailable: ("连接后台后可修改新闻输出语言。", "Connect to the backend to change the news language.", "ニュースの出力言語を変更するには接続が必要です。")
-        case .saveFailed: ("语言未保存到后台", "Language was not saved to the backend", "バックエンドに言語を保存できませんでした")
+        case .saveFailed: ("没有保存成功，请再试一次。", "That was not saved. Try again.", "保存できませんでした。もう一度お試しください。")
         case .conflict: ("保存时配置已被更改。", "Settings changed while saving.", "保存中に設定が変更されました。")
         case .stopFailed: ("未能确认后台已停止", "Could not confirm that the backend stopped", "バックエンドの停止を確認できませんでした")
         case .categories: ("新闻分类", "News categories", "ニュース分類")

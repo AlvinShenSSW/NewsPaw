@@ -15,54 +15,7 @@ enum LocaleField: String {
     case news = "news_output_locale"
 }
 
-enum LocaleEdit {
-    static func request(from result: Data, field: LocaleField, value: AppLanguage) throws -> Data {
-        guard let envelope = try JSONSerialization.jsonObject(with: result) as? [String: Any],
-              let revision = envelope["revision"] as? NSNumber,
-              CFGetTypeID(revision) != CFBooleanGetTypeID(),
-              revision.intValue > 0,
-              revision.doubleValue == Double(revision.intValue),
-              var document = envelope["document"] as? [String: Any] else {
-            throw BackendFailure.invalidReply
-        }
-        document[field.rawValue] = value.rawValue
-        return try JSONSerialization.data(withJSONObject: [
-            "op": "config.save",
-            "revision": revision,
-            "document": document,
-        ])
-    }
-}
-
-struct BackendRPC {
-    let socket: LocalSocket
-
-    func get(_ operation: String) async throws -> Data {
-        let data = try JSONSerialization.data(withJSONObject: ["op": operation])
-        return try await send(data)
-    }
-
-    func send(_ request: Data) async throws -> Data {
-        let data = try await socket.request(request)
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let ok = object["ok"] as? NSNumber,
-              CFGetTypeID(ok) == CFBooleanGetTypeID() else {
-            throw BackendFailure.invalidReply
-        }
-        if !ok.boolValue {
-            switch object["error"] as? String {
-            case "unknown_operation": throw BackendFailure.incompatible
-            case "config_conflict", "binding_changed", "alert_policy_changed", "video_policy_changed",
-                 "configuration_changed", "preview_changed":
-                throw BackendFailure.conflict
-            case "restore_requires_fresh_instance": throw BackendFailure.freshInstanceRequired
-            default: throw BackendFailure.rejected
-            }
-        }
-        guard let result = object["result"] else { throw BackendFailure.invalidReply }
-        return try JSONSerialization.data(withJSONObject: result, options: .fragmentsAllowed)
-    }
-
+enum BackendRPC {
     static func decode<Value: Decodable>(_ data: Data) throws -> Value {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -73,6 +26,7 @@ struct BackendRPC {
 struct ServiceStatus: Decodable {
     let protocolVersion: Int
     let state: String
+    let operations: [String]?
 }
 
 struct ConfigSnapshot: Decodable {
@@ -176,7 +130,7 @@ enum ConnectionState: Equatable {
 @MainActor @Observable
 final class AppModel {
     private static let languageKey = "displayLanguage"
-    private let rpc: BackendRPC
+    let client: BackendClient
     private let defaults: UserDefaults
     private var hasLocalLanguage: Bool
     private var refreshing = false
@@ -187,14 +141,18 @@ final class AppModel {
     private(set) var config: AppConfig?
     private(set) var configRevision = 0
     private(set) var bots: [BotStatus] = []
+    private(set) var readiness: Readiness?
+    /// The last failure from any request, so every view can say what happened.
+    private(set) var lastFailure: BackendError?
     var pendingModelProbes: [String: ModelProbeRequest] = [:]
     private(set) var uiLanguage: AppLanguage
     private(set) var busy = false
     private(set) var error: Phrase?
-    var page: SettingsPage? = .subscriptions
+    var page: Page = .overview
+    var schedulingPaused: Bool { readiness.map { !$0.schedulingEnabled } ?? false }
 
     init(socket: LocalSocket, defaults: UserDefaults = .standard) {
-        self.rpc = BackendRPC(socket: socket)
+        self.client = BackendClient(socket: socket)
         self.defaults = defaults
         let stored = defaults.string(forKey: Self.languageKey).flatMap(AppLanguage.init(rawValue:))
         self.uiLanguage = stored ?? .zhHans
@@ -209,7 +167,14 @@ final class AppModel {
         return LocalSocket(path: home.appendingPathComponent("Library/Application Support/NewsPaw/control.sock").path)
     }
 
-    func text(_ key: Phrase) -> String { uiLanguage.text(key) }
+    func text(_ key: Phrase) -> String {
+        // Views written before the redesign report every failure as `.saveFailed`;
+        // show what actually happened instead (R06).
+        if key == .saveFailed, let lastFailure { return FailureCopy.message(for: lastFailure, uiLanguage) }
+        return uiLanguage.text(key)
+    }
+
+    func text(_ words: Words) -> String { words(uiLanguage) }
 
     func startMonitoring() {
         guard monitor == nil else { return }
@@ -231,7 +196,7 @@ final class AppModel {
 
     private func loadSnapshot(generation started: Int) async {
         do {
-            let status: ServiceStatus = try BackendRPC.decode(await rpc.get("service.status"))
+            let status = try await client.status()
             guard started == generation else { return }
             guard status.protocolVersion == 1 else { throw BackendFailure.incompatible }
             if status.state == "stopping" {
@@ -239,9 +204,12 @@ final class AppModel {
                 return
             }
             guard status.state == "running" else { throw BackendFailure.invalidReply }
-            let current: ConfigSnapshot = try BackendRPC.decode(await rpc.get("config.get"))
-            let currentBots: [BotStatus] = try BackendRPC.decode(await rpc.get("bots.list"))
+            let ready = status.operations?.contains(Operation.setupReadiness.rawValue) == true
+                ? try await client.readiness() : nil
+            let current = try await client.config()
+            let currentBots = try await client.bots()
             guard started == generation else { return }
+            readiness = ready
             config = current.document
             configRevision = current.revision
             bots = currentBots
@@ -251,7 +219,9 @@ final class AppModel {
             }
         } catch {
             guard started == generation else { return }
-            clear((error as? BackendFailure) == .incompatible ? .incompatible : .offline)
+            let incompatible = (error as? BackendFailure) == .incompatible
+                || (error as? BackendError)?.code == "unknown_operation"
+            clear(incompatible ? .incompatible : .offline)
         }
     }
 
@@ -260,6 +230,7 @@ final class AppModel {
         config = nil
         configRevision = 0
         bots = []
+        readiness = nil
     }
 
     func chooseDisplayLanguage(_ value: AppLanguage) async {
@@ -280,30 +251,57 @@ final class AppModel {
         busy = true
         defer { busy = false }
         error = nil
-        do {
-            let current = try await rpc.get("config.get")
-            let request = try LocaleEdit.request(from: current, field: field, value: value)
-            _ = try await rpc.send(request)
-        } catch BackendFailure.conflict {
-            error = .conflict
-        } catch {
-            self.error = .saveFailed
-            if error is SocketFailure { clear(.offline) }
+        let editor = EditorState(client: client)
+        let saved = await editor.apply { document in
+            var document = document
+            document[field.rawValue] = value.rawValue
+            return document
+        }
+        if !saved, let failure = editor.failure {
+            lastFailure = failure
+            error = failure.isConflict ? .conflict : .saveFailed
+            if failure.code == "backend_unreachable" { clear(.offline) }
         }
         // A poll from before this save may still be in flight. Reload at the
         // current generation while the edit owns the model.
         await loadSnapshot(generation: generation)
     }
 
+    /// String-named requests from the settings views that predate the typed client.
+    /// Removed together with those views (R07–R12).
     func request(_ operation: String, fields: [String: Any] = [:]) async throws -> Data {
         guard connection == .connected else { throw SocketFailure.disconnected }
-        var body = fields
-        body["op"] = operation
-        let data = try JSONSerialization.data(withJSONObject: body)
-        let extended = ["sources.discover", "sources.preview", "models.probe", "bots.verify", "bots.test_send", "x.accounts.verify", "x.lists.refresh", "ops.verify_backup"].contains(operation)
-        let timeout = operation == "x.video.inspect" ? 155_000 : extended ? 35_000 : nil
-        let socket = timeout.map { LocalSocket(path: rpc.socket.path, timeoutMilliseconds: $0) } ?? rpc.socket
-        return try await BackendRPC(socket: socket).send(data)
+        lastFailure = nil
+        do {
+            return try await client.send(operation, fields)
+        } catch let failure as BackendError {
+            lastFailure = failure
+            // Keep the cases those views already distinguish.
+            if failure.code == "unknown_operation" { throw BackendFailure.incompatible }
+            if failure.code == "restore_requires_fresh_instance" { throw BackendFailure.freshInstanceRequired }
+            if failure.isConflict { throw BackendFailure.conflict }
+            throw failure
+        }
+    }
+
+    /// Pauses or resumes every scheduled delivery (the menu-bar and Settings switch).
+    func setPaused(_ paused: Bool) async {
+        guard connection == .connected, !busy else { return }
+        generation += 1
+        busy = true
+        defer { busy = false }
+        let editor = EditorState(
+            load: { [client] in try await client.schedulePolicy() },
+            store: { [client] in try await client.configureSchedule($0, revision: $1) }
+        )
+        if !(await editor.apply({ settings in
+            var settings = settings
+            settings["enabled"] = !paused
+            return settings
+        })) {
+            lastFailure = editor.failure
+        }
+        await loadSnapshot(generation: generation)
     }
 
     func pauseCategory(_ id: String, revision: Int) async throws {
@@ -327,7 +325,7 @@ final class AppModel {
         error = nil
         defer { busy = false }
         do {
-            let status: ServiceStatus = try BackendRPC.decode(await rpc.get("service.stop"))
+            let status = try await client.stop()
             guard status.protocolVersion == 1, status.state == "stopping" else {
                 throw BackendFailure.invalidReply
             }

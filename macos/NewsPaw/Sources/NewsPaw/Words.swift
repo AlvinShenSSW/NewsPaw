@@ -125,6 +125,11 @@ enum L10n {
         static let modelUnknownNote = Words("写简报的模型调用发出去了但没收到结果，可能已经扣费。", "The model call was sent but no result came back; it may have been charged.", "モデル呼び出しの結果が返らず、課金された可能性があります。")
         static let deliveryUnknownNote = Words("Telegram 没有回应，这期可能已发出，也可能没有。", "Telegram did not answer; this edition may or may not have arrived.", "Telegram から応答がなく、届いたかどうか分かりません。")
         static let abandonedNote = Words("你选择了不再补发这一期。", "You chose not to resend this edition.", "この回は再送しないことにしました。")
+        static let jobPaused = Words("已暂停", "Paused", "一時停止中")
+        static let jobPausedNote = Words("这一期被暂停了（在 Telegram 或这里），继续后会接着准备。", "This edition was paused (in Telegram or here); resuming continues preparing it.", "この回は一時停止されています（Telegram またはここで）。再開すると準備を続けます。")
+        static let resume = Words("继续", "Resume", "再開")
+        static let resumeTitle = Words("继续这一期？", "Resume this edition?", "この回を再開しますか？")
+        static let modelExpiredNote = Words("模型的结果不确定，补发时间已过，这一期不会再发。", "The model's result is unknown and the time to retry has passed; this edition will not be sent.", "モデルの結果が不明で、再試行の期限を過ぎました。この回は送られません。")
         static let partialSettledNote = Words("部分已发出，其余这期不会再发。", "Part of this edition arrived; the rest will not be sent.", "一部は届きました。残りは送られません。")
         static let retryExpiredNote = Words("Telegram 没有回应，这期可能已发出。补发时间已过，只能选择不再补发。", "Telegram did not answer; this edition may have arrived. The time to resend has passed, so it can only be marked as not resent.", "Telegram から応答がなく、届いた可能性があります。再送の期限を過ぎたため、再送しない扱いにするしかありません。")
         static let checkAndResend = Words("检查并补发", "Check and Resend", "確認して再送")
@@ -152,7 +157,7 @@ enum L10n {
             today, showWeek, hideWeek, nothingToday, waiting, preparing, late, delivered, partial, skipped,
             superseded, digestOff, retimed, noSuchTime,
             abandoned, unknown, held, failed, preparesAt, lateNote, noNews, missed, modelUnknownNote,
-            deliveryUnknownNote, abandonedNote, partialSettledNote, retryExpiredNote, checkAndResend, retry, stopResending, continueHeld, stopHeld,
+            deliveryUnknownNote, abandonedNote, partialSettledNote, retryExpiredNote, jobPaused, jobPausedNote, resume, resumeTitle, modelExpiredNote, checkAndResend, retry, stopResending, continueHeld, stopHeld,
             heldBody, retryModelTitle, retryModelBody, retryDeliveryTitle, retryDeliveryBody, stopResendingTitle,
             stopResendingBody, spending, ofCap, noCap, spendingDetail, xToday, sendNow, sendNowHelp, sendTrial,
         ]

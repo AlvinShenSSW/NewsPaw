@@ -20,7 +20,7 @@ struct Occurrence: Decodable, Identifiable, Equatable {
 /// What the owner sees for an occurrence and what they can do about it.
 enum OccurrenceState: Equatable {
     case waiting, preparing, late, delivered, partial, skipped, paused, abandoned
-    case modelUnknown, deliveryUnknown, held, failed
+    case modelUnknown, deliveryUnknown, held, failed, jobPaused
 
     init(_ occurrence: Occurrence, paused: Bool, abandoned: Bool) {
         let open: Set<String> = ["planned", "preparing", "waiting", "late", "delivering", "blocked"]
@@ -28,6 +28,9 @@ enum OccurrenceState: Equatable {
             self = .abandoned
         } else if paused, open.contains(occurrence.status) {
             self = .paused
+        } else if ["waiting", "late"].contains(occurrence.status), occurrence.reason == "job_paused" {
+            // This one edition was paused (jobs.pause or Telegram); it waits for a resume.
+            self = .jobPaused
         } else if ["waiting", "late", "outcome_unknown"].contains(occurrence.status),
                   occurrence.reason == "model_outcome_unknown" {
             // An unknown model result is reported as soon as it happens, not only after the
@@ -69,6 +72,7 @@ enum OccurrenceState: Equatable {
         case .partial: L10n.Overview.partial
         case .skipped: L10n.Overview.skipped
         case .paused: L10n.Shell.paused
+        case .jobPaused: L10n.Overview.jobPaused
         case .abandoned: L10n.Overview.abandoned
         case .modelUnknown, .deliveryUnknown: L10n.Overview.unknown
         case .held: L10n.Overview.held
@@ -99,13 +103,14 @@ final class OverviewData {
         var xLimit: Int?
     }
 
-    func load(_ client: BackendClient, now: Date = Date()) async {
+    func load(_ client: BackendClient, now: Date = Date(), subscriptions: [AppConfig.Subscription] = []) async {
         do {
             let schedule = try await client.call(.scheduleStatus, ["limit": 100])
             let rows = try BackendRPC.decode(schedule) as ScheduleRows
             let day = Self.day(now)
             let start = Self.day(Calendar.current.date(byAdding: .day, value: -6, to: now) ?? now)
-            today = rows.occurrences.filter { Self.localDay($0) == day }.sorted(by: Self.byTarget)
+            let scheduled = rows.occurrences.filter { Self.localDay($0) == day }
+            today = (scheduled + Self.upcoming(subscriptions, existing: rows.occurrences, now: now)).sorted(by: Self.byTarget)
             week = rows.occurrences.filter { Self.localDay($0) >= start && Self.localDay($0) < day }
                 .sorted { Self.localDay($0) != Self.localDay($1) ? Self.localDay($0) > Self.localDay($1) : Self.byTarget($1, $0) }
             var skipped: Set<String> = []
@@ -150,6 +155,9 @@ final class OverviewData {
             case .retryModel:
                 guard let job = occurrence.jobId else { return }
                 _ = try await client.call(.jobsResume, ["job_id": job, "acknowledge_duplicate_charge": true])
+            case .resumeJob:
+                guard let job = occurrence.jobId else { return }
+                _ = try await client.call(.jobsResume, ["job_id": job])
             case .retryDelivery, .stopResending:
                 guard let job = occurrence.jobId else { return }
                 for (bot, parts) in try await Self.parts(job, client) {
@@ -182,7 +190,7 @@ final class OverviewData {
         if let refused { failure = refused }
     }
 
-    enum Recovery: Equatable { case retryModel, retryDelivery, stopResending, continueHeld, stopHeld }
+    enum Recovery: Equatable { case retryModel, retryDelivery, stopResending, continueHeld, stopHeld, resumeJob }
 
     private struct ScheduleRows: Decodable { let occurrences: [Occurrence] }
 
@@ -252,6 +260,48 @@ final class OverviewData {
     /// catch-up window it is terminal and a retry would never run.
     nonisolated static func canRetryDelivery(_ row: Occurrence) -> Bool {
         ["waiting", "late", "delivering", "preparing"].contains(row.status)
+    }
+
+    /// Likewise a model retry runs only while the edition is open: `jobs.resume` does not reopen
+    /// a terminal occurrence.
+    nonisolated static func canRetryModel(_ row: Occurrence) -> Bool {
+        ["waiting", "late"].contains(row.status)
+    }
+
+    /// Today's slots that the scheduler has not created yet (it creates an occurrence only when
+    /// preparation starts), so the list shows the whole day. Enabled digests only; a slot
+    /// already present at the same instant is not repeated.
+    nonisolated static func upcoming(_ subscriptions: [AppConfig.Subscription], existing: [Occurrence], now: Date) -> [Occurrence] {
+        let today = day(now)
+        let taken = Set(existing.compactMap { row in row.targetAt.flatMap(date).map { "\(row.subscriptionId)@\(Int($0.timeIntervalSince1970))" } })
+        var result: [Occurrence] = []
+        for subscription in subscriptions where subscription.enabled {
+            guard let zone = TimeZone(identifier: subscription.timezone) else { continue }
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = zone
+            for offset in -1...1 {
+                guard let base = calendar.date(byAdding: .day, value: offset, to: now) else { continue }
+                let civil = calendar.dateComponents([.year, .month, .day], from: base)
+                for (slot, time) in subscription.times.enumerated() {
+                    let parts = time.split(separator: ":").compactMap { Int($0) }
+                    guard parts.count == 2 else { continue }
+                    var components = civil
+                    components.hour = parts[0]
+                    components.minute = parts[1]
+                    guard let target = calendar.date(from: components), target > now, day(target) == today,
+                          !taken.contains("\(subscription.id)@\(Int(target.timeIntervalSince1970))") else { continue }
+                    let formatter = ISO8601DateFormatter()
+                    formatter.timeZone = zone
+                    let civilDate = String(format: "%04d-%02d-%02d", civil.year ?? 0, civil.month ?? 0, civil.day ?? 0)
+                    result.append(Occurrence(
+                        id: "upcoming.\(subscription.id).\(civilDate).\(time)", subscriptionId: subscription.id, accountId: nil,
+                        slot: slot, civilDate: civilDate, targetAt: formatter.string(from: target), prepareAt: nil,
+                        status: "planned", reason: nil, jobId: nil, updatedAt: formatter.string(from: now)
+                    ))
+                }
+            }
+        }
+        return result
     }
 
     /// Target-time order across time zones: compare instants, not the offset strings.
@@ -334,13 +384,13 @@ struct OverviewPage: View {
         }
         .task(id: model.configRevision) {
             while !Task.isCancelled {
-                await data.load(model.client)
+                await data.load(model.client, subscriptions: model.config?.subscriptions ?? [])
                 try? await Task.sleep(for: .seconds(15))
             }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                SendNowMenu(model: model) { await data.load(model.client) }
+                SendNowMenu(model: model) { await data.load(model.client, subscriptions: model.config?.subscriptions ?? []) }
             }
         }
         .confirmationDialog(
@@ -443,6 +493,7 @@ struct OverviewPage: View {
         case .stopResending: L10n.Overview.stopResendingTitle
         case .continueHeld: L10n.Overview.continueHeld
         case .stopHeld: L10n.Overview.stopHeld
+        case .resumeJob: L10n.Overview.resumeTitle
         }
     }
 
@@ -452,6 +503,7 @@ struct OverviewPage: View {
         case .retryDelivery: L10n.Overview.retryDeliveryBody
         case .stopResending: L10n.Overview.stopResendingBody
         case .continueHeld, .stopHeld: L10n.Overview.heldBody
+        case .resumeJob: L10n.Overview.jobPausedNote
         }
     }
 
@@ -461,6 +513,7 @@ struct OverviewPage: View {
         case .stopResending: L10n.Overview.stopResending
         case .continueHeld: L10n.Overview.continueHeld
         case .stopHeld: L10n.Overview.stopHeld
+        case .resumeJob: L10n.Overview.resume
         }
     }
 }
@@ -502,7 +555,11 @@ struct OccurrenceRow: View {
     @ViewBuilder private func actions(_ state: OccurrenceState) -> some View {
         switch state {
         case .modelUnknown:
-            Button(model.text(L10n.Overview.retry)) { act(.retryModel) }
+            if OverviewData.canRetryModel(row) {
+                Button(model.text(L10n.Overview.retry)) { act(.retryModel) }
+            }
+        case .jobPaused:
+            Button(model.text(L10n.Overview.resume)) { act(.resumeJob) }
         case .deliveryUnknown, .partial:
             // Only unknown parts can be retried or skipped; a retry runs only while the edition is open.
             if data.unknownParts.contains(row.id) {
@@ -538,7 +595,11 @@ struct OccurrenceRow: View {
     private func note(_ state: OccurrenceState) -> String {
         switch state {
         case .waiting:
+            // A slot not created yet has no preparation time; name where it goes instead.
+            guard row.prepareAt != nil else { return model.targetsLine(row.subscriptionId) }
             return L10n.Overview.preparesAt(model.uiLanguage, ["time": OverviewData.clock(row.prepareAt)])
+        case .jobPaused:
+            return model.text(L10n.Overview.jobPausedNote)
         case .delivered:
             return model.targetsLine(row.subscriptionId)
         case .late:
@@ -546,7 +607,7 @@ struct OccurrenceRow: View {
         case .skipped:
             return model.text(Self.skipNote(status: row.status, reason: row.reason))
         case .modelUnknown:
-            return model.text(L10n.Overview.modelUnknownNote)
+            return model.text(OverviewData.canRetryModel(row) ? L10n.Overview.modelUnknownNote : L10n.Overview.modelExpiredNote)
         case .deliveryUnknown, .partial:
             if !data.unknownParts.contains(row.id) { return model.text(L10n.Overview.partialSettledNote) }
             return model.text(OverviewData.canRetryDelivery(row) ? L10n.Overview.deliveryUnknownNote : L10n.Overview.retryExpiredNote)
@@ -624,7 +685,7 @@ private struct SetupChecklist: View {
                         sending = true
                         defer { sending = false }
                         await model.sendNow(model.firstEnabledDigest)
-                        await data.load(model.client)
+                        await data.load(model.client, subscriptions: model.config?.subscriptions ?? [])
                     }
                 }
                 .buttonStyle(.borderedProminent)

@@ -244,7 +244,8 @@ private func realisticDelivery(_ server: ScriptedBackend, parts: String) {
     #expect(state("waiting", "model_outcome_unknown") == .modelUnknown)
     #expect(state("late", "model_outcome_unknown") == .modelUnknown)
     #expect(state("waiting", "delivery_outcome_unknown") == .deliveryUnknown)
-    #expect(state("waiting", "job_paused") == .preparing)
+    #expect(state("waiting", "job_paused") == .jobPaused)
+    #expect(state("waiting", "collection_failed") == .preparing)
 }
 
 @Test func editionsSortByTheirInstantAcrossTimeZones() {
@@ -333,4 +334,40 @@ private func realisticDelivery(_ server: ScriptedBackend, parts: String) {
     #expect(OverviewData.localDay(row) == local)
     let untimed = try! BackendRPC.decode(Data(#"{"id":"n","scope_id":"s","slot":1,"civil_date":"2026-11-09","target_at":null,"prepare_at":null,"cutoff_at":null,"status":"skipped","reason":null,"generation":1,"job_id":null,"updated_at":"2026-11-09T08:01:00+00:00","subscription_id":"sub_world","account_id":null}"#.utf8)) as Occurrence
     #expect(OverviewData.localDay(untimed) == "2026-11-09")
+}
+
+@Test @MainActor func aPausedEditionShowsPausedAndCanBeResumed() async {
+    let now = Date()
+    let server = backend(now: now, rows: [occurrence("j", status: "waiting", reason: "job_paused", date: fixtureDay(0, from: now))])
+    let data = OverviewData()
+    await data.load(server.client, now: now)
+    #expect(OccurrenceState(data.today[0], paused: false, abandoned: false) == .jobPaused)
+    await data.resolve(data.today[0], .resumeJob, client: server.client)
+    let resume = server.calls("jobs.resume")
+    #expect(resume.count == 1 && resume[0]["job_id"] as? String == "job1" && resume[0]["acknowledge_duplicate_charge"] == nil)
+}
+
+@Test func aModelRetryIsOfferedOnlyWhileTheEditionIsOpen() {
+    func row(_ status: String) -> Occurrence {
+        try! BackendRPC.decode(Data(occurrence("m", status: status, reason: "model_outcome_unknown", date: "2026-11-10").utf8))
+    }
+    #expect(OverviewData.canRetryModel(row("waiting")) && OverviewData.canRetryModel(row("late")))
+    #expect(!OverviewData.canRetryModel(row("outcome_unknown")))
+}
+
+@Test func todayIncludesSlotsTheSchedulerHasNotCreatedYet() throws {
+    let config = #"[{"id":"sub_world","category_id":"world","timezone":"Asia/Tokyo","enabled":true,"times":["08:00","12:00","21:00"]},{"id":"sub_off","category_id":"japan","timezone":"Asia/Tokyo","enabled":false,"times":["10:00"]}]"#
+    let subscriptions = try BackendRPC.decode(Data(config.utf8)) as [AppConfig.Subscription]
+    // 07:00 in Tokyo; the 08:00 edition already exists, 12:00 and 21:00 do not yet.
+    let now = try #require(ISO8601DateFormatter().date(from: "2026-11-09T22:00:00Z"))
+    let existing = try BackendRPC.decode(Data(#"{"id":"a","scope_id":"s","slot":0,"civil_date":"2026-11-10","target_at":"2026-11-10T08:00:00+09:00","prepare_at":"2026-11-10T07:45:00+09:00","cutoff_at":null,"status":"preparing","reason":null,"generation":1,"job_id":"j","updated_at":"2026-11-09T22:00:00Z","subscription_id":"sub_world","account_id":null}"#.utf8)) as Occurrence
+    let upcoming = OverviewData.upcoming(subscriptions, existing: [existing], now: now)
+    #expect(upcoming.allSatisfy { $0.subscriptionId == "sub_world" && $0.status == "planned" && $0.jobId == nil })
+    // Every later slot of the three digest days that falls on this Mac's today, and nothing else.
+    let candidates = ["2026-11-09", "2026-11-10", "2026-11-11"].flatMap { day in
+        ["08:00", "12:00", "21:00"].compactMap { OverviewData.date("\(day)T\($0):00+09:00") }
+    }
+    let expected = Set(candidates.filter { $0 > now && OverviewData.day($0) == OverviewData.day(now) }
+        .filter { $0 != OverviewData.date("2026-11-10T08:00:00+09:00") })
+    #expect(Set(upcoming.compactMap(\.targetAt).compactMap(OverviewData.date)) == expected)
 }

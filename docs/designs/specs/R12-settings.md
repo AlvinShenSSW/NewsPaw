@@ -1,0 +1,47 @@
+# R12 — 设置页与菜单栏（#90）
+
+冻结契约：issue #90 的四条验收 + `docs/planning/ux-redesign/interaction-spec.md` §8（状态词与反馈规范按 §0.2、§2，数据依赖按 §9 的「设置」行），视觉基线 `docs/mockup/redesign/settings.png`。依赖 R06（`BackendClient`、`EditorState`、`Words`、`FailureNote`、菜单栏骨架）；叠在 R10（`afk/r10-connect`）上。R05（导出含运行策略）未合入，导入 / 导出按当前 `ops.preview_import` / `ops.apply_import` 的形状实现。
+
+## 冻结的 issue 契约
+
+| # | 验收 / 规格行 | 本 issue 交付 |
+|---|---|---|
+| A1 | 自启开关与 SMAppService 实际状态一致，失败时给系统设置入口（§8.2 第 2 行） | 开关只在 `SMAppService.Status == .enabled` 时为开；每 2 秒与每次操作后重读实际状态。`requiresApproval` 显示「需要在系统设置里允许」+ `打开登录项设置`；`notFound` 显示找不到登记 + 同一按钮；注册 / 注销失败（旧版后台仍在、升级检查不过、`register()` 抛错如 Launch Constraint）行内说明 + `打开登录项设置`。开发版（未打包）开关禁用并说明原因。 |
+| A2 | 暂停全部推送在设置页、菜单栏、侧栏状态三处一致（§8.2 第 3 行、§8.3） | 唯一来源 `AppModel.schedulingPaused`（`setup.readiness.scheduling_enabled`）；三处都读它，切换走同一个 `AppModel.setPaused`（`schedule.configure` 经 `EditorState` 合并），保存后立即重读快照；Telegram 等处的改动由 3 秒轮询带回。 |
+| A3 | 导入前显示将改动的项目列表；导入不自动开启任何简报（§8.4） | 选择文件 → `ops.preview_import` → Popover 列出将改动的项目（语言、时区、哪些简报、来源 / 机器人 / X 账号 / 模型的增删改、因含凭据或私有地址被略去的项数）并写明「导入后所有简报保持关闭」→ `导入` 才调用 `ops.apply_import`（带预览给出的 digest 与 revision）。App 在导入前后不发送任何开启简报或调度的操作；后台本身把导入的简报与来源全部置为关闭（`_scrub_settings`）。 |
+| A4 | 停止后台需确认并说明「菜单栏将不再推送」（§8.2 第 1 行、§2.5） | `停止`（红字）→ `confirmationDialog`「停止后台？」+「停止后菜单栏将不再推送，直到你再次打开 NewsPaw。」；菜单栏不再有停止项。 |
+
+逐行对照 §8：
+
+- **§8.1 语言**：两行 `Picker(.menu)`。界面语言写 UserDefaults，并在连上后台时 `config.save ui_locale`；新闻输出语言 `config.save news_output_locale`（未连上时禁用并说明），说明「所有简报的标题和摘要。改了之后，还没发出的那几期会按新语言重新生成。」两者都经 `EditorState` 合并保存（R06 已有）。
+- **§8.2 后台**：状态行（色点 + 文字「运行中 / 已暂停全部推送 / 没有运行 / 正在停止」，11pt「今天 07:02 启动 · 版本 0.5.0 (5)」）+ `重启` + `停止`（红字，需确认）；后台没有运行时改为 `启动后台`。登录项开关、暂停全部推送开关（说明「暂停期间不采集、不花钱、不发送；恢复后只补最近一期。菜单栏里也有这个开关。」）、关窗说明。
+- **§8.3 菜单栏**：不可点的状态行「后台运行中 · 下一期 18:00 科技数码」（暂停时「已暂停全部推送」，没有已开启且有机器人的简报时只显示状态）；`打开 NewsPaw ⌘O`；`暂停全部推送` 切换项（暂停时带 ✓）；`退出 NewsPaw 界面 ⌘Q`（后台继续）。暂停时图标改为空心爪印并显示「已暂停」。菜单里没有停止后台。
+- **§8.4 数据**：存放位置（数据目录，`~` 缩写）+ `在访达中显示`；`导出设置…`（`ops.export_settings` → `NSSavePanel`，文件权限 0600，说明不含 Key 和 Token）/ `导入…`（见 A3）；「保留抓取记录和日志」`Picker` 7 / 30 / 90 天。
+- **§8.5 高级 / 排障**：`DisclosureGroup` 默认收起、展开状态存 UserDefaults，说明「给开发者看的工具。正常使用不需要打开。」诊断信息（`ops.diagnostics` → 复制 / 保存…）、支持快照（`ops.support_snapshot` → 保存…）、备份校验（在数据目录里选一个备份文件 → `ops.verify_backup`）、清理旧数据（`ops.cleanup` 预览 → 确认 → `apply`）、任务与投递记录（只读：`jobs.list`，展开一行读 `delivery.status`）。
+- **替换与删除**：`OperationsWorkspace`（诊断 sheet、`OperationsCopy`）与 `ResidentControls`（旧登录项区块）删除；`SettingsPage` 用新分区重写。「后台没有运行」卡片（§4.6）改用同一套后台控制：`启动后台` + `打开登录项设置`。
+- **一并关闭的延期发现**：R06-11（`service.stop` 失败只显示通用「没能确认后台已经停止」）——失败时记录结构化错误（后台错误码原样；连接断开 = `backend_unreachable`；回复不对 = `invalid_reply`），外壳用 `FailureNote` 显示该错误码的文案。R06-10 的设置 / 运维部分——新分区的每个失败都按错误码显示 `FailureCopy`（行内 `FailureNote`），不再有 `OperationsCopy.failure` 这类通用句。
+
+失败路径（每个都有测试或明确的处理）：后台未运行（数据与高级操作禁用；状态行给 `启动后台`）、操作被拒（按错误码行内显示）、回复丢失（`backend_unreachable`）、导入在预览阶段被拒（如 `restore_requires_fresh_instance`，不发 `apply`）、导入时设置刚变（`configuration_changed` / `preview_changed`：自动重新预览一次并请用户再确认，不静默套用）、面板取消（什么都不发生、不报错）、SMAppService 错误（见 A1）、文件过大或不是 JSON（本地拒绝，不发请求）。
+
+## 非目标
+
+- 不改 launchd 注册机制本身（PR #77 范围）：仍是 `SMAppService.agent(plistName:)` + 现有 plist（`KeepAlive.SuccessfulExit = false`），注册前的旧服务与升级检查原样保留。
+- 单人本机 App：不引入新系统、新进程、自动清理任务、多用户或远程管理。
+- 不新增导出内容（R05 的策略并入导出不在本 issue）。
+- 不做真实凭据联调；不发送真实消息。
+
+## 依据仓库证据修正契约
+
+- **关闭自启 = 停止并注销。** SMAppService 注销一个 LaunchAgent 时 launchd 会把它停掉；本 issue 不改注册机制，所以关掉开关只能是「先 `service.stop` 等后台安全退出，再注销」（沿用 `ResidentAgent.disable(waitForWorker:)`）。mockup 的说明「关闭后，重启电脑要手动打开 NewsPaw 才会推送」与此不符，改为「关闭后后台会停止，不再推送，直到你重新打开这个开关。」，并且关闭前确认（同一影响等同停止后台，§2.5）。
+- **重启与启动用 `launchctl kickstart`。** plist 的 `KeepAlive.SuccessfulExit = false` 使 `service.stop` 正常退出后 launchd 不会自己拉起后台，旧界面在「已注册但已停止」时没有任何启动入口。`ResidentAgent.start()` 只在登录项为 `.enabled` 时执行 `launchctl kickstart gui/<uid>/io.newspaw.resident`（启动已登记的任务，不改登记）；未注册时「启动后台」= 注册（`RunAtLoad` 随即启动）。`重启` = `service.stop` → 等进程退出（现有 `--check-stopped`，最多 6 秒）→ `kickstart`。App 启动时若登录项已开而后台没在运行，就启动一次——这样确认框里「直到你再次打开 NewsPaw」成立。
+- **启动时间与版本是新增后台字段。** `service.status` 原来只返回 `protocol_version / state / operations`。现在额外返回 `started_at`（控制服务开始监听的 UTC 时间）与 `version`（`newspaw.__version__`）；App 端可选解码，旧后台不显示这一行。括号里的构建号取 App 包的 `CFBundleVersion`，只在它的短版本与后台版本一致时显示。
+- **保留天数没有后台设置，清理也不是定时任务。** `ops.cleanup` 原来固定清理 7 天前的记录，且只在用户手动清理时运行。本 issue 让 `ops.cleanup` 接受可选的 `retention_days ∈ {7, 30, 90}`（缺省仍为 7，旧调用不变），选择存 UserDefaults（默认 30 天），由「清理旧数据」带上；说明写明「清理旧数据时只删除早于这个天数的记录；还没发出的简报引用到的记录不会被清。」不新增自动清理（非目标）。
+- **导入只对未使用过的实例开放。** `Operations._fresh` 要求当前库是全新默认状态，否则预览就以 `restore_requires_fresh_instance` 拒绝；所以「将改动的项目」是导入文件相对当前（默认）设置的差异，由 App 比较 `config.get` 与预览返回的、后台已清洗的 `settings` 得出，名称只取清洗后的值。Popover 自身就是 §2.5 要求的确认（标题 + 影响列表 + `导入` / `取消` 两个按钮），不再叠一层对话框。
+- **备份校验只认数据目录里的文件名。** `ops.verify_backup` 只接受数据目录下 `<库名>.backup-<32 位十六进制>` 的文件名；App 用 `NSOpenPanel` 从数据目录选文件，选到别处的文件在本地以 `invalid_backup` 拒绝，不发请求。
+- **任务状态词。** `jobs.list` 的 `status` 是流水线阶段；只读表把它映射到 §0.2 / contract §3 的词（准备中、等待投递、已跳过、未能发送、已暂停、结果未知、已取消），投递明细用 `delivery.status` 每个机器人的 `status` 与「已发 n / 共 m 段」。没有投递记录（`missing_delivery`）显示「还没有投递记录」。
+
+## 验证
+
+- 后端：`service.status` 带 `started_at` 与 `version`；`ops.cleanup` 的 `retention_days` 只接受 7 / 30 / 90，30 天时 10 天前的记录不是候选。
+- Swift（`swift test` 与 `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 swift test`）：内存后台按 `control.py` / `operations.py` 的语义实现（预览要求全新实例、apply 校验 digest 与 revision、导入的简报与来源全部关闭、cleanup 预览 / 执行、`delivery.status` 无记录时 `missing_delivery`、`schedule.configure` 校验 revision 并反映到 `setup.readiness`）。
+- 离屏截图：`WindowSnapshots` 增加设置页高级展开的一张（隔离后台）。

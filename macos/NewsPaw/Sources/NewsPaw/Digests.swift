@@ -119,7 +119,7 @@ final class DigestsData {
             struct Rows: Decodable { let occurrences: [Occurrence] }
             let rows: Rows = try BackendRPC.decode(await client.call(.scheduleStatus, ["limit": 100]))
             let day = OverviewData.day(now)
-            today = Dictionary(rows.occurrences.filter { $0.civilDate == day && $0.accountId == nil }
+            today = Dictionary(rows.occurrences.filter { OverviewData.localDay($0) == day && $0.accountId == nil }
                 .sorted { ($0.targetAt ?? "") < ($1.targetAt ?? "") }.map { ($0.subscriptionId, $0) }) { earlier, later in
                 // The row shows the edition that matters now: the next one still to come, else the last.
                 earlier.status == "planned" ? earlier : later

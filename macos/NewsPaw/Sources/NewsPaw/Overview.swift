@@ -874,11 +874,16 @@ extension AppModel {
         }
         let siblings = config.subscriptions.filter { $0.categoryId == subscription.categoryId }.count
         if siblings > 1, let name = subscription.name, !name.isEmpty { return name }
+        return categoryTitle(subscription.categoryId)
+    }
+
+    /// A built-in category's name in the interface language.
+    func categoryTitle(_ categoryId: String) -> String {
         let names: [String: Phrase] = [
             "world": .world, "japan": .japan, "australia": .australia, "china": .china,
             "electronics": .electronics, "ai": .ai, "av": .av, "x": .x, "x_adult": .xAdult,
         ]
-        return names[subscription.categoryId].map(text) ?? subscription.categoryId
+        return names[categoryId].map(text) ?? categoryId
     }
 
     /// "→ @bot" for where an edition goes (`targetsLine(row.subscriptionId, accountId: row.accountId)`).

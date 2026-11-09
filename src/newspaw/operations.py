@@ -79,6 +79,8 @@ _INITIAL_TABLES = {
     *_SETTINGS_DEFAULTS,
 }
 _SCHEDULE_STATES = _LEASE_STATES | _TERMINAL | {"rescheduled"}
+# The settings page offers these; cleanup only removes records older than the choice.
+_RETENTION_DAYS = {7, 30, 90}
 
 _ASSET_FILE = re.compile(r"(?:source|paper)_[a-f0-9]{64}\.jpg")
 _GENERATED_ID = re.compile(
@@ -731,10 +733,16 @@ class Operations:
             os.close(fd)
         return total, candidates, removed
 
-    def cleanup(self, *, apply=False, limit=100):
-        if type(apply) is not bool or type(limit) is not int or not 1 <= limit <= 200:
+    def cleanup(self, *, apply=False, limit=100, retention_days=7):
+        if (
+            type(apply) is not bool
+            or type(limit) is not int
+            or not 1 <= limit <= 200
+            or type(retention_days) is not int
+            or retention_days not in _RETENTION_DAYS
+        ):
             raise OperationsError("invalid_cleanup")
-        cutoff = self.clock() - timedelta(days=7)
+        cutoff = self.clock() - timedelta(days=retention_days)
         with self.store._write():
             attempts = self._feed_candidates(cutoff.isoformat(), limit)
             snapshots = self._snapshot_candidates(cutoff.isoformat(), limit)

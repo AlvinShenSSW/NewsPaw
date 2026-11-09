@@ -53,11 +53,11 @@ enum Page: String, CaseIterable, Identifiable {
 }
 
 enum Phrase {
-    case settings, tagline, subscriptions, accounts, models, delivery, language
+    case settings, tagline, subscriptions, accounts, models, delivery
     case subscriptionsNote, accountsNote, modelsNote, deliveryNote, languageNote
     case connected, connecting, offline, stopping, incompatible, refresh, openSettings
     case quitSettings, stopBackend, lifecycleNote, offlineNote, unavailable, noSources, noAccounts, noBots
-    case appLanguage, newsLanguage, displayLocal, newsUnavailable, saveFailed, conflict, stopFailed
+    case displayLocal, saveFailed, conflict, stopFailed
     case categories, sources, ordinary, adult, unclassified, special, enabled, disabled
     case primary, backup, verified, unverified, unpaired, paused, paired, modelSlots
     case world, japan, australia, china, electronics, ai, av, x, xAdult
@@ -70,7 +70,6 @@ enum Phrase {
         case .accounts: ("X 账号", "X Accounts", "X アカウント")
         case .models: ("模型", "Models", "モデル")
         case .delivery: ("推送与运行", "Delivery & Service", "配信と実行")
-        case .language: ("语言", "Language", "言語")
         case .subscriptionsNote: ("查看订阅的分类和配置的新闻源。", "View your subscriptions and configured news sources.", "購読中の分類と設定済みの情報源を確認できます。")
         case .accountsNote: ("普通与成人账号分开；特别关注账号单独汇总。", "Ordinary and adult accounts stay separate. Special accounts have their own digest.", "通常と成人向けを分け、特別フォローは個別にまとめます。")
         case .modelsNote: ("每个内容分区都有自己的主用和备用模型。", "Each content group has its own primary and backup models.", "各コンテンツ区分に主モデルと予備モデルがあります。")
@@ -91,10 +90,7 @@ enum Phrase {
         case .noSources: ("尚未配置新闻源", "No sources configured", "情報源は未設定です")
         case .noAccounts: ("尚未配置 X 账号", "No X accounts configured", "X アカウントは未設定です")
         case .noBots: ("尚未配置 Telegram Bot", "No Telegram bots configured", "Telegram Bot は未設定です")
-        case .appLanguage: ("界面语言", "Display language", "表示言語")
-        case .newsLanguage: ("新闻输出语言", "News output language", "ニュースの出力言語")
         case .displayLocal: ("界面语言保存在这台 Mac。", "Display language is saved on this Mac.", "表示言語はこの Mac に保存されます。")
-        case .newsUnavailable: ("连接后台后可修改新闻输出语言。", "Connect to the backend to change the news language.", "ニュースの出力言語を変更するには接続が必要です。")
         case .saveFailed: ("没有保存成功，请再试一次。", "That was not saved. Try again.", "保存できませんでした。もう一度お試しください。")
         case .conflict: ("保存时配置已被更改。", "Settings changed while saving.", "保存中に設定が変更されました。")
         case .stopFailed: ("未能确认后台已停止", "Could not confirm that the backend stopped", "バックエンドの停止を確認できませんでした")

@@ -164,6 +164,27 @@ def test_rotated_log_cleanup_skips_active_files_and_symlinks(tmp_path):
         assert "private synthetic log" not in json.dumps(ops.support_snapshot())
 
 
+def test_cleanup_keeps_records_younger_than_the_chosen_retention(tmp_path):
+    now = datetime(2026, 11, 8, 2, tzinfo=UTC)
+    with closing(Store(tmp_path / "state.db")) as store:
+        logs = tmp_path / "logs"
+        logs.mkdir(mode=0o700)
+        rotated = logs / "stderr.log.1"
+        rotated.write_text("synthetic")
+        rotated.chmod(0o600)
+        age = (now - timedelta(days=10)).timestamp()
+        os.utime(rotated, (age, age))
+        ops = Operations(store, tmp_path, clock=lambda: now, log_directory=logs)
+        assert ops.cleanup()["log_candidates"] == 1
+        assert ops.cleanup(retention_days=7)["log_candidates"] == 1
+        assert ops.cleanup(retention_days=30)["log_candidates"] == 0
+        assert ops.cleanup(apply=True, retention_days=90)["log_removed"] == 0
+        assert rotated.exists()
+        for invalid in (0, 14, True, "30", 7.0):
+            with pytest.raises(OperationsError, match="invalid_cleanup"):
+                ops.cleanup(retention_days=invalid)
+
+
 def test_cleanup_preserves_readiness_and_only_removes_eligible_orphans(tmp_path):
     from newspaw.evidence import EvidenceStore, feed_scopes
     from newspaw.newsparse import Article

@@ -45,3 +45,12 @@
 - 后端：`service.status` 带 `started_at` 与 `version`；`ops.cleanup` 的 `retention_days` 只接受 7 / 30 / 90，30 天时 10 天前的记录不是候选。
 - Swift（`swift test` 与 `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 swift test`）：内存后台按 `control.py` / `operations.py` 的语义实现（预览要求全新实例、apply 校验 digest 与 revision、导入的简报与来源全部关闭、cleanup 预览 / 执行、`delivery.status` 无记录时 `missing_delivery`、`schedule.configure` 校验 revision 并反映到 `setup.readiness`）。
 - 离屏截图：`WindowSnapshots` 增加设置页高级展开的一张（隔离后台）。
+
+### 结果（实现后）
+
+- `uv run pytest -q`：811 passed, 1 skipped；`uv run ruff check .` 通过。新增 `test_status_names_when_the_backend_started_and_its_version`、`test_cleanup_takes_a_retention_of_seven_thirty_or_ninety_days`、`test_cleanup_keeps_records_younger_than_the_chosen_retention`（修改前均失败）。
+- `swift test` 与 `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 swift test`：191 个测试通过（基线 166；`SettingsTests` 新增 26 个，旧 `CleanupPreview` 解码测试并入 `cleanupRepliesAreCountedFromTheBackendsShape`）。先写的测试在实现前失败：R06-11 三种停止失败都没有记录错误码、停止确认文案不符，其余因新接口不存在而无法编译。
+- 离屏截图：`settings-*` 与 `settings-open-*` × 三语 × 浅 / 深色（隔离后台，无 Key、无 Bot），版式与 `docs/mockup/redesign/settings.png` 一致。
+
+未做：打包版的登录项注册、`launchctl kickstart` 与菜单栏图标变灰只由单元测试与代码路径覆盖，需在安装版上目视确认（离屏渲染无法画出菜单栏）；无真实凭据联调。
+

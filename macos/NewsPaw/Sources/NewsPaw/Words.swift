@@ -44,7 +44,6 @@ enum L10n {
         )
         static let openNewsPaw = Words("打开 NewsPaw", "Open NewsPaw", "NewsPaw を開く")
         static let pauseAll = Words("暂停全部推送", "Pause All Deliveries", "すべての配信を一時停止")
-        static let resumeAll = Words("恢复推送", "Resume Deliveries", "配信を再開")
         static let quitWindow = Words("退出 NewsPaw 界面", "Quit NewsPaw Window", "NewsPaw の画面を終了")
         static let quitNote = Words(
             "关闭这个窗口不会停止后台，后台会一直在菜单栏里。",
@@ -55,9 +54,9 @@ enum L10n {
         static let stopBackend = Words("停止后台", "Stop Backend", "バックエンドを停止")
         static let stopTitle = Words("停止后台？", "Stop the backend?", "バックエンドを停止しますか？")
         static let stopBody = Words(
-            "停止后不会再推送，直到你再次打开 NewsPaw。",
-            "Nothing will be delivered until you open NewsPaw again.",
-            "NewsPaw をもう一度開くまで配信されません。"
+            "停止后菜单栏将不再推送，直到你再次打开 NewsPaw。",
+            "Once stopped, the menu bar delivers nothing until you open NewsPaw again.",
+            "停止すると、NewsPaw をもう一度開くまでメニューバーから配信されません。"
         )
         static let cancel = Words("取消", "Cancel", "キャンセル")
         static let stopFailed = Words("没能确认后台已经停止。", "Could not confirm that the backend stopped.", "バックエンドの停止を確認できませんでした。")
@@ -66,7 +65,7 @@ enum L10n {
 
         static let all: [Words] = [
             tagline, running, connecting, notRunning, stopping, incompatible, paused, notRunningNote,
-            openNewsPaw, pauseAll, resumeAll, quitWindow, quitNote, refresh, stopBackend, stopTitle,
+            openNewsPaw, pauseAll, quitWindow, quitNote, refresh, stopBackend, stopTitle,
             stopBody, cancel, stopFailed, retry, savedAt,
         ]
     }
@@ -670,6 +669,131 @@ enum L10n {
             coveragePartial, coverageGap, coverageUnfinished, listNotePending,
         ]
     }
+
+    enum Settings {
+        static let intro = Words("语言、后台和数据。排障工具都在最下面的「高级」里。", "Language, the backend and your data. Troubleshooting tools are under Advanced at the bottom.", "言語、バックエンド、データ。トラブル対応のツールはいちばん下の「詳細」にあります。")
+        static let language = Words("语言", "Language", "言語")
+        static let uiLanguage = Words("界面语言", "Interface language", "表示言語")
+        static let uiLanguageNote = Words("只影响这个窗口和 Telegram 里的管理回复。", "Affects only this window and management replies in Telegram.", "このウインドウと Telegram の管理用の返信だけに使います。")
+        static let newsLanguage = Words("新闻输出语言", "News language", "ニュースの言語")
+        static let newsLanguageNote = Words("所有简报的标题和摘要。改了之后，还没发出的那几期会按新语言重新生成。", "Titles and summaries of every digest. After a change, editions not yet sent are written again in the new language.", "すべてのダイジェストの見出しと要約に使います。変更すると、まだ送っていない回は新しい言語で作り直します。")
+        static let newsLanguageOffline = Words("后台运行后才能修改。", "Can be changed once the backend is running.", "バックエンドが動いているときに変更できます。")
+
+        static let backend = Words("后台", "Backend", "バックエンド")
+        static let status = Words("状态", "Status", "状態")
+        static let running = Words("运行中", "Running", "稼働中")
+        static let notRunning = Words("没有运行", "Not running", "停止中")
+        static let started = Words("{when} 启动", "Started {when}", "{when} に起動")
+        static let version = Words("版本 {version}", "Version {version}", "バージョン {version}")
+        static let restart = Words("重启", "Restart", "再起動")
+        static let restartHelp = Words("打开「登录这台 Mac 时自动启动」后才能从这里重启。", "Turn on “Start when you log in to this Mac” to restart from here.", "「この Mac にログインしたときに起動」をオンにするとここから再起動できます。")
+        static let stop = Words("停止", "Stop", "停止")
+        static let start = Words("启动后台", "Start Backend", "バックエンドを起動")
+        static let loginItem = Words("登录这台 Mac 时自动启动", "Start when you log in to this Mac", "この Mac にログインしたときに起動")
+        static let loginItemNote = Words("关闭后后台会停止，不再推送，直到你重新打开这个开关。", "Turning this off stops the backend; nothing is delivered until you turn it on again.", "オフにするとバックエンドが止まり、もう一度オンにするまで配信されません。")
+        static let loginOffTitle = Words("关闭自动启动？", "Turn off starting at login?", "ログイン時の起動をオフにしますか？")
+        static let loginOffBody = Words("后台会立即停止，菜单栏将不再推送，直到你重新打开这个开关。", "The backend stops now and the menu bar delivers nothing until you turn this on again.", "バックエンドはすぐに止まり、もう一度オンにするまでメニューバーから配信されません。")
+        static let loginOffButton = Words("关闭并停止后台", "Turn Off and Stop", "オフにして停止")
+        static let openLoginItems = Words("打开登录项设置", "Open Login Items Settings", "ログイン項目の設定を開く")
+        static let pauseNote = Words("暂停期间不采集、不花钱、不发送；恢复后只补最近一期。菜单栏里也有这个开关。", "While paused nothing is collected, spent or sent; resuming catches up only the latest edition. The menu bar has this switch too.", "一時停止中は収集も支払いも送信もしません。再開すると直近の 1 回だけ追いつきます。メニューバーにも同じスイッチがあります。")
+
+        static let data = Words("数据", "Data", "データ")
+        static let storage = Words("存放位置", "Storage location", "保存場所")
+        static let showInFinder = Words("在访达中显示", "Show in Finder", "Finder で表示")
+        static let backup = Words("设置备份", "Settings backup", "設定のバックアップ")
+        static let backupNote = Words("导出不包含任何 Key 和 Token。导入前会先给你看会改什么。", "Exports contain no keys or tokens. Before importing you see what would change.", "書き出しにキーやトークンは含まれません。読み込む前に何が変わるかを確認できます。")
+        static let export = Words("导出设置…", "Export Settings…", "設定を書き出す…")
+        static let `import` = Words("导入…", "Import…", "読み込む…")
+        static let retention = Words("保留抓取记录和日志", "Keep fetch records and logs", "取得記録とログの保存期間")
+        static let retentionNote = Words("清理旧数据时只删除早于这个天数的记录；还没发出的简报引用到的记录不会被清。", "Cleaning up removes only records older than this; records an unsent digest uses are kept.", "古いデータの整理ではこれより古い記録だけを消します。まだ送っていないダイジェストが使う記録は残します。")
+        static let days = Words("{count} 天", "{count} days", "{count} 日")
+        static let saved = Words("已保存到所选文件。", "Saved to the chosen file.", "選んだファイルに保存しました。")
+        static let copied = Words("已复制。", "Copied.", "コピーしました。")
+        static let imported = Words("已导入。所有简报保持关闭；机器人要重新配对，模型要重新填 Key。", "Imported. Every digest stays off; pair the bots again and enter the model keys again.", "読み込みました。ダイジェストはすべてオフのままです。ボットのペアリングとモデルのキー入力をやり直してください。")
+
+        static let importTitle = Words("导入这些设置？", "Import these settings?", "この設定を読み込みますか？")
+        static let importChanges = Words("会改动这些项目：", "These would change:", "次の項目が変わります：")
+        static let importNothing = Words("这个文件和当前设置一样，导入不会改动任何项目。", "This file matches the current settings; importing changes nothing.", "このファイルは今の設定と同じで、読み込んでも何も変わりません。")
+        static let importAgain = Words("设置刚有变化，下面是重新比较的结果，请再确认一次。", "Something changed meanwhile; this is the new comparison. Please confirm again.", "その間に変更があったため比べ直しました。もう一度確認してください。")
+        static let importStaysOff = Words("导入后所有简报保持关闭，推送不会自动开始。", "Every digest stays off after importing; nothing starts sending by itself.", "読み込んだ後もダイジェストはすべてオフで、配信が勝手に始まることはありません。")
+        static let importPairing = Words("机器人要重新填 Token 并配对。", "Bots need their token and pairing again.", "ボットはトークンの入力とペアリングをやり直します。")
+        static let importKeys = Words("模型的 Key 不在设置文件里，要重新填。", "Model keys are not in the file; enter them again.", "モデルのキーはファイルに含まれないので入力し直します。")
+        static let importButton = Words("导入", "Import", "読み込む")
+        static let changeUI = Words("界面语言改为 {value}", "Interface language becomes {value}", "表示言語を {value} に変更")
+        static let changeNews = Words("新闻输出语言改为 {value}", "News language becomes {value}", "ニュースの言語を {value} に変更")
+        static let changeTimezone = Words("时区改为 {value}", "Time zone becomes {value}", "タイムゾーンを {value} に変更")
+        static let changeDigests = Words("简报：{names}", "Digests: {names}", "ダイジェスト：{names}")
+        static let removeDigests = Words("移除简报：{names}", "Digests removed: {names}", "削除するダイジェスト：{names}")
+        static let kindSources = Words("来源", "Sources", "ソース")
+        static let kindBots = Words("机器人", "Bots", "ボット")
+        static let kindAccounts = Words("X 账号", "X accounts", "X アカウント")
+        static let kindModels = Words("模型", "Models", "モデル")
+        static let added = Words("新增 {count}", "{count} added", "追加 {count}")
+        static let removed = Words("移除 {count}", "{count} removed", "削除 {count}")
+        static let changed = Words("改动 {count}", "{count} changed", "変更 {count}")
+        static let collectionLine = Words("{kind}：{parts}", "{kind}: {parts}", "{kind}：{parts}")
+        static let omittedLine = Words("有 {count} 项含 Key 或私有地址，没有带过来。", "{count} entries with keys or private addresses were left out.", "キーや非公開アドレスを含む {count} 件は持ち込みません。")
+
+        static let advanced = Words("高级 / 排障", "Advanced / Troubleshooting", "詳細 / トラブル対応")
+        static let advancedSummary = Words("诊断信息 · 支持快照 · 备份校验 · 清理旧数据 · 任务与投递记录", "Diagnostics · Support snapshot · Backup check · Clean up · Jobs and deliveries", "診断情報・サポート用スナップショット・バックアップ確認・古いデータの整理・処理と配信の記録")
+        static let advancedNote = Words("给开发者看的工具。正常使用不需要打开。", "Tools for developers. Everyday use never needs them.", "開発者向けのツールです。普段は開く必要はありません。")
+        static let diagnostics = Words("诊断信息", "Diagnostics", "診断情報")
+        static let diagnosticsNote = Words("脱敏的运行状况，不含 Key、名称或链接。", "A redacted summary of how things are running, without keys, names or links.", "キー、名前、リンクを含まない匿名化した稼働状況です。")
+        static let copy = Words("复制", "Copy", "コピー")
+        static let saveFile = Words("保存…", "Save…", "保存…")
+        static let snapshot = Words("支持快照", "Support snapshot", "サポート用スナップショット")
+        static let snapshotNote = Words("诊断信息加上数据库版本，可以发给开发者。", "Diagnostics plus the database version, to send to a developer.", "診断情報とデータベースのバージョン。開発者に送れます。")
+        static let backupCheck = Words("备份校验", "Backup check", "バックアップの確認")
+        static let backupCheckNote = Words("在数据文件夹里选一个备份，检查它是否完整。", "Choose a backup in the data folder to check that it is intact.", "データフォルダのバックアップを選んで、壊れていないか確認します。")
+        static let chooseBackup = Words("选择备份文件…", "Choose Backup…", "バックアップを選ぶ…")
+        static let backupOK = Words("完整 · 数据库版本 {version} · {size}", "Intact · database version {version} · {size}", "問題なし・データベース {version}・{size}")
+        static let cleanup = Words("清理旧数据", "Clean up old data", "古いデータの整理")
+        static let previewCleanup = Words("看看能清理什么", "See What Can Go", "整理できるものを見る")
+        static let cleanupNothing = Words("没有可以清理的旧数据。", "There is no old data to clean up.", "整理できる古いデータはありません。")
+        static let cleanupFound = Words("可以清理 {count} 项：日志 {logs} · 抓取记录 {records} · 图片 {images} · X 帖子 {posts}", "{count} items can go: logs {logs} · fetch records {records} · images {images} · X posts {posts}", "{count} 件を整理できます：ログ {logs}・取得記録 {records}・画像 {images}・X の投稿 {posts}")
+        static let cleanupDeferred = Words("有图片正在使用，这次先不清理图片。", "Images are in use, so they are left for another time.", "画像が使用中のため、今回は画像を整理しません。")
+        static let cleanButton = Words("清理…", "Clean Up…", "整理する…")
+        static let cleanTitle = Words("清理旧数据？", "Clean up old data?", "古いデータを整理しますか？")
+        static let cleanBody = Words("将删除上面列出的旧记录，不能撤销。", "The old records listed above are deleted. This cannot be undone.", "上に挙げた古い記録を削除します。元に戻せません。")
+        static let cleanConfirm = Words("清理", "Clean Up", "整理する")
+        static let cleaned = Words("已清理 {count} 项。", "Cleaned up {count} items.", "{count} 件を整理しました。")
+        static let jobs = Words("任务与投递记录", "Jobs and deliveries", "処理と配信の記録")
+        static let jobsLoad = Words("载入最近的记录", "Load Recent Records", "最近の記録を読み込む")
+        static let jobsEmpty = Words("还没有任何任务。", "There are no jobs yet.", "まだ処理はありません。")
+        static let jobHandedOff = Words("已交给投递", "Handed to delivery", "配信へ引き渡し済み")
+        static let jobCancelled = Words("已取消", "Cancelled", "取り消し済み")
+        static let sending = Words("正在发送", "Sending", "送信中")
+        static let showDelivery = Words("投递明细", "Delivery details", "配信の詳細")
+        static let noDelivery = Words("还没有投递记录。", "No delivery record yet.", "配信の記録はまだありません。")
+        static let deliveryLine = Words("{bot} · {state} · 已发 {delivered} / 共 {parts} 段", "{bot} · {state} · {delivered} of {parts} parts sent", "{bot}・{state}・{parts} 件中 {delivered} 件送信")
+
+        static let tomorrowAt = Words("明天 {time}", "tomorrow {time}", "明日 {time}")
+        static let menuNext = Words("{status} · 下一期 {time} {digest}", "{status} · next {time} {digest}", "{status}・次回 {time} {digest}")
+        static let menuPaused = Words("已暂停", "Paused", "一時停止中")
+
+        static let noteApproval = Words("已登记，但需要你在「系统设置 › 通用 › 登录项」里允许 NewsPaw。", "Registered, but NewsPaw must be allowed in System Settings › General › Login Items.", "登録済みですが、「システム設定 › 一般 › ログイン項目」で NewsPaw を許可する必要があります。")
+        static let noteUnavailable = Words("找不到 NewsPaw 的后台登记。把 NewsPaw 放进「应用程序」文件夹后重新打开。", "NewsPaw's background item was not found. Move NewsPaw to Applications and open it again.", "NewsPaw のバックグラウンド項目が見つかりません。NewsPaw を「アプリケーション」に移してから開き直してください。")
+        static let noteNotPackaged = Words("开发版本没有登录项，自动启动和重启只在安装版里可用。", "A development build has no login item; starting at login and restarting work only in the installed app.", "開発版にはログイン項目がありません。ログイン時の起動と再起動はインストール版でのみ使えます。")
+        static let noteLegacy = Words("旧版后台还在运行。先从原来的安装里停掉它再试。", "The previous backend is still running. Stop it from its original installation, then try again.", "以前のバックエンドがまだ動いています。元のインストールから止めてから再試行してください。")
+        static let noteRefused = Words("macOS 没有完成这次登录项更改。到「系统设置 › 通用 › 登录项」里查看 NewsPaw 后再试。", "macOS did not make this login item change. Check NewsPaw in System Settings › General › Login Items, then try again.", "macOS がログイン項目を変更しませんでした。「システム設定 › 一般 › ログイン項目」で NewsPaw を確認してから再試行してください。")
+        static let noteStartFailed = Words("没能启动后台。到「系统设置 › 通用 › 登录项」确认 NewsPaw 已允许后再试。", "The backend did not start. Make sure NewsPaw is allowed in System Settings › General › Login Items, then try again.", "バックエンドが起動しませんでした。「システム設定 › 一般 › ログイン項目」で NewsPaw が許可されているか確認してから再試行してください。")
+        static let noteStillRunning = Words("后台没有及时停下，自动启动没有关闭。稍后再试。", "The backend did not stop in time, so starting at login is still on. Try again shortly.", "バックエンドが時間内に止まらなかったため、ログイン時の起動はオンのままです。少し待って再試行してください。")
+
+        static let all: [Words] = [
+            intro, language, uiLanguage, uiLanguageNote, newsLanguage, newsLanguageNote, newsLanguageOffline,
+            backend, status, running, notRunning, started, version, restart, restartHelp, stop, start, loginItem,
+            loginItemNote, loginOffTitle, loginOffBody, loginOffButton, openLoginItems, pauseNote,
+            data, storage, showInFinder, backup, backupNote, export, `import`, retention, retentionNote, days, saved,
+            copied, imported, importTitle, importChanges, importNothing, importAgain, importStaysOff, importPairing,
+            importKeys, importButton, changeUI, changeNews, changeTimezone, changeDigests, removeDigests, kindSources,
+            kindBots, kindAccounts, kindModels, added, removed, changed, collectionLine, omittedLine,
+            advanced, advancedSummary, advancedNote, diagnostics, diagnosticsNote, copy, saveFile, snapshot, snapshotNote,
+            backupCheck, backupCheckNote, chooseBackup, backupOK, cleanup, previewCleanup, cleanupNothing, cleanupFound,
+            cleanupDeferred, cleanButton, cleanTitle, cleanBody, cleanConfirm, cleaned, jobs, jobsLoad, jobsEmpty,
+            jobHandedOff, jobCancelled, sending, showDelivery, noDelivery, deliveryLine, tomorrowAt, menuNext, menuPaused,
+            noteApproval, noteUnavailable, noteNotPackaged, noteLegacy, noteRefused, noteStartFailed, noteStillRunning,
+        ]
+    }
 }
 
 /// "What happened. What to do." for a backend code (interaction-spec §2.4).
@@ -796,6 +920,13 @@ enum FailureCopy {
         "malformed_identity": Entry(message: Words("Telegram 返回的机器人信息不对，确认这是机器人的 Token。", "Telegram's reply about the bot was not valid; make sure this is a bot token.", "Telegram から返ったボット情報が正しくありません。ボットのトークンか確認してください。"), action: L10n.Shell.retry),
         "malformed_response": Entry(message: Words("Telegram 的回应看不懂，稍后再验证。", "Telegram's reply was not understood; check again later.", "Telegram の応答を解釈できません。あとで再確認してください。"), action: L10n.Shell.retry),
         "inbox_full": Entry(message: Words("这个机器人收到的消息太多还没处理完，稍后会继续。", "This bot has too many unprocessed messages; it continues shortly.", "このボットの未処理メッセージが多すぎます。少しすると続きを処理します。"), action: nil),
+        "restore_requires_fresh_instance": Entry(message: Words("只能导入到还没开始使用的 NewsPaw。这里的设置已经改过，导入会覆盖它们，所以没有导入。", "Settings can only be imported into a NewsPaw that has not been used yet. These settings were already changed, so nothing was imported.", "読み込めるのはまだ使い始めていない NewsPaw だけです。ここの設定はすでに変更されているため、読み込みませんでした。"), action: nil),
+        "invalid_portable_settings": Entry(message: Words("这个文件不是 NewsPaw 导出的设置，或者已经损坏。", "This file is not settings exported by NewsPaw, or it is damaged.", "このファイルは NewsPaw から書き出した設定ではないか、壊れています。"), action: nil),
+        "settings_not_portable": Entry(message: Words("当前设置里有不能安全导出的内容（比如名称里像 Key 的文字）。改掉后再导出。", "Something in the settings cannot be exported safely (such as key-like text in a name). Change it, then export again.", "設定に安全に書き出せない内容（名前に含まれるキーのような文字など）があります。直してから書き出してください。"), action: nil),
+        "invalid_backup": Entry(message: Words("这不是一个能用的 NewsPaw 备份。请在数据文件夹里选名字带「.backup-」的文件。", "This is not a usable NewsPaw backup. Choose a file named “….backup-…” in the data folder.", "使える NewsPaw のバックアップではありません。データフォルダにある「….backup-…」という名前のファイルを選んでください。"), action: nil),
+        "invalid_cleanup": Entry(message: Words("清理的条件不对。换一个保留天数再试。", "The cleanup settings were not accepted. Choose another number of days and try again.", "整理の条件が受け付けられませんでした。保存期間を選び直して再試行してください。"), action: nil),
+        "missing_delivery": Entry(message: Words("这一期还没有投递记录。", "This edition has no delivery record yet.", "この回の配信記録はまだありません。"), action: nil),
+        "file_write_failed": Entry(message: Words("没能写入这个文件。换个位置再试。", "The file could not be written. Choose another place and try again.", "ファイルを書き込めませんでした。別の場所を選んで再試行してください。"), action: nil),
         "internal_error": Entry(message: Words("NewsPaw 内部出了问题，已记录在日志里。", "NewsPaw hit an internal problem and logged it.", "NewsPaw 内部で問題が起き、ログに記録しました。"), action: nil),
         // X accounts (R11). Codes shared with model or Telegram copy carry the "x." domain prefix.
         "x.authentication_failed": Entry(message: Words("X 拒绝了 X API Key（401）。到「接入」重新填入。", "X rejected the X API key (401). Enter it again in Connect.", "X が X API キーを拒否しました（401）。「接続」で入力し直してください。"), action: L10n.XAccounts.goConnect),

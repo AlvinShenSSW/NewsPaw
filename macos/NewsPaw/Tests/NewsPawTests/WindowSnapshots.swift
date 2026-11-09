@@ -67,6 +67,15 @@ private let environment = ProcessInfo.processInfo.environment
                     let image = try await render(open, appearance: appearance, size: NSSize(width: 980, height: 1500))
                     try image.write(to: folder.appendingPathComponent("connect-open-\(language.rawValue)-\(suffix).png"))
                 }
+                // The settings page again with the troubleshooting tools open.
+                if page == .settings {
+                    defaults.set(true, forKey: "settings.advancedOpen")
+                    let open = ScrollView { SettingsPage(model: model).padding(24) }
+                        .background(Color(nsColor: .windowBackgroundColor))
+                        .defaultAppStorage(defaults)
+                    let image = try await render(open, appearance: appearance, size: NSSize(width: 980, height: 1300))
+                    try image.write(to: folder.appendingPathComponent("settings-open-\(language.rawValue)-\(suffix).png"))
+                }
             }
         }
     }

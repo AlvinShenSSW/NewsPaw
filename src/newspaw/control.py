@@ -16,9 +16,11 @@ import struct
 import sys
 from contextlib import suppress
 from dataclasses import asdict
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from . import __version__
 from .budget import BudgetError, BudgetLedger
 from .connectors.web_search import WebSearch
 from .credentials import CredentialError
@@ -60,7 +62,7 @@ OPERATIONS = {
     "ops.preview_import": ({"portable"}, set()),
     "ops.apply_import": ({"portable", "digest", "revision"}, set()),
     "ops.verify_backup": ({"name"}, set()),
-    "ops.cleanup": (set(), {"apply", "limit"}),
+    "ops.cleanup": (set(), {"apply", "limit", "retention_days"}),
     "service.status": (set(), set()),
     "setup.readiness": (set(), set()),
     "service.stop": (set(), set()),
@@ -264,11 +266,13 @@ class ControlServer:
         self._socket_identity = None
         self._stop_requested = asyncio.Event()
         self._background = set()
+        self._started_at = None
 
     async def start(self):
         if self._server is not None:
             raise ValueError("already_running")
         self._stop_requested.clear()
+        self._started_at = datetime.now(UTC).isoformat()
         if self._lock_fd is None:
             self._lock_fd = acquire_control_lock(self.directory)
         try:
@@ -386,6 +390,8 @@ class ControlServer:
                 "protocol_version": 1,
                 "state": "stopping" if self._stop_requested.is_set() else "running",
                 "operations": sorted(OPERATIONS),
+                "started_at": self._started_at,
+                "version": __version__,
             }
         if self._stop_requested.is_set():
             raise CredentialError("service_stopping")
@@ -406,7 +412,9 @@ class ControlServer:
             return await asyncio.to_thread(self.operations.verify_backup, data["name"])
         if op == "ops.cleanup":
             return self.operations.cleanup(
-                apply=data.get("apply", False), limit=data.get("limit", 100)
+                apply=data.get("apply", False),
+                limit=data.get("limit", 100),
+                retention_days=data.get("retention_days", 7),
             )
         if op == "media.policy":
             return self.media.policy()

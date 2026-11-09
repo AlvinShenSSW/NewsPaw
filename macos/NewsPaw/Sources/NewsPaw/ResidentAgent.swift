@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 import ServiceManagement
-import SwiftUI
+import Observation
 
 enum ResidentState {
     case notPackaged, off, approval, on, unavailable
@@ -23,8 +23,26 @@ enum ResidentFailure: Error {
     case workerStillRunning
 }
 
+/// The login item that runs the backend. The app only uses these; the registration mechanism
+/// itself (SMAppService + the bundled plist) is unchanged (R12 non-goal).
+@MainActor
+protocol ResidentService {
+    var state: ResidentState { get }
+    /// Registers the login item (launchd starts it at once: `RunAtLoad`).
+    func enable() async throws
+    /// Unregisters it, which also stops it; first waits for the worker to exit when asked.
+    func disable(waitForWorker: Bool) async throws
+    /// Waits until the backend process has exited after `service.stop`.
+    func waitUntilStopped() async throws
+    /// Starts the registered job again (it does not restart by itself after a clean stop).
+    func start() async throws
+    func openLoginItemsSettings()
+}
+
 struct ResidentAgent {
     static let plist = "io.newspaw.resident.plist"
+    /// The `Label` in `packaging/io.newspaw.resident.plist`.
+    static let label = "io.newspaw.resident"
     let bundle: Bundle
 
     init(bundle: Bundle = .main) { self.bundle = bundle }
@@ -59,19 +77,33 @@ struct ResidentAgent {
 
     func disable(waitForWorker: Bool) async throws {
         guard state == .on || state == .approval else { throw ResidentFailure.serviceUnavailable }
-        if waitForWorker {
-            let helperPath = helper.path
-            try await Task.detached(priority: .utility) {
-                let deadline = DispatchTime.now().uptimeNanoseconds + 6_000_000_000
-                while DispatchTime.now().uptimeNanoseconds < deadline {
-                    if try Self.run(helperPath, ["--check-stopped"], timeout: 2) == 0 { return }
-                    try await Task.sleep(for: .milliseconds(120))
-                }
-                throw ResidentFailure.workerStillRunning
-            }.value
-        }
+        if waitForWorker { try await waitUntilStopped() }
         try await SMAppService.agent(plistName: Self.plist).unregister()
     }
+
+    func waitUntilStopped() async throws {
+        let helperPath = helper.path
+        try await Task.detached(priority: .utility) {
+            let deadline = DispatchTime.now().uptimeNanoseconds + 6_000_000_000
+            while DispatchTime.now().uptimeNanoseconds < deadline {
+                if try Self.run(helperPath, ["--check-stopped"], timeout: 2) == 0 { return }
+                try await Task.sleep(for: .milliseconds(120))
+            }
+            throw ResidentFailure.workerStillRunning
+        }.value
+    }
+
+    func start() async throws {
+        guard state == .on else { throw ResidentFailure.serviceUnavailable }
+        let target = "gui/\(getuid())/" + Self.label
+        try await Task.detached(priority: .utility) {
+            guard try Self.run("/bin/launchctl", ["kickstart", target], timeout: 6) == 0 else {
+                throw ResidentFailure.serviceUnavailable
+            }
+        }.value
+    }
+
+    func openLoginItemsSettings() { SMAppService.openSystemSettingsLoginItems() }
 
     private static func run(_ executable: String, _ arguments: [String], timeout: Double) throws -> Int32 {
         let process = Process()
@@ -92,100 +124,191 @@ struct ResidentAgent {
     }
 }
 
-private enum ResidentCopy {
-    case heading, off, approval, on, unavailable, enable, disable, systemSettings, legacy, failed
+extension ResidentAgent: ResidentService {}
 
-    func text(_ language: AppLanguage) -> String {
-        let words: (String, String, String) = switch self {
-        case .heading: ("登录项", "Login item", "ログイン項目")
-        case .off: ("未注册", "Unregistered", "未登録")
-        case .approval: ("需要在系统设置中批准", "Approval required in System Settings", "システム設定で承認が必要です")
-        case .on: ("已注册", "Registered", "登録済み")
-        case .unavailable: ("登录项状态不可用", "Login item unavailable", "ログイン項目を確認できません")
-        case .enable: ("注册登录项", "Register login item", "ログイン項目を登録")
-        case .disable: ("停止并取消注册", "Stop and unregister", "停止して登録を解除")
-        case .systemSettings: ("打开登录项设置", "Open Login Items settings", "ログイン項目設定を開く")
-        case .legacy: ("现有的旧版后台仍在运行。请先从原安装停止。", "The previous background service is still loaded. Stop it from its original installation first.", "以前のバックグラウンドサービスが稼働しています。以前のインストールから停止してください。")
-        case .failed: ("登录项操作未完成。请检查后台与数据状态。", "The login item action did not complete. Check the backend and data state.", "ログイン項目の操作が完了しませんでした。バックエンドとデータ状態を確認してください。")
-        }
-        return switch language {
-        case .zhHans: words.0
-        case .en: words.1
-        case .ja: words.2
+/// What the login item row says when it is not simply on or off, or when a change failed.
+enum LoginNote: CaseIterable, Equatable {
+    case approval, unavailable, notPackaged, legacy, refused, startFailed, stillRunning
+
+    var message: Words {
+        switch self {
+        case .approval: L10n.Settings.noteApproval
+        case .unavailable: L10n.Settings.noteUnavailable
+        case .notPackaged: L10n.Settings.noteNotPackaged
+        case .legacy: L10n.Settings.noteLegacy
+        case .refused: L10n.Settings.noteRefused
+        case .startFailed: L10n.Settings.noteStartFailed
+        case .stillRunning: L10n.Settings.noteStillRunning
         }
     }
+
+    /// Whether System Settings › Login Items is the way out (interaction-spec §8.2).
+    var offersSettings: Bool { self != .notPackaged && self != .stillRunning }
 }
 
-struct ResidentControls: View {
-    let model: AppModel
-    private let agent = ResidentAgent()
-    @State private var current: ResidentState = .notPackaged
-    @State private var busy = false
-    @State private var failure: ResidentCopy?
+/// The login item switch, starting a stopped backend and restarting a running one
+/// (interaction-spec §8.2, §4.6). The switch shows only what SMAppService reports.
+@MainActor @Observable
+final class BackendControl {
+    private(set) var state: ResidentState
+    private(set) var busy = false
+    private(set) var failure: LoginNote?
+    @ObservationIgnored private let service: any ResidentService
+    @ObservationIgnored private var launched = false
+    /// How long to wait for a started backend to answer (attempts × interval, about 10 s).
+    @ObservationIgnored var settleInterval: Duration = .milliseconds(500)
+    @ObservationIgnored var settleAttempts = 20
 
-    private func label(_ key: ResidentCopy) -> String { key.text(model.uiLanguage) }
-
-    var body: some View {
-        Group {
-            if current != .notPackaged {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(label(.heading)).font(.headline).accessibilityAddTraits(.isHeader)
-                    Text(label(statusCopy)).foregroundStyle(.secondary)
-                    if let failure { Text(label(failure)).foregroundStyle(.secondary) }
-                    HStack {
-                        if current == .off {
-                            Button(label(.enable)) { Task { await change(enable: true) } }
-                        }
-                        if current == .approval || current == .on {
-                            Button(label(.disable)) { Task { await change(enable: false) } }
-                        }
-                        Button(label(.systemSettings)) { SMAppService.openSystemSettingsLoginItems() }
-                    }
-                }
-                .disabled(busy)
-            }
-        }
-        .task {
-            while !Task.isCancelled {
-                if !busy { current = agent.state }
-                try? await Task.sleep(for: .seconds(2))
-            }
-        }
+    init(service: any ResidentService = ResidentAgent()) {
+        self.service = service
+        state = service.state
     }
 
-    private var statusCopy: ResidentCopy {
-        switch current {
-        case .off: .off
+    var loginOn: Bool { state == .on }
+    /// Only a plainly registered or unregistered item can be switched here.
+    var canToggle: Bool { state == .on || state == .off }
+    /// launchd can only start a job that is registered and allowed.
+    var canRestart: Bool { state == .on }
+    var note: LoginNote? { failure ?? stateNote }
+
+    private var stateNote: LoginNote? {
+        switch state {
         case .approval: .approval
-        case .on: .on
-        case .notPackaged, .unavailable: .unavailable
+        case .unavailable: .unavailable
+        case .notPackaged: .notPackaged
+        case .on, .off: nil
         }
     }
 
-    private func change(enable: Bool) async {
+    func reload() {
         guard !busy else { return }
+        state = service.state
+    }
+
+    func openSettings() { service.openLoginItemsSettings() }
+
+    /// Turning it on registers (and so starts) the backend; turning it off stops the backend
+    /// safely first, because unregistering a launch agent stops it.
+    func setLoginItem(_ on: Bool, model: AppModel) async {
+        reload()
+        guard !busy, on ? state == .off : state == .on else { return }
         busy = true
         failure = nil
         defer {
-            current = agent.state
             busy = false
+            reload()
+        }
+        if on {
+            do {
+                try await service.enable()
+            } catch ResidentFailure.legacyServiceActive {
+                failure = .legacy
+                return
+            } catch {
+                failure = .refused
+                return
+            }
+            if service.state == .approval { return }
+            await settle(model)
+            if model.connection != .connected { failure = .startFailed }
+            return
+        }
+        let running = model.connection == .connected || model.connection == .stopping
+        if model.connection == .connected {
+            await model.stopBackend()
+            // A refused stop is shown by the shell with its own code.
+            guard model.connection == .stopping else { return }
         }
         do {
-            if enable {
-                try await agent.enable()
-            } else {
-                let running = model.connection == .connected || model.connection == .stopping
-                if model.connection == .connected {
-                    await model.stopBackend()
-                    guard model.connection == .stopping else { throw ResidentFailure.workerStillRunning }
-                }
-                try await agent.disable(waitForWorker: running)
-            }
-            await model.refresh()
+            try await service.disable(waitForWorker: running)
+        } catch ResidentFailure.workerStillRunning {
+            failure = .stillRunning
+        } catch {
+            failure = .refused
+        }
+        await model.refresh()
+    }
+
+    /// Starts a backend that is not running: launchd starts the registered job, or the job is
+    /// registered (which starts it).
+    func start(model: AppModel) async {
+        reload()
+        guard !busy, model.connection != .connected else { return }
+        let registered: Bool
+        switch state {
+        case .on: registered = true
+        case .off: registered = false
+        case .approval, .unavailable, .notPackaged: return
+        }
+        busy = true
+        failure = nil
+        defer {
+            busy = false
+            reload()
+        }
+        do {
+            if registered { try await service.start() } else { try await service.enable() }
         } catch ResidentFailure.legacyServiceActive {
             failure = .legacy
+            return
         } catch {
-            failure = .failed
+            failure = registered ? .startFailed : .refused
+            return
+        }
+        // Registered but not allowed yet: the approval note says what to do.
+        if service.state == .approval { return }
+        await settle(model)
+        if model.connection != .connected { failure = .startFailed }
+    }
+
+    /// Stop, wait for the process to exit, start it again.
+    func restart(model: AppModel) async {
+        reload()
+        guard !busy, canRestart, model.connection == .connected else { return }
+        busy = true
+        failure = nil
+        defer {
+            busy = false
+            reload()
+        }
+        await model.stopBackend()
+        guard model.connection == .stopping else { return }
+        do {
+            try await service.waitUntilStopped()
+            try await service.start()
+        } catch ResidentFailure.workerStillRunning {
+            failure = .stillRunning
+            return
+        } catch {
+            failure = .startFailed
+            return
+        }
+        await settle(model)
+        if model.connection != .connected { failure = .startFailed }
+    }
+
+    /// Once per launch: a backend that starts at login but is not running (it was stopped from
+    /// Settings) starts again when NewsPaw opens, as the stop confirmation says.
+    func startIfStopped(model: AppModel) async {
+        guard !launched else { return }
+        launched = true
+        // The first poll may still be on its way.
+        var attempts = 0
+        while model.connection == .connecting, attempts < settleAttempts {
+            await model.refresh()
+            attempts += 1
+            if model.connection == .connecting { try? await Task.sleep(for: settleInterval) }
+        }
+        reload()
+        guard model.connection == .offline, state == .on else { return }
+        await start(model: model)
+    }
+
+    private func settle(_ model: AppModel) async {
+        for attempt in 0..<settleAttempts {
+            await model.refresh()
+            if model.connection == .connected { return }
+            if attempt + 1 < settleAttempts { try? await Task.sleep(for: settleInterval) }
         }
     }
 }

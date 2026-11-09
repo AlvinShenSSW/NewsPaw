@@ -428,9 +428,13 @@ async def test_explicit_service_stop_acknowledges_and_releases_private_endpoint(
                     else:
                         break
             assert status["ok"] and "service.stop" in status["result"].pop("operations")
+            status["result"].pop("started_at")
+            status["result"].pop("version")
             assert status == {"ok": True, "result": {"protocol_version": 1, "state": "running"}}
             stopped = await request(endpoint, {"op": "service.stop"})
             stopped["result"].pop("operations")
+            stopped["result"].pop("started_at")
+            stopped["result"].pop("version")
             assert stopped == {"ok": True, "result": {"protocol_version": 1, "state": "stopping"}}
             await asyncio.wait_for(running, 3)
             assert not endpoint.path.exists()
@@ -630,6 +634,28 @@ async def test_status_lists_operations_and_readiness_is_served(control):
         "digest",
         "first_delivery",
     ]
+
+
+async def test_status_names_when_the_backend_started_and_its_version(control):
+    from datetime import datetime
+
+    from newspaw import __version__
+
+    server, _ = control
+    status = (await request(server, {"op": "service.status"}))["result"]
+    assert status["version"] == __version__
+    started = datetime.fromisoformat(status["started_at"])
+    assert started.tzinfo is not None
+    again = (await request(server, {"op": "service.status"}))["result"]
+    assert again["started_at"] == status["started_at"]
+
+
+async def test_cleanup_takes_a_retention_of_seven_thirty_or_ninety_days(control):
+    server, _ = control
+    reply = await request(server, {"op": "ops.cleanup", "retention_days": 30})
+    assert reply["ok"] and reply["result"]["apply"] is False
+    refused = await request(server, {"op": "ops.cleanup", "retention_days": 14})
+    assert refused == {"ok": False, "error": "invalid_cleanup"}
 
 
 @pytest.mark.parametrize(

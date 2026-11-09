@@ -751,9 +751,14 @@ async def test_saving_the_same_key_again_changes_nothing_and_pays_nothing(contro
     server, store = control
     calls = []
 
+    from newspaw.providers import ProfileRegistry
+
+    registry = ProfileRegistry(store)
+
     async def probe(probe_id, profile_id, capability, hold, *, revision=None):
         calls.append(probe_id)
-        return {"status": "verified"}
+        registry.begin(probe_id, profile_id, capability, hold)
+        return registry.finish(probe_id, {"status": "verified"})
 
     monkeypatch.setattr(server.probes, "probe", probe)
 
@@ -819,3 +824,54 @@ async def test_close_cancels_a_check_started_by_a_late_handler(control, monkeypa
     assert cancelled.is_set() and not server._background
     pending.cancel()
     await asyncio.gather(pending, return_exceptions=True)
+
+
+async def test_an_unchanged_key_is_checked_again_after_the_profile_changed(control, monkeypatch):
+    from newspaw.providers import ProfileRegistry
+
+    server, store = control
+    registry = ProfileRegistry(store)
+    calls = []
+
+    async def probe(probe_id, profile_id, capability, hold, *, revision=None):
+        calls.append(probe_id)
+        registry.begin(probe_id, profile_id, capability, hold)
+        return registry.finish(probe_id, {"status": "verified"})
+
+    monkeypatch.setattr(server.probes, "probe", probe)
+    key = {"op": "credentials.set", "kind": "model_profiles", "id": "normal_primary"}
+    assert (await request(server, {**key, "value": "sk-1", "revision": store.config_revision()}))[
+        "ok"
+    ]
+    await _drain(server)
+    revision, config = store.load_config()
+    next(p for p in config["model_profiles"] if p["id"] == "normal_primary")["model"] = (
+        "gpt-6-luna-mini"
+    )
+    store.save_config(config, expected_revision=revision)
+    assert (await request(server, {**key, "value": "sk-1", "revision": store.config_revision()}))[
+        "ok"
+    ]
+    await _drain(server)
+    assert len(calls) == 2 and calls[0] != calls[1]
+    assert registry.status("normal_primary")["text"]["state"] == "verified"
+
+
+async def test_a_keychain_failure_rejects_the_save_without_rotating(control, monkeypatch):
+    server, store = control
+
+    async def probe(*args, **kwargs):
+        return {"status": "verified"}
+
+    monkeypatch.setattr(server.probes, "probe", probe)
+    key = {"op": "credentials.set", "kind": "model_profiles", "id": "normal_primary"}
+    assert (await request(server, {**key, "value": "sk-1", "revision": store.config_revision()}))[
+        "ok"
+    ]
+    await _drain(server)
+    before = store.load_config()
+    server.credentials.backend.failure = "read"
+    reply = await request(server, {**key, "value": "sk-1", "revision": store.config_revision()})
+    server.credentials.backend.failure = None
+    assert reply == {"ok": False, "error": "keychain_denied"}
+    assert store.load_config() == before

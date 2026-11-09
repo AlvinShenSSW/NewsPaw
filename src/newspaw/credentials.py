@@ -247,12 +247,11 @@ class CredentialManager:
         return await self._submit(operation)
 
     async def _holds(self, ref, value):
+        """Whether `ref` already stores `value`. A Keychain failure rejects the save instead
+        of rotating the reference, which would reset verification for the same secret."""
         if ref is None:
             return False
-        try:
-            stored = await asyncio.to_thread(self.backend.read, ref)
-        except CredentialError:
-            return False
+        stored = await asyncio.to_thread(self.backend.read, ref)
         return isinstance(stored, str) and hmac.compare_digest(stored.encode(), value.encode())
 
     async def remove(self, kind, identity, revision):

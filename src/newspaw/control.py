@@ -659,7 +659,9 @@ class ControlServer:
             }
         if op == "credentials.set":
             result = await manager.set(data["kind"], data["id"], data["value"], data["revision"])
-            if data["kind"] == "model_profiles" and result["revision"] != data["revision"]:
+            if data["kind"] == "model_profiles":
+                # Also after an unchanged save: the profile may have changed since the key
+                # was last checked. Verified and in-flight checks are reused, never repaid.
                 self._verify_soon(data["id"], ["text"])
             return result
         if op == "credentials.remove":

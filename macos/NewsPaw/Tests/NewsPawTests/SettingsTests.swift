@@ -92,8 +92,6 @@ final class SettingsBackend {
     private(set) var stopped = false
     /// `service.stop` answers this instead of stopping.
     var stopRefusal: String?
-    /// Changes the preview digest (the stored data changed between preview and apply).
-    var digestSalt = 0
     /// Ages in days of cleanup candidates (rotated logs and fetch records).
     var logAges: [Int] = [10, 40, 100]
     var recordAges: [Int] = [3, 45]
@@ -159,7 +157,11 @@ final class SettingsBackend {
               portable["format"] as? Int == 1, let settings = portable["settings"] as? [String: Any],
               let omitted = portable["omitted"] as? [String: Int] else { return .failure(Refusal(code: "invalid_portable_settings")) }
         let scrubbed = scrub(settings)
-        return .success(["revision": revision, "digest": "digest-\(revision)-\(digestSalt)", "settings": scrubbed,
+        // `_preview`: sha256 of (revision, normalized settings, omitted) — the same file at the
+        // same revision always gives the same digest.
+        let canonical = (try? JSONSerialization.data(withJSONObject: [scrubbed, omitted], options: .sortedKeys)) ?? Data()
+        let digest = "digest-\(revision)-\(canonical.base64EncodedString().hashValue)"
+        return .success(["revision": revision, "digest": digest, "settings": scrubbed,
                          "omitted": omitted, "scheduling": "disabled",
                          "requires_pairing": !((scrubbed["bots"] as? [Any]) ?? []).isEmpty])
     }
@@ -256,6 +258,9 @@ final class FakeResident: ResidentService {
     var disableError: Error?
     var startError: Error?
     var waitError: Error?
+    /// `agent.lock` is released before the process exits: the next `kickstart` finds the old
+    /// process still running (and does nothing), then it exits 0 and launchd leaves it stopped.
+    var stillExitingAtNextStart = false
     let backend: SettingsBackend
 
     init(_ backend: SettingsBackend, state: ResidentState = .on) {
@@ -287,6 +292,10 @@ final class FakeResident: ResidentService {
         calls.append("start")
         guard state == .on else { throw ResidentFailure.serviceUnavailable }
         if let startError { throw startError }
+        if stillExitingAtNextStart {
+            stillExitingAtNextStart = false
+            return
+        }
         backend.run()
     }
 
@@ -629,7 +638,9 @@ private func write(_ object: Any, in folder: URL) throws -> URL {
     #expect(!backend.ops.contains("ops.apply_import"))
 }
 
-@Test @MainActor func anImportWhoseDataChangedIsShownAgainNotApplied() async throws {
+@Test @MainActor func anImportWhoseInstanceChangedMeanwhileNamesWhyAndAppliesNothing() async throws {
+    // ops.apply_import checks the revision first; a changed revision also means the instance is
+    // no longer untouched, so the second look names that (the real backend has no other outcome).
     let backend = SettingsBackend()
     let (model, cleanup) = try await connected(backend)
     defer { cleanup() }
@@ -639,28 +650,30 @@ private func write(_ object: Any, in folder: URL) throws -> URL {
     panels.openURL = try write(portable(backend), in: folder)
     let data = SettingsData(files: panels.files)
     await data.chooseImport(model: model)
-    let first = try #require(data.importPreview)
-
-    // The preview went stale: the list is read again and the owner confirms once more.
-    backend.digestSalt = 1
+    #expect(data.importPreview != nil)
+    backend.revision += 1
+    backend.used = true
     await data.applyImport(model: model)
-    let again = try #require(data.importPreview)
-    #expect(again.digest != first.digest && again.changedSincePreview)
-    #expect(backend.calls("ops.apply_import").count == 1 && !backend.used)
-    await data.applyImport(model: model)
-    #expect(backend.used && data.importPreview == nil)
+    #expect(data.importPreview == nil && data.failures["import"]?.code == "restore_requires_fresh_instance")
+    #expect(backend.calls("ops.apply_import").count == 1)
+    #expect((backend.document["subscriptions"] as! [[String: Any]]).map { $0["id"] as! String } == ["sub_world", "sub_ai"])
+}
 
-    // The instance stopped being untouched meanwhile: the reason is named, nothing applied.
-    let other = SettingsBackend()
-    let (second, cleanupSecond) = try await connected(other)
-    defer { cleanupSecond() }
-    let stale = SettingsData(files: panels.files)
-    await stale.chooseImport(model: second)
-    other.revision += 1
-    other.used = true
-    await stale.applyImport(model: second)
-    #expect(stale.importPreview == nil && stale.failures["import"]?.code == "restore_requires_fresh_instance")
-    #expect(other.calls("ops.apply_import").count == 1)
+@Test @MainActor func theSameFileAtTheSameRevisionPreviewsToTheSameDigest() async throws {
+    let backend = SettingsBackend()
+    let (model, cleanup) = try await connected(backend)
+    defer { cleanup() }
+    let folder = try temporaryFolder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let panels = Panels()
+    panels.openURL = try write(portable(backend), in: folder)
+    let data = SettingsData(files: panels.files)
+    await data.chooseImport(model: model)
+    let first = try #require(data.importPreview).digest
+    await data.chooseImport(model: model)
+    #expect(data.importPreview?.digest == first)
+    await data.applyImport(model: model)
+    #expect(backend.used && data.failures["import"] == nil)
 }
 
 @Test @MainActor func aFileThatIsNotExportedSettingsIsRefusedWithoutAsking() async throws {
@@ -886,4 +899,119 @@ private func write(_ object: Any, in folder: URL) throws -> URL {
     #expect(BackendLine.detail(status, build: "5", now: now, .en, calendar: calendar)?.hasSuffix("0.5.0 (5)") == true)
     let older: ServiceStatus = try BackendRPC.decode(Data(#"{"protocol_version":1,"state":"running"}"#.utf8))
     #expect(BackendLine.detail(older, build: "5", now: now, .en, calendar: calendar) == nil)
+}
+
+// MARK: - Review cycle 1
+
+@Test @MainActor func theSettingsStatusRowSaysPausedLikeTheSidebarAndMenuBar() async throws {
+    let backend = SettingsBackend()
+    let (model, cleanup) = try await connected(backend)
+    defer { cleanup() }
+    #expect(model.settingsStatus.words == L10n.Settings.running)
+    await model.setPaused(true)
+    #expect(model.settingsStatus.words == L10n.Shell.paused && model.settingsStatus.words == model.statusTitle)
+    #expect(model.settingsStatus.color == .orange)
+    await model.setPaused(false)
+    #expect(model.settingsStatus.words == L10n.Settings.running && model.settingsStatus.color == .green)
+}
+
+@Test @MainActor func cleanupRemovesWhatThePreviewCountedEvenIfTheRetentionChangedSince() async throws {
+    let backend = SettingsBackend()
+    let (model, cleanup) = try await connected(backend)
+    defer { cleanup() }
+    model.setRetentionDays(90)
+    let data = SettingsData()
+    await data.previewCleanup(model: model)
+    #expect(data.cleanup?.count == 1)
+    // Changed after looking: the confirmed list (90 days) is what goes, not a 7-day sweep.
+    model.setRetentionDays(7)
+    await data.applyCleanup(model: model)
+    #expect(backend.calls("ops.cleanup").last?["retention_days"] as? Int == 90)
+    #expect(data.cleaned == 1 && backend.logAges == [10, 40] && backend.recordAges == [3, 45])
+    // A preview made for another retention is dropped when the choice changes.
+    await data.previewCleanup(model: model)
+    #expect(data.cleanup != nil)
+    data.retentionChanged(to: 30)
+    #expect(data.cleanup == nil)
+}
+
+@Test @MainActor func restartStartsAgainWhenTheOldProcessWasStillExiting() async throws {
+    let backend = SettingsBackend()
+    let (model, cleanup) = try await connected(backend)
+    defer { cleanup() }
+    let resident = FakeResident(backend, state: .on)
+    resident.stillExitingAtNextStart = true
+    let backendControl = control(resident)
+    backendControl.settleAttempts = 3
+    backendControl.reload()
+    await backendControl.restart(model: model)
+    #expect(resident.calls == ["wait", "start", "start"])
+    #expect(model.connection == .connected && backendControl.note == nil)
+}
+
+@Test func launchdOutputTellsWhetherTheServiceStillHasAProcess() {
+    let running = "gui/501/io.newspaw.resident = {\n\tactive count = 1\n\tstate = running\n\n\tprogram = x\n\tpid = 2241\n}"
+    let stopped = "gui/501/io.newspaw.resident = {\n\tactive count = 0\n\tstate = not running\n\tlast exit code = 0\n}"
+    #expect(ResidentAgent.launchdShowsProcess(running))
+    #expect(!ResidentAgent.launchdShowsProcess(stopped))
+    #expect(!ResidentAgent.launchdShowsProcess(""))
+}
+
+@Test @MainActor func aStaleStartFailureClearsOnceTheBackendAnswersOrTheLoginItemChanges() async throws {
+    let backend = SettingsBackend()
+    let (model, cleanup) = try await connected(backend)
+    defer { cleanup() }
+    await model.stopBackend()
+    await model.refresh()
+    let resident = FakeResident(backend, state: .on)
+    resident.startError = ResidentFailure.serviceUnavailable
+    let backendControl = control(resident)
+    await backendControl.start(model: model)
+    #expect(backendControl.note == .startFailed)
+    // launchd brought it up after all (or the owner started it some other way).
+    backend.run()
+    await model.refresh()
+    backendControl.reload(model: model)
+    #expect(backendControl.note == nil)
+
+    // Refused registration, then the owner allows it in System Settings.
+    let other = FakeResident(backend, state: .off)
+    other.enableError = NSError(domain: "SMAppServiceErrorDomain", code: 1)
+    let second = control(other)
+    await second.setLoginItem(true, model: model)
+    #expect(second.note == .refused)
+    other.state = .on
+    second.reload(model: model)
+    #expect(second.note == nil)
+}
+
+@Test @MainActor func aRestartThatCouldNotStopInTimeSaysSoInRestartTerms() async throws {
+    let backend = SettingsBackend()
+    let (model, cleanup) = try await connected(backend)
+    defer { cleanup() }
+    let resident = FakeResident(backend, state: .on)
+    resident.waitError = ResidentFailure.workerStillRunning
+    let backendControl = control(resident)
+    backendControl.reload()
+    await backendControl.restart(model: model)
+    #expect(backendControl.note == .restartNotStopped)
+    #expect(!L10n.Settings.noteRestartNotStopped.zh.contains("自动启动"))
+}
+
+@Test func savedFilesAreOwnerOnlyFromTheStartAndReplaceAnOlderFile() throws {
+    let folder = try temporaryFolder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let url = folder.appendingPathComponent("out.json")
+    try Data("old".utf8).write(to: url)
+    try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+    try SettingsData.writePrivately(Data("{}".utf8), to: url)
+    #expect(try String(contentsOf: url, encoding: .utf8) == "{}")
+    let mode = (try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)?.intValue
+    #expect(mode == 0o600)
+    // No temporary file is left next to it.
+    #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["out.json"])
+    // An unwritable place is reported as such.
+    #expect(throws: BackendError(code: "file_write_failed")) {
+        try SettingsData.writePrivately(Data("{}".utf8), to: folder.appendingPathComponent("missing/out.json"))
+    }
 }

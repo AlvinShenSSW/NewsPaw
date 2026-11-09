@@ -777,6 +777,7 @@ enum L10n {
         static let noteLegacy = Words("旧版后台还在运行。先从原来的安装里停掉它再试。", "The previous backend is still running. Stop it from its original installation, then try again.", "以前のバックエンドがまだ動いています。元のインストールから止めてから再試行してください。")
         static let noteRefused = Words("macOS 没有完成这次登录项更改。到「系统设置 › 通用 › 登录项」里查看 NewsPaw 后再试。", "macOS did not make this login item change. Check NewsPaw in System Settings › General › Login Items, then try again.", "macOS がログイン項目を変更しませんでした。「システム設定 › 一般 › ログイン項目」で NewsPaw を確認してから再試行してください。")
         static let noteStartFailed = Words("没能启动后台。到「系统设置 › 通用 › 登录项」确认 NewsPaw 已允许后再试。", "The backend did not start. Make sure NewsPaw is allowed in System Settings › General › Login Items, then try again.", "バックエンドが起動しませんでした。「システム設定 › 一般 › ログイン項目」で NewsPaw が許可されているか確認してから再試行してください。")
+        static let noteRestartNotStopped = Words("后台没有及时停下，所以这次没有重启。稍后再试。", "The backend did not stop in time, so it was not restarted. Try again shortly.", "バックエンドが時間内に止まらなかったため、再起動しませんでした。少し待って再試行してください。")
         static let noteStillRunning = Words("后台没有及时停下，自动启动没有关闭。稍后再试。", "The backend did not stop in time, so starting at login is still on. Try again shortly.", "バックエンドが時間内に止まらなかったため、ログイン時の起動はオンのままです。少し待って再試行してください。")
 
         static let all: [Words] = [
@@ -792,6 +793,7 @@ enum L10n {
             cleanupDeferred, cleanButton, cleanTitle, cleanBody, cleanConfirm, cleaned, jobs, jobsLoad, jobsEmpty,
             jobHandedOff, jobCancelled, sending, showDelivery, noDelivery, deliveryLine, tomorrowAt, menuNext, menuPaused,
             noteApproval, noteUnavailable, noteNotPackaged, noteLegacy, noteRefused, noteStartFailed, noteStillRunning,
+            noteRestartNotStopped,
         ]
     }
 }

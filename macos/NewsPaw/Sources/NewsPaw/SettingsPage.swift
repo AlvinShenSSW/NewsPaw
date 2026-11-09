@@ -22,7 +22,7 @@ struct SettingsPage: View {
         .task {
             // The login item can change in System Settings at any time.
             while !Task.isCancelled {
-                model.resident.reload()
+                model.resident.reload(model: model)
                 try? await Task.sleep(for: .seconds(2))
             }
         }
@@ -140,23 +140,13 @@ private struct BackendSection: View {
 
     private var resident: BackendControl { model.resident }
 
-    private var dot: (Color, Words) {
-        switch model.connection {
-        case .connected: (.green, L10n.Settings.running)
-        case .connecting: (.gray, L10n.Shell.connecting)
-        case .stopping: (.gray, L10n.Shell.stopping)
-        case .offline: (.red, L10n.Settings.notRunning)
-        case .incompatible: (.red, L10n.Shell.incompatible)
-        }
-    }
-
     var body: some View {
         SettingsGroup(title: model.text(L10n.Settings.backend)) {
             SettingsRow(
                 title: model.text(L10n.Settings.status),
                 note: BackendLine.detail(model.service, build: BackendLine.build(for: model.service?.version), model.uiLanguage)
             ) {
-                StatusDot(color: dot.0, text: model.text(dot.1), busy: resident.busy)
+                StatusDot(color: model.settingsStatus.color, text: model.text(model.settingsStatus.words), busy: resident.busy)
                 if model.connection == .connected {
                     Button(model.text(L10n.Settings.restart)) { Task { await resident.restart(model: model) } }
                         .disabled(!resident.canRestart || resident.busy || model.busy)
@@ -265,7 +255,7 @@ struct BackendStartControls: View {
         }
         .task {
             while !Task.isCancelled {
-                model.resident.reload()
+                model.resident.reload(model: model)
                 try? await Task.sleep(for: .seconds(2))
             }
         }
@@ -313,7 +303,10 @@ private struct DataSection: View {
             SettingsRow(title: model.text(L10n.Settings.retention), note: model.text(L10n.Settings.retentionNote)) {
                 Picker(model.text(L10n.Settings.retention), selection: Binding(
                     get: { model.retentionDays },
-                    set: { model.setRetentionDays($0) }
+                    set: { days in
+                        model.setRetentionDays(days)
+                        data.retentionChanged(to: days)
+                    }
                 )) {
                     ForEach(AppModel.retentionChoices, id: \.self) { days in
                         Text(L10n.Settings.days(model.uiLanguage, ["count": String(days)])).tag(days)
@@ -586,5 +579,18 @@ private struct JobRow: View {
 
     private func botName(_ id: String) -> String {
         model.bots.first { $0.id == id }.map { $0.username.map { "@" + $0 } ?? $0.name } ?? id
+    }
+}
+
+extension AppModel {
+    /// The Settings status row: the same "paused" as the sidebar and the menu bar (§8.2, A2).
+    var settingsStatus: (color: Color, words: Words) {
+        switch connection {
+        case .connected: schedulingPaused ? (.orange, L10n.Shell.paused) : (.green, L10n.Settings.running)
+        case .connecting: (.gray, L10n.Shell.connecting)
+        case .stopping: (.gray, L10n.Shell.stopping)
+        case .offline: (.red, L10n.Settings.notRunning)
+        case .incompatible: (.red, L10n.Shell.incompatible)
+        }
     }
 }

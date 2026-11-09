@@ -263,6 +263,8 @@ final class SettingsData {
     private(set) var done: [String: Words] = [:]
     private(set) var importPreview: ImportPreview?
     private(set) var cleanup: CleanupSummary?
+    /// The retention the shown cleanup preview was counted with; applying uses exactly that.
+    private(set) var cleanupDays: Int?
     private(set) var cleaned: Int?
     private(set) var backup: BackupCheck?
     private(set) var jobs: [JobRecord]?
@@ -297,13 +299,34 @@ final class SettingsData {
         return try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
     }
 
-    /// Writes a file only the owner can read.
-    private static func write(_ data: Data, to url: URL) throws {
+    /// A preview counted for another retention no longer describes what a cleanup would remove.
+    func retentionChanged(to days: Int) {
+        guard cleanupDays != days else { return }
+        cleanup = nil
+        cleanupDays = nil
+    }
+
+    /// Writes a file only the owner can read, from its first byte: a new 0600 file next to the
+    /// destination, renamed over it. Nothing is changed afterwards that could fail on a volume
+    /// without POSIX permissions.
+    nonisolated static func writePrivately(_ data: Data, to url: URL) throws {
+        let failed = BackendError(code: "file_write_failed")
+        let temporary = url.deletingLastPathComponent()
+            .appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
+        let descriptor = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+        guard descriptor >= 0 else { throw failed }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
         do {
-            try data.write(to: url, options: .atomic)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            try handle.write(contentsOf: data)
+            try handle.close()
         } catch {
-            throw BackendError(code: "file_write_failed")
+            try? handle.close()
+            unlink(temporary.path)
+            throw failed
+        }
+        guard rename(temporary.path, url.path) == 0 else {
+            unlink(temporary.path)
+            throw failed
         }
     }
 
@@ -311,7 +334,7 @@ final class SettingsData {
         await run(key, model: model) {
             let content = try Self.pretty(await model.client.call(operation))
             guard let url = await files.save(name) else { return }
-            try Self.write(content, to: url)
+            try Self.writePrivately(content, to: url)
             done[key] = L10n.Settings.saved
         }
     }
@@ -377,6 +400,9 @@ final class SettingsData {
                     "portable": shown.portable, "digest": shown.digest, "revision": shown.revision,
                 ])
             } catch let failure as BackendError where failure.isConflict {
+                // `configuration_changed`: the instance changed since the preview. Asking again
+                // names why (with the real backend, that it is no longer untouched); a fresh
+                // comparison is shown for another confirmation, never applied unseen.
                 importPreview = nil
                 try await preview(shown.portable, model: model, again: true)
                 return
@@ -428,16 +454,21 @@ final class SettingsData {
     func previewCleanup(model: AppModel) async {
         await run("cleanup", model: model) {
             cleaned = nil
-            cleanup = try BackendRPC.decode(await model.client.call(.opsCleanup, ["retention_days": model.retentionDays]))
+            let days = model.retentionDays
+            cleanup = try BackendRPC.decode(await model.client.call(.opsCleanup, ["retention_days": days]))
+            cleanupDays = days
         }
     }
 
+    /// Removes what the confirmed preview counted: the same retention, never a later choice.
     func applyCleanup(model: AppModel) async {
+        guard cleanup != nil, let days = cleanupDays else { return }
         await run("cleanup", model: model) {
             let result: CleanupSummary = try BackendRPC.decode(
-                await model.client.call(.opsCleanup, ["apply": true, "retention_days": model.retentionDays])
+                await model.client.call(.opsCleanup, ["apply": true, "retention_days": days])
             )
             cleanup = nil
+            cleanupDays = nil
             cleaned = result.removed
         }
     }

@@ -34,6 +34,7 @@
 
 - **关闭自启 = 停止并注销。** SMAppService 注销一个 LaunchAgent 时 launchd 会把它停掉；本 issue 不改注册机制，所以关掉开关只能是「先 `service.stop` 等后台安全退出，再注销」（沿用 `ResidentAgent.disable(waitForWorker:)`）。mockup 的说明「关闭后，重启电脑要手动打开 NewsPaw 才会推送」与此不符，改为「关闭后后台会停止，不再推送，直到你重新打开这个开关。」，并且关闭前确认（同一影响等同停止后台，§2.5）。
 - **重启与启动用 `launchctl kickstart`。** plist 的 `KeepAlive.SuccessfulExit = false` 使 `service.stop` 正常退出后 launchd 不会自己拉起后台，旧界面在「已注册但已停止」时没有任何启动入口。`ResidentAgent.start()` 只在登录项为 `.enabled` 时执行 `launchctl kickstart gui/<uid>/io.newspaw.resident`（启动已登记的任务，不改登记）；未注册时「启动后台」= 注册（`RunAtLoad` 随即启动）。`重启` = `service.stop` → 等进程退出（现有 `--check-stopped`，最多 6 秒）→ `kickstart`。App 启动时若登录项已开而后台没在运行，就启动一次——这样确认框里「直到你再次打开 NewsPaw」成立。
+- **`--check-stopped` 不等于进程已退出。** `ControlServer.close()` 在进程退出前就释放 `agent.lock`，此时 `kickstart`（不带 `-k`）面对仍在运行的旧进程什么也不做，旧进程随后以 0 退出，launchd 不再拉起。所以 `waitUntilStopped` 在锁释放后继续等到 `launchctl print` 不再列出 `pid`（同一 6 秒上限）；重启若仍没连上，再 `kickstart` 一次。
 - **启动时间与版本是新增后台字段。** `service.status` 原来只返回 `protocol_version / state / operations`。现在额外返回 `started_at`（控制服务开始监听的 UTC 时间）与 `version`（`newspaw.__version__`）；App 端可选解码，旧后台不显示这一行。括号里的构建号取 App 包的 `CFBundleVersion`，只在它的短版本与后台版本一致时显示。
 - **保留天数没有后台设置，清理也不是定时任务。** `ops.cleanup` 原来固定清理 7 天前的记录，且只在用户手动清理时运行。本 issue 让 `ops.cleanup` 接受可选的 `retention_days ∈ {7, 30, 90}`（缺省仍为 7，旧调用不变），选择存 UserDefaults（默认 30 天），由「清理旧数据」带上；说明写明「清理旧数据时只删除早于这个天数的记录；还没发出的简报引用到的记录不会被清。」不新增自动清理（非目标）。
 - **导入只对未使用过的实例开放。** `Operations._fresh` 要求当前库是全新默认状态，否则预览就以 `restore_requires_fresh_instance` 拒绝；所以「将改动的项目」是导入文件相对当前（默认）设置的差异，由 App 比较 `config.get` 与预览返回的、后台已清洗的 `settings` 得出，名称只取清洗后的值。Popover 自身就是 §2.5 要求的确认（标题 + 影响列表 + `导入` / `取消` 两个按钮），不再叠一层对话框。
@@ -53,4 +54,14 @@
 - 离屏截图：`settings-*` 与 `settings-open-*` × 三语 × 浅 / 深色（隔离后台，无 Key、无 Bot），版式与 `docs/mockup/redesign/settings.png` 一致。
 
 未做：打包版的登录项注册、`launchctl kickstart` 与菜单栏图标变灰只由单元测试与代码路径覆盖，需在安装版上目视确认（离屏渲染无法画出菜单栏）；无真实凭据联调。
+
+### 内部评审第 1 轮（已修复，回归测试先失败）
+
+- R12-01：设置页状态行在暂停时显示「已暂停全部推送」（橙），与侧栏、菜单栏同词（`AppModel.settingsStatus`）。
+- R12-02：清理按预览时的保留天数执行（`SettingsData.cleanupDays`）；改了保留天数就丢弃旧预览。
+- R12-03：见上「`--check-stopped` 不等于进程已退出」；内存后台可模拟「kickstart 时旧进程还在退出」。
+- R12-04：页面轮询 `BackendControl.reload(model:)`：登录项状态变化就清掉旧提示；后台连上后清掉启动 / 停止类提示。
+- R12-05：重启时没能及时停下用重启自己的说明（不再说「自动启动没有关闭」）。
+- R12-06：导出、诊断、快照从第一个字节起就是 0600（同目录 0600 临时文件 + rename），不再事后 chmod，也不会因卷不支持权限位把已写好的文件报成失败。此项的测试只能验证结果（覆盖 0644 旧文件后为 0600、无残留临时文件、写不进去报 `file_write_failed`），旧实现同样通过——窗口期在测试里不可观测。
+- R12-07：内存后台的 digest 改为确定性（同一文件同一 revision 同一 digest），`apply_import` 先查 revision，与 `operations.py` 一致；删去现实中不会发生的「同 revision 但 digest 变化」用例。冲突后重新预览保留为防御路径：真实后台下它给出 `restore_requires_fresh_instance`。
 

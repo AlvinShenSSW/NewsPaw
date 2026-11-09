@@ -269,6 +269,9 @@ final class FakeResident: ResidentService {
     /// `agent.lock` is released before the process exits: the next `kickstart` finds the old
     /// process still running (and does nothing), then it exits 0 and launchd leaves it stopped.
     var stillExitingAtNextStart = false
+    /// The old process has released its lock but not exited yet; a wait for launchd to show no
+    /// process (`waitUntilStopped`) outlasts it, a `kickstart` before that does nothing.
+    var exitingUntilWaited = false
     let backend: SettingsBackend
 
     init(_ backend: SettingsBackend, state: ResidentState = .on) {
@@ -294,14 +297,16 @@ final class FakeResident: ResidentService {
     func waitUntilStopped() async throws {
         calls.append("wait")
         if let waitError { throw waitError }
+        exitingUntilWaited = false
     }
 
     func start() async throws {
         calls.append("start")
         guard state == .on else { throw ResidentFailure.serviceUnavailable }
         if let startError { throw startError }
-        if stillExitingAtNextStart {
+        if stillExitingAtNextStart || exitingUntilWaited {
             stillExitingAtNextStart = false
+            exitingUntilWaited = false
             return
         }
         backend.run()
@@ -463,7 +468,7 @@ private func temporaryFolder() throws -> URL {
     let resident = FakeResident(backend, state: .on)
     let backendControl = control(resident)
     await backendControl.start(model: model)
-    #expect(resident.calls == ["start"] && model.connection == .connected)
+    #expect(resident.calls == ["wait", "start"] && model.connection == .connected)
 
     // Not registered: starting registers it (RunAtLoad starts it).
     await model.stopBackend()
@@ -501,7 +506,7 @@ private func temporaryFolder() throws -> URL {
     let backendControl = control(registered)
     await backendControl.startIfStopped(model: model)
     await backendControl.startIfStopped(model: model)
-    #expect(registered.calls == ["start"] && model.connection == .connected)
+    #expect(registered.calls == ["wait", "start"] && model.connection == .connected)
 }
 
 // MARK: - A2: one pause switch everywhere
@@ -1146,4 +1151,62 @@ private func write(_ object: Any, in folder: URL) throws -> URL {
     // A short list stays compact.
     let short = ImportPreview(portable: [:], digest: "d", revision: 1, requiresPairing: false, changes: [.timezone("UTC")], changedSincePreview: false)
     #expect(NSHostingView(rootView: ImportPopover(model: model, data: SettingsData(), preview: short)).fittingSize.height < 300)
+}
+
+// MARK: - Review cycle 5
+
+@MainActor
+private func stoppedJustNow(_ backend: SettingsBackend) async throws -> (AppModel, () -> Void) {
+    let (model, cleanup) = try await connected(backend)
+    await model.stopBackend()
+    await model.refresh()
+    #expect(model.connection == .offline)
+    return (model, cleanup)
+}
+
+@Test @MainActor func startingRightAfterAStopWaitsForTheOldProcessToExit() async throws {
+    let backend = SettingsBackend()
+    let (model, cleanup) = try await stoppedJustNow(backend)
+    defer { cleanup() }
+    let resident = FakeResident(backend, state: .on)
+    resident.exitingUntilWaited = true
+    let backendControl = control(resident)
+    await backendControl.start(model: model)
+    #expect(resident.calls == ["wait", "start"])
+    #expect(model.connection == .connected && backendControl.note == nil)
+}
+
+@Test @MainActor func startingAsksLaunchdAgainWhenTheOldProcessWasStillExiting() async throws {
+    let backend = SettingsBackend()
+    let (model, cleanup) = try await stoppedJustNow(backend)
+    defer { cleanup() }
+    let resident = FakeResident(backend, state: .on)
+    resident.stillExitingAtNextStart = true
+    let backendControl = control(resident)
+    backendControl.settleAttempts = 3
+    await backendControl.start(model: model)
+    #expect(resident.calls == ["wait", "start", "start"])
+    #expect(model.connection == .connected && backendControl.note == nil)
+}
+
+@Test @MainActor func openingNewsPawRightAfterAStopStartsTheBackendOnceItHasExited() async throws {
+    let backend = SettingsBackend()
+    let (model, cleanup) = try await stoppedJustNow(backend)
+    defer { cleanup() }
+    let resident = FakeResident(backend, state: .on)
+    resident.exitingUntilWaited = true
+    let backendControl = control(resident)
+    await backendControl.startIfStopped(model: model)
+    #expect(model.connection == .connected && backendControl.note == nil)
+}
+
+@Test @MainActor func aBackendThatNeverExitsIsNotKickstarted() async throws {
+    let backend = SettingsBackend()
+    let (model, cleanup) = try await stoppedJustNow(backend)
+    defer { cleanup() }
+    let resident = FakeResident(backend, state: .on)
+    resident.waitError = ResidentFailure.workerStillRunning
+    let backendControl = control(resident)
+    await backendControl.start(model: model)
+    #expect(resident.calls == ["wait"] && backendControl.note == .startFailed)
 }

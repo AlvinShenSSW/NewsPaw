@@ -34,7 +34,7 @@
 
 - **关闭自启 = 停止并注销。** SMAppService 注销一个 LaunchAgent 时 launchd 会把它停掉；本 issue 不改注册机制，所以关掉开关只能是「先 `service.stop` 等后台安全退出，再注销」（沿用 `ResidentAgent.disable(waitForWorker:)`）。mockup 的说明「关闭后，重启电脑要手动打开 NewsPaw 才会推送」与此不符，改为「关闭后后台会停止，不再推送，直到你重新打开这个开关。」，并且关闭前确认（同一影响等同停止后台，§2.5）。
 - **重启与启动用 `launchctl kickstart`。** plist 的 `KeepAlive.SuccessfulExit = false` 使 `service.stop` 正常退出后 launchd 不会自己拉起后台，旧界面在「已注册但已停止」时没有任何启动入口。`ResidentAgent.start()` 只在登录项为 `.enabled` 时执行 `launchctl kickstart gui/<uid>/io.newspaw.resident`（启动已登记的任务，不改登记）；未注册时「启动后台」= 注册（`RunAtLoad` 随即启动）。`重启` = `service.stop` → 等进程退出（现有 `--check-stopped`，最多 6 秒）→ `kickstart`。App 启动时若登录项已开而后台没在运行，就启动一次——这样确认框里「直到你再次打开 NewsPaw」成立。
-- **`--check-stopped` 不等于进程已退出。** `ControlServer.close()` 在进程退出前就释放 `agent.lock`，此时 `kickstart`（不带 `-k`）面对仍在运行的旧进程什么也不做，旧进程随后以 0 退出，launchd 不再拉起。所以 `waitUntilStopped` 在锁释放后继续等到 `launchctl print` 不再列出 `pid`（同一 6 秒上限）；重启若仍没连上，再 `kickstart` 一次。
+- **`--check-stopped` 不等于进程已退出。** `ControlServer.close()` 在进程退出前就释放 `agent.lock`，此时 `kickstart`（不带 `-k`）面对仍在运行的旧进程什么也不做，旧进程随后以 0 退出，launchd 不再拉起。所以 `waitUntilStopped` 在锁释放后继续等到 `launchctl print` 不再列出 `pid`（同一 6 秒上限）；所有 `kickstart`（重启、启动后台、后台没有运行卡片、打开 NewsPaw 时的自动启动）都经同一个 `BackendControl.launch`：先等旧进程退出，再 kickstart，仍没连上就再 kickstart 一次。
 - **启动时间与版本是新增后台字段。** `service.status` 原来只返回 `protocol_version / state / operations`。现在额外返回 `started_at`（控制服务开始监听的 UTC 时间）与 `version`（`newspaw.__version__`）；App 端可选解码，旧后台不显示这一行。括号里的构建号取 App 包的 `CFBundleVersion`，只在它的短版本与后台版本一致时显示。
 - **保留天数没有后台设置，清理也不是定时任务。** `ops.cleanup` 原来固定清理 7 天前的记录，且只在用户手动清理时运行。本 issue 让 `ops.cleanup` 接受可选的 `retention_days ∈ {7, 30, 90}`（缺省仍为 7，旧调用不变），选择存 UserDefaults（默认 30 天），由「清理旧数据」带上；说明写明「清理旧数据时只删除早于这个天数的记录；还没发出的简报引用到的记录不会被清。」不新增自动清理（非目标）。
 - **导入只对未使用过的实例开放。** `Operations._fresh` 要求当前库是全新默认状态，否则预览就以 `restore_requires_fresh_instance` 拒绝；所以「将改动的项目」是导入文件相对当前（默认）设置的差异，由 App 比较 `config.get` 与预览返回的、后台已清洗的 `settings` 得出，名称只取清洗后的值。Popover 自身就是 §2.5 要求的确认（标题 + 影响列表 + `导入` / `取消` 两个按钮），不再叠一层对话框。
@@ -80,4 +80,8 @@
 
 - R12-11：「下一期」只看简报时间，漏了单独发的 X 账号（`scheduler._scopes` 给它们独立的时间）。抽出 `OverviewData.slots`（按 `_scopes` 生成昨天到明天、晚于现在的每个时段），概览的 `upcoming` 与菜单栏的 `nextDelivery` 都从这里取，不再有第二份实现；只算有机器人的时段：账号自己的 `bot_ids`（非 null 时，与 `routing` 一致），否则简报的。菜单栏对账号显示「@账号」。测试 `theNextDeliveryCountsASpecialXAccountsOwnTime`。
 - R12-12：导入差异列表放进最高 320pt 的 `ScrollView`，说明与「导入 / 取消」按钮在滚动区外始终可见；短列表保持紧凑。测试 `aLongImportListScrollsAndKeepsItsButtonsInView`（200 份长名称简报，改前高度远超上限）。
+
+### 外部评审第 4 轮（Codex Sol 代 Kimi，已修复，回归测试先失败）
+
+- R12-13：刚停止后立即「启动后台」（或打开 NewsPaw 自动启动）时，socket 已断但旧进程还在退出，`kickstart` 不起作用、旧进程以 0 退出后一直停着——与 R12-03 同因。重启与启动共用 `BackendControl.launch`（等 launchd 不再显示 pid → kickstart → 没连上再 kickstart 一次）；等不到旧进程退出时不 kickstart，显示「没能启动后台」。`enable()`（打开自启、未注册时启动）不经此路：未注册就没有 launchd 任务，关闭自启时已在注销前等旧进程退出。测试：`startingRightAfterAStopWaitsForTheOldProcessToExit`、`startingAsksLaunchdAgainWhenTheOldProcessWasStillExiting`、`openingNewsPawRightAfterAStopStartsTheBackendOnceItHasExited`、`aBackendThatNeverExitsIsNotKickstarted`；原有两个用例的调用序列相应变为先 `wait` 再 `start`。
 

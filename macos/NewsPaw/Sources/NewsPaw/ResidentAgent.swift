@@ -291,19 +291,44 @@ final class BackendControl {
             busy = false
             reload()
         }
+        if registered {
+            do {
+                try await launch(model)
+            } catch {
+                failure = .startFailed
+                return
+            }
+            if model.connection != .connected { failure = .startFailed }
+            return
+        }
+        // Not registered: no launchd job (and so no exiting process) exists; registering starts it.
         do {
-            if registered { try await service.start() } else { try await service.enable() }
+            try await service.enable()
         } catch ResidentFailure.legacyServiceActive {
             failure = .legacy
             return
         } catch {
-            failure = registered ? .startFailed : .refused
+            failure = .refused
             return
         }
         // Registered but not allowed yet: the approval note says what to do.
         if service.state == .approval { return }
         await settle(model)
         if model.connection != .connected { failure = .startFailed }
+    }
+
+    /// Starts the registered job and waits for it to answer. The previous process may still be
+    /// exiting (its control lock is released first); `kickstart` would then do nothing and the job
+    /// would stay stopped (`KeepAlive.SuccessfulExit = false`). So: wait until launchd shows no
+    /// process, start, and ask once more if it still does not answer. Every kickstart goes here.
+    private func launch(_ model: AppModel) async throws {
+        try await service.waitUntilStopped()
+        try await service.start()
+        await settle(model)
+        if model.connection != .connected {
+            try await service.start()
+            await settle(model)
+        }
     }
 
     /// Stop, wait for the process to exit, start it again.
@@ -319,15 +344,7 @@ final class BackendControl {
         await model.stopBackend()
         guard model.connection == .stopping else { return }
         do {
-            try await service.waitUntilStopped()
-            try await service.start()
-            await settle(model)
-            // The old process may still have been exiting when launchd was asked (it then
-            // ignores the request and the job stays stopped): ask once more.
-            if model.connection != .connected {
-                try await service.start()
-                await settle(model)
-            }
+            try await launch(model)
         } catch ResidentFailure.workerStillRunning {
             failure = .restartNotStopped
             return

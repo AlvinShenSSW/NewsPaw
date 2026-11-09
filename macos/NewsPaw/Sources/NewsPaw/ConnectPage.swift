@@ -72,6 +72,28 @@ enum BotState: Equatable {
     }
 }
 
+/// A limit field that shows the stored value until the owner types, and saves only what the
+/// owner typed: focusing it before the budget loads, then leaving, saves nothing.
+struct LimitField: Equatable {
+    private(set) var text = ""
+    private(set) var edited = false
+
+    /// The stored value, unless the owner is in the middle of an edit.
+    mutating func load(_ value: String) { if !edited { text = value } }
+    mutating func type(_ value: String) {
+        text = value
+        edited = true
+    }
+    /// What to save when the field is left: only an edit that differs from what is stored.
+    func pendingSave(stored: String) -> String? { edited && text != stored ? text : nil }
+    mutating func saved() { edited = false }
+    /// Drops an edit (after a refused save) and shows the stored value again.
+    mutating func reset(_ value: String) {
+        edited = false
+        text = value
+    }
+}
+
 /// What the line under a Bot shows for its last test message.
 enum TestDisplay: Equatable {
     case none, sent, sending, unknown, stillUnknown, notSent
@@ -363,7 +385,8 @@ private struct BotGroup: View {
     @State private var token = ""
     @State private var confirmUnpair = false
     @State private var confirmDelete = false
-    @State private var adultOff: [String]?
+    /// The adult digests the owner is asked about, and the configuration they came from.
+    @State private var adultOff: (ids: [String], revision: Int)?
 
     private var configured: AppConfig.ConfiguredBot? { model.config?.bots?.first { $0.id == bot.id } }
     private var adultAllowed: Bool { configured?.adultAllowed ?? false }
@@ -402,17 +425,22 @@ private struct BotGroup: View {
             Text(model.text(L10n.Connect.unpairBody))
         }
         .confirmationDialog(L10n.Connect.deleteTitle(model.uiLanguage, ["name": displayName]), isPresented: $confirmDelete) {
-            Button(model.text(L10n.Connect.deleteButton), role: .destructive) { Task { await data.delete(bot.id, model: model) } }
+            Button(model.text(L10n.Connect.deleteButton), role: .destructive) {
+                // Deleted only as confirmed; a changed impact is shown and asked about again.
+                Task { if await data.delete(bot.id, model: model) == .changed { confirmDelete = true } }
+            }
             Button(model.text(L10n.Shell.cancel), role: .cancel) {}
         } message: {
             Text(deleteImpact)
         }
         .confirmationDialog(L10n.Connect.adultOffTitle(model.uiLanguage, ["name": displayName]),
                             isPresented: Binding(get: { adultOff != nil }, set: { if !$0 { adultOff = nil } })) {
-            Button(model.text(L10n.Connect.adultOffButton), role: .destructive) { Task { await data.setAdult(bot.id, false, model: model) } }
+            Button(model.text(L10n.Connect.adultOffButton), role: .destructive) {
+                if let revision = adultOff?.revision { Task { await turnAdultOff(revision: revision) } }
+            }
             Button(model.text(L10n.Shell.cancel), role: .cancel) {}
         } message: {
-            Text(L10n.Connect.adultOffBody(model.uiLanguage, ["names": (adultOff ?? []).map(model.digestTitle).joined(separator: "、")]))
+            Text(L10n.Connect.adultOffBody(model.uiLanguage, ["names": (adultOff?.ids ?? []).map(model.digestTitle).joined(separator: "、")]))
         }
     }
 
@@ -694,6 +722,20 @@ private struct BotGroup: View {
         }
     }
 
+    /// Lists the adult digests that would lose this Bot (from one configuration snapshot) and
+    /// asks; with none, it turns adult content off at that snapshot right away.
+    private func askAdultOff() {
+        guard let config = model.config else { return }
+        let revision = model.configRevision
+        let affected = ConnectData.adultTargets(bot.id, config: config)
+        if affected.isEmpty { Task { await turnAdultOff(revision: revision) } } else { adultOff = (affected, revision) }
+    }
+
+    /// Applies only to the configuration the owner saw; if it changed, asks again with the new list.
+    private func turnAdultOff(revision: Int) async {
+        if await data.setAdult(bot.id, false, model: model, revision: revision) == .changed { askAdultOff() }
+    }
+
     private var adultRow: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
@@ -711,9 +753,8 @@ private struct BotGroup: View {
                 set: { on in
                     if on {
                         Task { await data.setAdult(bot.id, true, model: model) }
-                    } else if let config = model.config {
-                        let affected = ConnectData.adultTargets(bot.id, config: config)
-                        if affected.isEmpty { Task { await data.setAdult(bot.id, false, model: model) } } else { adultOff = affected }
+                    } else {
+                        askAdultOff()
                     }
                 }
             ))
@@ -1179,8 +1220,8 @@ private struct EndpointEditor: View {
 private struct SpendingSection: View {
     let model: AppModel
     let data: ConnectData
-    @State private var monthly = ""
-    @State private var daily = ""
+    @State private var monthly = LimitField()
+    @State private var daily = LimitField()
     @FocusState private var focus: Field?
 
     private enum Field { case monthly, daily }
@@ -1213,20 +1254,22 @@ private struct SpendingSection: View {
         }
     }
 
+    private var storedMonthly: String? { data.budget.map { BudgetSummary.dollarField($0.monthlyLimit) } }
+    private var storedDaily: String? { data.budget.map { $0.dailyReads.map(String.init) ?? "" } }
+
     private func fill() {
-        guard let budget = data.budget else { return }
-        if focus != .monthly { monthly = BudgetSummary.dollarField(budget.monthlyLimit) }
-        if focus != .daily { daily = budget.dailyReads.map(String.init) ?? "" }
+        if let storedMonthly { monthly.load(storedMonthly) }
+        if let storedDaily { daily.load(storedDaily) }
     }
 
     private func saveMonthly() {
-        guard let budget = data.budget, monthly != BudgetSummary.dollarField(budget.monthlyLimit) else { return }
-        Task { await data.saveMonthlyLimit(monthly, model: model) }
+        guard let stored = storedMonthly, let value = monthly.pendingSave(stored: stored) else { return }
+        Task { if await data.saveMonthlyLimit(value, model: model) { monthly.saved() } }
     }
 
     private func saveDaily() {
-        guard let budget = data.budget, daily != (budget.dailyReads.map(String.init) ?? "") else { return }
-        Task { await data.saveDailyReads(daily, model: model) }
+        guard let stored = storedDaily, let value = daily.pendingSave(stored: stored) else { return }
+        Task { if await data.saveDailyReads(value, model: model) { daily.saved() } }
     }
 
     private var monthlyRow: some View {
@@ -1239,7 +1282,7 @@ private struct SpendingSection: View {
                 Spacer()
                 saved("budget.monthly")
                 Text("$")
-                TextField(model.text(L10n.Connect.noLimit), text: $monthly)
+                TextField(model.text(L10n.Connect.noLimit), text: Binding(get: { monthly.text }, set: { monthly.type($0) }))
                     .textFieldStyle(.roundedBorder)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 80)
@@ -1249,7 +1292,10 @@ private struct SpendingSection: View {
                 Text(model.text(L10n.Connect.perMonth)).foregroundStyle(.secondary)
             }
             if let failure = data.failures["budget.monthly"] {
-                FailureNote(model: model, failure: failure) { fill(); data.dismiss("budget.monthly") }
+                FailureNote(model: model, failure: failure) {
+                    if let storedMonthly { monthly.reset(storedMonthly) }
+                    data.dismiss("budget.monthly")
+                }
             }
         }
     }
@@ -1300,7 +1346,7 @@ private struct SpendingSection: View {
                 }
                 Spacer()
                 saved("budget.daily")
-                TextField(model.text(L10n.Connect.noLimit), text: $daily)
+                TextField(model.text(L10n.Connect.noLimit), text: Binding(get: { daily.text }, set: { daily.type($0) }))
                     .textFieldStyle(.roundedBorder)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 80)
@@ -1310,7 +1356,10 @@ private struct SpendingSection: View {
                 Text(model.text(L10n.Connect.perDay)).foregroundStyle(.secondary)
             }
             if let failure = data.failures["budget.daily"] {
-                FailureNote(model: model, failure: failure) { fill(); data.dismiss("budget.daily") }
+                FailureNote(model: model, failure: failure) {
+                    if let storedDaily { daily.reset(storedDaily) }
+                    data.dismiss("budget.daily")
+                }
             }
         }
     }

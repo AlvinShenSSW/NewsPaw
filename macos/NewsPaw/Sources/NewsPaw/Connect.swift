@@ -25,6 +25,8 @@ struct ModelHealth: Decodable, Equatable {
 /// `targets.bot_impact`: the digests (and separately sent X accounts) a Bot receives.
 struct BotImpact: Decodable, Equatable {
     struct Account: Decodable, Equatable { let id: String; let lastTarget: Bool }
+    /// The configuration revision this impact describes.
+    let revision: Int
     let subscriptions: [String]
     let lastTargetSubscriptions: [String]
     let accounts: [Account]
@@ -460,6 +462,8 @@ final class ConnectData {
         defer { working.remove(key) }
         failures[key] = nil
         tests[id] = nil
+        // A new message has its own receipt; "still unknown" was about the earlier one.
+        stillUnknown.remove(id)
         var request: TestSend?
         do {
             let status: BotStatus = try BackendRPC.decode(await model.client.call(.botsStatus, ["bot_id": id]))
@@ -554,48 +558,78 @@ final class ConnectData {
         }
     }
 
+    /// How a confirmed change ended: done, refused because what the owner confirmed changed
+    /// meanwhile (the new state is loaded and has to be confirmed again), or failed.
+    enum Outcome: Equatable { case done, changed, failed }
+
     /// Deletes a Bot and removes it from every digest (`targets.delete_bot`).
+    /// Deletes at the revision of the impact the owner confirmed; if the configuration changed
+    /// since, nothing is deleted, the new impact is loaded and has to be confirmed again.
     @discardableResult
-    func delete(_ id: String, model: AppModel) async -> Bool {
+    func delete(_ id: String, model: AppModel) async -> Outcome {
         let key = "bot." + id
-        guard !working.contains(key) else { return false }
+        guard !working.contains(key) else { return .failed }
+        guard let impact = impacts[id] else {
+            _ = await loadImpact(id, model: model)
+            return .changed
+        }
         working.insert(key)
         defer { working.remove(key) }
         failures[key] = nil
         do {
-            try await deleteBot(id, model: model)
+            _ = try await model.client.call(.targetsDeleteBot, ["bot_id": id, "revision": impact.revision])
             pairings[id] = nil
             tests[id] = nil
             impacts[id] = nil
             await model.refresh()
-            return true
+            return .done
+        } catch let error as BackendError where error.isConflict {
+            working.remove(key)
+            _ = await loadImpact(id, model: model)
+            await model.refresh()
+            return .changed
         } catch {
             failures[key] = BackendError.wrapping(error)
             await model.refresh()
-            return false
+            return .failed
         }
     }
 
+    /// Removes a Bot the add form created and did not finish (no impact was shown for it).
     private func deleteBot(_ id: String, model: AppModel) async throws {
-        try await model.client.deleteBot(id)
+        try await model.client.discardBot(id)
     }
 
     /// Allows or stops adult content for a Bot; stopping also removes it from adult digests.
-    func setAdult(_ id: String, _ allowed: Bool, model: AppModel) async {
+    /// With `revision` (the configuration the owner's list of affected digests came from), the
+    /// change applies only to that configuration; if it changed, nothing is saved and the caller
+    /// asks again with the new list. Without it (allowing adult content removes nothing), the
+    /// newest revision is used.
+    @discardableResult
+    func setAdult(_ id: String, _ allowed: Bool, model: AppModel, revision: Int? = nil) async -> Outcome {
         let key = "adult." + id
-        guard !working.contains(key) else { return }
+        guard !working.contains(key) else { return .failed }
         working.insert(key)
         defer { working.remove(key) }
         failures[key] = nil
+        var outcome = Outcome.done
         do {
-            try await revisioned(model) { revision in
+            if let revision {
                 _ = try await model.client.call(.targetsAdultPermission, ["bot_id": id, "allowed": allowed, "revision": revision])
+            } else {
+                try await revisioned(model) { revision in
+                    _ = try await model.client.call(.targetsAdultPermission, ["bot_id": id, "allowed": allowed, "revision": revision])
+                }
             }
             savedAt[key] = Date()
+        } catch let error as BackendError where error.isConflict && revision != nil {
+            outcome = .changed
         } catch {
             failures[key] = BackendError.wrapping(error)
+            outcome = .failed
         }
         await model.refresh()
+        return outcome
     }
 
     /// Adult digests (and adult X accounts) that send to this Bot now and would lose it.
@@ -756,6 +790,14 @@ final class ConnectData {
         if await editor.apply(change) {
             failures[key] = nil
             savedAt[key] = editor.savedAt
+            await load(model: model)
+            // Turning an extra on starts automatic checks of its models; follow those by their id.
+            let checks = key == "newspaper" ? (extras.newspaperOn ? extraChecks(newspaper: true) : [])
+                : (extras.transcriptionProfile != nil ? extraChecks(newspaper: false) : [])
+            for check in checks {
+                await keys.trackAutomatic(check.profile, capability: check.capability, model: model)
+            }
+            await keys.resume(model: model)
         } else {
             failures[key] = editor.failure
         }

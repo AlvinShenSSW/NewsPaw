@@ -21,15 +21,18 @@ struct ProbeState: Decodable, Equatable {
     let errorKind: String?
     let reportedModel: String?
     let checkedAt: String?
+    /// The profile's current generation (`models.status`); absent in a `models.probe` reply.
+    let generation: Int?
 
-    init(state: String, errorKind: String? = nil, reportedModel: String? = nil, checkedAt: String? = nil) {
+    init(state: String, errorKind: String? = nil, reportedModel: String? = nil, checkedAt: String? = nil, generation: Int? = nil) {
         self.state = state
         self.errorKind = errorKind
         self.reportedModel = reportedModel
         self.checkedAt = checkedAt
+        self.generation = generation
     }
 
-    private enum Keys: String, CodingKey { case state, status, errorKind, reportedModel, checkedAt }
+    private enum Keys: String, CodingKey { case state, status, errorKind, reportedModel, checkedAt, generation }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: Keys.self)
@@ -37,6 +40,7 @@ struct ProbeState: Decodable, Equatable {
         errorKind = try values.decodeIfPresent(String.self, forKey: .errorKind)
         reportedModel = try values.decodeIfPresent(String.self, forKey: .reportedModel)
         checkedAt = try values.decodeIfPresent(String.self, forKey: .checkedAt)
+        generation = try values.decodeIfPresent(Int.self, forKey: .generation)
     }
 
     /// The check has an outcome for the current key. `stale` is a result for an earlier key
@@ -56,6 +60,10 @@ struct PendingProbe: Equatable {
     let id: String?
     let profile: String
     let capability: String
+    /// The profile generation the check was started for; nil when not known.
+    var generation: Int? = nil
+    /// Tells a replacement apart from the entry a follower started with.
+    var token = UUID()
 
     var key: String { KeyChecks.key(profile, capability) }
     var request: [String: Any] {
@@ -102,6 +110,14 @@ extension BackendClient {
                 continue
             }
         }
+    }
+
+    /// `deleteBot` for cleaning up an entry the app itself created: one that never got saved
+    /// (an unanswered save that did not commit) is already gone.
+    func discardBot(_ id: String) async throws {
+        do {
+            try await deleteBot(id)
+        } catch let error as BackendError where error.code == "missing_bot" {}
     }
 
     /// A request id the backend accepts (`[A-Za-z0-9_.:-]{1,120}`).
@@ -177,7 +193,7 @@ final class BotPairing {
         pair = nil
         failure = nil
         guard let id = created else { return }
-        if (try? await model.client.deleteBot(id)) != nil {
+        if (try? await model.client.discardBot(id)) != nil {
             created = nil
             botId = nil
             bot = nil
@@ -278,6 +294,10 @@ final class BotPairing {
     private func ensureBot(model: AppModel) async throws -> String {
         if let botId { return botId }
         let id = "bot_" + String(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(12))
+        // Known before the save: if its reply is lost the entry may exist, and cancelling must
+        // still be able to remove it.
+        botId = id
+        created = id
         let editor = EditorState(client: model.client)
         let saved = await editor.apply { document in
             var document = document
@@ -289,9 +309,20 @@ final class BotPairing {
             document["bots"] = bots
             return document
         }
-        guard saved else { throw editor.failure ?? BackendError(code: "invalid_reply") }
-        botId = id
-        created = id
+        guard saved else {
+            let failure = editor.failure ?? BackendError(code: "invalid_reply")
+            // A refusal saved nothing. An unanswered save may have committed: ask the configuration,
+            // and keep the id unless it is known to be absent (deleting a missing Bot is a no-op).
+            var absent = !["backend_unreachable", "invalid_reply"].contains(failure.code)
+            if !absent, let document = try? await model.client.configDocument().document {
+                absent = !((document["bots"] as? [[String: Any]] ?? []).contains { $0["id"] as? String == id })
+            }
+            if absent {
+                botId = nil
+                created = nil
+            }
+            throw failure
+        }
         return id
     }
 }
@@ -308,6 +339,8 @@ final class KeyChecks {
     private(set) var states: [String: [String: ProbeState]] = [:]
     private(set) var working: Set<String> = []
     private(set) var failures: [String: BackendError] = [:]
+    /// Each profile's current generation, as `models.status` reports it.
+    private(set) var generations: [String: Int] = [:]
 
     /// How often a pending check is read back, and how long a check may take: longer than the
     /// 90 seconds a provider gets (`providers.py`), so a slow provider's result is still read.
@@ -325,6 +358,7 @@ final class KeyChecks {
         if let read: [String: ProbeState] = try? BackendRPC.decode(await model.client.call(.modelsStatus, ["profile_id": profile])) {
             states[profile] = read
             probes[profile] = read["text"]
+            if let generation = read.values.compactMap(\.generation).first { generations[profile] = generation }
             // Once the check has an outcome, an earlier "no result yet" note no longer holds.
             if read["text"]?.settled == true, failures[profile]?.code == "probe_pending" { failures[profile] = nil }
         }
@@ -341,10 +375,11 @@ final class KeyChecks {
         do {
             try await before?()
             try await model.client.setCredential(kind: "model_profiles", id: profile, value: key)
-            let pending = PendingProbe(id: nil, profile: profile, capability: "text")
+            await load(profile, model: model)
+            let pending = PendingProbe(id: nil, profile: profile, capability: "text", generation: generations[profile])
             model.pendingProbes[pending.key] = pending
             await readProbe(profile, model: model)
-            if !Task.isCancelled { model.pendingProbes[pending.key] = nil }
+            if !Task.isCancelled { release(pending, model: model) }
         } catch {
             failures[profile] = BackendError.wrapping(error)
         }
@@ -392,24 +427,51 @@ final class KeyChecks {
         defer { working.remove(pending.key) }
         if pending.id == nil {
             await readProbe(pending.profile, model: model)
-            if !Task.isCancelled { model.pendingProbes[pending.key] = nil }
+            if !Task.isCancelled { release(pending, model: model) }
             return
         }
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: probeLimit)
         while !Task.isCancelled, clock.now < deadline {
-            if let state: ProbeState = try? BackendRPC.decode(await model.client.call(.modelsProbe, pending.request)), state.settled {
-                await load(pending.profile, model: model)
-                record(state, profile: pending.profile, capability: pending.capability)
-                model.pendingProbes[pending.key] = nil
-                await model.refresh()
-                return
+            // Replaced (the key or model changed and a new check started): that one reports.
+            guard model.pendingProbes[pending.key]?.token == pending.token else { return }
+            if let state: ProbeState = try? BackendRPC.decode(await model.client.call(.modelsProbe, pending.request)) {
+                if state.state == "stale" {
+                    // Started for an earlier key or model: its result says nothing about this one.
+                    release(pending, model: model)
+                    return
+                }
+                if state.settled {
+                    guard model.pendingProbes[pending.key]?.token == pending.token else { return }
+                    await load(pending.profile, model: model)
+                    record(state, profile: pending.profile, capability: pending.capability)
+                    release(pending, model: model)
+                    await model.refresh()
+                    return
+                }
             }
             try? await Task.sleep(for: pollInterval)
         }
-        guard !Task.isCancelled else { return }
-        model.pendingProbes[pending.key] = nil
+        guard !Task.isCancelled, model.pendingProbes[pending.key]?.token == pending.token else { return }
+        release(pending, model: model)
         failures[pending.key] = BackendError(code: "probe_pending", domain: "models")
+    }
+
+    /// Clears a pending check, unless a newer one has taken its place.
+    private func release(_ pending: PendingProbe, model: AppModel) {
+        if model.pendingProbes[pending.key]?.token == pending.token { model.pendingProbes[pending.key] = nil }
+    }
+
+    /// Records the automatic check `newspaper.configure` / `media.configure` just started
+    /// (`control._verify_soon`, id `auto.<profile>.<capability>.g<generation>`) as pending, so it is
+    /// followed by that id instead of paid for again. A capability already verified is not re-checked.
+    func trackAutomatic(_ profile: String, capability: String, model: AppModel) async {
+        await load(profile, model: model)
+        let key = Self.key(profile, capability)
+        guard let generation = generations[profile], states[profile]?[capability]?.passed != true,
+              model.pendingProbes[key] == nil else { return }
+        model.pendingProbes[key] = PendingProbe(
+            id: "auto.\(profile).\(capability).g\(generation)", profile: profile, capability: capability, generation: generation)
     }
 
     /// Waits for a check that is already running (opened while the backend checks a key).
@@ -441,20 +503,27 @@ final class KeyChecks {
     /// the same failed record again.
     func recheck(_ profile: String, model: AppModel, capability: String = "text", confirmed: Bool = false) async {
         let key = Self.key(profile, capability)
-        // A check of this key is still running somewhere: follow it rather than pay for another.
+        guard !working.contains(key) else { return }
+        await load(profile, model: model)
         if let pending = model.pendingProbes[key] {
-            await follow(pending, model: model)
-            return
+            // A check of this key and model is still running: follow it rather than pay for another.
+            if pending.generation == nil || pending.generation == generations[profile] {
+                await follow(pending, model: model)
+                return
+            }
+            // It was started for an earlier key or model and will end stale: check the current one.
+            model.pendingProbes[key] = nil
+            if failures[key]?.code == "probe_pending" { failures[key] = nil }
         }
-        guard confirmed || !needsConfirmation(profile, capability: capability), !working.contains(key) else { return }
+        guard confirmed || !needsConfirmation(profile, capability: capability) else { return }
         failures[key] = nil
-        let pending = PendingProbe(id: BackendClient.requestId("probe"), profile: profile, capability: capability)
+        let pending = PendingProbe(id: BackendClient.requestId("probe"), profile: profile, capability: capability, generation: generations[profile])
         model.pendingProbes[key] = pending
         working.insert(key)
         do {
             let result: ProbeState = try BackendRPC.decode(await model.client.call(.modelsProbe, pending.request))
             working.remove(key)
-            model.pendingProbes[key] = nil
+            release(pending, model: model)
             await load(profile, model: model)
             record(result, profile: profile, capability: capability)
         } catch is SocketFailure {
@@ -469,7 +538,7 @@ final class KeyChecks {
             let failure = BackendError.wrapping(error)
             // Refused before it began: nothing is running. Otherwise the record may still exist.
             if !["internal_error", "probe_storage_failed", "invalid_reply"].contains(failure.code) {
-                model.pendingProbes[key] = nil
+                release(pending, model: model)
             }
             failures[key] = failure
         }

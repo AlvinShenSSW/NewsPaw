@@ -102,6 +102,19 @@ private final class ConnectBackend {
     /// `bots.test_send` records the message and sends it, then fails while answering
     /// (e.g. internal_error); the receipt still holds the real outcome.
     var testSendAnswer: String?
+    /// Each profile's generation (`profile_epochs`): a new key or a changed model starts a new one.
+    var generations: [String: Int] = [:]
+    func generation(_ profile: String) -> Int { generations[profile, default: 1] }
+    /// The generation each dropped-reply probe was started under.
+    private var probeBorn: [String: Int] = [:]
+    /// Automatic checks `newspaper.configure` / `media.configure` start (`control._verify_soon`),
+    /// by their deterministic id: how many more reads until finished, and their result.
+    var automatic: [String: (profile: String, capability: String, readsLeft: Int)] = [:]
+    var automaticReads = 2
+    /// `bots.test_send` records and sends, then its reply is lost.
+    var dropNextTestSend = false
+    /// `config.save` commits, then its reply is lost.
+    var dropNextConfigSaveReply = false
     /// `targets.delete_bot` fails (the store could not commit).
     var deleteFails = false
     /// The next `bots.test_status` reply is lost (connection dropped).
@@ -119,6 +132,16 @@ private final class ConnectBackend {
                     self.requests.append(request)
                     return (nil, true)
                 }
+                if op == "bots.test_send", self.dropNextTestSend {
+                    self.dropNextTestSend = false
+                    _ = self.answer(request)
+                    return (nil, true)
+                }
+                if op == "config.save", self.dropNextConfigSaveReply {
+                    self.dropNextConfigSaveReply = false
+                    _ = self.answer(request)
+                    return (nil, true)
+                }
                 return (op == "config.save" ? self.configSaveDelay : nil, false)
             }
             if dropped { throw SocketFailure.disconnected }
@@ -130,9 +153,13 @@ private final class ConnectBackend {
                     self.requests.append(request)
                     let asked = self.droppedProbes[id, default: 0]
                     self.droppedProbes[id] = asked + 1
+                    if asked == 0 { self.probeBorn[id] = self.generation(profile) }
                     switch asked {
                     case 0: return nil
                     case 1: return self.ok(["status": "pending"])
+                    // A check started for an earlier key or model finishes stale (ProfileRegistry.finish).
+                    case _ where self.probeBorn[id] != self.generation(profile):
+                        return self.ok(["status": "stale"])
                     default:
                         self.checks[profile] = [result]
                         return self.ok(result.filter { $0.key != "state" })
@@ -159,11 +186,21 @@ private final class ConnectBackend {
 
     /// Checks made for an earlier key or model read `stale` (ProfileRegistry.status).
     private func staleChecks(_ profile: String) {
+        generations[profile] = generation(profile) + 1
         for (capability, record) in capabilityStates[profile] ?? [:] {
             var record = record
             record["state"] = "stale"
             capabilityStates[profile]?[capability] = record
         }
+    }
+
+    /// `control._verify_soon`: a capability not yet verified is checked by `auto.<p>.<c>.g<gen>`;
+    /// `models.status` keeps showing the previous finished check until it ends.
+    private func startAutomatic(_ profile: String, _ capability: String) {
+        guard capabilityStates[profile]?[capability]?["state"] as? String != "verified" else { return }
+        let id = "auto.\(profile).\(capability).g\(generation(profile))"
+        guard probeRecords[id] == nil, automatic[id] == nil else { return }
+        automatic[id] = (profile, capability, automaticReads)
     }
 
     private func editBots(_ change: (inout [[String: Any]]) -> Void) {
@@ -307,9 +344,9 @@ private final class ConnectBackend {
             return ok(tests[identity] ?? ["request_id": identity, "generation": request["generation"]!, "state": "not_started", "reason": NSNull()])
         case "targets.bot_impact":
             let subs = (document["subscriptions"] as! [[String: Any]]).filter { ($0["bot_ids"] as! [String]).contains(id) }
-            return ok(["revision": revision, "bot_id": id, "subscriptions": subs.map { $0["id"]! },
+            return ok(["revision": revision, "bot_id": id, "subscriptions": subs.map { $0["id"] as! String }.sorted(),
                        "categories": subs.map { $0["category_id"]! },
-                       "last_target_subscriptions": subs.filter { ($0["bot_ids"] as! [String]) == [id] }.map { $0["id"]! },
+                       "last_target_subscriptions": subs.filter { ($0["bot_ids"] as! [String]) == [id] }.map { $0["id"] as! String }.sorted(),
                        "subscription_targets": [String: Any](), "accounts": []])
         case "targets.delete_bot":
             if stale { return refuse("config_conflict") }
@@ -340,10 +377,26 @@ private final class ConnectBackend {
             }
             var states: [String: Any] = ["text": text, "vision": ["state": "untested"], "image": ["state": "untested"], "stt": ["state": "untested"]]
             for (capability, record) in capabilityStates[profile] ?? [:] { states[capability] = record }
+            for (capability, record) in states {
+                var record = record as! [String: Any]
+                record["generation"] = generation(profile)
+                states[capability] = record
+            }
             return ok(states)
         case "models.probe":
             let profile = request["profile_id"] as! String
             let capability = request["capability"] as! String
+            if let id = request["probe_id"] as? String, let running = automatic[id] {
+                // The automatic check runs on its own; asking by its id returns its record.
+                if running.readsLeft > 0 {
+                    automatic[id]?.readsLeft -= 1
+                    return ok(["status": "pending"])
+                }
+                capabilityStates[profile, default: [:]][capability] = capabilityResult
+                automatic[id] = nil
+                probeRecords[id] = capabilityResult
+                return ok(capabilityResult.filter { $0.key != "state" })
+            }
             if capability != "text" {
                 // A probe id names one check: asking again returns its record, never a new check.
                 let id = request["probe_id"] as! String
@@ -371,6 +424,11 @@ private final class ConnectBackend {
             if request["revision"] as? Int != paperRevision { return refuse("newspaper_policy_changed", "media") }
             paper = request["settings"] as! [String: Any]
             paperRevision += 1
+            if paper["enabled"] as? Bool == true {
+                for (role, capability) in [("generation_profile", "image"), ("vision_profile", "vision")] {
+                    if let profile = paper[role] as? String { startAutomatic(profile, capability) }
+                }
+            }
             return ok(["revision": paperRevision, "settings": paper])
         case "media.policy": return ok(["revision": mediaRevision, "settings": media])
         case "media.configure":
@@ -380,6 +438,7 @@ private final class ConnectBackend {
             if settings["stt_profile"] is NSNull, !(settings["stt_hold"] is NSNull) { return refuse("invalid_media_settings", "media") }
             media = settings
             mediaRevision += 1
+            if let profile = settings["stt_profile"] as? String { startAutomatic(profile, "stt") }
             return ok(["revision": mediaRevision, "settings": media])
         case "x.accounts.list":
             let ref = (document["x_api"] as? [String: Any])?["credential_ref"]
@@ -483,7 +542,7 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
     #expect(impact.subscriptions == ["sub_world"] && impact.lastTargetSubscriptions == ["sub_world"])
     #expect(server.calls("targets.delete_bot").isEmpty)
 
-    #expect(await data.delete("b1", model: model))
+    #expect(await data.delete("b1", model: model) == .done)
     #expect(server.bots.isEmpty && (server.subscription("sub_world")?["bot_ids"] as? [String]) == [])
     // The digests page now reads "no bot chosen" for it.
     #expect(model.config?.subscriptions.first { $0.id == "sub_world" }?.botIds == [])
@@ -947,9 +1006,11 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
     let (model, data, cleanup) = try await connected(server)
     defer { cleanup() }
     await data.saveKey("sk-synthetic-image", profile: "normal_primary", model: model)
-    // The automatic check (its id is bound to the key's generation) failed.
-    server.capabilityStates["normal_primary"] = ["image": ["state": "failed", "status": "failed", "error_kind": "rate_limited"]]
+    // The automatic checks (their id is bound to the key's generation) failed.
+    server.capabilityResult = ["state": "failed", "status": "failed", "error_kind": "rate_limited"]
+    server.automaticReads = 0
     await data.setNewspaper(true, profile: "normal_primary", model: model)
+    server.capabilityResult = ["state": "verified", "status": "verified"]
     server.capabilityStates["normal_primary"]?["vision"] = ["state": "verified", "status": "verified"]
     await data.load(model: model)
     let checks = data.extraChecks(newspaper: true)
@@ -1000,7 +1061,7 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
 
     let connecting = Task { await adding.connect(token: "123456:synthetic-token", model: model) }
     try await Task.sleep(for: .milliseconds(20))
-    #expect(adding.botId == nil && adding.working)
+    #expect(adding.working)
     await data.cancelAdding(model: model)
     await connecting.value
     await model.refresh()
@@ -1044,7 +1105,10 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
 
     // A changed address does the same; an extra that is off is left alone.
     await data.saveEndpoint("normal_primary", baseURL: "https://api.openai.com/v1/", modelId: "gpt-6-luna-2", model: model)
-    #expect(server.calls("models.probe").filter { $0["capability"] as? String == "image" }.count == 2)
+    let ownImageChecks = server.calls("models.probe").filter {
+        $0["capability"] as? String == "image" && !(($0["probe_id"] as? String) ?? "").hasPrefix("auto.")
+    }
+    #expect(Set(ownImageChecks.compactMap { $0["probe_id"] as? String }).count == 2)
     #expect(server.calls("models.probe").allSatisfy { $0["capability"] as? String != "stt" })
 }
 
@@ -1150,4 +1214,125 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
     server.deleteFails = false
     await data.cancelAdding(model: model)
     #expect(data.adding == nil && data.failures["adding"] == nil && server.bots.isEmpty)
+}
+
+// MARK: - Kimi review (cycle 5)
+
+@Test func aLimitFieldSavesOnlyWhatTheOwnerTyped() {
+    // Focused before the budget arrived: it still shows the stored value, and leaving it saves nothing.
+    var field = LimitField()
+    field.load("20")
+    #expect(field.text == "20" && field.pendingSave(stored: "20") == nil)
+    field.type("35")
+    // A background reload does not overwrite what is being typed.
+    field.load("20")
+    #expect(field.text == "35" && field.pendingSave(stored: "20") == "35")
+    field.saved()
+    field.load("35")
+    #expect(field.pendingSave(stored: "35") == nil)
+}
+
+@Test @MainActor func turningAnExtraOnFollowsItsAutomaticCheckInsteadOfPayingForAnother() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk-synthetic-paper", profile: "normal_primary", model: model)
+    // An earlier image check failed; models.status keeps showing it while the automatic one runs.
+    server.capabilityStates["normal_primary"] = ["image": ["state": "failed", "status": "failed", "error_kind": "rate_limited"]]
+    server.automaticReads = 3
+
+    // The page closes while the automatic check still runs; Check Again later follows it by its id.
+    let turning = Task { await data.setNewspaper(true, profile: "normal_primary", model: model) }
+    turning.cancel()
+    await turning.value
+    #expect(data.keys.isChecking("normal_primary", capability: "image", model: model))
+    await data.recheck("normal_primary", model: model, capability: "image")
+
+    let generation = server.generation("normal_primary")
+    let ids = Set(server.calls("models.probe").filter { $0["capability"] as? String == "image" }.compactMap { $0["probe_id"] as? String })
+    #expect(ids == ["auto.normal_primary.image.g\(generation)"])
+    #expect(data.keys.states["normal_primary"]?["image"]?.passed == true)
+    // The vision check it also started is followed the same way when the page opens again.
+    await data.keys.resume(model: model)
+    let visionIds = Set(server.calls("models.probe").filter { $0["capability"] as? String == "vision" }.compactMap { $0["probe_id"] as? String })
+    #expect(visionIds == ["auto.normal_primary.vision.g\(generation)"] && model.pendingProbes.isEmpty)
+}
+
+@Test @MainActor func aChangedModelGetsANewCheckInsteadOfFollowingTheObsoleteOne() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    data.keys.probeLimit = .milliseconds(300)
+    await data.saveKey("sk-synthetic-7Qx2", profile: "normal_primary", model: model)
+    server.probeOutlastsSocket = ["state": "verified", "status": "verified"]
+    let leaving = Task { await data.recheck("normal_primary", model: model) }
+    leaving.cancel()
+    await leaving.value
+    let obsolete = try #require(model.pendingProbes["normal_primary"]?.id)
+
+    await data.saveEndpoint("normal_primary", baseURL: "https://api.openai.com/v1", modelId: "gpt-6-luna-2", model: model)
+
+    let last = try #require(server.calls("models.probe").last?["probe_id"] as? String)
+    #expect(last != obsolete)
+    #expect(data.keys.probes["normal_primary"]?.passed == true && data.keys.failures["normal_primary"] == nil)
+    #expect(model.pendingProbes.isEmpty)
+}
+
+@Test @MainActor func aNewTestMessageStartsWithoutTheEarlierStillUnknownNote() async throws {
+    let server = ConnectBackend(bots: [ConnectBackend.bot("b1")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.testOutcome = ("outcome_unknown", "outcome_unknown")
+    await data.sendTest("b1", model: model)
+    await data.checkTest("b1", model: model)
+    #expect(data.stillUnknown.contains("b1"))
+
+    server.dropNextTestSend = true
+    await data.sendTest("b1", model: model)
+    let receipt = data.receipt("b1", generation: model.bots[0].generation)
+    #expect(TestDisplay.of(receipt, stillUnknown: data.stillUnknown.contains("b1")) == .unknown)
+}
+
+@Test @MainActor func aBotSavedWhoseReplyWasLostIsStillRemovedOnCancel() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.dropNextConfigSaveReply = true
+    data.startAdding()
+    await data.adding?.connect(token: "123456:synthetic-token", model: model)
+    #expect(data.adding?.failure?.code == "backend_unreachable" && server.bots.count == 1)
+
+    await data.cancelAdding(model: model)
+    #expect(data.adding == nil && server.bots.isEmpty)
+}
+
+@Test @MainActor func deletingABotUsesTheImpactTheOwnerSawAndAsksAgainWhenItChanged() async throws {
+    let server = ConnectBackend(bots: [ConnectBackend.bot("b1", adult: true)], botIds: ["b1"])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let shown = try #require(await data.loadImpact("b1", model: model))
+    #expect(shown.subscriptions == ["sub_world"])
+    // Meanwhile an adult digest starts sending to it (from Telegram).
+    server.document["subscriptions"] = (server.document["subscriptions"] as! [[String: Any]]).map { var entry = $0; entry["bot_ids"] = ["b1"]; return entry }
+    server.revision += 1
+
+    #expect(await data.delete("b1", model: model) == .changed)
+    #expect(server.bots.count == 1 && data.impacts["b1"]?.subscriptions == ["sub_av", "sub_world"])
+    #expect(await data.delete("b1", model: model) == .done)
+    #expect(server.bots.isEmpty)
+}
+
+@Test @MainActor func turningAdultOffUsesTheListTheOwnerSawAndAsksAgainWhenItChanged() async throws {
+    let server = ConnectBackend(bots: [ConnectBackend.bot("b1", adult: true)], adultBotIds: ["b1"])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let seen = model.configRevision
+    // Meanwhile something else changes the configuration.
+    server.document["subscriptions"] = (server.document["subscriptions"] as! [[String: Any]]).map { var entry = $0; entry["name"] = "Renamed"; return entry }
+    server.revision += 1
+
+    #expect(await data.setAdult("b1", false, model: model, revision: seen) == .changed)
+    #expect(server.bots.first?["adult_allowed"] as? Bool == true)
+    #expect(await data.setAdult("b1", false, model: model, revision: model.configRevision) == .done)
+    #expect(server.bots.first?["adult_allowed"] as? Bool == false)
 }

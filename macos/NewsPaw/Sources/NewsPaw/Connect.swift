@@ -58,13 +58,17 @@ struct CapabilityCheck: Equatable {
 enum ExtraStatus: Equatable {
     case off, usable
     case waiting(CapabilityCheck)
+    /// Checked for an earlier key or model (`stale`): nothing checks it again by itself.
+    case unchecked(CapabilityCheck)
     case failed(CapabilityCheck, ProbeState)
 
     static func of(on: Bool, checks: [CapabilityCheck], states: [String: [String: ProbeState]], working: Set<String>) -> ExtraStatus {
         guard on else { return .off }
         for check in checks {
             guard !working.contains(KeyChecks.key(check.profile, check.capability)),
-                  let state = states[check.profile]?[check.capability], state.settled else { return .waiting(check) }
+                  let state = states[check.profile]?[check.capability] else { return .waiting(check) }
+            if state.state == "stale" { return .unchecked(check) }
+            guard state.settled else { return .waiting(check) }
             if !state.passed { return .failed(check, state) }
         }
         return .usable
@@ -439,13 +443,25 @@ final class ConnectData {
                 "bot_id": id, "generation": status.generation ?? 0, "request_id": identity,
             ]))
             record(id, result)
-        } catch is SocketFailure where request != nil {
-            // The message may have gone out; the backend still knows, so the result can be checked.
-            if let request { tests[id] = TestSend(requestId: request.requestId, generation: request.generation, state: "outcome_unknown", reason: nil) }
         } catch {
-            failures[key] = BackendError.wrapping(error)
+            let failure = BackendError.wrapping(error)
+            // Unless the backend refused before contacting Telegram, the message may have gone
+            // out: keep its request id so "Check Result" reads that receipt, never a new send.
+            if let request, !(error is BackendError && Self.refusedBeforeSending.contains(failure.code)) {
+                tests[id] = TestSend(requestId: request.requestId, generation: request.generation, state: "outcome_unknown", reason: nil)
+                if !(error is SocketFailure) { failures[key] = failure }
+            } else {
+                failures[key] = failure
+            }
         }
     }
+
+    /// What `bots.test_send` refuses before recording or sending anything (`check_send.TestSends.send`,
+    /// `registry.snapshot`, the control request check): nothing went out.
+    nonisolated static let refusedBeforeSending: Set<String> = [
+        "invalid_test_request", "invalid_request", "unknown_operation", "service_stopping", "request_id_conflict",
+        "missing_bot", "unregistered_bot", "binding_not_ready", "binding_changed", "credential_unavailable", "send_lane_busy",
+    ]
 
     /// Reads the backend's record of the last test message (`bots.test_status`).
     func checkTest(_ id: String, model: AppModel) async {
@@ -608,6 +624,20 @@ final class ConnectData {
     func saveKey(_ key: String, profile: String, model: AppModel) async {
         await keys.save(key, profile: profile, model: model)
         await load(model: model)
+        await recheckExtras(profile, model: model)
+    }
+
+    /// A new key or model makes the enabled extras' checks of that model stale, and the backend
+    /// re-checks only text: check them again here (new probe ids, same confirmation rule).
+    func recheckExtras(_ profile: String, model: AppModel) async {
+        var checks: [CapabilityCheck] = []
+        if extras.newspaperOn { checks += extraChecks(newspaper: true) }
+        if extras.transcriptionProfile != nil { checks += extraChecks(newspaper: false) }
+        var seen = Set<String>()
+        for check in checks where check.profile == profile && seen.insert(check.capability).inserted {
+            guard ["stale", "untested"].contains(keys.states[profile]?[check.capability]?.state ?? "untested") else { continue }
+            await keys.recheck(profile, model: model, capability: check.capability)
+        }
     }
 
     /// Checks the saved key again (also "check and retry" after an unknown result, once confirmed).
@@ -650,6 +680,8 @@ final class ConnectData {
             if model.config?.modelProfiles.first(where: { $0.id == profile })?.credentialRef != nil {
                 await keys.recheck(profile, model: model)
             }
+            await load(model: model)
+            await recheckExtras(profile, model: model)
         } else {
             failures[key] = editor.failure
         }

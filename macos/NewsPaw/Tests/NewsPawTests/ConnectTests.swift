@@ -99,6 +99,9 @@ private final class ConnectBackend {
     /// What the next non-text `models.probe` finds; a repeated probe id returns its own record.
     var capabilityResult: [String: Any] = ["state": "verified", "status": "verified"]
     private var probeRecords: [String: [String: Any]] = [:]
+    /// `bots.test_send` records the message and sends it, then fails while answering
+    /// (e.g. internal_error); the receipt still holds the real outcome.
+    var testSendAnswer: String?
     /// The next `bots.test_status` reply is lost (connection dropped).
     var dropNextTestStatus = false
     /// `config.save` answers only after this long (another writer holds the store).
@@ -152,6 +155,15 @@ private final class ConnectBackend {
                 "generation": bot.generation, "status": bot.status, "username": bot.username ?? ""]
     }
 
+    /// Checks made for an earlier key or model read `stale` (ProfileRegistry.status).
+    private func staleChecks(_ profile: String) {
+        for (capability, record) in capabilityStates[profile] ?? [:] {
+            var record = record
+            record["state"] = "stale"
+            capabilityStates[profile]?[capability] = record
+        }
+    }
+
     private func editBots(_ change: (inout [[String: Any]]) -> Void) {
         var list = bots
         change(&list)
@@ -175,7 +187,14 @@ private final class ConnectBackend {
         case "config.get": return ok(["revision": revision, "document": document])
         case "config.save":
             if stale { return refuse("config_conflict") }
+            let before = (document["model_profiles"] as! [[String: Any]])
             document = request["document"] as! [String: Any]
+            for profile in document["model_profiles"] as! [[String: Any]] {
+                let old = before.first { $0["id"] as? String == profile["id"] as? String }
+                if old?["base_url"] as? String != profile["base_url"] as? String || old?["model"] as? String != profile["model"] as? String {
+                    staleChecks(profile["id"] as! String)
+                }
+            }
             for bot in bots where registry[bot["id"] as! String] == nil { registry[bot["id"] as! String] = Bot() }
             revision += 1
             return ok(["revision": revision])
@@ -211,6 +230,7 @@ private final class ConnectBackend {
                     entry["capabilities"] = []
                     return entry
                 }
+                staleChecks(request["id"] as! String)
             default:
                 document["x_api"] = ["credential_ref": ref]
             }
@@ -278,6 +298,7 @@ private final class ConnectBackend {
             let record: [String: Any] = ["request_id": request["request_id"]!, "generation": bot.generation,
                                          "state": testOutcome.state, "reason": testOutcome.reason ?? NSNull()]
             tests[request["request_id"] as! String] = record
+            if let failure = testSendAnswer { return refuse(failure, "bots") }
             return ok(record)
         case "bots.test_status":
             let identity = request["request_id"] as! String
@@ -983,4 +1004,75 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
 
     #expect(data.adding == nil && server.bots.isEmpty && model.bots.isEmpty)
     #expect(server.calls("bots.pair_code").isEmpty && adding.pair == nil)
+}
+
+// MARK: - External review, cycle 3
+
+@Test @MainActor func aBudgetBlockedCheckOffersANewCheck() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.checks["normal_primary"] = [["state": "budget_blocked", "status": "budget_blocked", "error_kind": "monthly_limit"]]
+    await data.saveKey("sk-synthetic-budget", profile: "normal_primary", model: model)
+    let status = KeyStatus.of(credential: "available", probe: data.keys.probes["normal_primary"], health: nil, working: false)
+    #expect(status == .budget && status.action == .recheck)
+    #expect(!data.needsConfirmation("normal_primary"))
+
+    server.checks["normal_primary"] = [["state": "verified", "status": "verified"]]
+    await data.recheck("normal_primary", model: model)
+    #expect(server.calls("models.probe").count == 1 && data.keys.probes["normal_primary"]?.passed == true)
+}
+
+@Test @MainActor func anEnabledExtraIsCheckedAgainAfterItsModelsKeyChanges() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk-synthetic-first", profile: "normal_primary", model: model)
+    await data.setNewspaper(true, profile: "normal_primary", model: model)
+    server.capabilityStates["normal_primary"] = ["image": ["state": "verified", "status": "verified"], "vision": ["state": "verified", "status": "verified"]]
+    await data.load(model: model)
+    #expect(ExtraStatus.of(on: true, checks: data.extraChecks(newspaper: true), states: data.keys.states, working: data.keys.working) == .usable)
+
+    await data.saveKey("sk-synthetic-second", profile: "normal_primary", model: model)
+
+    let probes = server.calls("models.probe").filter { $0["profile_id"] as? String == "normal_primary" }
+    #expect(Set(probes.compactMap { $0["capability"] as? String }) == ["image", "vision"])
+    #expect(ExtraStatus.of(on: true, checks: data.extraChecks(newspaper: true), states: data.keys.states, working: data.keys.working) == .usable)
+
+    // A changed address does the same; an extra that is off is left alone.
+    await data.saveEndpoint("normal_primary", baseURL: "https://api.openai.com/v1/", modelId: "gpt-6-luna-2", model: model)
+    #expect(server.calls("models.probe").filter { $0["capability"] as? String == "image" }.count == 2)
+    #expect(server.calls("models.probe").allSatisfy { $0["capability"] as? String != "stt" })
+}
+
+@Test @MainActor func onlyARefusalBeforeSendingDropsATestMessagesReceipt() async throws {
+    let server = ConnectBackend(bots: [ConnectBackend.bot("b1")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    // The backend recorded and sent it, then failed while answering.
+    server.testSendAnswer = "internal_error"
+    await data.sendTest("b1", model: model)
+    let sent = try #require(server.calls("bots.test_send").last?["request_id"] as? String)
+    #expect(data.tests["b1"]?.requestId == sent && data.failures["test.b1"]?.code == "internal_error")
+
+    await data.retryTest("b1", model: model)
+    #expect(server.calls("bots.test_send").count == 1)
+    #expect(server.calls("bots.test_status").last?["request_id"] as? String == sent && data.tests["b1"]?.state == "confirmed")
+
+    // Refused before anything was sent (binding_not_ready): a retry may send a new message.
+    server.testSendAnswer = nil
+    server.registry["b1"]?.paused = true
+    await data.sendTest("b1", model: model)
+    #expect(data.failures["test.b1"]?.code == "binding_not_ready" && data.tests["b1"] == nil)
+    server.registry["b1"]?.paused = false
+    await data.retryTest("b1", model: model)
+    #expect(server.calls("bots.test_send").count == 3 && data.tests["b1"]?.state == "confirmed")
+}
+
+@Test func aCapabilityCheckedForAnEarlierKeyOffersCheckAgainInsteadOfWaiting() {
+    let check = CapabilityCheck(profile: "normal_primary", capability: "stt")
+    let stale = ["normal_primary": ["stt": ProbeState(state: "stale")]]
+    #expect(ExtraStatus.of(on: true, checks: [check], states: stale, working: []) == .unchecked(check))
+    let pending = ["normal_primary": ["stt": ProbeState(state: "pending")]]
+    #expect(ExtraStatus.of(on: true, checks: [check], states: pending, working: []) == .waiting(check))
 }

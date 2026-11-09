@@ -192,9 +192,10 @@ enum KeyStatus: Equatable {
         switch self {
         case .missing: .enterKey
         case .rejected, .keychain: .reenterKey
-        case .unavailable, .untested, .failed: .recheck
+        // A check the budget refused never ran; a new check (new probe id) can pass once there is room.
+        case .unavailable, .untested, .failed, .budget: .recheck
         case .unknown: .confirmRecheck
-        case .checking, .verified, .cooldown, .budget, .uncheckable: .none
+        case .checking, .verified, .cooldown, .uncheckable: .none
         }
     }
 }
@@ -1015,6 +1016,14 @@ private struct ExtraRow: View {
             if let failure = data.failures[key] {
                 FailureNote(model: model, failure: failure)
             }
+            if case let .unchecked(check) = extraStatus {
+                // The key or model changed since this check: it has to be made again.
+                HStack(spacing: 8) {
+                    Text(capabilityName(check.capability)).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(model.text(L10n.Onboarding.checkAgain)) { recheck(check) }
+                }
+            }
             if case let .failed(check, state) = extraStatus {
                 // Which check blocks it (the newspaper also needs its vision check), and one retry.
                 FailureNote(model: model, failure: BackendError(code: state.errorKind ?? state.state, domain: "models"))
@@ -1059,6 +1068,8 @@ private struct ExtraRow: View {
             let state = data.keys.states[check.profile]?[check.capability]?.state
             let busy = state == "pending" || data.keys.working.contains(KeyChecks.key(check.profile, check.capability))
             StatusDot(color: .gray, text: model.text(L10n.Connect.checkingCapability), busy: busy)
+        case .unchecked:
+            StatusDot(color: .gray, text: model.text(L10n.Connect.statusUntested))
         case let .failed(_, state):
             StatusDot(color: state.state == "outcome_unknown" ? .orange : .red,
                       text: model.text(state.state == "outcome_unknown" ? L10n.Overview.unknown : L10n.Connect.statusFailed))

@@ -153,9 +153,10 @@ def _upgrade_schedule(db: sqlite3.Connection) -> None:
     delivery of digests the owner had enabled while scheduling was off."""
     from .scheduler import DEFAULT_HOLD
 
-    settings = json.loads(
-        db.execute("SELECT settings FROM schedule_policy WHERE id=1").fetchone()[0]
-    )
+    revision, raw = db.execute(
+        "SELECT revision,settings FROM schedule_policy WHERE id=1"
+    ).fetchone()
+    settings = json.loads(raw)
     config = json.loads(
         db.execute("SELECT document FROM app_configuration WHERE id=1").fetchone()[0]
     )
@@ -174,6 +175,13 @@ def _upgrade_schedule(db: sqlite3.Connection) -> None:
             "activated_at=CASE WHEN ? THEN NULL ELSE activated_at END WHERE id=1",
             (json.dumps(updated, ensure_ascii=False), newly_enabled),
         )
+        if revision == 1:
+            # Like untouched_import_revision: an owner who never edited the policy still
+            # has a fresh instance for settings import after this upgrade.
+            db.execute(
+                "INSERT OR REPLACE INTO migration_info VALUES ('untouched_schedule_revision', ?)",
+                (str(revision + 1),),
+            )
 
 
 def migrate(db: sqlite3.Connection, path: Path) -> None:

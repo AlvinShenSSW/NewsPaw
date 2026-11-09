@@ -289,10 +289,18 @@ class Operations:
         schedule_revision, settings = self.db.execute(
             "SELECT revision,settings FROM schedule_policy WHERE id=1"
         ).fetchone()
+        untouched_schedule = self.db.execute(
+            "SELECT value FROM migration_info WHERE key='untouched_schedule_revision'"
+        ).fetchone()
+        budget_revision, budget = BudgetLedger(self.store).policy()
+        # Databases created before E10 started without the $20 / 200-read defaults.
+        legacy_budget = default_policy(config["timezone"])
+        legacy_budget["model"]["monthly_limit"] = legacy_budget["x"]["daily_limit"] = None
         if (
-            schedule_revision != 1
+            schedule_revision != (int(untouched_schedule[0]) if untouched_schedule else 1)
             or json.loads(settings) != schedule_default()
-            or BudgetLedger(self.store).policy() != (1, default_policy(config["timezone"]))
+            or budget_revision != 1
+            or budget not in (default_policy(config["timezone"]), legacy_budget)
             or self.db.execute(
                 "SELECT revision,profile_id FROM web_search_policy WHERE id=1"
             ).fetchone()

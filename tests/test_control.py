@@ -1258,3 +1258,24 @@ async def test_policies_naming_a_profile_the_export_leaves_out_still_restore(two
     assert exported["policies"]["media"]["vision_hold"] is None
     preview = await request(target, {"op": "ops.preview_import", "portable": exported})
     assert preview["ok"], preview
+
+
+def test_an_exported_newspaper_missing_a_model_is_turned_off():
+    from newspaw.operations import _portable_policy_refs
+
+    paper = {
+        "enabled": True,
+        "generation_profile": "normal_primary",
+        "backup_profile": None,
+        "vision_profile": "custom_vision",
+        "pages": 1,
+        "generation_hold": 1,
+        "vision_hold": 1,
+        "task_limit": None,
+    }
+    out = _portable_policy_refs({"newspaper": paper}, {"normal_primary"})["newspaper"]
+    assert out["vision_profile"] is None and out["enabled"] is False
+    kept = _portable_policy_refs(
+        {"newspaper": {**paper, "vision_profile": "normal_primary"}}, {"normal_primary"}
+    )["newspaper"]
+    assert kept["enabled"] is True

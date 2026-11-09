@@ -180,7 +180,8 @@ def _portable_policy_refs(policies, available):
         for role in ("generation_profile", "backup_profile", "vision_profile"):
             if paper.get(role) not in available:
                 paper[role] = None
-        if paper["generation_profile"] is None:
+        # An enabled newspaper needs both its image and its vision model.
+        if paper["generation_profile"] is None or paper["vision_profile"] is None:
             paper["enabled"] = False
     media = policies.get("media")
     if media:

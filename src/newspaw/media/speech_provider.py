@@ -15,12 +15,13 @@ _ENDPOINT = _ORIGIN + "/v1/audio/transcriptions"
 _MAX_RESPONSE = 64 * 1024
 
 
-def supported_stt_profile(profile):
+def supported_stt_profile(profile, *, keyed=True):
+    """``keyed=False``: a settings restore, where profiles have no key yet; use still needs one."""
     return (
         profile["partition"] == "normal"
         and profile["provider"] == "openai"
         and profile["base_url"].rstrip("/") == _ORIGIN + "/v1"
-        and bool(profile["credential_ref"])
+        and (bool(profile["credential_ref"]) or not keyed)
     )
 
 

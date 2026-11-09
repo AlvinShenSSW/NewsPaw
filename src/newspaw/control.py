@@ -304,7 +304,10 @@ class ControlServer:
             "budget": (ledger.policy, ledger.configure),
             "schedule": (read(self.scheduler), self.scheduler.configure),
             "newspaper": (read(self.newspapers), self.newspapers.configure),
-            "media": (read(self.media), self.media.configure),
+            "media": (
+                read(self.media),
+                lambda settings, revision: self.media.configure(settings, revision, restoring=True),
+            ),
             "x_video": (
                 read(self.videos),
                 lambda settings, revision: self.videos.configure(

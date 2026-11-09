@@ -87,6 +87,8 @@ def test_delivery_targets_use_the_same_words(status, state):
 def test_a_paused_jobs_targets_read_as_paused():
     assert target_state("blocked", reason="job_paused") == "paused"
     assert target_state("blocked", reason="token_revoked") == "failed"
+    assert target_state("outcome_unknown", reason="job_paused") == "delivery_unknown"
+    assert occurrence_state("blocked", "targets_unavailable", parts=[SKIP]) == "abandoned"
 
 
 def test_every_state_is_in_the_vocabulary():

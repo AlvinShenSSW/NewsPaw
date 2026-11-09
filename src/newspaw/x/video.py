@@ -125,7 +125,10 @@ class Videos:
                 if (
                     profile["partition"] != "normal"
                     or (not restoring and capability not in profile["capabilities"])
-                    or (capability == "stt" and not supported_stt_profile(profile))
+                    or (
+                        capability == "stt"
+                        and not supported_stt_profile(profile, keyed=not restoring)
+                    )
                 ):
                     raise MediaInputError("invalid_video_profiles")
         with self.store._write():

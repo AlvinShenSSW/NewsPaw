@@ -89,6 +89,7 @@ def job_state(status):
 def target_state(status, parts=(), reason=None):
     if abandoned(parts):
         return "abandoned"
-    if reason == "job_paused":
+    # A paused job does not settle an uncertain send; that still needs resolving.
+    if reason == "job_paused" and status != "outcome_unknown":
         return "paused"
     return _TARGET.get(status, "failed")

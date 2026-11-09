@@ -270,7 +270,7 @@ class Scheduler:
         parts = []
         if view["job_id"] and (
             view["status"] in {"partial", "skipped", "outcome_unknown"}
-            or view["reason"] == "delivery_outcome_unknown"
+            or view["reason"] in {"delivery_outcome_unknown", "targets_unavailable"}
         ):
             try:
                 parts = [part for target in self.outbox._rows(view["job_id"]) for part in target["parts"]]

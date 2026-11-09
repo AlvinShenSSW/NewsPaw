@@ -1185,3 +1185,37 @@ async def test_config_changes_since_reports_a_background_bump(control):
     }
     gone = await raw_request(server, {"op": "config.changes_since", "revision": 99})
     assert gone["error"] == "invalid_revision" and gone["error_detail"]["domain"] == "config"
+
+
+async def test_speech_policies_naming_a_profile_survive_a_restore(two_controls):
+    (source, source_store), (target, _) = two_controls
+    revision, config = source_store.load_config()
+    for profile in config["model_profiles"]:
+        if profile["id"] == "normal_primary":
+            profile["capabilities"] = ["text", "vision", "stt"]
+            profile["credential_ref"] = "keychain:00000000-0000-0000-0000-000000000009"
+    with source_store._write():
+        source_store._db.execute(
+            "UPDATE app_configuration SET revision=revision+1,document=? WHERE id=1",
+            (json.dumps(config),),
+        )
+    media_revision, media = source.operations.policies["media"][0]()
+    source.media.configure({**media, "stt_profile": "normal_primary"}, media_revision)
+    video_revision, video = source.operations.policies["x_video"][0]()
+    source.videos.configure({**video, "stt_profiles": ["normal_primary"]}, video_revision)
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    preview = await request(target, {"op": "ops.preview_import", "portable": exported})
+    assert preview["ok"], preview
+    applied = await request(
+        target,
+        {
+            "op": "ops.apply_import",
+            "portable": exported,
+            "digest": preview["result"]["digest"],
+            "revision": preview["result"]["revision"],
+        },
+    )
+    assert applied["ok"], applied
+    after = target.operations._current_policies()
+    assert after["media"]["stt_profile"] == "normal_primary"
+    assert after["x_video"]["stt_profiles"] == ["normal_primary"]

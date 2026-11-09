@@ -28,6 +28,14 @@ enum OccurrenceState: Equatable {
             self = .abandoned
         } else if paused, open.contains(occurrence.status) {
             self = .paused
+        } else if ["waiting", "late", "outcome_unknown"].contains(occurrence.status),
+                  occurrence.reason == "model_outcome_unknown" {
+            // An unknown model result is reported as soon as it happens, not only after the
+            // catch-up window ends (scheduler records it as waiting/late with this reason).
+            self = .modelUnknown
+        } else if ["waiting", "late", "outcome_unknown"].contains(occurrence.status),
+                  occurrence.reason == "delivery_outcome_unknown" {
+            self = .deliveryUnknown
         } else {
             switch occurrence.status {
             case "planned": self = .waiting
@@ -94,13 +102,15 @@ final class OverviewData {
             let schedule = try await client.call(.scheduleStatus, ["limit": 100])
             let rows = try BackendRPC.decode(schedule) as ScheduleRows
             let day = Self.day(now)
-            let start = Self.day(now.addingTimeInterval(-6 * 86_400))
-            today = rows.occurrences.filter { $0.civilDate == day }.sorted { ($0.targetAt ?? "") < ($1.targetAt ?? "") }
+            let start = Self.day(Calendar.current.date(byAdding: .day, value: -6, to: now) ?? now)
+            today = rows.occurrences.filter { $0.civilDate == day }.sorted(by: Self.byTarget)
             week = rows.occurrences.filter { $0.civilDate >= start && $0.civilDate < day }
-                .sorted { ($0.civilDate, $0.targetAt ?? "") > ($1.civilDate, $1.targetAt ?? "") }
+                .sorted { $0.civilDate != $1.civilDate ? $0.civilDate > $1.civilDate : Self.byTarget($1, $0) }
             var skipped: Set<String> = []
-            for row in today where ["partial", "skipped", "outcome_unknown"].contains(row.status) {
-                if let job = row.jobId, try await Self.abandoned(job, client) { skipped.insert(row.id) }
+            for row in today + week where ["partial", "skipped", "outcome_unknown"].contains(row.status) {
+                // An edition stopped before delivery has no delivery record; that only means
+                // nothing was skipped, never that the overview cannot load.
+                if let job = row.jobId, (try? await Self.abandoned(job, client)) == true { skipped.insert(row.id) }
             }
             abandoned = skipped
             spending = Self.spending(try BackendRPC.decode(await client.call(.budgetGet)), now: now)
@@ -130,9 +140,9 @@ final class OverviewData {
                 _ = try await client.call(.jobsResume, ["job_id": job, "acknowledge_duplicate_charge": true])
             case .retryDelivery, .stopResending:
                 guard let job = occurrence.jobId else { return }
-                let status: DeliveryStatus = try BackendRPC.decode(await client.call(.deliveryStatus, ["job_id": job]))
-                for (bot, target) in status.targets {
-                    for (ordinal, part) in target.parts.enumerated() where part.state == "outcome_unknown" {
+                for (bot, parts) in try await Self.parts(job, client) {
+                    for (index, part) in parts.enumerated() where part.state == "outcome_unknown" {
+                        let ordinal = part.ordinal ?? index
                         var fields: [String: Any] = ["job_id": job, "bot_id": bot, "ordinal": ordinal]
                         if action == .retryDelivery {
                             fields["action"] = "retry"
@@ -152,18 +162,23 @@ final class OverviewData {
         } catch let error as BackendError {
             failure = error
         } catch {
-            failure = BackendError(code: "invalid_reply")
+            failure = BackendError(code: error is SocketFailure ? "backend_unreachable" : "invalid_reply")
         }
+        // The reload must not hide why the action did not complete.
+        let refused = failure
         await load(client)
+        if let refused { failure = refused }
     }
 
     enum Recovery: Equatable { case retryModel, retryDelivery, stopResending, continueHeld, stopHeld }
 
     private struct ScheduleRows: Decodable { let occurrences: [Occurrence] }
 
+    /// `delivery.status` lists parts only when asked for one Bot (outbox.status).
     private struct DeliveryStatus: Decodable {
-        struct Target: Decodable { let parts: [Part] }
+        struct Target: Decodable { let parts: [Part]? }
         struct Part: Decodable {
+            let ordinal: Int?
             let state: String
             let resolution: Resolution?
         }
@@ -197,9 +212,29 @@ final class OverviewData {
         let report: Report
     }
 
+    /// Each target Bot's parts for a job: the summary names the Bots, then each is read alone.
+    private static func parts(_ job: String, _ client: BackendClient) async throws -> [(String, [DeliveryStatus.Part])] {
+        let summary: DeliveryStatus = try BackendRPC.decode(await client.call(.deliveryStatus, ["job_id": job]))
+        var result: [(String, [DeliveryStatus.Part])] = []
+        for bot in summary.targets.keys.sorted() {
+            let detail: DeliveryStatus = try BackendRPC.decode(await client.call(.deliveryStatus, ["job_id": job, "bot_id": bot]))
+            result.append((bot, detail.targets[bot]?.parts ?? []))
+        }
+        return result
+    }
+
     private static func abandoned(_ job: String, _ client: BackendClient) async throws -> Bool {
-        let status: DeliveryStatus = try BackendRPC.decode(await client.call(.deliveryStatus, ["job_id": job]))
-        return status.targets.values.contains { $0.parts.contains { $0.resolution?.action == "skip" } }
+        try await parts(job, client).contains { $0.1.contains { $0.resolution?.action == "skip" } }
+    }
+
+    /// Target-time order across time zones: compare instants, not the offset strings.
+    nonisolated static func byTarget(_ a: Occurrence, _ b: Occurrence) -> Bool {
+        switch (a.targetAt.flatMap(date), b.targetAt.flatMap(date)) {
+        case let (x?, y?): x != y ? x < y : a.id < b.id
+        case (_?, nil): true
+        case (nil, _?): false
+        default: a.id < b.id
+        }
     }
 
     private static func spending(_ reply: BudgetReply, now: Date) -> Spending {
@@ -611,8 +646,7 @@ private struct AttentionSection: View {
             result.append(Item(id: "x-limit", dot: .gray, title: L10n.Attention.xUnlimited(language),
                                note: L10n.Attention.xUnlimitedNote(language), page: .connect))
         }
-        if let backup = model.config?.modelProfiles.first(where: { $0.partition == "normal" && $0.role == "backup" }),
-           backup.credentialRef == nil {
+        if model.config?.modelProfiles.first(where: { $0.partition == "normal" && $0.role == "backup" })?.credentialRef == nil {
             result.append(Item(id: "backup", dot: .gray, title: L10n.Attention.noBackup(language),
                                note: L10n.Attention.noBackupNote(language), page: .connect))
         }
@@ -694,11 +728,10 @@ extension AppModel {
         return names.isEmpty ? "" : "→ " + names.joined(separator: ", ")
     }
 
-    /// The digest a trial send uses: the first enabled ordinary one, else any enabled one.
+    /// The digest a trial send uses: the first enabled ordinary one (never an adult one).
     var firstEnabledDigest: String? {
         guard let config else { return nil }
         let ordinary = Set(config.categories.filter { $0.partition == "normal" }.map(\.id))
-        let enabled = config.subscriptions.filter(\.enabled)
-        return (enabled.first { ordinary.contains($0.categoryId) } ?? enabled.first)?.id
+        return config.subscriptions.first { $0.enabled && ordinary.contains($0.categoryId) }?.id
     }
 }

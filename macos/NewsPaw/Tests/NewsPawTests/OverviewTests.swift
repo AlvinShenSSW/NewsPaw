@@ -7,6 +7,8 @@ import Testing
 @MainActor
 private final class ScriptedBackend {
     var replies: [String: String]
+    /// Answers a request before `replies` when it returns non-nil (for replies that depend on fields).
+    var responder: (([String: Any]) -> String?)?
     private(set) var requests: [[String: Any]] = []
 
     init(_ replies: [String: String]) { self.replies = replies }
@@ -17,7 +19,7 @@ private final class ScriptedBackend {
             let op = request["op"] as! String
             return await MainActor.run {
                 self.requests.append(request)
-                return Data((self.replies[op] ?? #"{"ok":false,"error":"unknown_operation"}"#).utf8)
+                return Data((self.responder?(request) ?? self.replies[op] ?? #"{"ok":false,"error":"unknown_operation"}"#).utf8)
             }
         }
     }
@@ -25,10 +27,10 @@ private final class ScriptedBackend {
     func calls(_ op: String) -> [[String: Any]] { requests.filter { $0["op"] as? String == op } }
 }
 
-private func occurrence(_ id: String, status: String, reason: String? = nil, date: String, time: String = "08:00", job: String? = "job1") -> String {
+private func occurrence(_ id: String, status: String, reason: String? = nil, date: String, time: String = "08:00", job: String? = "job1", offset: String = "+00:00") -> String {
     let reason = reason.map { "\"\($0)\"" } ?? "null"
     let job = job.map { "\"\($0)\"" } ?? "null"
-    return #"{"id":"\#(id)","scope_id":"s","slot":1,"civil_date":"\#(date)","target_at":"\#(date)T\#(time):00+00:00","prepare_at":"\#(date)T07:45:00+00:00","cutoff_at":"\#(date)T14:00:00+00:00","status":"\#(status)","reason":\#(reason),"generation":1,"job_id":\#(job),"updated_at":"\#(date)T08:01:00+00:00","subscription_id":"sub_world","account_id":null}"#
+    return #"{"id":"\#(id)","scope_id":"s","slot":1,"civil_date":"\#(date)","target_at":"\#(date)T\#(time):00\#(offset)","prepare_at":"\#(date)T07:45:00+00:00","cutoff_at":"\#(date)T14:00:00+00:00","status":"\#(status)","reason":\#(reason),"generation":1,"job_id":\#(job),"updated_at":"\#(date)T08:01:00+00:00","subscription_id":"sub_world","account_id":null}"#
 }
 
 private func fixtureDay(_ offset: Int, from now: Date) -> String {
@@ -170,5 +172,93 @@ private func backend(now: Date, rows: [String], delivery: String = #"{"ok":true,
     await model.refresh()
     #expect(model.digestTitle("sub_world") == AppLanguage.ja.text(.world))
     #expect(model.digestTitle("sub_japan2") == "日本 · 娱乐")
+    #expect(try await replies.value.count == 3)
+}
+
+
+/// The real `delivery.status`: a summary without parts, and parts only for one Bot.
+@MainActor
+private func realisticDelivery(_ server: ScriptedBackend, parts: String) {
+    server.responder = { request in
+        guard request["op"] as? String == "delivery.status" else { return nil }
+        if let bot = request["bot_id"] as? String {
+            return #"{"ok":true,"result":{"targets":{"\#(bot)":{"status":"partial","parts":\#(parts)}}}}"#
+        }
+        return #"{"ok":true,"result":{"targets":{"bot1":{"status":"partial","part_count":2}}}}"#
+    }
+}
+
+@Test @MainActor func recoveryReadsEachBotsPartsLikeTheRealBackend() async {
+    let now = Date()
+    let server = backend(now: now, rows: [occurrence("d", status: "outcome_unknown", reason: "delivery_outcome_unknown", date: fixtureDay(0, from: now))])
+    realisticDelivery(server, parts: #"[{"ordinal":0,"state":"delivered"},{"ordinal":1,"state":"outcome_unknown"}]"#)
+    let data = OverviewData()
+    await data.load(server.client, now: now)
+    #expect(data.failure == nil)
+    await data.resolve(data.today[0], .retryDelivery, client: server.client)
+    let retry = server.calls("delivery.resolve")
+    #expect(retry.count == 1 && retry.first?["bot_id"] as? String == "bot1" && retry.first?["ordinal"] as? Int == 1)
+    #expect(server.calls("delivery.status").contains { $0["bot_id"] as? String == "bot1" })
+}
+
+@Test @MainActor func aSkipInThePastWeekAlsoShowsAsAbandoned() async {
+    let now = Date()
+    let server = backend(now: now, rows: [occurrence("old", status: "partial", date: fixtureDay(-2, from: now))])
+    realisticDelivery(server, parts: #"[{"ordinal":0,"state":"skipped","resolution":{"action":"skip"}}]"#)
+    let data = OverviewData()
+    await data.load(server.client, now: now)
+    #expect(data.abandoned == ["old"])
+}
+
+@Test @MainActor func anEditionStoppedBeforeDeliveryDoesNotBreakTheOverview() async {
+    let now = Date()
+    let server = backend(now: now, rows: [occurrence("s", status: "skipped", reason: "stopped_after_model_result", date: fixtureDay(0, from: now))],
+                         delivery: #"{"ok":false,"error":"missing_delivery","error_detail":{"code":"missing_delivery","domain":"delivery","retryable":false}}"#)
+    let data = OverviewData()
+    await data.load(server.client, now: now)
+    #expect(data.failure == nil)
+    #expect(data.spending != nil && data.staleSources.map(\.name) == ["NHK"])
+}
+
+@Test @MainActor func aRefusedRecoveryStaysOnScreenAfterTheReload() async {
+    let now = Date()
+    let server = backend(now: now, rows: [occurrence("h", status: "held", reason: "partial_assignment_changed", date: fixtureDay(0, from: now))])
+    server.replies["schedule.resolve"] = #"{"ok":false,"error":"job_busy","error_detail":{"code":"job_busy","domain":"schedule","retryable":true}}"#
+    let data = OverviewData()
+    await data.load(server.client, now: now)
+    await data.resolve(data.today[0], .continueHeld, client: server.client)
+    #expect(data.failure?.code == "job_busy")
+}
+
+@Test func unknownOutcomesShowWhileTheEditionIsStillOpen() {
+    func state(_ status: String, _ reason: String) -> OccurrenceState {
+        let row = try! BackendRPC.decode(Data(occurrence("x", status: status, reason: reason, date: "2026-11-10").utf8)) as Occurrence
+        return OccurrenceState(row, paused: false, abandoned: false)
+    }
+    #expect(state("waiting", "model_outcome_unknown") == .modelUnknown)
+    #expect(state("late", "model_outcome_unknown") == .modelUnknown)
+    #expect(state("waiting", "delivery_outcome_unknown") == .deliveryUnknown)
+    #expect(state("waiting", "job_paused") == .preparing)
+}
+
+@Test func editionsSortByTheirInstantAcrossTimeZones() {
+    let tokyo = try! BackendRPC.decode(Data(occurrence("tokyo", status: "planned", date: "2026-11-10", time: "09:00", offset: "+09:00").utf8)) as Occurrence
+    let london = try! BackendRPC.decode(Data(occurrence("london", status: "planned", date: "2026-11-10", time: "08:00", offset: "+00:00").utf8)) as Occurrence
+    // 09:00 Tokyo is 00:00 UTC, before 08:00 London, though "09" sorts after "08" as text.
+    #expect([london, tokyo].sorted(by: OverviewData.byTarget).map(\.id) == ["tokyo", "london"])
+}
+
+@Test @MainActor func aTrialSendNeverPicksAnAdultDigest() async throws {
+    let fixture = try FixtureSocket()
+    let running = #"{"ok":true,"result":{"protocol_version":1,"state":"running"}}"# + "\n"
+    let configuration = #"{"ok":true,"result":{"revision":1,"document":{"ui_locale":"en","news_output_locale":"en","categories":[{"id":"world","name":"W","partition":"normal"},{"id":"av","name":"AV","partition":"adult"}],"subscriptions":[{"id":"sub_world","category_id":"world","timezone":"Asia/Tokyo","enabled":false,"times":["08:00"]},{"id":"sub_av","category_id":"av","timezone":"Asia/Tokyo","enabled":true,"times":["21:00"]}],"sources":[],"accounts":[],"model_profiles":[]}}}"# + "\n"
+    let bots = #"{"ok":true,"result":[]}"# + "\n"
+    let replies = fixture.serve([running, configuration, bots])
+    let name = "NewsPawTests-" + UUID().uuidString
+    let defaults = try #require(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let model = AppModel(socket: LocalSocket(path: fixture.path), defaults: defaults)
+    await model.refresh()
+    #expect(model.config != nil && model.firstEnabledDigest == nil)
     #expect(try await replies.value.count == 3)
 }

@@ -254,8 +254,32 @@ final class DigestsData {
     /// working source is enabled (and, for a digest with its own list, added to it).
     func addSource(name: String, url: String, kind: String, focus: String?, to subscription: AppConfig.Subscription, model: AppModel) async {
         let category = subscription.categoryId
-        let id = "src_" + UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
         let partition = model.config?.categories.first { $0.id == category }?.partition ?? "normal"
+        // A feed may serve several categories: an existing one (same address, kind and partition)
+        // joins this category instead of being added twice (`duplicate_source`).
+        if let existing = sources.first(where: { $0.source.url == url && $0.source.kind == kind && $0.source.partition == partition }) {
+            working.insert(category)
+            defer { working.remove(category) }
+            do {
+                try await saveSource(existing.id, model: model) { source in
+                    var source = source
+                    var categories = source["category_ids"] as? [String] ?? []
+                    if !categories.contains(category) { categories.append(category) }
+                    source["category_ids"] = categories
+                    return source
+                }
+                failures[category] = nil
+            } catch {
+                failures[category] = error as? BackendError ?? BackendError(code: "invalid_reply")
+                return
+            }
+            await load(model.client)
+            if !subscription.followsCategory, sources.first(where: { $0.id == existing.id })?.source.enabled == true {
+                await include(existing.id, in: subscription.id, true, model: model)
+            }
+            return
+        }
+        let id = "src_" + UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
         var source: [String: Any] = [
             "id": id, "name": name, "url": url, "kind": kind, "partition": partition,
             "category_ids": [category], "enabled": false,
@@ -673,7 +697,7 @@ struct DigestsPage: View {
             guard case let .success(url) = result else { return }
             let access = url.startAccessingSecurityScopedResource()
             defer { if access { url.stopAccessingSecurityScopedResource() } }
-            guard let content = try? String(contentsOf: url, encoding: .utf8) else {
+            guard let content = DigestsPage.readOPML(url) else {
                 importFailure = BackendError(code: "invalid_opml", domain: "sources")
                 return
             }
@@ -687,6 +711,15 @@ struct DigestsPage: View {
                 ImportResult(model: model, data: data, result: data.imported, ids: ids, choices: ordered)
             }
         }
+    }
+
+    /// Reads at most the backend's 1 MiB OPML limit; a larger or unreadable file is refused
+    /// before it is loaded into memory.
+    nonisolated static func readOPML(_ url: URL, limit: Int = 1_048_576) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: limit + 1), data.count <= limit else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     private var ordered: [AppConfig.Subscription] {

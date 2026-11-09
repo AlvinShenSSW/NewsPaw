@@ -504,3 +504,30 @@ private func connected(_ server: DigestBackend) async throws -> (AppModel, () ->
     let found = try BackendRPC.decode(Data(#"{"kind":"web","choices":[{"url":"https://example.av","kind":"web","name":"AV","partition":"adult","category_ids":["av"]}]}"#.utf8)) as Discovery
     #expect(found.choices.first?.partition == "adult" && found.choices.first?.categoryIds == ["av"])
 }
+
+
+@Test @MainActor func aFeedAlreadyInAnotherCategoryJoinsThisOne() async throws {
+    var shared = source("nhk", focus: "domestic")
+    shared["category_ids"] = ["world"]
+    let server = DigestBackend(subscriptions: [subscription("sub_japan")], sources: [shared])
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    await data.load(model.client)
+    let digest = try #require(model.config?.subscriptions.first)
+    await data.addSource(name: "NHK", url: "https://nhk.example/rss", kind: "rss", focus: nil, to: digest, model: model)
+    #expect(server.sources.count == 1)
+    #expect(server.source("nhk")?["category_ids"] as? [String] == ["world", "japan"])
+}
+
+@Test func anOversizedOPMLFileIsRefusedBeforeLoading() throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("np-opml-" + UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let small = folder.appendingPathComponent("small.opml")
+    try Data("<opml/>".utf8).write(to: small)
+    let large = folder.appendingPathComponent("large.opml")
+    try Data(repeating: 0x20, count: 2_000).write(to: large)
+    #expect(DigestsPage.readOPML(small, limit: 1_000) == "<opml/>")
+    #expect(DigestsPage.readOPML(large, limit: 1_000) == nil)
+}

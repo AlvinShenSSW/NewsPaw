@@ -366,6 +366,7 @@ enum FailureCopy {
     }
 
     static let table: [String: Entry] = [
+        "invalid_output": Entry(message: Words("模型回复了，但内容不符合要求。再测一次，或换一个模型。", "The model replied, but not in the expected form. Check again or choose another model.", "モデルは応答しましたが、想定した内容ではありませんでした。もう一度確認するか、別のモデルを選んでください。"), action: L10n.Shell.retry),
         "token_revoked": Entry(message: Words("Telegram 说这个 Token 已作废。到 @BotFather 重新生成后再粘贴。", "Telegram says this token was revoked. Make a new one with @BotFather and paste it.", "このトークンは無効になりました。@BotFather で再発行して貼り付けてください。"), action: L10n.Shell.retry),
         "forbidden": Entry(message: Words("Telegram 拒绝了这个机器人的请求。", "Telegram refused this Bot's request.", "Telegram がこのボットの要求を拒否しました。"), action: L10n.Shell.retry),
         "consumer_conflict": Entry(message: Words("另一个程序也在用这个 Token 读取消息。关掉它后再试。", "Another program is reading messages with this token. Stop it, then try again.", "別のプログラムがこのトークンでメッセージを読んでいます。止めてから再試行してください。"), action: L10n.Shell.retry),

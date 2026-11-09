@@ -453,3 +453,25 @@ private func connected(_ server: SetupBackend) async throws -> (AppModel, Onboar
     #expect(!(await data.finish(sendTrial: false, model: model)))
     #expect(data.failures["trial"]?.code == "backend_unreachable")
 }
+
+
+@Test @MainActor func losingTheBackendAfterTheLastDigestSavesReportsTheTrial() async throws {
+    let server = SetupBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.document["bots"] = [["id": "bot_x", "name": "T", "credential_ref": NSNull(), "telegram_id": NSNull(), "chat_id": NSNull(), "verified": true, "paired": true, "adult_allowed": false]]
+    server.verified = true
+    server.paired = true
+    await model.refresh()
+    await data.saveKey("sk", profile: "normal_primary", choice: nil, model: model)
+    data.chosen = ["sub_world"]
+    server.dropAfterSave = true
+
+    #expect(!(await data.finish(sendTrial: true, model: model)))
+
+    #expect(data.failures["trial"]?.code == "backend_unreachable" && !data.sentTrial)
+}
+
+@Test func aCheckThatRepliedWrongCanBeRetried() {
+    #expect(FailureCopy.entry(for: BackendError(code: "invalid_output", domain: "models")).action != nil)
+}

@@ -342,8 +342,13 @@ final class OnboardingData {
             }
         }
         failures["trial"] = nil
-        let ordinary = Set(model.config?.categories.filter { $0.partition == "normal" }.map(\.id) ?? [])
-        if sendTrial, let first = model.config?.subscriptions.first(where: { chosen.contains($0.id) && $0.enabled && ordinary.contains($0.categoryId) }) {
+        // The last save's refresh can find the backend gone: a requested trial needs a configuration.
+        guard let config = model.config else {
+            failures["trial"] = BackendError(code: "backend_unreachable")
+            return false
+        }
+        let ordinary = Set(config.categories.filter { $0.partition == "normal" }.map(\.id))
+        if sendTrial, let first = config.subscriptions.first(where: { chosen.contains($0.id) && $0.enabled && ordinary.contains($0.categoryId) }) {
             sentTrial = await model.sendNow(first.id)
             if !sentTrial {
                 failures["trial"] = model.lastFailure ?? BackendError(code: "invalid_reply")
@@ -374,6 +379,7 @@ extension AppModel {
 
 struct OnboardingWindow: View {
     @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.openWindow) private var openWindow
     let model: AppModel
     @State private var data: OnboardingData
 
@@ -450,7 +456,12 @@ struct OnboardingWindow: View {
     private func finish(sendTrial: Bool) async {
         // A digest that could not turn on stays on screen with its reason.
         guard await data.finish(sendTrial: sendTrial, model: model) else { return }
-        if sendTrial { model.page = .overview }
+        if sendTrial {
+            // Show the trial on the overview, reopening the main window if it was closed.
+            model.page = .overview
+            openWindow(id: "settings")
+            NSApp.activate()
+        }
         close()
     }
 
@@ -730,8 +741,11 @@ private struct KeyRow: View {
                     }
                     .font(.callout)
                 } else {
-                    FailureNote(model: model, failure: BackendError(code: probe.errorKind ?? probe.state, domain: "models")) {
-                        recheck()
+                    let failure = BackendError(code: probe.errorKind ?? probe.state, domain: "models")
+                    FailureNote(model: model, failure: failure) { recheck() }
+                    // Whatever the reason's copy offers, a saved key can always be checked again.
+                    if FailureCopy.entry(for: failure).action == nil {
+                        Button(model.text(L10n.Onboarding.checkAgain)) { recheck() }.buttonStyle(.link).font(.callout)
                     }
                 }
             }

@@ -23,20 +23,21 @@ CREATE INDEX IF NOT EXISTS budget_task_attempts ON budget_attempts(meter,task_id
 """
 
 
-def default_policy():
+def default_policy(timezone="Asia/Tokyo"):
+    """New-database policy: $20 a month and 200 X reads a day (E10 contract §2)."""
     return {
         "model": {
-            "monthly_limit": None,
+            "monthly_limit": 20_000_000,
             "image_limit": None,
             "provider_limits": {},
-            "timezone": "Asia/Tokyo",
+            "timezone": timezone,
             "cycle_day": 1,
         },
         "x": {
-            "daily_limit": None,
+            "daily_limit": 200,
             "partition_limits": {"normal": None, "adult": None},
             "account_limits": {},
-            "timezone": "Asia/Tokyo",
+            "timezone": timezone,
         },
         "prices": [],
         "openai_credit": {
@@ -129,11 +130,13 @@ def validate_policy(policy):
         raise BudgetError("invalid_policy") from None
 
 
-def initialize(db):
+def initialize(db, timezone="Asia/Tokyo"):
     for statement in SCHEMA.split(";"):
         if statement.strip():
             db.execute(statement)
-    db.execute("INSERT OR IGNORE INTO budget_policy VALUES (1,1,?)", (_json(default_policy()),))
+    db.execute(
+        "INSERT OR IGNORE INTO budget_policy VALUES (1,1,?)", (_json(default_policy(timezone)),)
+    )
 
 
 def _calendar_window(now, meter, zone, cycle_day):

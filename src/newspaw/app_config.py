@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from copy import deepcopy
 from pathlib import Path
@@ -15,7 +16,8 @@ from dotenv import dotenv_values
 
 from .config import parse_times, parse_topics
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
+DEFAULT_TIMEZONE = "Asia/Tokyo"
 STYLES = {"text", "source_image", "newspaper"}
 LOCALES = {"zh-Hans", "en", "ja"}
 PARTITIONS = {"normal", "adult"}
@@ -31,7 +33,7 @@ _OPTIONAL = {
 _ID = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,79}")
 _CREDENTIAL = re.compile(r"keychain:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 _FIELDS = {
-    "categories": {"id", "name", "partition", "primary_profile_id", "backup_profile_id", "style"},
+    "categories": {"id", "name", "partition"},
     "sources": {"id", "name", "url", "kind", "partition", "category_ids", "enabled"},
     "subscriptions": {
         "id",
@@ -44,6 +46,8 @@ _FIELDS = {
         "enabled",
         "style",
         "max_items",
+        "primary_profile_id",
+        "backup_profile_id",
     },
     "accounts": {
         "id",
@@ -83,7 +87,6 @@ _TOP_FIELDS = {
     "news_output_locale",
     "timezone",
     "owner_id",
-    "group_styles",
     "x_api",
     *_FIELDS,
 }
@@ -131,7 +134,7 @@ def new_id(kind: str) -> str:
     return f"{kind}_{uuid4().hex}"
 
 
-def default_config() -> dict:
+def default_config(timezone: str = DEFAULT_TIMEZONE) -> dict:
     categories = [
         ("world", "世界新闻", "08:00"),
         ("japan", "日本新闻", "08:30"),
@@ -174,19 +177,11 @@ def default_config() -> dict:
         "schema_version": SCHEMA_VERSION,
         "ui_locale": "zh-Hans",
         "news_output_locale": "zh-Hans",
-        "timezone": "Asia/Tokyo",
+        "timezone": timezone,
         "owner_id": None,
-        "group_styles": {"normal": "text", "adult": "text"},
         "x_api": {"credential_ref": None},
         "categories": [
-            dict(
-                id=key,
-                name=name,
-                partition="adult" if key in {"av", "x_adult"} else "normal",
-                primary_profile_id=None,
-                backup_profile_id=None,
-                style=None,
-            )
+            dict(id=key, name=name, partition="adult" if key in {"av", "x_adult"} else "normal")
             for key, name, _ in categories
         ],
         "subscriptions": [
@@ -197,10 +192,12 @@ def default_config() -> dict:
                 source_ids=[],
                 bot_ids=[],
                 times=[time],
-                timezone="Asia/Tokyo",
+                timezone=timezone,
                 enabled=False,
                 style="text",
                 max_items=5,
+                primary_profile_id=None,
+                backup_profile_id=None,
             )
             for key, name, time in categories
         ],
@@ -350,9 +347,63 @@ def upgrade_v2(config: dict) -> dict:
         raise ValueError("Expected version2 configuration")
     if "x_api" in result:
         raise ValueError("Unexpected X configuration in version2")
-    result.update(schema_version=SCHEMA_VERSION, x_api={"credential_ref": None})
+    result.update(schema_version=3, x_api={"credential_ref": None})
+    return upgrade_v3(result)
+
+
+def upgrade_v3(config: dict) -> dict:
+    """Fold category- and partition-level settings into each subscription (E10 contract §1.2)."""
+    result = deepcopy(config)
+    if type(result.get("schema_version")) is not int or result["schema_version"] != 3:
+        raise ValueError("Expected version3 configuration")
+    categories = {category["id"]: category for category in result["categories"]}
+    group_styles = result.pop("group_styles")
+    for subscription in result["subscriptions"]:
+        category = categories[subscription["category_id"]]
+        subscription["style"] = (
+            subscription["style"]
+            or category["style"]
+            or group_styles[category["partition"]]
+            or "text"
+        )
+        subscription["primary_profile_id"] = category["primary_profile_id"]
+        subscription["backup_profile_id"] = category["backup_profile_id"]
+    result["categories"] = [
+        dict(id=c["id"], name=c["name"], partition=c["partition"]) for c in result["categories"]
+    ]
+    result["schema_version"] = SCHEMA_VERSION
     validate_config(result)
     return result
+
+
+def upgrade_config(config: dict) -> dict:
+    """Upgrade any supported stored document to the current schema; never mutates the input."""
+    version = config.get("schema_version") if isinstance(config, dict) else None
+    upgrades = {1: upgrade_v1, 2: upgrade_v2, 3: upgrade_v3}
+    if version == SCHEMA_VERSION:
+        return deepcopy(config)
+    if version not in upgrades:
+        raise ValueError("Unsupported configuration schema")
+    return upgrades[version](config)
+
+
+def system_timezone() -> str:
+    """The Mac's IANA time zone, from TZ or the /etc/localtime link; Tokyo when unknown."""
+    candidates = [os.environ.get("TZ", "").lstrip(":")]
+    try:
+        target = os.readlink("/etc/localtime")
+    except OSError:
+        target = ""
+    if "zoneinfo/" in target:
+        candidates.append(target.split("zoneinfo/", 1)[1])
+    for name in candidates:
+        if name and "/" in name or name == "UTC":
+            try:
+                ZoneInfo(name)
+            except (ValueError, ZoneInfoNotFoundError):
+                continue
+            return name
+    return DEFAULT_TIMEZONE
 
 
 def validate_config(config: dict) -> None:
@@ -376,10 +427,6 @@ def _validate_config(config: dict) -> None:
     for key in ("ui_locale", "news_output_locale"):
         if config[key] not in LOCALES:
             raise ValueError("Unsupported locale")
-    if not isinstance(config["group_styles"], dict) or set(config["group_styles"]) != PARTITIONS:
-        raise ValueError("Invalid group styles")
-    for style in config["group_styles"].values():
-        _style(style)
     _timezone(config["timezone"])
     _integer(config["owner_id"], 1, 2**52, optional=True)
     indexed = {}
@@ -415,20 +462,6 @@ def _validate_config(config: dict) -> None:
         ) != len(values):
             raise ValueError("Missing or duplicate referenced entity")
 
-    for category in config["categories"]:
-        _style(category["style"], optional=True)
-        for key in ("primary_profile_id", "backup_profile_id"):
-            if category[key] is not None:
-                references([category[key]], "model_profiles")
-            role = key.split("_")[0]
-            profile = indexed["model_profiles"].get(
-                category[key] or f"{category['partition']}_{role}"
-            )
-            if profile is not None:
-                if profile["partition"] != category["partition"]:
-                    raise ValueError("Cross-partition model reference")
-                if profile["role"] != role:
-                    raise ValueError("Wrong model slot role")
     for source in config["sources"]:
         _url(source["url"])
         if source["kind"] not in {"rss", "atom", "web", "github", "huggingface", "draft"}:
@@ -480,7 +513,7 @@ def _validate_config(config: dict) -> None:
             _times(subscription["times"])
         _timezone(subscription["timezone"])
         _integer(subscription["max_items"], 1, 20)
-        _style(subscription["style"], optional=True)
+        _style(subscription["style"])
         mode = subscription.get("source_mode")
         if "source_mode" in subscription and mode not in {"explicit", "category"}:
             raise ValueError("Invalid source selection mode")
@@ -506,6 +539,16 @@ def _validate_config(config: dict) -> None:
             ):
                 raise ValueError("Invalid regional focus weights")
         partition = indexed["categories"][subscription["category_id"]]["partition"]
+        for key in ("primary_profile_id", "backup_profile_id"):
+            if subscription[key] is not None:
+                references([subscription[key]], "model_profiles")
+            role = key.split("_")[0]
+            profile = indexed["model_profiles"].get(subscription[key] or f"{partition}_{role}")
+            if profile is not None:
+                if profile["partition"] != partition:
+                    raise ValueError("Cross-partition model reference")
+                if profile["role"] != role:
+                    raise ValueError("Wrong model slot role")
         if any(
             indexed["sources"][key]["partition"] != partition for key in subscription["source_ids"]
         ):
@@ -609,16 +652,7 @@ def import_preferences(env_path: Path | None, legacy: dict[str, str], *, values=
         key = aliases_by_topic.get(topic)
         if key is None:
             key = "legacy_" + hashlib.sha256(topic.encode()).hexdigest()[:16]
-            config["categories"].append(
-                dict(
-                    id=key,
-                    name=topic,
-                    partition="normal",
-                    primary_profile_id=None,
-                    backup_profile_id=None,
-                    style=None,
-                )
-            )
+            config["categories"].append(dict(id=key, name=topic, partition="normal"))
         if any(sub["category_id"] == key for sub in subscriptions):
             continue
         subscriptions.append(
@@ -633,6 +667,8 @@ def import_preferences(env_path: Path | None, legacy: dict[str, str], *, values=
                 enabled=False,
                 style="text",
                 max_items=5,
+                primary_profile_id=None,
+                backup_profile_id=None,
             )
         )
     config["subscriptions"] = subscriptions

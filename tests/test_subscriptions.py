@@ -182,3 +182,34 @@ def test_weighted_order_prioritizes_existing_evidence_without_filling_gaps():
     result = _focus_order(items, {"domestic": 30, "entertainment": 70})
     assert [row["id"] for row in result] == ["e1", "e2", "d1", "d2"]
     assert _focus_order(items[:2], {"domestic": 30, "entertainment": 70}) == items[:2]
+
+
+async def test_drafts_without_model_overrides_keep_the_saved_ones(tmp_path):
+    from contextlib import closing
+
+    from test_credentials import FakeKeychain
+    from test_routing import configured
+
+    from newspaw.credentials import CredentialManager
+    from newspaw.source_manager import SourceManager
+    from newspaw.store import Store
+    from newspaw.subscriptions import Subscriptions
+    from newspaw.telegram.registry import BotRegistry
+
+    with closing(Store(tmp_path / "state.db")) as store:
+        config, sub = configured()
+        sub["backup_profile_id"] = "normal_backup"
+        revision = store.save_config(config, expected_revision=1)
+        keychain = FakeKeychain()
+        manager = CredentialManager(store, keychain)
+        service = Subscriptions(manager, SourceManager(manager), BotRegistry(store, keychain))
+        draft = {
+            key: value
+            for key, value in sub.items()
+            if key not in {"enabled", "primary_profile_id", "backup_profile_id"}
+        }
+        draft.update(max_items=3, source_mode="category")
+        await service.save(draft, revision)
+        saved = next(s for s in store.load_config()[1]["subscriptions"] if s["id"] == sub["id"])
+        assert saved["max_items"] == 3 and saved["backup_profile_id"] == "normal_backup"
+        assert saved["primary_profile_id"] is None

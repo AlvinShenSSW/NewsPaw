@@ -64,6 +64,7 @@ OPERATIONS = {
     "setup.readiness": (set(), set()),
     "service.stop": (set(), set()),
     "schedule.status": (set(), {"limit"}),
+    "subscriptions.send_now": ({"subscription_id"}, set()),
     "media.policy": (set(), set()),
     "media.configure": ({"settings", "revision"}, set()),
     "newspaper.policy": (set(), set()),
@@ -382,6 +383,8 @@ class ControlServer:
             return self.newspapers.configure(data["settings"], data["revision"])
         if op == "schedule.status":
             return self.scheduler.status(limit=data.get("limit", 25))
+        if op == "subscriptions.send_now":
+            return self.scheduler.send_now(data["subscription_id"])
         if op == "schedule.configure":
             return self.scheduler.configure(data["settings"], data["revision"])
         if op == "schedule.resolve":

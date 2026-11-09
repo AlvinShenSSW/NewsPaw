@@ -49,7 +49,7 @@ def test_redacted_diagnostics_do_not_copy_untrusted_text(tmp_path):
         ops = Operations(store, tmp_path, process_status=lambda: "running")
         status = ops.diagnostics()
         assert status["process"] == "running"
-        assert status["business"]["scheduling"] == "disabled"
+        assert status["business"]["scheduling"] == "enabled"
         encoded = json.dumps(ops.support_snapshot())
         assert "private-fixture-name" not in encoded and REF not in encoded
         assert "https://" not in encoded
@@ -245,16 +245,17 @@ def test_backup_with_matching_version_but_missing_tables_is_rejected(tmp_path):
             Operations(store, path.parent).verify_backup(backup.name)
 
 
-def test_export_omits_unsupported_profile_and_clears_category_override(tmp_path):
+def test_export_omits_unsupported_profile_and_clears_subscription_override(tmp_path):
     with closing(Store(tmp_path / "state.db")) as store:
-        config, _ = configured()
+        config, subscription = configured()
         profile = config["model_profiles"][0]
         profile["provider"] = "valid-custom-provider"
-        config["categories"][0]["primary_profile_id"] = profile["id"]
+        subscription["primary_profile_id"] = profile["id"]
         store.save_config(config, expected_revision=1)
         portable = Operations(store, tmp_path).export_settings()
         assert portable["omitted"]["model_profiles"] == 1
-        assert portable["settings"]["categories"][0]["primary_profile_id"] is None
+        exported = {s["id"]: s for s in portable["settings"]["subscriptions"]}
+        assert exported[subscription["id"]]["primary_profile_id"] is None
         assert "valid-custom-provider" not in json.dumps(portable)
 
 

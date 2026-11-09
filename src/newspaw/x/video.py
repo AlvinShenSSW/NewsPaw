@@ -40,12 +40,15 @@ def _json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def initialize(db):
+def initialize(db, timezone="Asia/Tokyo"):
     db.execute(
         """CREATE TABLE IF NOT EXISTS x_video_policy (
            id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, settings TEXT NOT NULL)"""
     )
-    db.execute("INSERT OR IGNORE INTO x_video_policy VALUES (1,1,?)", (_json(_DEFAULT),))
+    db.execute(
+        "INSERT OR IGNORE INTO x_video_policy VALUES (1,1,?)",
+        (_json(dict(_DEFAULT, timezone=timezone)),),
+    )
     db.execute(
         """CREATE TABLE IF NOT EXISTS x_video_receipts (
            id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES pipeline_jobs(id),

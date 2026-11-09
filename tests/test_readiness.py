@@ -39,7 +39,7 @@ def test_fresh_database_points_at_the_bot_first(store):
     result = readiness(store, ProfileRegistry(store))
     assert [s["step"] for s in result["steps"]] == ["bot", "model", "digest", "first_delivery"]
     assert result["complete"] is False and result["next"] == "bot"
-    assert result["scheduling_enabled"] is False
+    assert result["scheduling_enabled"] is True  # E10 contract §2: on by default
     assert steps(result) == {
         "bot": ("pending", "no_bot", None, "credentials.set"),
         "model": ("pending", "missing_primary_credential", "normal_primary", "credentials.set"),

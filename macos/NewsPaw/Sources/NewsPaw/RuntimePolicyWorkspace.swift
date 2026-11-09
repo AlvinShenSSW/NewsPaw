@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 private enum RuntimeEditor: String, Identifiable {
-    case budget, schedule, style
+    case budget, schedule
     var id: String { rawValue }
 }
 
@@ -26,7 +26,6 @@ struct RuntimePolicyWorkspace: View {
     @ViewBuilder private var actions: some View {
         Button(label(.budget)) { editor = .budget }
         Button(label(.schedule)) { editor = .schedule }
-        Button(SubscriptionCopy.style.text(model.uiLanguage)) { editor = .style }
     }
 }
 
@@ -58,8 +57,6 @@ private struct RuntimePolicyEditor: View {
     @State private var xLimit = ""
     @State private var normalHold = ""
     @State private var adultHold = ""
-    @State private var ordinaryStyle = "text"
-    @State private var adultStyle = "text"
     @State private var scheduled = false
     @State private var failure: Phrase?
     @State private var busy = false
@@ -104,9 +101,6 @@ private struct RuntimePolicyEditor: View {
                         TextField(label(.normalHold), text: $normalHold)
                         TextField(label(.adultHold), text: $adultHold)
                     }
-                case .style:
-                    stylePicker(model.text(.ordinary), selection: $ordinaryStyle)
-                    stylePicker(model.text(.adult), selection: $adultStyle)
                 }
                 if let failure { Text(model.text(failure)).foregroundStyle(.secondary) }
             }
@@ -120,14 +114,6 @@ private struct RuntimePolicyEditor: View {
         }
         .frame(minWidth: 620, minHeight: 440)
         .task { await load() }
-    }
-
-    private func stylePicker(_ title: String, selection: Binding<String>) -> some View {
-        Picker(title, selection: selection) {
-            Text(SubscriptionCopy.textStyle.text(model.uiLanguage)).tag("text")
-            Text(SubscriptionCopy.imageStyle.text(model.uiLanguage)).tag("source_image")
-            Text(SubscriptionCopy.newspaperStyle.text(model.uiLanguage)).tag("newspaper")
-        }
     }
 
     private func operation(_ value: String) -> String {
@@ -168,7 +154,7 @@ private struct RuntimePolicyEditor: View {
 
     private func load() async {
         do {
-            let operation = kind == .budget ? "budget.get" : kind == .schedule ? "schedule.status" : "config.get"
+            let operation = kind == .budget ? "budget.get" : "schedule.status"
             let data = try await model.request(operation)
             let state: SettingsRevision = try BackendRPC.decode(data)
             document = try ProtectedSettings.record(data, revision: state.revision, field: kind == .schedule ? "settings" : "document")
@@ -181,15 +167,11 @@ private struct RuntimePolicyEditor: View {
                 modelLimit = (model["monthly_limit"] as? Int).map(String.init) ?? ""
                 imageLimit = (model["image_limit"] as? Int).map(String.init) ?? ""
                 xLimit = (x["daily_limit"] as? Int).map(String.init) ?? ""
-            } else if kind == .schedule {
+            } else {
                 scheduled = document["enabled"] as? Bool ?? false
                 let holds = document["holds"] as? [String: Any] ?? [:]
                 normalHold = (holds["normal"] as? Int).map(String.init) ?? ""
                 adultHold = (holds["adult"] as? Int).map(String.init) ?? ""
-            } else {
-                let styles = document["group_styles"] as? [String: String] ?? [:]
-                ordinaryStyle = styles["normal"] ?? "text"
-                adultStyle = styles["adult"] ?? "text"
             }
         } catch { failure = .saveFailed }
     }
@@ -220,9 +202,6 @@ private struct RuntimePolicyEditor: View {
                 next["enabled"] = scheduled
                 next["holds"] = ["normal": normal, "adult": adult]
                 _ = try await model.request("schedule.configure", fields: ["revision": revision, "settings": next])
-            case .style:
-                next["group_styles"] = ["normal": ordinaryStyle, "adult": adultStyle]
-                _ = try await model.request("config.save", fields: ["revision": revision, "document": next])
             }
             await model.refresh()
             dismiss()

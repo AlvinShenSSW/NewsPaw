@@ -16,7 +16,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from urllib.parse import unquote, urlsplit
 
-from .app_config import default_config, upgrade_v2, uses_category_sources, validate_config
+from .app_config import default_config, upgrade_config, uses_category_sources, validate_config
 from .budget import BudgetLedger, default_policy
 from .credentials import CredentialError
 from .evidence import EvidenceError, EvidenceStore
@@ -27,6 +27,7 @@ from .migrations import DATABASE_VERSION
 from .news import public_url
 from .providers import ProfileRegistry
 from .scheduler import _LEASE_STATES, _TERMINAL
+from .scheduler import _policy as schedule_default
 from .store import AUDIT_RETENTION
 from .x.alerts import _DEFAULT as X_ALERT_DEFAULT
 from .x.video import _DEFAULT as X_VIDEO_DEFAULT
@@ -208,10 +209,10 @@ def _scrub_settings(document):
         profiles.append(profile)
     config["model_profiles"] = profiles
     available_profiles = {profile["id"] for profile in profiles}
-    for category in config["categories"]:
+    for sub in config["subscriptions"]:
         for key in ("primary_profile_id", "backup_profile_id"):
-            if category[key] not in available_profiles:
-                category[key] = None
+            if sub[key] not in available_profiles:
+                sub[key] = None
     for bot in config["bots"]:
         bot.update(
             credential_ref=None, telegram_id=None, chat_id=None, paired=False, verified=False
@@ -276,7 +277,7 @@ class Operations:
         eligible_revision = int(untouched[0]) if untouched else 1
         if (
             revision != eligible_revision
-            or config != default_config()
+            or config != default_config(config["timezone"])
             or any(
                 self.db.execute(
                     'SELECT 1 FROM "' + table.replace('"', '""') + '" LIMIT 1'
@@ -290,8 +291,8 @@ class Operations:
         ).fetchone()
         if (
             schedule_revision != 1
-            or json.loads(settings)["enabled"]
-            or BudgetLedger(self.store).policy() != (1, default_policy())
+            or json.loads(settings) != schedule_default()
+            or BudgetLedger(self.store).policy() != (1, default_policy(config["timezone"]))
             or self.db.execute(
                 "SELECT revision,profile_id FROM web_search_policy WHERE id=1"
             ).fetchone()
@@ -308,6 +309,8 @@ class Operations:
         ):
             raise OperationsError("restore_requires_fresh_instance")
         for table, default in _SETTINGS_DEFAULTS.items():
+            if "timezone" in default:
+                default = dict(default, timezone=config["timezone"])
             row = self.db.execute(f"SELECT revision,settings FROM {table} WHERE id=1").fetchone()
             if row is None or row[0] != 1 or json.loads(row[1]) != default:
                 raise OperationsError("restore_requires_fresh_instance")
@@ -335,8 +338,7 @@ class Operations:
             raise OperationsError("invalid_portable_settings")
         settings = value["settings"]
         try:
-            if settings.get("schema_version") == 2:
-                settings = upgrade_v2(settings)
+            settings = upgrade_config(settings)
             validate_config(settings)
             if (
                 settings["owner_id"] is not None

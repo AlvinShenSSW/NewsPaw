@@ -3,6 +3,7 @@ from contextlib import closing
 
 import httpx
 import pytest
+from test_app_config import downgrade_to_v3
 from test_credentials import FakeKeychain
 
 from newspaw.budget import BudgetLedger
@@ -183,6 +184,7 @@ def test_config_v2_upgrade_preserves_existing_route_fingerprint(tmp_path):
     with closing(Store(path)) as store:
         revision, config = store.load_config()
         before = store.preview_route("sub_world")
+        config = downgrade_to_v3(config)
         config["schema_version"] = 2
         config.pop("x_api")
         with store._write():
@@ -193,7 +195,7 @@ def test_config_v2_upgrade_preserves_existing_route_fingerprint(tmp_path):
             store._db.execute("PRAGMA user_version=12")
     with closing(Store(path)) as upgraded:
         revision, actual = upgraded.load_config()
-        assert actual["schema_version"] == 3 and actual["x_api"]["credential_ref"] is None
+        assert actual["schema_version"] == 4 and actual["x_api"]["credential_ref"] is None
         assert upgraded.preview_route("sub_world").fingerprint == before.fingerprint
         actual["news_output_locale"] = "ja"
         upgraded.save_config(actual, expected_revision=revision)
@@ -352,6 +354,7 @@ def test_v2_upgrade_keeps_untouched_legacy_preferences(tmp_path, marker):
     path = tmp_path / "state.db"
     with closing(Store(path)) as store:
         _, config = store.load_config()
+        config = downgrade_to_v3(config)
         config["schema_version"] = 2
         config.pop("x_api")
         revision = 3 if marker else 1
@@ -392,6 +395,7 @@ async def test_v2_upgrade_reuses_confirmed_paid_edition(tmp_path, prior_version)
         assert (await pipe.advance(job, now=NOW))["stage"] == "preparing_media"
         assert len(model_calls) == 1
         _, config = store.load_config()
+        config = downgrade_to_v3(config)
         config["schema_version"] = 2
         config.pop("x_api")
         with store._write():

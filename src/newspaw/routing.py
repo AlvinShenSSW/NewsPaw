@@ -152,8 +152,6 @@ def resolve_route(config, revision, subscription_id, *, account_id=None, style=N
         ("request", style),
         ("special_account", special["style"] if special else None),
         ("subscription", subscription["style"]),
-        ("category", category["style"]),
-        ("partition_default", config["group_styles"][partition]),
     ]
     origin, effective_style = next((name, value) for name, value in choices if value is not None)
     explanation["style"] = origin
@@ -165,9 +163,9 @@ def resolve_route(config, revision, subscription_id, *, account_id=None, style=N
         "special_account" if special and special["times"] is not None else "subscription"
     )
     for role in ("primary", "backup"):
-        override = category[f"{role}_profile_id"]
+        override = subscription[f"{role}_profile_id"]
         profile = index["model_profiles"].get(override or f"{partition}_{role}")
-        explanation[role] = "category" if override else "partition_default"
+        explanation[role] = "subscription" if override else "partition_default"
         payload[role] = profile
         if profile is None:
             blockers.append(f"missing_{role}")

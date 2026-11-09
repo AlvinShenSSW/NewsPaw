@@ -206,7 +206,7 @@ struct SubscriptionDraft {
         sourceIds = Set(existing?.sourceIds ?? [])
         botIds = Set(existing?.botIds ?? [])
         inherited = existing?.sourceMode.map { $0 == "category" } ?? sourceIds.isEmpty
-        style = existing?.style ?? ""
+        style = existing?.style ?? "text"
         weighted = existing?.focusWeights != nil
         domestic = existing?.focusWeights?["domestic"] ?? 50
         entertainment = existing?.focusWeights?["entertainment"] ?? 50
@@ -223,7 +223,7 @@ struct SubscriptionDraft {
             "timezone": timezone, "times": slots.sorted(), "max_items": maxItems,
             "source_mode": inherited ? "category" : "explicit",
             "source_ids": inherited ? [] : sourceIds.sorted(), "bot_ids": botIds.sorted(),
-            "style": style.isEmpty ? NSNull() as Any : style,
+            "style": style,
         ]
         if isRegional && weighted {
             result["focus_weights"] = ["domestic": domestic, "entertainment": entertainment]
@@ -279,7 +279,6 @@ struct SubscriptionEditor: View {
                     TextField(label(.times), text: $draft.times)
                     Stepper("\(label(.count)) · \(draft.maxItems)", value: $draft.maxItems, in: 1...20)
                     Picker(label(.style), selection: $draft.style) {
-                        Text(label(.inheritStyle)).tag("")
                         Text(label(.textStyle)).tag("text")
                         Text(label(.imageStyle)).tag("source_image")
                         Text(label(.newspaperStyle)).tag("newspaper")

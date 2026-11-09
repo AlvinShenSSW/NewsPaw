@@ -118,6 +118,7 @@ struct AppConfig: Decodable {
         let times: [String]
         let name, sourceMode, style: String?
         let sourceIds, botIds: [String]?
+        let primaryProfileId, backupProfileId: String?
         let maxItems: Int?
         let focusWeights: [String: Int]?
     }

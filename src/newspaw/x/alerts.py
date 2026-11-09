@@ -96,13 +96,16 @@ def _valid(settings):
         seen.add(key)
 
 
-def initialize(db):
+def initialize(db, timezone="Asia/Tokyo"):
     db.execute(
         """CREATE TABLE IF NOT EXISTS x_alert_policy (
            id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL,
            settings TEXT NOT NULL, activated_at TEXT)"""
     )
-    db.execute("INSERT OR IGNORE INTO x_alert_policy VALUES (1,1,?,NULL)", (_json(_DEFAULT),))
+    db.execute(
+        "INSERT OR IGNORE INTO x_alert_policy VALUES (1,1,?,NULL)",
+        (_json(dict(_DEFAULT, timezone=timezone)),),
+    )
     db.execute(
         """CREATE TABLE IF NOT EXISTS x_alerts (
            job_id TEXT PRIMARY KEY REFERENCES pipeline_jobs(id), rule_key TEXT NOT NULL,

@@ -16,13 +16,17 @@ struct CategoryRoutingEditor: View {
         self.model = model
         self.config = config
         let first = config.categories.first
+        let digest = first.flatMap { category in config.subscriptions.first { $0.categoryId == category.id } }
         _categoryId = State(initialValue: first?.id ?? "")
-        _primary = State(initialValue: first?.primaryProfileId ?? "")
-        _backup = State(initialValue: first?.backupProfileId ?? "")
+        _primary = State(initialValue: digest?.primaryProfileId ?? "")
+        _backup = State(initialValue: digest?.backupProfileId ?? "")
         _revision = State(initialValue: model.configRevision)
     }
 
     private var category: AppConfig.Category? { config.categories.first { $0.id == categoryId } }
+    // Schema v4 keeps model overrides on each digest; this editor sets them for every digest
+    // of the category until the redesigned digest page (R09) edits them one digest at a time.
+    private var digests: [AppConfig.Subscription] { config.subscriptions.filter { $0.categoryId == categoryId } }
 
     var body: some View {
         VStack {
@@ -31,8 +35,8 @@ struct CategoryRoutingEditor: View {
                     ForEach(config.categories) { Text($0.name).tag($0.id) }
                 }
                 .onChange(of: categoryId) {
-                    primary = category?.primaryProfileId ?? ""
-                    backup = category?.backupProfileId ?? ""
+                    primary = digests.first?.primaryProfileId ?? ""
+                    backup = digests.first?.backupProfileId ?? ""
                 }
                 selector(.primary, role: "primary", selection: $primary)
                 selector(.backup, role: "backup", selection: $backup)
@@ -64,11 +68,13 @@ struct CategoryRoutingEditor: View {
         defer { busy = false }
         failure = nil
         do {
-            let config = try ProtectedSettings.record(await model.request("config.get"), revision: revision)
-            let updated = try ProtectedSettings.modify(config, collection: "categories", id: categoryId, fields: [
-                "primary_profile_id": primary.isEmpty ? NSNull() as Any : primary,
-                "backup_profile_id": backup.isEmpty ? NSNull() as Any : backup,
-            ])
+            var updated = try ProtectedSettings.record(await model.request("config.get"), revision: revision)
+            for digest in digests {
+                updated = try ProtectedSettings.modify(updated, collection: "subscriptions", id: digest.id, fields: [
+                    "primary_profile_id": primary.isEmpty ? NSNull() as Any : primary,
+                    "backup_profile_id": backup.isEmpty ? NSNull() as Any : backup,
+                ])
+            }
             _ = try await model.request("config.save", fields: ["revision": revision, "document": updated])
             await model.refresh()
             dismiss()

@@ -1081,3 +1081,18 @@ private func write(_ object: Any, in folder: URL) throws -> URL {
     future["new_setting"] = true
     #expect(ImportChange.list(current: current, incoming: future, omitted: [:]) == [.other])
 }
+
+// MARK: - Review cycle 3
+
+@Test func theTwentyFourHourRuleForXPostTextIsStatedBesideTheRetentionChoice() {
+    // ops.cleanup purges X post text older than 24 hours whatever retention is chosen
+    // (x/timelines.py purge_expired, _AGE = 24 h); the copy must not imply otherwise.
+    for language in AppLanguage.allCases {
+        let note = L10n.Settings.retentionNote(language)
+        #expect(note.contains("X") && note.contains("24"), "\(note)")
+        let found = L10n.Settings.cleanupFound(language, ["count": "9", "logs": "1", "records": "2", "images": "3", "posts": "3"])
+        #expect(found.contains("24"), "\(found)")
+    }
+    #expect(L10n.Settings.retentionNote.zh.contains("X 帖子正文"))
+    #expect(L10n.Settings.cleanupFound.zh.contains("超过 24 小时的 X 帖子正文 {posts}"))
+}

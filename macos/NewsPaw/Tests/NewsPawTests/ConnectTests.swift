@@ -844,3 +844,18 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
 @Test func savingAFirstKeyShowsItIsBeingChecked() {
     #expect(KeyStatus.of(credential: nil, probe: nil, health: nil, working: true) == .checking)
 }
+
+@Test @MainActor func theFirstRunWindowAsksBeforeRepeatingAnUnknownCheckLikeThisPage() async throws {
+    let server = ConnectBackend()
+    let (model, _, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let setup = OnboardingData()
+    server.checks["normal_primary"] = [["state": "outcome_unknown", "status": "outcome_unknown", "error_kind": "outcome_unknown"]]
+    await setup.keys.load("normal_primary", model: model)
+    #expect(setup.keys.needsConfirmation("normal_primary"))
+
+    await setup.recheck("normal_primary", model: model)
+    #expect(server.calls("models.probe").isEmpty)
+    await setup.recheck("normal_primary", model: model, confirmed: true)
+    #expect(server.calls("models.probe").count == 1)
+}

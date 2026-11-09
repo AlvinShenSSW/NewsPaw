@@ -12,7 +12,7 @@ import httpx
 
 from ..av_rules import AV_PUBLISHER, industry_fact
 from ..evidence import EvidenceError, _content_status, _selection, _time
-from ..news import MAX_FEED_BYTES, Article, plain_text
+from ..newsparse import MAX_FEED_BYTES, Article, plain_text
 from ..transport import source_client
 
 AV_ORIGIN = "https://fiu758.com/"

@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ..credentials import CredentialError
-from ..news import public_url
+from ..newsparse import public_url
 
 _LOCALES = {
     "zh-Hans": ("NewsPaw 简报", "AI 生成示意", "第{page}/{total}页", "zh-Hans"),

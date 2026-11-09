@@ -731,9 +731,30 @@ class ControlServer:
             self._handlers.discard(task)
 
 
+def service_log_directory(home_dir: Path) -> Path:
+    return home_dir / "Library" / "Logs" / "NewsPaw"
+
+
+def prepare_logs(log_dir: Path) -> None:
+    """Create private log files owned by this user, refusing links and special files."""
+    log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    log_dir.chmod(0o700)
+    for filename in ("stdout.log", "stderr.log"):
+        log_path = log_dir / filename
+        descriptor = os.open(
+            log_path, os.O_CREAT | os.O_APPEND | os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600
+        )
+        try:
+            info = os.fstat(descriptor)
+            if info.st_uid != os.geteuid() or not stat.S_ISREG(info.st_mode):
+                raise OSError("unsafe_service_log")
+            os.fchmod(descriptor, 0o600)
+        finally:
+            os.close(descriptor)
+
+
 async def serve_control(directory):
     from .credentials import CredentialManager, MacKeychain
-    from .service import _prepare_logs, service_log_directory
     from .store import Store
 
     directory = Path(directory).expanduser().absolute()
@@ -747,7 +768,7 @@ async def serve_control(directory):
             try:
                 if log_directory.is_symlink():
                     raise OSError("unsafe_log_directory")
-                _prepare_logs(log_directory)
+                prepare_logs(log_directory)
                 handler = RotatingFileHandler(
                     log_directory / "stderr.log",
                     maxBytes=1_048_576,

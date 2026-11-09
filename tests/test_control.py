@@ -182,7 +182,7 @@ async def test_disconnect_after_mutation_still_commits(control):
     assert store.config_revision() == 2
 
 
-def test_control_cli_does_not_load_legacy_settings(monkeypatch, tmp_path):
+def test_control_cli_starts_only_the_control_backend(monkeypatch, tmp_path):
     import newspaw.cli as cli
     import newspaw.control as module
 
@@ -191,13 +191,30 @@ def test_control_cli_does_not_load_legacy_settings(monkeypatch, tmp_path):
     async def serve(directory):
         calls.append(directory)
 
-    def forbidden(*args):
-        raise AssertionError("control setup must not load runtime secrets")
-
     monkeypatch.setattr(module, "serve_control", serve)
-    monkeypatch.setattr(cli, "load_settings", forbidden)
     assert cli.main(["control", "--data-dir", str(tmp_path)]) == 0
     assert calls == [tmp_path]
+
+
+@pytest.mark.parametrize("command", ["run", "service", "init", "doctor", "search", "collect"])
+def test_removed_env_commands_are_rejected(command, capsys):
+    import newspaw.cli as cli
+
+    with pytest.raises(SystemExit) as exited:
+        cli.main([command])
+    assert exited.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_cli_help_lists_only_the_control_command(capsys):
+    import newspaw.cli as cli
+
+    with pytest.raises(SystemExit):
+        cli.main(["--help"])
+    output = capsys.readouterr().out
+    assert "{control}" in output
+    for removed in ("run", "service", "init", "doctor", "--config"):
+        assert removed not in output.split()
 
 
 async def test_budget_policy_uses_separate_cas_without_changing_news_config(control):

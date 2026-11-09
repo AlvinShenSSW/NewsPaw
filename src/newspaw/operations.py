@@ -24,11 +24,10 @@ from .media.input_service import _POLICY as MEDIA_DEFAULT
 from .media.paper_service import _POLICY as NEWSPAPER_DEFAULT
 from .media.source_images import AssetStore, ImageError
 from .migrations import DATABASE_VERSION
-from .news import public_url
+from .newsparse import public_url
 from .providers import ProfileRegistry
 from .scheduler import _LEASE_STATES, _TERMINAL
 from .scheduler import _policy as schedule_default
-from .store import AUDIT_RETENTION
 from .x.alerts import _DEFAULT as X_ALERT_DEFAULT
 from .x.video import _DEFAULT as X_VIDEO_DEFAULT
 
@@ -37,8 +36,7 @@ _MAX_PORTABLE = 512 * 1024
 _MAX_BACKUP = 64 * 1024 * 1024
 # Each release adds these tables to the previous on-disk schema.
 _BACKUP_TABLES = {
-    0: "settings deliveries",
-    1: "app_configuration migration_info deliveries_v2 collections briefs",
+    1: "app_configuration migration_info",
     3: "credential_intents",
     4: "budget_policy budget_periods budget_tasks budget_attempts",
     5: "feed_associations feed_attempts feed_cache feed_health_policy feed_snapshots",
@@ -61,6 +59,9 @@ _BACKUP_TABLES = {
     22: "bot_test_sends",
     23: "x_alert_policy x_alerts x_alert_posts x_alert_checked x_video_policy x_video_receipts",
 }
+# Tables of the removed .env bot. Databases from v0.5.0 or earlier keep them (the explicit
+# legacy preference import still reads `settings`); new databases never create them.
+_LEGACY_TABLES = {"settings", "deliveries", "deliveries_v2", "collections", "briefs"}
 _SETTINGS_DEFAULTS = {
     "newspaper_policy": NEWSPAPER_DEFAULT,
     "telegram_media_policy": MEDIA_DEFAULT,
@@ -587,6 +588,7 @@ class Operations:
                     if version == DATABASE_VERSION and any(
                         self._columns(backup, name) != columns
                         for name, columns in self.backup_tables.items()
+                        if name not in _LEGACY_TABLES
                     ):
                         raise OperationsError("invalid_backup")
         except (OSError, sqlite3.Error, AttributeError):
@@ -747,10 +749,6 @@ class Operations:
                 self.db.execute(
                     f"DELETE FROM feed_snapshots WHERE id IN ({placeholders})", snapshots
                 )
-            audit_count = self.db.execute("SELECT count(*) FROM collections").fetchone()[0]
-            audit_candidates = min(limit, max(0, audit_count - AUDIT_RETENTION))
-            if apply and audit_candidates:
-                self.store._prune_audit(audit_count - audit_candidates)
             media, removed, deferred = self._media_cleanup(
                 cutoff=cutoff.timestamp(), limit=limit, apply=apply
             )
@@ -766,7 +764,6 @@ class Operations:
             "log_removed": log_removed,
             "attempt_candidates": len(attempts),
             "snapshot_candidates": len(snapshots),
-            "audit_candidates": audit_candidates,
             "media_candidates": media,
             "media_removed": removed,
             "media_deferred": deferred,

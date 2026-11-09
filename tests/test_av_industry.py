@@ -1,14 +1,11 @@
-from types import SimpleNamespace
-
 import httpx
 import pytest
 from test_evidence import NOW
 from test_outbox import system as outbox_system
 from test_routing import configured
 
-from newspaw.bot import NewsBot
 from newspaw.evidence import feed_scopes
-from newspaw.news import Article, NewsService
+from newspaw.newsparse import Article
 
 legacy_edition = outbox_system
 
@@ -17,45 +14,6 @@ def test_known_publisher_never_enters_the_generic_rss_scope():
     config, sub = configured()
     config["sources"][0]["url"] = "https://fiu758.com/?feed=rss2"
     assert feed_scopes(config, [sub["id"]]) == []
-
-
-async def test_legacy_fetch_does_not_access_known_adult_origin():
-    observed = []
-
-    def handler(request):
-        observed.append(request)
-        return httpx.Response(200, content=b"fixture")
-
-    news = NewsService(["https://fiu758.com/?feed=rss2"])
-    await news._client.aclose()
-    news._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    try:
-        articles, attempt = await news._fetch("https://fiu758.com/?feed=rss2", NOW)
-    finally:
-        await news.close()
-    assert not articles and not observed
-    assert attempt.error_kind == "adult_source_requires_adapter"
-
-
-async def test_legacy_delivery_excludes_known_origin_before_model_or_raw_card():
-    effects = []
-
-    async def summarize(*args, **kwargs):
-        effects.append("ordinary_model")
-        return ""
-
-    async def send_message(*args, **kwargs):
-        effects.append("raw_card")
-
-    legacy = SimpleNamespace(
-        ai=SimpleNamespace(enabled=True, summarize=summarize),
-        settings=SimpleNamespace(timezone="UTC"),
-        voice_enabled=False,
-    )
-    bot = SimpleNamespace(send_message=send_message)
-    article = Article("Synthetic industry announcement", "https://fiu758.com/?p=123", "Fixture")
-    await NewsBot.deliver(legacy, bot, 123, [article])
-    assert not effects
 
 
 @pytest.mark.parametrize("hold", [False, True])

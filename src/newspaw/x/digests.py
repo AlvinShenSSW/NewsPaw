@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 from ..app_config import X_DEFAULT_POST_TYPES, in_x_aggregate, x_post_types
-from ..news import Article
+from ..newsparse import Article
 from .timelines import TimelineError, same_timeline_binding, timeline_access_current
 
 _REUSE = timedelta(hours=1)

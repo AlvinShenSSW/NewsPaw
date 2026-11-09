@@ -14,8 +14,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import dotenv_values
 
-from .config import parse_times, parse_topics
-
 SCHEMA_VERSION = 4
 DEFAULT_TIMEZONE = "Asia/Tokyo"
 STYLES = {"text", "source_image", "newspaper"}
@@ -90,6 +88,24 @@ _TOP_FIELDS = {
     "x_api",
     *_FIELDS,
 }
+
+
+def parse_times(value: str) -> list[str]:
+    times = sorted(set(part.strip() for part in value.split(",") if part.strip()))
+    if (
+        not times
+        or len(times) > 12
+        or any(not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", item) for item in times)
+    ):
+        raise ValueError("推送时间格式应为 09:00,18:00，每天最多 12 次。")
+    return times
+
+
+def parse_topics(value: str) -> list[str]:
+    topics = list(dict.fromkeys(part.strip() for part in value.split(";") if part.strip()))
+    if not topics or len(topics) > 10 or any(len(item) > 150 for item in topics):
+        raise ValueError("请设置 1–10 个主题，用英文分号分隔，每个主题最多 150 字。")
+    return topics
 
 
 def uses_category_sources(subscription):

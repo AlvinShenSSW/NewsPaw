@@ -235,12 +235,25 @@ class CredentialManager:
         async def operation():
             document = self._current(revision)
             entry = self._entry(document, kind, identity)
+            if await self._holds(entry["credential_ref"], value):
+                # Saving the secret already stored changes nothing: same reference, same
+                # profile generation, so no verification is reset or paid for again.
+                return {"revision": revision, **await self._cleanup()}
             ref = f"keychain:{uuid4()}"
             entry["credential_ref"] = ref
             self._reset(entry, kind)
             return await self._commit(document, revision, [(ref, value)])
 
         return await self._submit(operation)
+
+    async def _holds(self, ref, value):
+        if ref is None:
+            return False
+        try:
+            stored = await asyncio.to_thread(self.backend.read, ref)
+        except CredentialError:
+            return False
+        return isinstance(stored, str) and hmac.compare_digest(stored.encode(), value.encode())
 
     async def remove(self, kind, identity, revision):
         async def operation():

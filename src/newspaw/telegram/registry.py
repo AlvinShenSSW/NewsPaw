@@ -165,12 +165,17 @@ class Binding:
     owner_id: int
 
 
-
-def _assign_first_bot(config, bot_id):
+def _assign_first_bot(db, config, bot_id):
     """E10 contract §2: the first paired Bot receives every ordinary digest that has no
-    target yet. Later Bots and adult digests are never assigned automatically."""
-    if any(bot["paired"] for bot in config["bots"] if bot["id"] != bot_id):
-        return
+    target yet. Later Bots and adult digests are never assigned automatically.
+
+    Registrations are authoritative: a paused Bot is still paired even though its config
+    projection says otherwise."""
+    for (payload,) in db.execute(
+        "SELECT payload FROM bot_registrations WHERE id<>? AND active=1", (bot_id,)
+    ).fetchall():
+        if json.loads(payload)["paired"]:
+            return
     partitions = {category["id"]: category["partition"] for category in config["categories"]}
     for subscription in config["subscriptions"]:
         if partitions[subscription["category_id"]] == "normal" and not subscription["bot_ids"]:
@@ -594,7 +599,7 @@ class BotRegistry:
                             paired=True, chat_id=message["chat_id"], status="paired", cutover=when
                         )
                         _clear_pair(state)
-                        _assign_first_bot(config, row["id"])
+                        _assign_first_bot(self.db, config, row["id"])
                     else:
                         state["pair_tries"] += 1
                         if state["pair_tries"] >= 5:

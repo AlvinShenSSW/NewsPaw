@@ -312,13 +312,15 @@ class ControlServer:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
-        for task in self._background:
-            task.cancel()
-        await asyncio.gather(*self._background, return_exceptions=True)
         await self.commands.close()
         await self.scheduler.close()
         if self._handlers:
             await asyncio.gather(*self._handlers, return_exceptions=True)
+        # After the last handler: none can start another background check now.
+        while self._background:
+            for task in tuple(self._background):
+                task.cancel()
+            await asyncio.gather(*self._background, return_exceptions=True)
         await self.bots.close()
         await self.pipeline.close()
         await self.credentials.drain()
@@ -657,7 +659,7 @@ class ControlServer:
             }
         if op == "credentials.set":
             result = await manager.set(data["kind"], data["id"], data["value"], data["revision"])
-            if data["kind"] == "model_profiles":
+            if data["kind"] == "model_profiles" and result["revision"] != data["revision"]:
                 self._verify_soon(data["id"], ["text"])
             return result
         if op == "credentials.remove":

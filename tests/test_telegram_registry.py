@@ -627,3 +627,27 @@ async def test_first_paired_bot_receives_empty_ordinary_digests_only(system):
     config = store.load_config()[1]
     assert next(s for s in config["subscriptions"] if s["id"] == japan["id"])["bot_ids"] == []
     assert next(s for s in config["subscriptions"] if s["id"] == world["id"])["bot_ids"] == ["bot1"]
+
+
+async def test_a_paused_first_bot_keeps_later_bots_from_being_auto_assigned(system):
+    registry, api, store = system
+    revision, config = store.load_config()
+    config["owner_id"] = None
+    for bot in config["bots"]:
+        bot.update(verified=False, paired=False, telegram_id=None, chat_id=None)
+    config["bots"].append({**config["bots"][0], "id": "bot2", "name": "Second"})
+    store.save_config(config, expected_revision=revision)
+    await bind(registry, api)
+    registry.action("bot1", "pause", now=NOW)
+    revision, config = store.load_config()
+    japan = next(s for s in config["subscriptions"] if s["category_id"] == "japan")
+    japan["bot_ids"] = []
+    store.save_config(config, expected_revision=revision)
+    api.remote_id = 1000
+    await registry.verify("bot2", now=NOW)
+    code = registry.pair_code("bot2", now=NOW)["code"]
+    api.updates = [update("/pair " + code, 2)]
+    await registry.poll_once("bot2", now=NOW)
+    assert registry.status("bot2")["paired"]
+    config = store.load_config()[1]
+    assert next(s for s in config["subscriptions"] if s["id"] == japan["id"])["bot_ids"] == []

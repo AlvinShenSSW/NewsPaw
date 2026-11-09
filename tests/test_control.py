@@ -611,3 +611,22 @@ async def test_status_lists_operations_and_readiness_is_served(control):
         "digest",
         "first_delivery",
     ]
+
+
+@pytest.mark.parametrize(
+    "op", ["\ud800", "x" * (8 * 1024 * 1024 - 100), "Bots.List", "bots..list", "a.b.c.d.e"]
+)
+async def test_unbounded_or_odd_op_names_stay_in_the_protocol_domain(control, op):
+    server, _ = control
+    reader, writer = await asyncio.open_unix_connection(server.path, limit=9 * 1024 * 1024)
+    writer.write(json.dumps({"op": op}).encode() + b"\n")  # ASCII-escaped, so surrogates survive
+    await writer.drain()
+    raw = await reader.readline()
+    writer.close()
+    await writer.wait_closed()
+    assert len(raw) < 1024
+    assert json.loads(raw) == {
+        "ok": False,
+        "error": "unknown_operation",
+        "error_detail": {"code": "unknown_operation", "domain": "protocol", "retryable": False},
+    }

@@ -9,6 +9,7 @@ import fcntl
 import json
 import logging
 import os
+import re
 import socket
 import stat
 import struct
@@ -49,6 +50,8 @@ from .x.video import Videos
 
 MAX_FRAME = 8 * 1024 * 1024
 _LOG = logging.getLogger(__name__)
+# Only a bounded ASCII name may become an error domain; anything else stays "protocol".
+_OP_NAME = re.compile(r"[a-z][a-z0-9_]{0,31}(?:\.[a-z][a-z0-9_]{0,31}){0,3}")
 OPERATIONS = {
     "ops.diagnostics": (set(), set()),
     "ops.support_snapshot": (set(), set()),
@@ -635,7 +638,11 @@ class ControlServer:
                     data = json.loads(raw)
                 except ValueError:
                     raise CredentialError("invalid_request") from None
-                if isinstance(data, dict) and isinstance(data.get("op"), str):
+                if (
+                    isinstance(data, dict)
+                    and isinstance(data.get("op"), str)
+                    and _OP_NAME.fullmatch(data["op"])
+                ):
                     op = data["op"]
                     domain = op.split(".", 1)[0]
                 result = await self._dispatch(data)

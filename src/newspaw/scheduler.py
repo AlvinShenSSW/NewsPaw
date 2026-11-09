@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from .credentials import CredentialError
 from .pipeline import PipelineError
 from .telegram.outbox import _FINISHED_PARTS, OutboxError
+from .vocabulary import occurrence_state
 
 _TERMINAL = {
     "cancelled",
@@ -262,7 +263,22 @@ class Scheduler:
                ORDER BY o.updated_at DESC, o.civil_date DESC, o.target_at DESC LIMIT ?""",
             (limit,),
         )
-        return {**self.policy(), "occurrences": [self._view(row) for row in rows]}
+        return {**self.policy(), "occurrences": [self._stated(self._view(row)) for row in rows]}
+
+    def _stated(self, view):
+        """Adds the shared `state` (vocabulary.py); a skip choice reads its delivery parts."""
+        parts = []
+        if view["job_id"] and (
+            view["status"] in {"partial", "skipped", "outcome_unknown"}
+            or view["reason"] == "delivery_outcome_unknown"
+        ):
+            try:
+                parts = [part for target in self.outbox._rows(view["job_id"]) for part in target["parts"]]
+            except OutboxError as exc:
+                if str(exc) != "missing_delivery":
+                    raise
+        view["state"] = occurrence_state(view["status"], view["reason"], parts=parts)
+        return view
 
     def _scope(self, identity, sub, account, shape, policy, now, *, first_scan):
         rows = self._rows("SELECT * FROM schedule_scopes WHERE id=?", (identity,))

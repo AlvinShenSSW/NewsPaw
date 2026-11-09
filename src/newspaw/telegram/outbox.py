@@ -16,6 +16,7 @@ import httpx
 
 from ..credentials import CredentialError
 from ..pipeline import PipelineError
+from ..vocabulary import target_state
 from .client import TelegramClient, TelegramError, TelegramSendError
 from .registry import Binding
 from .targets import TargetError
@@ -367,6 +368,7 @@ class Outbox:
             )
             view = dict(
                 status=state,
+                state=target_state(state, parts),
                 selected=bool(target["selected"]),
                 chat_id=target["chat_id"],
                 reason=target["reason"] or reason or part_reason,

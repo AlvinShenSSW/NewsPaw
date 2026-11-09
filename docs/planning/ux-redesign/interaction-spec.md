@@ -150,6 +150,26 @@ X 账号    普通 | 成人 分段；添加行；账号列表；汇总卡；读�
 
 所有状态点配文字（不只颜色）；图标按钮有 `accessibilityLabel`；展开/收起有 `accessibilityValue`；Tab 顺序按视觉顺序；`accessibilityReduceMotion` 时展开无动画。
 
+### 2.8 状态词汇（R05 #83）
+
+`jobs.get`、`schedule.status` 的每条 occurrence、`delivery.status` 的每个 target 都带同一个 `state` 字段（`src/newspaw/vocabulary.py`），界面只按它显示；原有 `status` / `reason` 保留用于说明文案。
+
+| `state` | 界面 | occurrence `status`（`reason`） | job `status` | target `status` |
+|---|---|---|---|---|
+| `waiting` | 等待中 | `planned` | — | — |
+| `preparing` | 准备中 | `preparing`、`waiting`、`delivering` | 收集 / 编辑 / `inflight` / `waiting` / `awaiting_delivery` | `pending`、`inflight` |
+| `late` | 延迟 | `late` | — | — |
+| `delivered` | 已发送 | `delivered` | — | `delivered` |
+| `partial` | 部分发送 | `partial` | — | `partial` |
+| `unknown` | 结果未知 | `outcome_unknown`；`waiting`/`late` 且 reason 为 `model_outcome_unknown` / `delivery_outcome_unknown` | `outcome_unknown` | `outcome_unknown` |
+| `skipped` | 已跳过 | `no_news`、`skipped`、`superseded`、`rescheduled` | `no_news`、`stale` | `skipped` |
+| `abandoned` | 已放弃补发 | 投递有 part 的 `resolution.action == skip` 且没有仍未知的 part（优先于其他） | — | 同左 |
+| `paused` | 已暂停 | `waiting`/`late` 且 reason `job_paused` | `paused` | — |
+| `held` | 等你决定 | `held` | — | — |
+| `failed` | 未能发送 | `blocked`、`cancelled` | `cancelled`、`blocked`、`refused`、`collection_failed` | `blocked`、`revoked` |
+
+调度总开关关闭时的「已暂停全部推送」由界面根据 `scheduling_enabled` 叠加，不是一个后端状态。
+
 ---
 
 ## 3. 首次设置窗口（R07 #85）

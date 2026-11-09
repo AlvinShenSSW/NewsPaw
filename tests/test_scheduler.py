@@ -138,6 +138,7 @@ async def test_prepares_before_send_and_completed_slot_survives_retime(system):
     clock[0] = target
     await scheduler.step(scheduler.plan(clock[0])[0])
     assert len(calls) == 2 and scheduler.status()["occurrences"][0]["status"] == "delivered"
+    assert scheduler.status()["occurrences"][0]["state"] == "delivered"
 
     revision, config = pipeline.store.load_config()
     sub = next(row for row in config["subscriptions"] if row["id"] == "sub_world")

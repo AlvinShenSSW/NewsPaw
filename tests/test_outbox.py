@@ -155,9 +155,11 @@ async def test_unknown_send_needs_explicit_ack_and_does_not_block_peer(system):
     await outbox.advance(job, "bot1", now=NOW)
     await outbox.advance(job, "bot1", now=NOW + timedelta(hours=1))
     assert bot_status(outbox, job, "bot1")["status"] == "outcome_unknown"
+    assert bot_status(outbox, job, "bot1")["state"] == "unknown"
     assert len(calls) == 1
     await outbox.advance(job, "bot2", now=NOW)
     assert bot_status(outbox, job, "bot2")["status"] == "delivered"
+    assert outbox.status(job)["targets"]["bot2"]["state"] == "delivered"
     with pytest.raises(OutboxError, match="duplicate_send_ack_required"):
         outbox.resolve(job, "bot1", 0, "retry", now=NOW)
     outbox.resolve(job, "bot1", 0, "retry", acknowledge_duplicate_send=True, now=NOW)

@@ -72,6 +72,7 @@ private struct Trial: Decodable {
 
 private struct Impact: Decodable {
     struct Subscription: Decodable { let id: String; let wasEnabled, enabled: Bool; let blockers: [String] }
+    let revision: Int
     let subscriptions: [Subscription]
 }
 
@@ -175,7 +176,22 @@ final class DigestsData {
     /// Applies `change` to the newest stored draft of `id` and saves it, keeping its on/off
     /// state unless `enable` says otherwise.
     @discardableResult
-    func save(_ id: String, model: AppModel, enable: Bool? = nil, change: EditorState.Change = { $0 }) async -> Bool {
+    func save(_ id: String, model: AppModel, enable: Bool? = nil, change: @escaping EditorState.Change = { $0 }) async -> Bool {
+        // Saves to one digest run one after another, in the order they were made: a quick second
+        // choice must not be overwritten by the first one's conflict retry.
+        let prior = saving[id]
+        let mine = Task { @MainActor in
+            _ = await prior?.value
+            return await self.saveNow(id, model: model, enable: enable, change: change)
+        }
+        saving[id] = Task { @MainActor in _ = await mine.value }
+        return await mine.value
+    }
+
+    /// The tail of each digest's save queue.
+    private var saving: [String: Task<Void, Never>] = [:]
+
+    private func saveNow(_ id: String, model: AppModel, enable: Bool?, change: EditorState.Change) async -> Bool {
         let client = model.client
         var enabled = false
         var attempted: [String: Any]?
@@ -422,6 +438,7 @@ final class DigestsData {
             return false
         }
         failures[id] = nil
+        impactRevision[id] = impact.revision
         // Turned off, or (for a digest following its category) left on with nothing to collect.
         impacts[id] = impact.subscriptions
             .filter { $0.wasEnabled && (!$0.enabled || $0.blockers.contains("no_sources")) }
@@ -429,11 +446,18 @@ final class DigestsData {
         return true
     }
 
+    /// The configuration revision each confirmed impact was read at.
+    private var impactRevision: [String: Int] = [:]
+
+    /// Removes a source against the revision whose impact the owner confirmed; if anything changed
+    /// since, the backend refuses (conflict) and the owner confirms again with the new impact.
     func removeSource(_ id: String, model: AppModel) async {
         working.insert(id)
         defer { working.remove(id) }
         do {
-            let revision = try await model.client.configDocument().revision
+            guard let revision = impactRevision.removeValue(forKey: id) else {
+                throw BackendError(code: "config_conflict", domain: "sources")
+            }
             _ = try await model.client.call(.sourcesDelete, ["source_id": id, "revision": revision])
             failures[id] = nil
         } catch {
@@ -1240,7 +1264,8 @@ private struct DigestEditor: View {
     }
 
     private var catalogPopover: some View {
-        let added = Set(data.sources.map(\.source.url))
+        // Feeds already in this digest; a feed serving another category can still join it.
+        let added = Set(data.listed(subscription).map(\.source.url))
         let entries = data.catalog.filter { $0.categoryId == subscription.categoryId && !added.contains($0.url) }
         return VStack(alignment: .leading, spacing: 8) {
             Text(model.text(L10n.Digests.fromCatalog)).font(.headline)

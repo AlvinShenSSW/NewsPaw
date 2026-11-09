@@ -17,6 +17,15 @@ private final class DigestBackend {
     /// The same, before the next sources.save of an existing source.
     var sourceBackgroundChange: (([String: Any]) -> [String: Any])?
     var impactReply: [String: Any] = ["subscriptions": []]
+    /// Per-operation delays applied before the reply is computed (to overlap requests).
+    var delays: [String: [Duration]] = [:]
+
+    func nextDelay(_ op: String) -> Duration? {
+        guard var queue = delays[op], !queue.isEmpty else { return nil }
+        let delay = queue.removeFirst()
+        delays[op] = queue
+        return delay
+    }
 
     init(subscriptions: [[String: Any]], sources: [[String: Any]] = [], bots: [[String: Any]] = [["id": "bot1", "adult_allowed": false]]) {
         document = [
@@ -39,6 +48,8 @@ private final class DigestBackend {
     var client: BackendClient {
         BackendClient { [unowned self] body, _ in
             let request = try JSONSerialization.jsonObject(with: body) as! [String: Any]
+            let op = request["op"] as! String
+            if let delay = await MainActor.run(body: { self.nextDelay(op) }) { try await Task.sleep(for: delay) }
             return await MainActor.run { self.answer(request) }
         }
     }
@@ -118,7 +129,10 @@ private final class DigestBackend {
             let draft = request["draft"] as! [String: Any]
             return ok(["blockers": (draft["bot_ids"] as? [String] ?? []).isEmpty ? ["no_ready_bot"] : [], "bots": draft["bot_ids"] ?? [], "sources": []])
         case "sources.impact":
-            return ok(impactReply)
+            return ok(impactReply.merging(["revision": revision]) { $1 })
+        case "sources.delete":
+            if stale { return refuse("config_conflict") }
+            return commit { document["sources"] = sources.filter { $0["id"] as? String != request["source_id"] as? String } }
         case "config.save":
             if stale { return refuse("config_conflict") }
             return commit { document = request["document"] as! [String: Any] }
@@ -530,4 +544,33 @@ private func connected(_ server: DigestBackend) async throws -> (AppModel, () ->
     try Data(repeating: 0x20, count: 2_000).write(to: large)
     #expect(DigestsPage.readOPML(small, limit: 1_000) == "<opml/>")
     #expect(DigestsPage.readOPML(large, limit: 1_000) == nil)
+}
+
+
+@Test @MainActor func twoQuickChangesToOneDigestSaveInTheOrderMade() async throws {
+    let server = DigestBackend(subscriptions: [subscription("sub_japan", enabled: true, bots: ["bot1"])])
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    // The first save's request is slow; without ordering, its conflict retry would land last.
+    server.delays["subscriptions.save"] = [.milliseconds(150)]
+    async let first = data.save("sub_japan", model: model) { var d = $0; d["max_items"] = 3; return d }
+    try await Task.sleep(for: .milliseconds(20))
+    async let second = data.save("sub_japan", model: model) { var d = $0; d["max_items"] = 10; return d }
+    _ = await (first, second)
+    #expect(server.subscription("sub_japan")?["max_items"] as? Int == 10)
+}
+
+@Test @MainActor func aRemovalConfirmedBeforeAChangeIsRefusedAndAskedAgain() async throws {
+    let server = DigestBackend(subscriptions: [subscription("sub_japan")], sources: [source("nhk", focus: "domestic")])
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    #expect(await data.loadImpact("nhk", model: model))
+    server.revision += 1 // another window changed the configuration meanwhile
+    await data.removeSource("nhk", model: model)
+    #expect(server.source("nhk") != nil && data.failures["nhk"]?.isConflict == true)
+    #expect(await data.loadImpact("nhk", model: model))
+    await data.removeSource("nhk", model: model)
+    #expect(server.source("nhk") == nil)
 }

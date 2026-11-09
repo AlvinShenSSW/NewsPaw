@@ -716,15 +716,7 @@ final class ConnectData {
     /// Runs a revisioned change against the newest configuration revision, once more after a
     /// background change.
     private func revisioned(_ model: AppModel, _ body: (Int) async throws -> Void) async throws {
-        for attempt in 0..<2 {
-            let revision = try await model.client.configDocument().revision
-            do {
-                try await body(revision)
-                return
-            } catch let error as BackendError where error.isConflict && attempt == 0 {
-                continue
-            }
-        }
+        try await model.client.revisioned(body)
     }
 
     // MARK: Models
@@ -878,13 +870,7 @@ final class ConnectData {
             failures["budget.daily"] = BackendError(code: "invalid_count", domain: "budget")
             return false
         }
-        return await saveBudget("budget.daily", model: model) { document in
-            var document = document
-            var limits = document["x"] as? [String: Any] ?? [:]
-            limits["daily_limit"] = value ?? NSNull()
-            document["x"] = limits
-            return document
-        }
+        return await saveBudget("budget.daily", model: model, change: BudgetChange.dailyReads(value))
     }
 
     /// Clears one of the other limits.
@@ -921,11 +907,7 @@ final class ConnectData {
         guard !working.contains(key) else { return false }
         working.insert(key)
         defer { working.remove(key) }
-        let client = model.client
-        let editor = EditorState(
-            load: { try BackendClient.record(await client.call(.budgetGet), field: "document") },
-            store: { _ = try await client.call(.budgetSave, ["document": $0, "revision": $1]) }
-        )
+        let editor = model.client.budgetEditor()
         let saved = await editor.apply(change)
         if saved {
             failures[key] = nil

@@ -595,7 +595,7 @@ struct OccurrenceRow: View {
                 .font(.body.weight(.semibold)).monospacedDigit()
                 .frame(width: showDate ? 96 : 48, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.digestTitle(row.subscriptionId))
+                Text(model.editionTitle(row.subscriptionId, accountId: row.accountId))
                 Text(note(state)).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -659,7 +659,7 @@ struct OccurrenceRow: View {
         switch state {
         case .waiting:
             // A slot not created yet has no preparation time; name where it goes instead.
-            guard row.prepareAt != nil else { return model.targetsLine(row.subscriptionId) }
+            guard row.prepareAt != nil else { return model.targetsLine(row.subscriptionId, accountId: row.accountId) }
             return L10n.Overview.preparesAt(model.uiLanguage, ["time": OverviewData.clock(row.prepareAt)])
         case .jobPaused:
             return model.text(L10n.Overview.jobPausedNote)
@@ -682,7 +682,7 @@ struct OccurrenceRow: View {
         case .failed:
             return FailureCopy.message(for: BackendError(code: row.reason ?? row.status), model.uiLanguage)
         case .preparing, .paused:
-            return model.targetsLine(row.subscriptionId)
+            return model.targetsLine(row.subscriptionId, accountId: row.accountId)
         }
     }
 }
@@ -881,9 +881,25 @@ extension AppModel {
         return names[subscription.categoryId].map(text) ?? subscription.categoryId
     }
 
-    /// "→ @bot" for the digest's targets.
-    func targetsLine(_ subscriptionId: String) -> String {
-        recipientsLine(config?.subscriptions.first { $0.id == subscriptionId }?.botIds ?? [])
+    /// "→ @bot" for where an edition goes (`targetsLine(row.subscriptionId, accountId: row.accountId)`).
+    func targetsLine(_ subscriptionId: String, accountId: String? = nil) -> String {
+        recipientsLine(recipients(subscriptionId, accountId: accountId))
+    }
+
+    /// The Bots an edition goes to, as routing.py `resolve_route` decides: an X account sent
+    /// alone uses its own Bots when it has chosen some, otherwise its digest's.
+    func recipients(_ subscriptionId: String, accountId: String?) -> [String] {
+        let digest = config?.subscriptions.first { $0.id == subscriptionId }?.botIds ?? []
+        guard let accountId, let account = config?.accounts.first(where: { $0.id == accountId }),
+              account.priority == "special" else { return digest }
+        return account.botIds ?? digest
+    }
+
+    /// A row's title: the digest, and for an X account sent alone also its @username.
+    func editionTitle(_ subscriptionId: String, accountId: String?) -> String {
+        let title = digestTitle(subscriptionId)
+        guard let accountId, let account = config?.accounts.first(where: { $0.id == accountId }) else { return title }
+        return title + " · @" + account.handle
     }
 
     /// "→ @bot, @other" for these Bot ids.

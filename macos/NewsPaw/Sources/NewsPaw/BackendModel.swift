@@ -275,26 +275,33 @@ final class AppModel {
     /// String-named requests from the settings views that predate the typed client.
     /// Removed together with those views (R07–R12).
     func request(_ operation: String, fields: [String: Any] = [:]) async throws -> Data {
-        // A failure from these views has no shell retry; never keep an older one.
-        lastFailure = nil
-        retryLast = nil
+        // A success leaves an earlier shell failure and its retry as they are. A failure
+        // replaces them: these views have no shell retry, so an older one is never kept.
         do {
             guard connection == .connected else { throw SocketFailure.disconnected }
             return try await client.send(operation, fields)
         } catch let failure as SocketFailure {
-            lastFailure = BackendError(code: "backend_unreachable")
+            replaceFailure(BackendError(code: "backend_unreachable"))
             throw failure
         } catch BackendFailure.invalidReply {
-            lastFailure = BackendError(code: "invalid_reply")
+            replaceFailure(BackendError(code: "invalid_reply"))
             throw BackendFailure.invalidReply
         } catch let failure as BackendError {
-            lastFailure = failure
+            replaceFailure(failure)
             // Keep the cases those views already distinguish.
             if failure.code == "unknown_operation" { throw BackendFailure.incompatible }
             if failure.code == "restore_requires_fresh_instance" { throw BackendFailure.freshInstanceRequired }
             if failure.isConflict { throw BackendFailure.conflict }
             throw failure
+        } catch {
+            replaceFailure(nil)
+            throw error
         }
+    }
+
+    private func replaceFailure(_ failure: BackendError?) {
+        lastFailure = failure
+        retryLast = nil
     }
 
     /// Pauses or resumes every scheduled delivery (the menu-bar and Settings switch).

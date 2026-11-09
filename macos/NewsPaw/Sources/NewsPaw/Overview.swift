@@ -89,6 +89,10 @@ final class OverviewData {
     private(set) var abandoned: Set<String> = []
     /// Editions with a delivery part whose outcome is unknown (the only parts recovery can act on).
     private(set) var unknownParts: Set<String> = []
+    /// The Bots each delivered edition today actually went to (its delivery record).
+    private(set) var recipients: [String: [String]] = [:]
+    /// The digests used for today's later slots, kept for reloads after a recovery action.
+    private var subscriptions: [AppConfig.Subscription] = []
     private(set) var spending: Spending?
     private(set) var staleSources: [(name: String, days: Int)] = []
     private(set) var failure: BackendError?
@@ -103,7 +107,9 @@ final class OverviewData {
         var xLimit: Int?
     }
 
-    func load(_ client: BackendClient, now: Date = Date(), subscriptions: [AppConfig.Subscription] = []) async {
+    func load(_ client: BackendClient, now: Date = Date(), subscriptions: [AppConfig.Subscription]? = nil) async {
+        if let subscriptions { self.subscriptions = subscriptions }
+        let subscriptions = self.subscriptions
         do {
             let schedule = try await client.call(.scheduleStatus, ["limit": 100])
             let rows = try BackendRPC.decode(schedule) as ScheduleRows
@@ -130,6 +136,14 @@ final class OverviewData {
             }
             abandoned = skipped
             unknownParts = unknown
+            var sent: [String: [String]] = [:]
+            for row in today where ["delivered", "partial"].contains(row.status) {
+                guard let job = row.jobId else { continue }
+                if let summary: DeliveryStatus = try? BackendRPC.decode(await client.call(.deliveryStatus, ["job_id": job])) {
+                    sent[row.id] = summary.targets.filter { ["delivered", "partial"].contains($0.value.status ?? "") }.keys.sorted()
+                }
+            }
+            recipients = sent
             spending = Self.spending(try BackendRPC.decode(await client.call(.budgetGet)), now: now)
             let sources: [SourceHealth] = try BackendRPC.decode(await client.call(.sourcesList))
             staleSources = sources.compactMap { item in
@@ -196,7 +210,7 @@ final class OverviewData {
 
     /// `delivery.status` lists parts only when asked for one Bot (outbox.status).
     private struct DeliveryStatus: Decodable {
-        struct Target: Decodable { let parts: [Part]? }
+        struct Target: Decodable { let status: String?; let parts: [Part]? }
         struct Part: Decodable {
             let ordinal: Int?
             let state: String
@@ -237,6 +251,8 @@ final class OverviewData {
     nonisolated static func mayHaveSkippedParts(_ row: Occurrence) -> Bool {
         ["partial", "skipped", "outcome_unknown"].contains(row.status)
             || (["waiting", "late"].contains(row.status) && row.reason == "delivery_outcome_unknown")
+            // Every unknown part skipped before any arrived: the scheduler records it as blocked.
+            || (row.status == "blocked" && row.reason == "targets_unavailable")
     }
 
     /// Each target Bot's parts for a job: the summary names the Bots, then each is read alone.
@@ -268,6 +284,24 @@ final class OverviewData {
         ["waiting", "late"].contains(row.status)
     }
 
+    /// The scheduler's rule (`resolve_wall_time`): the earliest instant showing that wall time,
+    /// or, inside a daylight-saving gap, the first valid minute after it.
+    nonisolated static func resolveWallTime(_ civil: DateComponents, hour: Int, minute: Int, calendar: Calendar) -> Date? {
+        for step in 0..<(24 * 60 - (hour * 60 + minute)) {
+            var wall = civil
+            wall.hour = hour + (minute + step) / 60
+            wall.minute = (minute + step) % 60
+            guard let guess = calendar.date(from: wall) else { continue }
+            let matches = [-3_600.0, 0, 3_600].map { guess.addingTimeInterval($0) }.filter { instant in
+                let shown = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: instant)
+                return shown.year == wall.year && shown.month == wall.month && shown.day == wall.day
+                    && shown.hour == wall.hour && shown.minute == wall.minute
+            }
+            if let earliest = matches.min() { return earliest }
+        }
+        return nil
+    }
+
     /// Today's slots that the scheduler has not created yet (it creates an occurrence only when
     /// preparation starts), so the list shows the whole day. Enabled digests only; a slot
     /// already present at the same instant is not repeated.
@@ -285,10 +319,8 @@ final class OverviewData {
                 for (slot, time) in subscription.times.enumerated() {
                     let parts = time.split(separator: ":").compactMap { Int($0) }
                     guard parts.count == 2 else { continue }
-                    var components = civil
-                    components.hour = parts[0]
-                    components.minute = parts[1]
-                    guard let target = calendar.date(from: components), target > now, day(target) == today,
+                    guard let target = resolveWallTime(civil, hour: parts[0], minute: parts[1], calendar: calendar),
+                          target > now, day(target) == today,
                           !taken.contains("\(subscription.id)@\(Int(target.timeIntervalSince1970))") else { continue }
                     let formatter = ISO8601DateFormatter()
                     formatter.timeZone = zone
@@ -601,7 +633,8 @@ struct OccurrenceRow: View {
         case .jobPaused:
             return model.text(L10n.Overview.jobPausedNote)
         case .delivered:
-            return model.targetsLine(row.subscriptionId)
+            // The Bots that received it, from its delivery record — not today's settings.
+            return data.recipients[row.id].map(model.recipientsLine) ?? ""
         case .late:
             return L10n.Overview.lateNote(model.uiLanguage, ["time": OverviewData.clock(row.targetAt)])
         case .skipped:
@@ -819,7 +852,11 @@ extension AppModel {
 
     /// "→ @bot" for the digest's targets.
     func targetsLine(_ subscriptionId: String) -> String {
-        let ids = config?.subscriptions.first { $0.id == subscriptionId }?.botIds ?? []
+        recipientsLine(config?.subscriptions.first { $0.id == subscriptionId }?.botIds ?? [])
+    }
+
+    /// "→ @bot, @other" for these Bot ids.
+    func recipientsLine(_ ids: [String]) -> String {
         let names = ids.map { id in bots.first { $0.id == id }.flatMap { $0.username.map { "@" + $0 } ?? $0.name } ?? id }
         return names.isEmpty ? "" : "→ " + names.joined(separator: ", ")
     }

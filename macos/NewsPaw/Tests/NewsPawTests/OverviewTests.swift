@@ -371,3 +371,51 @@ private func realisticDelivery(_ server: ScriptedBackend, parts: String) {
         .filter { $0 != OverviewData.date("2026-11-10T08:00:00+09:00") })
     #expect(Set(upcoming.compactMap(\.targetAt).compactMap(OverviewData.date)) == expected)
 }
+
+@Test @MainActor func skippingEveryUnknownPartBeforeAnyArrivedReadsAsAbandoned() async {
+    let now = Date()
+    let server = backend(now: now, rows: [occurrence("b", status: "blocked", reason: "targets_unavailable", date: fixtureDay(0, from: now))])
+    realisticDelivery(server, parts: #"[{"ordinal":0,"state":"skipped","resolution":{"action":"skip"}}]"#)
+    let data = OverviewData()
+    await data.load(server.client, now: now)
+    #expect(data.abandoned == ["b"])
+}
+
+@Test @MainActor func aRecoveryReloadKeepsTodaysLaterSlots() async throws {
+    let now = Date()
+    let server = backend(now: now, rows: [occurrence("h", status: "held", reason: "partial_assignment_changed", date: fixtureDay(0, from: now))])
+    let later = Calendar.current.date(byAdding: .minute, value: 2, to: now)!
+    guard OverviewData.day(later) == OverviewData.day(now) else { return } // too close to midnight to test
+    let clock = DateFormatter()
+    clock.dateFormat = "HH:mm"
+    let config = #"[{"id":"sub_world","category_id":"world","timezone":"\#(TimeZone.current.identifier)","enabled":true,"times":["\#(clock.string(from: later))"]}]"#
+    let subscriptions = try BackendRPC.decode(Data(config.utf8)) as [AppConfig.Subscription]
+    let data = OverviewData()
+    await data.load(server.client, now: now, subscriptions: subscriptions)
+    let before = data.today.count
+    #expect(data.today.contains { $0.id.hasPrefix("upcoming.") })
+    await data.resolve(data.today.first { $0.id == "h" }!, .continueHeld, client: server.client)
+    #expect(data.today.count == before && data.today.contains { $0.id.hasPrefix("upcoming.") })
+}
+
+@Test func wallTimesFollowTheSchedulersDaylightSavingRules() throws {
+    var sydney = Calendar(identifier: .gregorian)
+    sydney.timeZone = try #require(TimeZone(identifier: "Australia/Sydney"))
+    // 2026-10-04 02:30 does not exist (02:00 → 03:00): the first valid minute after the gap.
+    let gap = OverviewData.resolveWallTime(DateComponents(year: 2026, month: 10, day: 4), hour: 2, minute: 30, calendar: sydney)
+    #expect(gap == OverviewData.date("2026-10-04T03:00:00+11:00"))
+    // 2026-04-05 02:30 happens twice (03:00 → 02:00): the earlier one.
+    let fold = OverviewData.resolveWallTime(DateComponents(year: 2026, month: 4, day: 5), hour: 2, minute: 30, calendar: sydney)
+    #expect(fold == OverviewData.date("2026-04-05T02:30:00+11:00"))
+    let plain = OverviewData.resolveWallTime(DateComponents(year: 2026, month: 11, day: 10), hour: 8, minute: 0, calendar: sydney)
+    #expect(plain == OverviewData.date("2026-11-10T08:00:00+11:00"))
+}
+
+@Test @MainActor func aDeliveredEditionNamesTheBotsItActuallyReached() async {
+    let now = Date()
+    let server = backend(now: now, rows: [occurrence("d", status: "delivered", date: fixtureDay(0, from: now))],
+                         delivery: #"{"ok":true,"result":{"targets":{"bot1":{"status":"delivered"},"bot2":{"status":"blocked"}}}}"#)
+    let data = OverviewData()
+    await data.load(server.client, now: now)
+    #expect(data.recipients["d"] == ["bot1"])
+}

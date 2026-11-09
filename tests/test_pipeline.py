@@ -526,3 +526,26 @@ def test_schema_upgrade_keeps_legacy_receipts_without_enqueuing(tmp_path):
         ).fetchall() == [(123, "news", "article")]
         assert upgraded._db.execute("SELECT COUNT(*) FROM pipeline_jobs").fetchone() == (0,)
     assert len(list(tmp_path.glob("state.db.backup-*"))) == 1
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [("model_refused", "model_refused"), ("Editor said: no!", "preparation_failed")],
+)
+async def test_blocked_preparation_keeps_a_stable_reason_code(
+    database, monkeypatch, message, expected
+):
+    from newspaw.editorial import EditorialError
+
+    store, sub, _ = database
+    pipeline, _, _ = prepare(store)
+    job = create(pipeline, sub)
+    assert (await pipeline.advance(job, now=NOW))["stage"] == "editing"
+
+    async def refuse(*args, **kwargs):
+        raise EditorialError(message)
+
+    monkeypatch.setattr(pipeline, "_edit", refuse)
+    result = await pipeline.advance(job, now=NOW)
+    assert result["stage"] == "blocked"
+    assert result["error_kind"] == expected

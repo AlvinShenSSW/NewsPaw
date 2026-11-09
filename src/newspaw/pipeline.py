@@ -16,6 +16,7 @@ from .connectors.av import AVCollector, av_scopes
 from .connectors.web import WebCollector, web_scopes
 from .credentials import CredentialError
 from .editorial import EditorialError, EditorialService
+from .errors import code_of
 from .evidence import EvidenceError, EvidenceStore, FeedCollector, feed_scopes
 from .media.newspaper import PaperError
 from .model_runner import ModelRunner, RunnerError
@@ -657,7 +658,9 @@ class Pipeline:
         except (EvidenceError, EditorialError, ProviderError, RunnerError) as exc:
             if str(exc) == "storage_failed":
                 raise PipelineError("storage_failed") from None
-            self._transition(job_id, token, "blocked", _time(now), error="preparation_failed")
+            self._transition(
+                job_id, token, "blocked", _time(now), error=code_of(exc, "preparation_failed")
+            )
 
     async def advance(self, job_id, *, now=None, effect_guard=None):
         try:

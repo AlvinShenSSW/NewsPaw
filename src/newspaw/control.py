@@ -9,6 +9,7 @@ import fcntl
 import json
 import logging
 import os
+import re
 import socket
 import stat
 import struct
@@ -21,6 +22,7 @@ from pathlib import Path
 from .budget import BudgetError, BudgetLedger
 from .connectors.web_search import WebSearch
 from .credentials import CredentialError
+from .errors import code_of, detail
 from .media.image_provider import ImageProvider
 from .media.input_service import MediaCommands
 from .media.newspaper import MacOCR
@@ -30,6 +32,7 @@ from .media.speech_provider import TranscriptionProvider
 from .operations import Operations
 from .pipeline import Pipeline
 from .providers import ProbeService, ProfileRegistry, ProviderError
+from .readiness import readiness
 from .scheduler import Scheduler
 from .source_catalog import catalog
 from .source_manager import SourceError, SourceManager
@@ -46,6 +49,9 @@ from .x.timelines import Timelines
 from .x.video import Videos
 
 MAX_FRAME = 8 * 1024 * 1024
+_LOG = logging.getLogger(__name__)
+# Only a bounded ASCII name may become an error domain; anything else stays "protocol".
+_OP_NAME = re.compile(r"[a-z][a-z0-9_]{0,31}(?:\.[a-z][a-z0-9_]{0,31}){0,3}")
 OPERATIONS = {
     "ops.diagnostics": (set(), set()),
     "ops.support_snapshot": (set(), set()),
@@ -55,6 +61,7 @@ OPERATIONS = {
     "ops.verify_backup": ({"name"}, set()),
     "ops.cleanup": (set(), {"apply", "limit"}),
     "service.status": (set(), set()),
+    "setup.readiness": (set(), set()),
     "service.stop": (set(), set()),
     "schedule.status": (set(), {"limit"}),
     "media.policy": (set(), set()),
@@ -331,17 +338,24 @@ class ControlServer:
         required, optional = OPERATIONS[op]
         keys = set(data) - {"op"}
         if not required <= keys or keys - required - optional:
-            raise CredentialError("invalid_request")
+            error = CredentialError("invalid_request")
+            error.field = (
+                min(required - keys) if required - keys else min(keys - required - optional)
+            )
+            raise error
         if op == "service.stop":
             self._stop_requested.set()
         if op in {"service.status", "service.stop"}:
             return {
                 "protocol_version": 1,
                 "state": "stopping" if self._stop_requested.is_set() else "running",
+                "operations": sorted(OPERATIONS),
             }
         if self._stop_requested.is_set():
             raise CredentialError("service_stopping")
         manager, store = self.credentials, self.credentials.store
+        if op == "setup.readiness":
+            return readiness(store, ProfileRegistry(store))
         if op == "ops.diagnostics":
             return self.operations.diagnostics()
         if op == "ops.support_snapshot":
@@ -601,12 +615,17 @@ class ControlServer:
             return await manager.import_preferences(data["path"], data["revision"])
         return await manager.import_secrets(data["path"], data["revision"])
 
+    @staticmethod
+    def _failure(code, domain, field=None):
+        return {"ok": False, "error": code, "error_detail": detail(code, domain, field)}
+
     async def _handle(self, reader, writer):
         task = asyncio.current_task()
         if len(self._handlers) >= 16:
             writer.close()
             return
         self._handlers.add(task)
+        domain, op = "protocol", None
         try:
             try:
                 if peer_uid(writer.get_extra_info("socket")) != os.getuid():
@@ -615,15 +634,32 @@ class ControlServer:
                     raw = await reader.readline()
                 if not raw.endswith(b"\n") or len(raw) > MAX_FRAME:
                     raise CredentialError("invalid_request")
-                result = await self._dispatch(json.loads(raw))
+                try:
+                    data = json.loads(raw)
+                except ValueError:
+                    raise CredentialError("invalid_request") from None
+                if (
+                    isinstance(data, dict)
+                    and isinstance(data.get("op"), str)
+                    and _OP_NAME.fullmatch(data["op"])
+                ):
+                    op = data["op"]
+                    domain = op.split(".", 1)[0]
+                result = await self._dispatch(data)
                 response = {"ok": True, "result": result}
             except (CredentialError, BudgetError, ProviderError, TelegramError, SourceError) as exc:
-                response = {"ok": False, "error": str(exc)}
-            except Exception:
-                response = {"ok": False, "error": "invalid_request"}
+                response = self._failure(str(exc), domain, getattr(exc, "field", None))
+            except ValueError as exc:
+                field = getattr(exc, "field", None)
+                response = self._failure(code_of(exc, "invalid_request"), domain, field)
+            except Exception as exc:
+                logged = op if op in OPERATIONS else domain
+                _LOG.warning("Control %s failed (%s)", logged, type(exc).__name__)
+                response = self._failure("internal_error", domain, getattr(exc, "field", None))
             encoded = json.dumps(response, ensure_ascii=False).encode() + b"\n"
             if len(encoded) > MAX_FRAME:
-                encoded = b'{"ok":false,"error":"response_too_large"}\n'
+                too_large = self._failure("response_too_large", domain)
+                encoded = json.dumps(too_large).encode() + b"\n"
             writer.write(encoded)
             async with asyncio.timeout(10):
                 await writer.drain()

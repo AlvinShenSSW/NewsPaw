@@ -212,7 +212,8 @@ X 账号    普通 | 成人 分段；添加行；账号列表；汇总卡；读�
 | paused | 灰「已暂停」 | 「全部推送已暂停」 | `恢复`（跳设置） |
 | partial | 黄「部分发送」 | 「3 / 5 段已到达」 | `检查并补发` |
 | outcome_unknown，reason `model_outcome_unknown` | 黄「结果未知」 | 「写简报的模型调用发出去了但没收到结果，可能已经扣费。」 | `确认后重试` → 确认框说明可能重复扣费 → `jobs.resume(acknowledge_duplicate_charge: true)` |
-| outcome_unknown（投递 part） | 黄「结果未知」 | 「Telegram 没有回应，这期可能已发出，也可能没有。」 | `检查并补发` → 确认框说明可能重复 → `delivery.resolve(action: retry, acknowledge_duplicate_send: true)`；`不用补发`（手机上已经收到）→ `delivery.resolve(action: skip)` |
+| outcome_unknown（投递 part） | 黄「结果未知」 | 「Telegram 没有回应，这期可能已发出，也可能没有。」 | `检查并补发` → 确认框说明可能重复 → `delivery.resolve(action: retry, acknowledge_duplicate_send: true)`；`不再补发` → 确认框「这一期（或其中这一段）将不再发送，之后也不会自动重试」→ `delivery.resolve(action: skip)` |
+| 投递 part 的 `resolution.action == skip`（用户选了不再补发） | 灰「已放弃补发」 | 「你选择了不再补发这一期」；多段时「其中 N 段已放弃补发」 | 无（不显示补发按钮，也不使用「没有合格的新条目」说明） |
 | held（reason `partial_assignment_changed`） | 黄「等你决定」 | 「这期已发出一部分，之后发送对象变了。」 | `继续发剩下的` → `schedule.resolve(continue)`；`停止` → `schedule.resolve(stop)` |
 | blocked、cancelled；target blocked / revoked | 红「未能发送」 | 具体 reason 文案（§2.4） | reason 对应的修复按钮 |
 

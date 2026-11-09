@@ -76,7 +76,8 @@ v3 的 `subscription` 已经拥有简报需要的全部字段（时间、时区�
 | 已发送 | `delivered`；target `delivered` | — |
 | 部分发送 | `partial`；target `partial` | 检查并补发 → `delivery.resolve`（需确认可能重复） |
 | 结果未知 | `outcome_unknown`（模型或投递） | 检查并重试 → 模型：`jobs.resume(acknowledge_duplicate_charge)`；投递：`delivery.resolve(acknowledge_duplicate_send)` |
-| 已跳过 | `no_news`, `skipped`, `superseded` | — |
+| 已跳过 | `no_news`, `skipped`, `superseded`（未经用户放弃） | — |
+| 已放弃补发 | 投递 part `skipped` 且 `resolution.action == skip`（用户在结果未知时选择不再补发）；优先于「已跳过」「部分发送」 | — （不提供补发） |
 | 已暂停 | job `paused` 或调度总开关关 | 恢复 → `jobs.resume` / 调度开关 |
 | 等你决定 | `held`（部分投递后目标变化） | 继续 / 停止 → `schedule.resolve` |
 | 未能发送 | `blocked`, `cancelled`；target `blocked` / `revoked` | 按 `reason` 映射的修复动作（见 interaction-spec §2.4） |

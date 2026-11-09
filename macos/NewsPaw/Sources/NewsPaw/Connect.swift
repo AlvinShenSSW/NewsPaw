@@ -44,7 +44,31 @@ struct TestSend: Decodable, Equatable {
 struct ExtraSettings: Equatable {
     var newspaperOn = false
     var newspaperProfile: String?
+    var newspaperVision: String?
     var transcriptionProfile: String?
+}
+
+/// One capability check of one model.
+struct CapabilityCheck: Equatable {
+    let profile: String
+    let capability: String
+}
+
+/// What an extra's row shows: off, working, still being checked, or the first check that blocks it.
+enum ExtraStatus: Equatable {
+    case off, usable
+    case waiting(CapabilityCheck)
+    case failed(CapabilityCheck, ProbeState)
+
+    static func of(on: Bool, checks: [CapabilityCheck], states: [String: [String: ProbeState]], working: Set<String>) -> ExtraStatus {
+        guard on else { return .off }
+        for check in checks {
+            guard !working.contains(KeyChecks.key(check.profile, check.capability)),
+                  let state = states[check.profile]?[check.capability], state.settled else { return .waiting(check) }
+            if !state.passed { return .failed(check, state) }
+        }
+        return .usable
+    }
 }
 
 /// This month's spending, the limits that apply, and today's X reads (`budget.get`).
@@ -272,7 +296,7 @@ final class ConnectData {
 
     nonisolated static func extras(paper: Data, media: Data) -> ExtraSettings {
         struct Paper: Decodable {
-            struct Settings: Decodable { let enabled: Bool; let generationProfile: String? }
+            struct Settings: Decodable { let enabled: Bool; let generationProfile: String?; let visionProfile: String? }
             let settings: Settings
         }
         struct Media: Decodable {
@@ -283,6 +307,7 @@ final class ConnectData {
         if let paper: Paper = try? BackendRPC.decode(paper) {
             extras.newspaperOn = paper.settings.enabled
             extras.newspaperProfile = paper.settings.generationProfile
+            extras.newspaperVision = paper.settings.visionProfile
         }
         if let media: Media = try? BackendRPC.decode(media) { extras.transcriptionProfile = media.settings.sttProfile }
         return extras
@@ -325,6 +350,11 @@ final class ConnectData {
     func cancelAdding(model: AppModel) async {
         guard let pairing = adding else { return }
         adding = nil
+        // Still connecting: the attempt removes what it created at its next step.
+        if pairing.working {
+            pairing.cancel()
+            return
+        }
         if let id = pairing.botId, pairing.bot?.verified != true {
             _ = try? await deleteBot(id, model: model)
         } else if let id = pairing.botId {
@@ -341,6 +371,29 @@ final class ConnectData {
     }
 
     func pairing(_ id: String) -> BotPairing? { pairings[id] }
+
+    /// The checks an extra needs to be usable.
+    func extraChecks(newspaper: Bool) -> [CapabilityCheck] {
+        if newspaper {
+            // A newspaper is made by the generation model and checked by the vision model
+            // (`Newspapers._profiles`); both checks must pass.
+            guard let generation = extras.newspaperProfile else { return [] }
+            return [CapabilityCheck(profile: generation, capability: "image"),
+                    CapabilityCheck(profile: extras.newspaperVision ?? generation, capability: "vision")]
+        }
+        return extras.transcriptionProfile.map { [CapabilityCheck(profile: $0, capability: "stt")] } ?? []
+    }
+
+    /// The retry offered under a failed test-message action.
+    /// While it is unknown whether the last message arrived, retrying reads that message's
+    /// receipt again (same request id); only a message known not to have arrived is sent anew.
+    func retryTest(_ id: String, model: AppModel) async {
+        if ["outcome_unknown", "inflight"].contains(tests[id]?.state ?? "") {
+            await checkTest(id, model: model)
+        } else {
+            await sendTest(id, model: model)
+        }
+    }
 
     private func ensurePairing(_ id: String, model: AppModel) -> BotPairing {
         if let existing = pairings[id] { return existing }
@@ -482,9 +535,7 @@ final class ConnectData {
     }
 
     private func deleteBot(_ id: String, model: AppModel) async throws {
-        try await revisioned(model) { revision in
-            _ = try await model.client.call(.targetsDeleteBot, ["bot_id": id, "revision": revision])
-        }
+        try await model.client.deleteBot(id)
     }
 
     /// Allows or stops adult content for a Bot; stopping also removes it from adult digests.
@@ -560,14 +611,16 @@ final class ConnectData {
     }
 
     /// Checks the saved key again (also "check and retry" after an unknown result, once confirmed).
-    func recheck(_ profile: String, model: AppModel, confirmed: Bool = false) async {
-        await keys.recheck(profile, model: model, confirmed: confirmed)
+    func recheck(_ profile: String, model: AppModel, capability: String = "text", confirmed: Bool = false) async {
+        await keys.recheck(profile, model: model, capability: capability, confirmed: confirmed)
         await load(model: model)
     }
 
     /// Whether checking this key again could repeat a charge whose result never came back
     /// (one rule for this page and the first-run window).
-    func needsConfirmation(_ profile: String) -> Bool { keys.needsConfirmation(profile) }
+    func needsConfirmation(_ profile: String, capability: String = "text") -> Bool {
+        keys.needsConfirmation(profile, capability: capability)
+    }
 
     /// Points a model at another OpenAI-compatible address or model ID, then checks its key.
     func saveEndpoint(_ profile: String, baseURL: String, modelId: String, model: AppModel) async {

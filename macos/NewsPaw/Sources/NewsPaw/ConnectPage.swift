@@ -581,7 +581,8 @@ private struct BotGroup: View {
     @ViewBuilder private var testLine: some View {
         let language = model.uiLanguage
         if let failure = data.failures["test." + bot.id] {
-            FailureNote(model: model, failure: failure) { Task { await data.sendTest(bot.id, model: model) } }
+            // An unresolved receipt is read again; a new message only after a definite failure.
+            FailureNote(model: model, failure: failure) { Task { await data.retryTest(bot.id, model: model) } }
         } else {
             switch TestDisplay.of(data.tests[bot.id], stillUnknown: data.stillUnknown.contains(bot.id)) {
             case .sent:
@@ -965,9 +966,9 @@ private struct ExtraRow: View {
     let data: ConnectData
     let kind: Kind
     @State private var choice = ""
+    @State private var confirming: CapabilityCheck?
 
     private var key: String { kind == .newspaper ? "newspaper" : "transcription" }
-    private var capability: String { kind == .newspaper ? "image" : "stt" }
     private var on: Bool { kind == .newspaper ? data.extras.newspaperOn : data.extras.transcriptionProfile != nil }
     private var stored: String? { kind == .newspaper ? data.extras.newspaperProfile : data.extras.transcriptionProfile }
     private var options: [AppConfig.Profile] { (model.config?.modelProfiles ?? []).filter(ModelNames.openAIOfficial) }
@@ -1014,26 +1015,67 @@ private struct ExtraRow: View {
             if let failure = data.failures[key] {
                 FailureNote(model: model, failure: failure)
             }
+            if case let .failed(check, state) = extraStatus {
+                // Which check blocks it (the newspaper also needs its vision check), and one retry.
+                FailureNote(model: model, failure: BackendError(code: state.errorKind ?? state.state, domain: "models"))
+                HStack(spacing: 8) {
+                    Text(capabilityName(check.capability)).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(model.text(L10n.Onboarding.checkAgain)) { recheck(check) }
+                }
+            }
+            if let failure = extraChecks.lazy.compactMap({ data.keys.failures[KeyChecks.key($0.profile, $0.capability)] }).first {
+                FailureNote(model: model, failure: failure)
+            }
         }
         .padding(.vertical, 8)
+        .confirmationDialog(model.text(L10n.Connect.retryTitle), isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } })) {
+            Button(model.text(L10n.Onboarding.checkAgain)) {
+                if let check = confirming {
+                    Task { await data.recheck(check.profile, model: model, capability: check.capability, confirmed: true) }
+                }
+            }
+            Button(model.text(L10n.Shell.cancel), role: .cancel) {}
+        } message: {
+            Text(model.text(L10n.Connect.retryBody))
+        }
         .onAppear { choice = stored ?? options.first?.id ?? "" }
         .onChange(of: stored) { _, value in if let value { choice = value } }
     }
 
+    private var extraChecks: [CapabilityCheck] { data.extraChecks(newspaper: kind == .newspaper) }
+
+    private var extraStatus: ExtraStatus {
+        ExtraStatus.of(on: on, checks: extraChecks, states: data.keys.states, working: data.keys.working)
+    }
+
     @ViewBuilder private var status: some View {
-        if !on {
+        switch extraStatus {
+        case .off:
             StatusDot(color: .gray, text: model.text(L10n.Connect.off))
-        } else if let profile = stored, let check = data.keys.states[profile]?[capability] {
-            if check.passed {
-                StatusDot(color: .green, text: model.text(L10n.Connect.statusUsable))
-            } else if !check.settled {
-                StatusDot(color: .gray, text: model.text(L10n.Connect.checkingCapability), busy: check.state == "pending")
-            } else {
-                StatusDot(color: check.state == "outcome_unknown" ? .orange : .red, text: model.text(L10n.Connect.statusFailed))
-                    .help(FailureCopy.message(for: BackendError(code: check.errorKind ?? check.state, domain: "models"), model.uiLanguage))
-            }
+        case .usable:
+            StatusDot(color: .green, text: model.text(L10n.Connect.statusUsable))
+        case let .waiting(check):
+            let state = data.keys.states[check.profile]?[check.capability]?.state
+            let busy = state == "pending" || data.keys.working.contains(KeyChecks.key(check.profile, check.capability))
+            StatusDot(color: .gray, text: model.text(L10n.Connect.checkingCapability), busy: busy)
+        case let .failed(_, state):
+            StatusDot(color: state.state == "outcome_unknown" ? .orange : .red,
+                      text: model.text(state.state == "outcome_unknown" ? L10n.Overview.unknown : L10n.Connect.statusFailed))
+        }
+    }
+
+    private func capabilityName(_ capability: String) -> String {
+        let names: [String: Words] = ["image": L10n.Connect.capImage, "vision": L10n.Connect.capVision, "stt": L10n.Connect.capSpeech]
+        return names[capability].map(model.text) ?? capability
+    }
+
+    /// A paid check whose last outcome is unknown is confirmed first, like a key's own check.
+    private func recheck(_ check: CapabilityCheck) {
+        if data.needsConfirmation(check.profile, capability: check.capability) {
+            confirming = check
         } else {
-            StatusDot(color: .gray, text: model.text(L10n.Connect.checkingCapability))
+            Task { await data.recheck(check.profile, model: model, capability: check.capability) }
         }
     }
 

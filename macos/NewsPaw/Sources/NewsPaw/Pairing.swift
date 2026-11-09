@@ -73,6 +73,21 @@ extension BackendClient {
         }
     }
 
+    /// Deletes a Bot and removes it from every digest (`targets.delete_bot`), at the revision
+    /// its impact was read at, once more after a background change.
+    func deleteBot(_ id: String) async throws {
+        for attempt in 0..<2 {
+            struct Impact: Decodable { let revision: Int }
+            let impact: Impact = try BackendRPC.decode(await call(.targetsBotImpact, ["bot_id": id]))
+            do {
+                _ = try await call(.targetsDeleteBot, ["bot_id": id, "revision": impact.revision])
+                return
+            } catch let error as BackendError where error.isConflict && attempt == 0 {
+                continue
+            }
+        }
+    }
+
     /// A request id the backend accepts (`[A-Za-z0-9_.:-]{1,120}`).
     static func requestId(_ prefix: String) -> String {
         prefix + "_" + String(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(16))
@@ -94,6 +109,9 @@ final class BotPairing {
 
     /// How often a waiting Bot is read back.
     @ObservationIgnored var pollInterval: Duration = .seconds(2)
+    @ObservationIgnored private var cancelled = false
+    /// The Bot entry this attempt created, until it is kept or removed.
+    @ObservationIgnored private var created: String?
 
     var paired: Bool { bot?.paired == true }
 
@@ -125,12 +143,29 @@ final class BotPairing {
         pair = nil
         do {
             let id = try await ensureBot(model: model)
+            try checkCancelled()
             try await model.client.setCredential(kind: "bots", id: id, value: token)
+            try checkCancelled()
             try await verify(id, model: model)
+            try checkCancelled()
+        } catch is Cancelled {
+            await discard(model: model)
         } catch {
-            failure = BackendError.wrapping(error)
+            if cancelled { await discard(model: model) } else { failure = BackendError.wrapping(error) }
         }
         await model.refresh()
+    }
+
+    /// Removes the Bot this attempt created (cancelled before it was finished).
+    private func discard(model: AppModel) async {
+        pair = nil
+        failure = nil
+        guard let id = created else { return }
+        if (try? await model.client.deleteBot(id)) != nil {
+            created = nil
+            botId = nil
+            bot = nil
+        }
     }
 
     /// Checks the stored token with Telegram again (e.g. after a webhook was turned off).
@@ -153,6 +188,7 @@ final class BotPairing {
         guard bot?.verified == true else {
             throw BackendError(code: Self.problem(bot?.status), domain: "bots")
         }
+        try checkCancelled()
         // The same token for the same Bot keeps its pairing; a new code would end it.
         if bot?.paired != true { try await issueCode(model: model) }
     }
@@ -212,6 +248,16 @@ final class BotPairing {
 
     func dismissFailure() { failure = nil }
 
+    /// Stops a connection attempt that is under way: at its next step it removes the Bot it
+    /// created and ends, so cancelling at any moment leaves no Bot behind.
+    func cancel() { cancelled = true }
+
+    private struct Cancelled: Error {}
+
+    private func checkCancelled() throws {
+        if cancelled { throw Cancelled() }
+    }
+
     /// The Bot being connected: the adopted one, else a new entry without a token.
     private func ensureBot(model: AppModel) async throws -> String {
         if let botId { return botId }
@@ -229,6 +275,7 @@ final class BotPairing {
         }
         guard saved else { throw editor.failure ?? BackendError(code: "invalid_reply") }
         botId = id
+        created = id
         return id
     }
 }
@@ -250,6 +297,12 @@ final class KeyChecks {
     /// 90 seconds a provider gets (`providers.py`), so a slow provider's result is still read.
     @ObservationIgnored var pollInterval: Duration = .seconds(2)
     @ObservationIgnored var probeLimit: Duration = .seconds(120)
+
+    /// Where a capability check's progress and failure are kept: the profile for its text check
+    /// (the key's own check), else "profile.capability".
+    nonisolated static func key(_ profile: String, _ capability: String) -> String {
+        capability == "text" ? profile : profile + "." + capability
+    }
 
     /// Reads one profile's checks.
     func load(_ profile: String, model: AppModel) async {
@@ -302,24 +355,35 @@ final class KeyChecks {
     /// Whether checking this key again could repeat a charge whose result never came back: the
     /// last check's outcome is unknown, it is still running, or it gave no result in time. Both
     /// the first-run window and the Connect page ask the owner before such a recheck.
-    func needsConfirmation(_ profile: String) -> Bool {
-        ["outcome_unknown", "pending"].contains(probes[profile]?.state ?? "") || failures[profile]?.code == "probe_pending"
+    func needsConfirmation(_ profile: String, capability: String = "text") -> Bool {
+        let state = capability == "text" ? probes[profile]?.state : states[profile]?[capability]?.state
+        return ["outcome_unknown", "pending"].contains(state ?? "") || failures[Self.key(profile, capability)]?.code == "probe_pending"
+    }
+
+    /// A finished or followed check: the text check is the key's own result.
+    private func record(_ state: ProbeState, profile: String, capability: String) {
+        states[profile, default: [:]][capability] = state
+        if capability == "text" { probes[profile] = state }
     }
 
     /// Runs the key check again for the same saved key; `models.probe` returns the finished result.
     /// Without `confirmed`, a check that may already have been charged is not repeated.
-    func recheck(_ profile: String, model: AppModel, confirmed: Bool = false) async {
-        guard confirmed || !needsConfirmation(profile), !working.contains(profile) else { return }
-        working.insert(profile)
-        defer { working.remove(profile) }
-        failures[profile] = nil
+    /// A capability other than text (image, vision, speech) is checked with a new probe id: the
+    /// backend's automatic check uses one bound to the key's generation and would only return
+    /// the same failed record again.
+    func recheck(_ profile: String, model: AppModel, capability: String = "text", confirmed: Bool = false) async {
+        let key = Self.key(profile, capability)
+        guard confirmed || !needsConfirmation(profile, capability: capability), !working.contains(key) else { return }
+        working.insert(key)
+        defer { working.remove(key) }
+        failures[key] = nil
         let request: [String: Any] = [
-            "probe_id": BackendClient.requestId("probe"), "profile_id": profile, "capability": "text", "hold_units": 10_000,
+            "probe_id": BackendClient.requestId("probe"), "profile_id": profile, "capability": capability, "hold_units": 10_000,
         ]
         do {
             let result: ProbeState = try BackendRPC.decode(await model.client.call(.modelsProbe, request))
             await load(profile, model: model)
-            probes[profile] = result
+            record(result, profile: profile, capability: capability)
         } catch is SocketFailure {
             // The connection gave up but the backend keeps checking. Asking again with the same
             // probe id returns this check's own record (no second charge), not an earlier one.
@@ -328,14 +392,14 @@ final class KeyChecks {
             while !Task.isCancelled, clock.now < deadline {
                 try? await Task.sleep(for: pollInterval)
                 if let state: ProbeState = try? BackendRPC.decode(await model.client.call(.modelsProbe, request)), state.settled {
-                    probes[profile] = state
+                    record(state, profile: profile, capability: capability)
                     await model.refresh()
                     return
                 }
             }
-            failures[profile] = BackendError(code: "probe_pending", domain: "models")
+            failures[key] = BackendError(code: "probe_pending", domain: "models")
         } catch {
-            failures[profile] = BackendError.wrapping(error)
+            failures[key] = BackendError.wrapping(error)
         }
         await model.refresh()
     }

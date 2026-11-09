@@ -94,9 +94,30 @@ private final class ConnectBackend {
     /// record (pending once, then this result) without starting another one.
     var probeOutlastsSocket: [String: Any]?
     private var droppedProbes: [String: Int] = [:]
+    /// Image / vision / speech check records per profile, as `models.status` reports them.
+    var capabilityStates: [String: [String: [String: Any]]] = [:]
+    /// What the next non-text `models.probe` finds; a repeated probe id returns its own record.
+    var capabilityResult: [String: Any] = ["state": "verified", "status": "verified"]
+    private var probeRecords: [String: [String: Any]] = [:]
+    /// The next `bots.test_status` reply is lost (connection dropped).
+    var dropNextTestStatus = false
+    /// `config.save` answers only after this long (another writer holds the store).
+    var configSaveDelay: Duration?
 
     var client: BackendClient {
         BackendClient { [unowned self] body, _ in
+            let (delay, dropped) = await MainActor.run { () -> (Duration?, Bool) in
+                let request = try! JSONSerialization.jsonObject(with: body) as! [String: Any]
+                let op = request["op"] as? String
+                if op == "bots.test_status", self.dropNextTestStatus {
+                    self.dropNextTestStatus = false
+                    self.requests.append(request)
+                    return (nil, true)
+                }
+                return (op == "config.save" ? self.configSaveDelay : nil, false)
+            }
+            if dropped { throw SocketFailure.disconnected }
+            if let delay { try? await Task.sleep(for: delay) }
             let reply = await MainActor.run { () -> Data? in
                 let request = try! JSONSerialization.jsonObject(with: body) as! [String: Any]
                 if request["op"] as? String == "models.probe", let result = self.probeOutlastsSocket,
@@ -293,9 +314,20 @@ private final class ConnectBackend {
                 text = first
                 if queue.count > 1 { queue.removeFirst(); checks[profile] = queue }
             }
-            return ok(["text": text, "vision": ["state": "untested"], "image": ["state": "untested"], "stt": ["state": "untested"]])
+            var states: [String: Any] = ["text": text, "vision": ["state": "untested"], "image": ["state": "untested"], "stt": ["state": "untested"]]
+            for (capability, record) in capabilityStates[profile] ?? [:] { states[capability] = record }
+            return ok(states)
         case "models.probe":
             let profile = request["profile_id"] as! String
+            let capability = request["capability"] as! String
+            if capability != "text" {
+                // A probe id names one check: asking again returns its record, never a new check.
+                let id = request["probe_id"] as! String
+                let record = probeRecords[id] ?? capabilityResult
+                probeRecords[id] = record
+                capabilityStates[profile, default: [:]][capability] = record
+                return ok(record.filter { $0.key != "state" })
+            }
             let result = checks[profile]?.last ?? ["state": "verified", "status": "verified"]
             checks[profile] = [result]
             return ok(result.filter { $0.key != "state" })
@@ -858,4 +890,97 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
     #expect(server.calls("models.probe").isEmpty)
     await setup.recheck("normal_primary", model: model, confirmed: true)
     #expect(server.calls("models.probe").count == 1)
+}
+
+// MARK: - External review regressions
+
+@Test @MainActor func aFailedResultCheckAsksAboutTheSameMessageInsteadOfSendingAnother() async throws {
+    let server = ConnectBackend(bots: [ConnectBackend.bot("b1")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.testOutcome = ("outcome_unknown", "outcome_unknown")
+    await data.sendTest("b1", model: model)
+    let unknown = try #require(data.tests["b1"])
+
+    server.dropNextTestStatus = true
+    await data.checkTest("b1", model: model)
+    #expect(data.failures["test.b1"]?.code == "backend_unreachable")
+
+    // While it is unknown whether the message arrived, retrying reads the same receipt again.
+    await data.retryTest("b1", model: model)
+    #expect(server.calls("bots.test_send").count == 1)
+    #expect(server.calls("bots.test_status").map { $0["request_id"] as? String } == [unknown.requestId, unknown.requestId])
+
+    // After a definite failure, retrying sends a new message.
+    server.testOutcome = ("failed", "forbidden")
+    await data.sendTest("b1", model: model)
+    await data.retryTest("b1", model: model)
+    #expect(server.calls("bots.test_send").count == 3)
+}
+
+@Test @MainActor func aFailedImageCheckIsCheckedAgainWithANewProbe() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk-synthetic-image", profile: "normal_primary", model: model)
+    // The automatic check (its id is bound to the key's generation) failed.
+    server.capabilityStates["normal_primary"] = ["image": ["state": "failed", "status": "failed", "error_kind": "rate_limited"]]
+    await data.setNewspaper(true, profile: "normal_primary", model: model)
+    server.capabilityStates["normal_primary"]?["vision"] = ["state": "verified", "status": "verified"]
+    await data.load(model: model)
+    let checks = data.extraChecks(newspaper: true)
+    guard case .failed(CapabilityCheck(profile: "normal_primary", capability: "image"), _) =
+        ExtraStatus.of(on: true, checks: checks, states: data.keys.states, working: data.keys.working) else {
+        Issue.record("the failed image check is not shown"); return
+    }
+
+    await data.recheck("normal_primary", model: model, capability: "image")
+
+    let probe = try #require(server.calls("models.probe").last)
+    #expect(probe["capability"] as? String == "image" && !(probe["probe_id"] as? String ?? "auto.").hasPrefix("auto."))
+    #expect(ExtraStatus.of(on: true, checks: data.extraChecks(newspaper: true), states: data.keys.states, working: data.keys.working) == .usable)
+
+    // An unknown capability result is not paid for again without confirmation.
+    server.capabilityStates["normal_primary"]?["image"] = ["state": "outcome_unknown", "status": "outcome_unknown", "error_kind": "outcome_unknown"]
+    await data.load(model: model)
+    let calls = server.calls("models.probe").count
+    await data.recheck("normal_primary", model: model, capability: "image")
+    #expect(server.calls("models.probe").count == calls)
+    await data.recheck("normal_primary", model: model, capability: "image", confirmed: true)
+    #expect(server.calls("models.probe").count == calls + 1)
+}
+
+@Test @MainActor func theNewspaperAlsoNeedsItsVisionCheck() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.setNewspaper(true, profile: "normal_primary", model: model)
+    server.capabilityStates["normal_primary"] = [
+        "image": ["state": "verified", "status": "verified"],
+        "vision": ["state": "failed", "status": "failed", "error_kind": "model_unavailable"],
+    ]
+    await data.load(model: model)
+
+    let status = ExtraStatus.of(on: true, checks: data.extraChecks(newspaper: true), states: data.keys.states, working: data.keys.working)
+    guard case let .failed(check, state) = status else { Issue.record("vision failure not shown: \(status)"); return }
+    #expect(check == CapabilityCheck(profile: "normal_primary", capability: "vision") && state.errorKind == "model_unavailable")
+}
+
+@Test @MainActor func cancellingWhileTheBotIsBeingCreatedLeavesNoBotBehind() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.configSaveDelay = .milliseconds(80)
+    data.startAdding()
+    let adding = try #require(data.adding)
+
+    let connecting = Task { await adding.connect(token: "123456:synthetic-token", model: model) }
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(adding.botId == nil && adding.working)
+    await data.cancelAdding(model: model)
+    await connecting.value
+    await model.refresh()
+
+    #expect(data.adding == nil && server.bots.isEmpty && model.bots.isEmpty)
+    #expect(server.calls("bots.pair_code").isEmpty && adding.pair == nil)
 }

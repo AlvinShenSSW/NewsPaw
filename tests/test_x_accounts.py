@@ -25,7 +25,7 @@ async def system(tmp_path):
         await targets.registry.close()
 
 
-def directory(system, responder):
+def directory(system, responder, clock=None):
     store, credentials, targets = system
     requests = []
 
@@ -37,7 +37,8 @@ def directory(system, responder):
     def factory(token):
         return XClient(token, client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
 
-    return XDirectory(credentials, targets, client_factory=factory), requests
+    extra = {} if clock is None else {"clock": clock}
+    return XDirectory(credentials, targets, client_factory=factory, **extra), requests
 
 
 def user(identity, name, protected=False):

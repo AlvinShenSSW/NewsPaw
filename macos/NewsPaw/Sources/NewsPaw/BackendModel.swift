@@ -168,6 +168,9 @@ final class AppModel {
     private(set) var configRevision = 0
     private(set) var bots: [BotStatus] = []
     private(set) var readiness: Readiness?
+    /// Key checks started from the app that have no outcome yet, by `KeyChecks.key`; kept here so
+    /// they outlive the page that started them (see `PendingProbe`).
+    var pendingProbes: [String: PendingProbe] = [:]
     /// The last failure from any request, so every view can say what happened.
     private(set) var lastFailure: BackendError?
     /// Repeats the shell action that produced `lastFailure` (language or pause).

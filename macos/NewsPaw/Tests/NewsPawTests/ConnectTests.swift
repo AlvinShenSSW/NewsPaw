@@ -102,6 +102,8 @@ private final class ConnectBackend {
     /// `bots.test_send` records the message and sends it, then fails while answering
     /// (e.g. internal_error); the receipt still holds the real outcome.
     var testSendAnswer: String?
+    /// `targets.delete_bot` fails (the store could not commit).
+    var deleteFails = false
     /// The next `bots.test_status` reply is lost (connection dropped).
     var dropNextTestStatus = false
     /// `config.save` answers only after this long (another writer holds the store).
@@ -311,6 +313,7 @@ private final class ConnectBackend {
                        "subscription_targets": [String: Any](), "accounts": []])
         case "targets.delete_bot":
             if stale { return refuse("config_conflict") }
+            if deleteFails { return refuse("internal_error", "bots") }
             editBots { $0.removeAll { $0["id"] as? String == id } }
             editSubscriptions { $0["bot_ids"] = ($0["bot_ids"] as! [String]).filter { $0 != id } }
             registry[id] = nil
@@ -1075,4 +1078,76 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
     #expect(ExtraStatus.of(on: true, checks: [check], states: stale, working: []) == .unchecked(check))
     let pending = ["normal_primary": ["stt": ProbeState(state: "pending")]]
     #expect(ExtraStatus.of(on: true, checks: [check], states: pending, working: []) == .waiting(check))
+}
+
+// MARK: - External review, cycle 4
+
+@Test @MainActor func aCheckStillRunningWhenThePageClosedIsFollowedByItsOwnIdOnReturn() async throws {
+    let server = ConnectBackend()
+    let (model, first, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await first.saveKey("sk-synthetic-7Qx2", profile: "normal_primary", model: model)
+    server.checks["normal_primary"] = [["state": "failed", "status": "failed", "error_kind": "rate_limited"]]
+    await first.load(model: model)
+    server.probeOutlastsSocket = ["state": "verified", "status": "verified"]
+
+    // The page goes away while its recheck is still running (its task is cancelled).
+    let leaving = Task { await first.recheck("normal_primary", model: model) }
+    leaving.cancel()
+    await leaving.value
+
+    let returned = ConnectData()
+    returned.keys.pollInterval = .milliseconds(5)
+    await returned.load(model: model)
+    // The finished record is still the old failure; the running check shows instead.
+    #expect(returned.keys.isChecking("normal_primary", model: model))
+    await returned.recheck("normal_primary", model: model)
+    await returned.keys.resume(model: model)
+
+    let ids = server.calls("models.probe").compactMap { $0["probe_id"] as? String }
+    #expect(Set(ids).count == 1 && ids.count >= 2)
+    #expect(returned.keys.probes["normal_primary"]?.passed == true && !returned.keys.isChecking("normal_primary", model: model))
+}
+
+@Test @MainActor func theHeaderButtonChecksAnOpenReceiptInsteadOfSendingAnother() async throws {
+    let server = ConnectBackend(bots: [ConnectBackend.bot("b1")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    #expect(data.headerTestAction("b1", generation: model.bots[0].generation) == .send)
+    server.testOutcome = ("outcome_unknown", "outcome_unknown")
+    await data.sendTest("b1", model: model)
+    #expect(data.headerTestAction("b1", generation: model.bots[0].generation) == .check)
+    server.testOutcome = ("confirmed", nil)
+    await data.sendTest("b1", model: model)
+    #expect(data.headerTestAction("b1", generation: model.bots[0].generation) == .send)
+}
+
+@Test @MainActor func aReceiptFromAnEarlierBindingIsNotShown() async throws {
+    let server = ConnectBackend(bots: [ConnectBackend.bot("b1")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.sendTest("b1", model: model)
+    #expect(data.receipt("b1", generation: model.bots[0].generation)?.state == "confirmed")
+
+    await data.replaceToken("b1", token: "123456:another-token", model: model)
+    await model.refresh()
+    #expect(data.receipt("b1", generation: model.bots[0].generation) == nil)
+    #expect(data.headerTestAction("b1", generation: model.bots[0].generation) == .send)
+}
+
+@Test @MainActor func cancellingKeepsTheFormUntilItsBotIsReallyDeleted() async throws {
+    let server = ConnectBackend()
+    server.tokenProblem = "invalid_token"
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    data.startAdding()
+    await data.adding?.connect(token: "wrong", model: model)
+    server.deleteFails = true
+
+    await data.cancelAdding(model: model)
+    #expect(data.adding != nil && data.failures["adding"]?.code == "internal_error" && server.bots.count == 1)
+
+    server.deleteFails = false
+    await data.cancelAdding(model: model)
+    #expect(data.adding == nil && data.failures["adding"] == nil && server.bots.isEmpty)
 }

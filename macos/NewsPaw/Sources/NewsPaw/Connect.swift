@@ -352,18 +352,30 @@ final class ConnectData {
     /// Closes the add form. A Bot entry created for a token Telegram refused is removed again,
     /// so a failed attempt leaves nothing behind; a checked Bot stays in the list to pair later.
     func cancelAdding(model: AppModel) async {
-        guard let pairing = adding else { return }
-        adding = nil
-        // Still connecting: the attempt removes what it created at its next step.
-        if pairing.working {
+        guard let pairing = adding, !working.contains("adding") else { return }
+        working.insert("adding")
+        defer { working.remove("adding") }
+        failures["adding"] = nil
+        // Still connecting: the attempt removes what it created at its next step; wait for it.
+        let midway = pairing.working
+        if midway {
             pairing.cancel()
-            return
+            while pairing.working { try? await Task.sleep(for: .milliseconds(20)) }
         }
-        if let id = pairing.botId, pairing.bot?.verified != true {
-            _ = try? await deleteBot(id, model: model)
+        // A Bot the attempt created and did not finish is deleted before the form closes; if that
+        // fails, the form stays with the reason so cancelling can be tried again.
+        if let id = pairing.botId, midway || pairing.bot?.verified != true {
+            do {
+                try await deleteBot(id, model: model)
+            } catch {
+                failures["adding"] = BackendError.wrapping(error)
+                await model.refresh()
+                return
+            }
         } else if let id = pairing.botId {
             pairings[id] = pairing
         }
+        adding = nil
         await model.refresh()
     }
 
@@ -386,6 +398,20 @@ final class ConnectData {
                     CapabilityCheck(profile: extras.newspaperVision ?? generation, capability: "vision")]
         }
         return extras.transcriptionProfile.map { [CapabilityCheck(profile: $0, capability: "stt")] } ?? []
+    }
+
+    /// What the header's test button does now.
+    enum TestAction: Equatable { case send, check }
+    /// While the last message's outcome is open, the header checks it instead of sending another.
+    func headerTestAction(_ id: String, generation: Int?) -> TestAction {
+        ["outcome_unknown", "inflight"].contains(receipt(id, generation: generation)?.state ?? "") ? .check : .send
+    }
+
+    /// The last test message's receipt, for the Bot as it is now: a receipt from an earlier
+    /// binding (another token, a new pairing) says nothing about this one.
+    func receipt(_ id: String, generation: Int?) -> TestSend? {
+        guard let test = tests[id], generation == nil || test.generation == generation else { return nil }
+        return test
     }
 
     /// The retry offered under a failed test-message action.

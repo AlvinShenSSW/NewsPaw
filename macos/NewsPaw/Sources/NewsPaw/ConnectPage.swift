@@ -252,6 +252,8 @@ struct ConnectPage: View {
             XSection(model: model, data: data)
         }
         .task(id: model.configRevision) { await data.load(model: model) }
+        // Checks started before this page opened (or by a visit that ended) are followed here.
+        .task { await data.keys.resume(model: model) }
         .task {
             // Checks, cooldowns and spending change without a configuration change.
             while !Task.isCancelled {
@@ -337,6 +339,9 @@ private struct AddBotForm: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Link(model.text(L10n.Onboarding.howTo), destination: URL(string: "https://core.telegram.org/bots/features#botfather")!)
                         .font(.callout)
+                }
+                if let failure = data.failures["adding"] {
+                    FailureNote(model: model, failure: failure) { Task { await data.cancelAdding(model: model) } }
                 }
                 BotConnectForm(model: model, pairing: pairing)
             }
@@ -434,7 +439,12 @@ private struct BotGroup: View {
                         Text(model.text(L10n.Connect.sending)).foregroundStyle(.secondary)
                     }
                 } else {
-                    Button(model.text(L10n.Connect.sendTest)) { Task { await data.sendTest(bot.id, model: model) } }
+                    // An open receipt is checked, never replaced by a new message.
+                    if data.headerTestAction(bot.id, generation: current.generation) == .check {
+                        Button(model.text(L10n.Connect.checkResult)) { Task { await data.checkTest(bot.id, model: model) } }
+                    } else {
+                        Button(model.text(L10n.Connect.sendTest)) { Task { await data.sendTest(bot.id, model: model) } }
+                    }
                 }
             }
             menu
@@ -585,7 +595,7 @@ private struct BotGroup: View {
             // An unresolved receipt is read again; a new message only after a definite failure.
             FailureNote(model: model, failure: failure) { Task { await data.retryTest(bot.id, model: model) } }
         } else {
-            switch TestDisplay.of(data.tests[bot.id], stillUnknown: data.stillUnknown.contains(bot.id)) {
+            switch TestDisplay.of(data.receipt(bot.id, generation: current.generation), stillUnknown: data.stillUnknown.contains(bot.id)) {
             case .sent:
                 Label(L10n.Connect.testSent(language, ["time": Stamp.clock(data.testedAt[bot.id] ?? Date())]), systemImage: "checkmark.circle.fill")
                     .font(.callout).foregroundStyle(.green)
@@ -595,7 +605,7 @@ private struct BotGroup: View {
                     Text(model.text(testNote))
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
-                    if data.stillUnknown.contains(bot.id) || data.tests[bot.id]?.state == "not_started" {
+                    if data.stillUnknown.contains(bot.id) || data.receipt(bot.id, generation: current.generation)?.state == "not_started" {
                         Button(model.text(L10n.Connect.sendAgain)) { Task { await data.sendTest(bot.id, model: model) } }
                     } else {
                         Button(model.text(L10n.Connect.checkResult)) { Task { await data.checkTest(bot.id, model: model) } }
@@ -620,7 +630,7 @@ private struct BotGroup: View {
     }
 
     private var testNote: Words {
-        switch TestDisplay.of(data.tests[bot.id], stillUnknown: data.stillUnknown.contains(bot.id)) {
+        switch TestDisplay.of(data.receipt(bot.id, generation: current.generation), stillUnknown: data.stillUnknown.contains(bot.id)) {
         case .notSent: L10n.Connect.testNotSent
         case .stillUnknown: L10n.Connect.testStillUnknown
         default: L10n.Connect.testUnknown
@@ -780,7 +790,7 @@ private struct ModelRow: View {
     private var provider: String { ModelNames.provider(profile.provider, model.uiLanguage) }
     private var status: KeyStatus {
         KeyStatus.of(credential: data.credentialState(profile.credentialRef), probe: data.keys.probes[profile.id],
-                     health: data.health[profile.id], working: data.keys.working.contains(profile.id))
+                     health: data.health[profile.id], working: data.keys.isChecking(profile.id, model: model))
     }
 
     var body: some View {
@@ -1055,7 +1065,7 @@ private struct ExtraRow: View {
     private var extraChecks: [CapabilityCheck] { data.extraChecks(newspaper: kind == .newspaper) }
 
     private var extraStatus: ExtraStatus {
-        ExtraStatus.of(on: on, checks: extraChecks, states: data.keys.states, working: data.keys.working)
+        ExtraStatus.of(on: on, checks: extraChecks, states: data.keys.states, working: data.keys.active(model: model))
     }
 
     @ViewBuilder private var status: some View {
@@ -1066,7 +1076,7 @@ private struct ExtraRow: View {
             StatusDot(color: .green, text: model.text(L10n.Connect.statusUsable))
         case let .waiting(check):
             let state = data.keys.states[check.profile]?[check.capability]?.state
-            let busy = state == "pending" || data.keys.working.contains(KeyChecks.key(check.profile, check.capability))
+            let busy = state == "pending" || data.keys.isChecking(check.profile, capability: check.capability, model: model)
             StatusDot(color: .gray, text: model.text(L10n.Connect.checkingCapability), busy: busy)
         case .unchecked:
             StatusDot(color: .gray, text: model.text(L10n.Connect.statusUntested))

@@ -113,6 +113,8 @@ final class OnboardingData {
             let saved = model.config?.modelProfiles.first { $0.id == profile }?.credentialRef != nil
             if saved, probes[profile]?.settled != true { await keys.follow(profile, model: model) }
         }
+        // Checks started on an earlier visit (or on the Connect page) are followed by their own id.
+        await keys.resume(model: model)
     }
 
     // MARK: Step 1

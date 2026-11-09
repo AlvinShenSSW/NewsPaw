@@ -47,6 +47,22 @@ struct ProbeState: Decodable, Equatable {
     static let waiting: Set<String> = ["pending", "untested", "stale"]
 }
 
+/// A key check started from the app that has no outcome yet. Kept on `AppModel`, so it outlives
+/// the page that started it: `models.status` lists only finished checks, and a page opened later
+/// follows this one instead of paying for another.
+struct PendingProbe: Equatable {
+    /// The `models.probe` id; nil for the backend's automatic check after a saved key, which is
+    /// followed through `models.status`.
+    let id: String?
+    let profile: String
+    let capability: String
+
+    var key: String { KeyChecks.key(profile, capability) }
+    var request: [String: Any] {
+        ["probe_id": id ?? "", "profile_id": profile, "capability": capability, "hold_units": 10_000]
+    }
+}
+
 extension BackendError {
     /// Any thrown error as the one shape every view shows.
     static func wrapping(_ error: Error) -> BackendError {
@@ -325,7 +341,10 @@ final class KeyChecks {
         do {
             try await before?()
             try await model.client.setCredential(kind: "model_profiles", id: profile, value: key)
+            let pending = PendingProbe(id: nil, profile: profile, capability: "text")
+            model.pendingProbes[pending.key] = pending
             await readProbe(profile, model: model)
+            if !Task.isCancelled { model.pendingProbes[pending.key] = nil }
         } catch {
             failures[profile] = BackendError.wrapping(error)
         }
@@ -341,7 +360,56 @@ final class KeyChecks {
             if probes[profile]?.settled == true { return }
             try? await Task.sleep(for: pollInterval)
         }
-        if probes[profile]?.settled != true { failures[profile] = BackendError(code: "probe_pending", domain: "models") }
+        // A page that went away leaves the check pending (on AppModel) for the next one to follow.
+        if probes[profile]?.settled != true, !Task.isCancelled {
+            failures[profile] = BackendError(code: "probe_pending", domain: "models")
+        }
+    }
+
+    /// Follows the checks started before this page opened (or by a page that closed), each by
+    /// its own probe id, until they have an outcome.
+    func resume(model: AppModel) async {
+        for pending in model.pendingProbes.values where !working.contains(pending.key) {
+            await follow(pending, model: model)
+        }
+    }
+
+    /// A check of this profile and capability is running (here or started earlier).
+    func isChecking(_ profile: String, capability: String = "text", model: AppModel) -> Bool {
+        let key = Self.key(profile, capability)
+        return working.contains(key) || model.pendingProbes[key] != nil
+    }
+
+    /// Everything being checked now, for status rows.
+    func active(model: AppModel) -> Set<String> { working.union(model.pendingProbes.keys) }
+
+    /// Reads one pending check until it settles: by its own probe id (a repeated call returns
+    /// that check's record and never starts another), or through `models.status` for the
+    /// automatic check after a save. A cancelled wait leaves it pending for the next page.
+    private func follow(_ pending: PendingProbe, model: AppModel) async {
+        guard !working.contains(pending.key) else { return }
+        working.insert(pending.key)
+        defer { working.remove(pending.key) }
+        if pending.id == nil {
+            await readProbe(pending.profile, model: model)
+            if !Task.isCancelled { model.pendingProbes[pending.key] = nil }
+            return
+        }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: probeLimit)
+        while !Task.isCancelled, clock.now < deadline {
+            if let state: ProbeState = try? BackendRPC.decode(await model.client.call(.modelsProbe, pending.request)), state.settled {
+                await load(pending.profile, model: model)
+                record(state, profile: pending.profile, capability: pending.capability)
+                model.pendingProbes[pending.key] = nil
+                await model.refresh()
+                return
+            }
+            try? await Task.sleep(for: pollInterval)
+        }
+        guard !Task.isCancelled else { return }
+        model.pendingProbes[pending.key] = nil
+        failures[pending.key] = BackendError(code: "probe_pending", domain: "models")
     }
 
     /// Waits for a check that is already running (opened while the backend checks a key).
@@ -373,33 +441,37 @@ final class KeyChecks {
     /// the same failed record again.
     func recheck(_ profile: String, model: AppModel, capability: String = "text", confirmed: Bool = false) async {
         let key = Self.key(profile, capability)
+        // A check of this key is still running somewhere: follow it rather than pay for another.
+        if let pending = model.pendingProbes[key] {
+            await follow(pending, model: model)
+            return
+        }
         guard confirmed || !needsConfirmation(profile, capability: capability), !working.contains(key) else { return }
-        working.insert(key)
-        defer { working.remove(key) }
         failures[key] = nil
-        let request: [String: Any] = [
-            "probe_id": BackendClient.requestId("probe"), "profile_id": profile, "capability": capability, "hold_units": 10_000,
-        ]
+        let pending = PendingProbe(id: BackendClient.requestId("probe"), profile: profile, capability: capability)
+        model.pendingProbes[key] = pending
+        working.insert(key)
         do {
-            let result: ProbeState = try BackendRPC.decode(await model.client.call(.modelsProbe, request))
+            let result: ProbeState = try BackendRPC.decode(await model.client.call(.modelsProbe, pending.request))
+            working.remove(key)
+            model.pendingProbes[key] = nil
             await load(profile, model: model)
             record(result, profile: profile, capability: capability)
         } catch is SocketFailure {
             // The connection gave up but the backend keeps checking. Asking again with the same
             // probe id returns this check's own record (no second charge), not an earlier one.
-            let clock = ContinuousClock()
-            let deadline = clock.now.advanced(by: probeLimit)
-            while !Task.isCancelled, clock.now < deadline {
-                try? await Task.sleep(for: pollInterval)
-                if let state: ProbeState = try? BackendRPC.decode(await model.client.call(.modelsProbe, request)), state.settled {
-                    record(state, profile: profile, capability: capability)
-                    await model.refresh()
-                    return
-                }
-            }
-            failures[key] = BackendError(code: "probe_pending", domain: "models")
+            working.remove(key)
+            try? await Task.sleep(for: pollInterval)
+            await follow(pending, model: model)
+            return
         } catch {
-            failures[key] = BackendError.wrapping(error)
+            working.remove(key)
+            let failure = BackendError.wrapping(error)
+            // Refused before it began: nothing is running. Otherwise the record may still exist.
+            if !["internal_error", "probe_storage_failed", "invalid_reply"].contains(failure.code) {
+                model.pendingProbes[key] = nil
+            }
+            failures[key] = failure
         }
         await model.refresh()
     }

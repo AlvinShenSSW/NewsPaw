@@ -165,6 +165,7 @@ final class DigestsData {
     func save(_ id: String, model: AppModel, enable: Bool? = nil, change: EditorState.Change = { $0 }) async -> Bool {
         let client = model.client
         var enabled = false
+        var attempted: [String: Any]?
         let editor = EditorState(
             load: {
                 let current = try await client.configDocument()
@@ -176,6 +177,7 @@ final class DigestsData {
                 return (current.revision, Self.draft(stored))
             },
             store: { draft, revision in
+                attempted = draft
                 _ = try await client.call(.subscriptionsSave, ["draft": draft, "revision": revision, "enable": enable ?? enabled])
             }
         )
@@ -187,7 +189,9 @@ final class DigestsData {
             savedAt[id] = editor.savedAt
         } else if let failure = editor.failure {
             failures[id] = failure
-            if failure.code == "subscription_not_ready" { await preview(id, model: model) }
+            // What blocks the change that was refused (e.g. with the Bot it would have chosen),
+            // not the record as stored.
+            if failure.code == "subscription_not_ready" { await preview(id, draft: attempted, model: model) }
         }
         await model.refresh()
         await load(model.client)
@@ -195,7 +199,7 @@ final class DigestsData {
     }
 
     /// What the next edition would use, and what still stops it (`subscriptions.preview`).
-    func preview(_ id: String, model: AppModel) async {
+    func preview(_ id: String, draft: [String: Any]? = nil, model: AppModel) async {
         previews[id] = nil
         if failures[id]?.code != "subscription_not_ready" { failures[id] = nil }
         do {
@@ -203,7 +207,7 @@ final class DigestsData {
             let subscriptions = current.document["subscriptions"] as? [[String: Any]] ?? []
             guard let stored = subscriptions.first(where: { $0["id"] as? String == id }) else { return }
             previews[id] = try BackendRPC.decode(await model.client.call(.subscriptionsPreview, [
-                "draft": Self.draft(stored), "revision": current.revision,
+                "draft": draft ?? Self.draft(stored), "revision": current.revision,
             ]))
         } catch let error as BackendError {
             failures[id] = error

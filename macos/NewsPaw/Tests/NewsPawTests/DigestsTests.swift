@@ -396,3 +396,16 @@ private func connected(_ server: DigestBackend) async throws -> (AppModel, () ->
         }
     }
 }
+
+
+@Test @MainActor func aRefusedTurnOnListsTheBlockersOfTheAttemptedChange() async throws {
+    // The refused change (here max_items 8) is what the blocker preview examines, not the stored record.
+    let server = DigestBackend(subscriptions: [subscription("sub_japan")], sources: [source("nhk", focus: "domestic")])
+    server.ready = ["nhk"]
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    #expect(!(await data.save("sub_japan", model: model, enable: true) { var d = $0; d["max_items"] = 8; return d }))
+    let attempt = try #require(server.calls("subscriptions.preview").last?["draft"] as? [String: Any])
+    #expect(attempt["max_items"] as? Int == 8)
+}

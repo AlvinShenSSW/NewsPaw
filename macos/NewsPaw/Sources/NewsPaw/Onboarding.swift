@@ -89,6 +89,9 @@ final class OnboardingData {
     // Step 3
     var chosen: Set<String> = ["sub_world", "sub_japan"]
     private(set) var sentTrial = false
+    /// The model picked on step 2 differs from the saved one; it takes effect only when a key is
+    /// saved for it, so Continue waits.
+    var modelUnsaved = false
 
     private(set) var working: Set<String> = []
     private(set) var failures: [String: BackendError] = [:]
@@ -161,6 +164,9 @@ final class OnboardingData {
 
     private func issueCode(model: AppModel) async throws {
         guard let botId else { return }
+        // Read the Bot's current generation first: a code issued earlier whose reply was lost has
+        // already moved it on, and the stale one would be refused (binding_changed) forever.
+        bot = try BackendRPC.decode(await model.client.call(.botsStatus, ["bot_id": botId]))
         pair = try BackendRPC.decode(await model.client.call(.botsPairCode, ["bot_id": botId, "generation": bot?.generation ?? 0]))
         bot = try BackendRPC.decode(await model.client.call(.botsStatus, ["bot_id": botId]))
     }
@@ -435,7 +441,7 @@ struct OnboardingWindow: View {
                     .keyboardShortcut(.defaultAction).disabled(!data.botReady)
             case .model:
                 Button(model.text(L10n.Onboarding.next)) { advance() }
-                    .keyboardShortcut(.defaultAction).disabled(!data.keyReady("normal_primary"))
+                    .keyboardShortcut(.defaultAction).disabled(!data.keyReady("normal_primary") || data.modelUnsaved)
             case .digests:
                 // Without a usable Bot nothing can turn on; the step says so and only closing is offered.
                 let blocked = data.chosen.isEmpty || data.working.contains("finish") || model.usableBots(for: "world").isEmpty
@@ -632,6 +638,14 @@ private struct PairBlock: View {
 private struct ModelStep: View {
     let model: AppModel
     let data: OnboardingData
+
+    /// The picked model is the one saved for the main profile.
+    private var matchesSaved: Bool {
+        guard let profile = model.config?.modelProfiles.first(where: { $0.id == "normal_primary" }) else { return true }
+        let saved = ModelChoice.matching(provider: profile.provider, baseURL: profile.baseUrl, model: profile.model)
+        guard saved == choice else { return false }
+        return choice != .custom || (customURL == (profile.baseUrl ?? "") && customModel == profile.model)
+    }
     @State private var choice: ModelChoice = .luna
     @State private var key = ""
     @State private var customURL = ""
@@ -652,7 +666,13 @@ private struct ModelStep: View {
                 TextField(model.text(L10n.Onboarding.customModel), text: $customModel).textFieldStyle(.roundedBorder)
             }
             KeyRow(model: model, data: data, profile: "normal_primary", key: $key,
-                   save: { await data.saveKey(key, profile: "normal_primary", choice: choice, customURL: customURL, customModel: customModel, model: model) })
+                   save: {
+                       await data.saveKey(key, profile: "normal_primary", choice: choice, customURL: customURL, customModel: customModel, model: model)
+                       data.modelUnsaved = !matchesSaved
+                   })
+            if data.modelUnsaved {
+                Text(model.text(L10n.Onboarding.saveToUse)).font(.caption).foregroundStyle(.orange)
+            }
             DisclosureGroup(model.text(L10n.Onboarding.adultOptional)) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(model.text(L10n.Onboarding.adultNote)).font(.caption).foregroundStyle(.secondary)
@@ -672,6 +692,9 @@ private struct ModelStep: View {
             Text(model.text(L10n.Onboarding.costNote)).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .onChange(of: choice) { data.modelUnsaved = !matchesSaved }
+        .onChange(of: customURL) { data.modelUnsaved = !matchesSaved }
+        .onChange(of: customModel) { data.modelUnsaved = !matchesSaved }
         .onAppear {
             if let profile = model.config?.modelProfiles.first(where: { $0.id == "normal_primary" }) {
                 choice = ModelChoice.matching(provider: profile.provider, baseURL: profile.baseUrl, model: profile.model)

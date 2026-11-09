@@ -125,6 +125,7 @@ private final class SetupBackend {
             generation += 1
             return ok(botStatus)
         case "bots.pair_code":
+            if request["generation"] as? Int != generation { return refuse("binding_changed", "bots") }
             generation += 1
             statusReads = 0
             return ok(["code": "AbC_123", "expires_at": Date().timeIntervalSince1970 + 600, "max_attempts": 5])
@@ -474,4 +475,17 @@ private func connected(_ server: SetupBackend) async throws -> (AppModel, Onboar
 
 @Test func aCheckThatRepliedWrongCanBeRetried() {
     #expect(FailureCopy.entry(for: BackendError(code: "invalid_output", domain: "models")).action != nil)
+}
+
+
+@Test @MainActor func aNewCodeAfterALostReplyUsesTheBotsCurrentGeneration() async throws {
+    let server = SetupBackend()
+    server.pairAfterReads = 1_000
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.connect(token: "123:abc", model: model)
+    // A code was issued elsewhere (or its reply lost): the Bot moved to a newer generation.
+    server.generation += 1
+    await data.newCode(model: model)
+    #expect(data.failures["bot"] == nil && data.pair != nil)
 }

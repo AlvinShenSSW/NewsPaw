@@ -208,6 +208,7 @@ enum L10n {
         static let expired = Words("配对码过期了。", "The pairing code expired.", "ペアリングコードの期限が切れました。")
         static let newCode = Words("重新生成", "New Code", "再発行")
         static let paired = Words("已配对 · {time}", "Paired · {time}", "ペアリング済み · {time}")
+        static let saveToUse = Words("换了模型：保存 Key 后才会使用它。", "Model changed: save a key to start using it.", "モデルを変更しました。キーを保存すると使われます。")
         static let pairedEarlier = Words("已配对", "Paired", "ペアリング済み")
         static let notPaired = Words("机器人已验证，但还没配对。", "The Bot is verified but not paired yet.", "ボットは確認済みですが、まだペアリングされていません。")
         static let moreBots = Words("这里只接一个机器人；还可以在「接入」里再加一个只收成人内容的机器人。", "This connects one Bot; you can add another, for adult content only, in Connect.", "ここでは 1 つだけ接続します。成人向け専用のボットは「接続」で追加できます。")
@@ -236,7 +237,7 @@ enum L10n {
             back, next, finishAndSend, finishQuietly, telegramIntro, howTo, tokenPlaceholder, check, checking, verified,
             sendThis, copy, expiresIn, expired, newCode, paired, moreBots, modelIntro, whichModel, luna, mimo, custom,
             customURL, customModel, keyPlaceholder, paste, saveAndCheck, checkingKey, keyPassed, checkAgain, adultOptional,
-            adultNote, advanced, backupNote, costNote, sendTo, chooseLater, pairedEarlier, notPaired,
+            adultNote, advanced, backupNote, costNote, sendTo, chooseLater, pairedEarlier, notPaired, saveToUse,
         ]
     }
 

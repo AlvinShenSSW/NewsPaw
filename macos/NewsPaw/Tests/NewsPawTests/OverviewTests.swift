@@ -55,7 +55,7 @@ private func backend(now: Date, rows: [String], delivery: String = #"{"ok":true,
              {"meter":"x","start":"2000-01-01T00:00:00+00:00","end":"2999-01-01T00:00:00+00:00","known_settled":84,"held":0,"unpriced":0,
               "scopes":{"total":{"limit":null,"used":84}}}]}}}
             """#,
-        "sources.list": #"{"ok":true,"result":[{"source":{"name":"NHK","enabled":true},"health":{"freshness":"stale","latest_publication":"2000-01-01T00:00:00+00:00"}},{"source":{"name":"Asahi","enabled":true},"health":{"freshness":"current","latest_publication":null}}]}"#,
+        "sources.list": #"{"ok":true,"result":[{"source":{"id":"src_nhk","name":"NHK","enabled":true},"health":{"freshness":"stale","latest_publication":"2000-01-01T00:00:00+00:00"}},{"source":{"id":"src_nhk2","name":"NHK","enabled":true},"health":{"freshness":"stale","latest_publication":"2000-01-01T00:00:00+00:00"}},{"source":{"id":"src_asahi","name":"Asahi","enabled":true},"health":{"freshness":"current","latest_publication":null}}]}"#,
         "jobs.resume": #"{"ok":true,"result":{}}"#,
         "delivery.resolve": #"{"ok":true,"result":{}}"#,
         "schedule.resolve": #"{"ok":true,"result":{}}"#,
@@ -78,7 +78,8 @@ private func backend(now: Date, rows: [String], delivery: String = #"{"ok":true,
     #expect(data.week.map(\.id) == ["c"])
     #expect(data.spending == .init(used: 3_420_000, limit: 20_000_000, image: 320_000, unpriced: 2, xReads: 84, xLimit: nil))
     #expect(dollars(3_420_000) == "$3.42")
-    #expect(data.staleSources.map(\.name) == ["NHK"])
+    // Two sources may share a name; each keeps its own identity.
+    #expect(data.staleSources.map(\.name) == ["NHK", "NHK"] && data.staleSources.map(\.id) == ["src_nhk", "src_nhk2"])
     #expect(server.calls("schedule.status").first?["limit"] as? Int == 100)
 }
 
@@ -223,7 +224,7 @@ private func realisticDelivery(_ server: ScriptedBackend, parts: String) {
     let data = OverviewData()
     await data.load(server.client, now: now)
     #expect(data.failure == nil)
-    #expect(data.spending != nil && data.staleSources.map(\.name) == ["NHK"])
+    #expect(data.spending != nil && data.staleSources.map(\.id) == ["src_nhk", "src_nhk2"])
 }
 
 @Test @MainActor func aRefusedRecoveryStaysOnScreenAfterTheReload() async {
@@ -418,4 +419,26 @@ private func realisticDelivery(_ server: ScriptedBackend, parts: String) {
     let data = OverviewData()
     await data.load(server.client, now: now)
     #expect(data.recipients["d"] == ["bot1"])
+}
+
+
+@Test func anXAccountWithItsOwnTimesGetsItsOwnUpcomingSlots() throws {
+    let zone = TimeZone.current.identifier
+    let subscriptions = try BackendRPC.decode(Data(#"[{"id":"sub_x","category_id":"x","timezone":"\#(zone)","enabled":true,"times":["08:00"]}]"#.utf8)) as [AppConfig.Subscription]
+    let accounts = try BackendRPC.decode(Data(#"""
+        [{"id":"acc_special","handle":"a","priority":"special","subscription_id":"sub_x","remote_id":"1","times":["20:00"]},
+         {"id":"acc_inherit","handle":"b","priority":"special","subscription_id":"sub_x","remote_id":"2","times":null},
+         {"id":"acc_plain","handle":"c","priority":"normal","subscription_id":"sub_x","remote_id":"3","times":["21:00"]},
+         {"id":"acc_unverified","handle":"d","priority":"special","subscription_id":"sub_x","remote_id":null,"times":["22:00"]}]
+        """#.utf8)) as [AppConfig.Account]
+    // 07:00 on a fixed local day: 08:00 and 20:00 are both later the same day.
+    let now = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 11, day: 10, hour: 7)))
+    let slots = OverviewData.upcoming(subscriptions, accounts: accounts, existing: [], now: now)
+    func clock(_ row: Occurrence) -> String { OverviewData.clock(row.targetAt) }
+    #expect(Set(slots.map { "\($0.accountId ?? "-") \(clock($0))" }) == ["- 08:00", "acc_inherit 08:00", "acc_special 20:00"])
+    // A slot the scheduler already created for that account is not repeated; the aggregate stays.
+    let created = try #require(slots.first { $0.accountId == "acc_special" })
+    let existing = try BackendRPC.decode(Data(#"{"id":"o","scope_id":"s","slot":1,"civil_date":"\#(created.civilDate)","target_at":"\#(created.targetAt!)","prepare_at":null,"cutoff_at":null,"status":"preparing","reason":null,"generation":1,"job_id":"j","updated_at":"x","subscription_id":"sub_x","account_id":"acc_special"}"#.utf8)) as Occurrence
+    let again = OverviewData.upcoming(subscriptions, accounts: accounts, existing: [existing], now: now)
+    #expect(Set(again.map { "\($0.accountId ?? "-") \(clock($0))" }) == ["- 08:00", "acc_inherit 08:00"])
 }

@@ -91,10 +91,12 @@ final class OverviewData {
     private(set) var unknownParts: Set<String> = []
     /// The Bots each delivered edition today actually went to (its delivery record).
     private(set) var recipients: [String: [String]] = [:]
-    /// The digests used for today's later slots, kept for reloads after a recovery action.
+    /// The digests (and X accounts with their own times) used for today's later slots, kept for
+    /// reloads after a recovery action.
     private var subscriptions: [AppConfig.Subscription] = []
+    private var accounts: [AppConfig.Account] = []
     private(set) var spending: Spending?
-    private(set) var staleSources: [(name: String, days: Int)] = []
+    private(set) var staleSources: [(id: String, name: String, days: Int)] = []
     private(set) var failure: BackendError?
     private(set) var working: String?
 
@@ -107,16 +109,20 @@ final class OverviewData {
         var xLimit: Int?
     }
 
-    func load(_ client: BackendClient, now: Date = Date(), subscriptions: [AppConfig.Subscription]? = nil) async {
+    func load(_ client: BackendClient, now: Date = Date(), subscriptions: [AppConfig.Subscription]? = nil,
+              accounts: [AppConfig.Account]? = nil) async {
         if let subscriptions { self.subscriptions = subscriptions }
+        if let accounts { self.accounts = accounts }
         let subscriptions = self.subscriptions
+        let accounts = self.accounts
         do {
             let schedule = try await client.call(.scheduleStatus, ["limit": 100])
             let rows = try BackendRPC.decode(schedule) as ScheduleRows
             let day = Self.day(now)
             let start = Self.day(Calendar.current.date(byAdding: .day, value: -6, to: now) ?? now)
             let scheduled = rows.occurrences.filter { Self.localDay($0) == day }
-            today = (scheduled + Self.upcoming(subscriptions, existing: rows.occurrences, now: now)).sorted(by: Self.byTarget)
+            today = (scheduled + Self.upcoming(subscriptions, accounts: accounts, existing: rows.occurrences, now: now))
+                .sorted(by: Self.byTarget)
             week = rows.occurrences.filter { Self.localDay($0) >= start && Self.localDay($0) < day }
                 .sorted { Self.localDay($0) != Self.localDay($1) ? Self.localDay($0) > Self.localDay($1) : Self.byTarget($1, $0) }
             var skipped: Set<String> = []
@@ -150,7 +156,7 @@ final class OverviewData {
                 guard item.source.enabled, item.health?.freshness == "stale" else { return nil }
                 let latest = item.health?.latestPublication.flatMap(Self.date)
                 let days = latest.map { max(1, Int(now.timeIntervalSince($0) / 86_400)) } ?? 0
-                return (item.source.name, days)
+                return (item.source.id, item.source.name, days)
             }
             failure = nil
         } catch let error as BackendError {
@@ -221,7 +227,7 @@ final class OverviewData {
     }
 
     private struct SourceHealth: Decodable {
-        struct Source: Decodable { let name: String; let enabled: Bool }
+        struct Source: Decodable { let id: String; let name: String; let enabled: Bool }
         struct Health: Decodable { let freshness: String; let latestPublication: String? }
         let source: Source
         let health: Health?
@@ -303,31 +309,44 @@ final class OverviewData {
     }
 
     /// Today's slots that the scheduler has not created yet (it creates an occurrence only when
-    /// preparation starts), so the list shows the whole day. Enabled digests only; a slot
-    /// already present at the same instant is not repeated.
-    nonisolated static func upcoming(_ subscriptions: [AppConfig.Subscription], existing: [Occurrence], now: Date) -> [Occurrence] {
+    /// preparation starts), so the list shows the whole day. Mirrors the scheduler's scopes
+    /// (`_scopes`): each enabled digest, and each special X account with a remote id under an
+    /// enabled digest, on its own times or the digest's. A slot already present is not repeated.
+    nonisolated static func upcoming(_ subscriptions: [AppConfig.Subscription], accounts: [AppConfig.Account] = [],
+                                     existing: [Occurrence], now: Date) -> [Occurrence] {
         let today = day(now)
-        let taken = Set(existing.compactMap { row in row.targetAt.flatMap(date).map { "\(row.subscriptionId)@\(Int($0.timeIntervalSince1970))" } })
+        func key(_ subscription: String, _ account: String?, _ instant: Date) -> String {
+            "\(subscription)|\(account ?? "")@\(Int(instant.timeIntervalSince1970))"
+        }
+        let taken = Set(existing.compactMap { row in row.targetAt.flatMap(date).map { key(row.subscriptionId, row.accountId, $0) } })
+        let enabled = Dictionary(uniqueKeysWithValues: subscriptions.filter(\.enabled).map { ($0.id, $0) })
+        var scopes: [(subscription: AppConfig.Subscription, account: String?, times: [String])] =
+            subscriptions.filter(\.enabled).map { ($0, nil, $0.times) }
+        for account in accounts where account.priority == "special" && account.remoteId != nil {
+            guard let subscription = account.subscriptionId.flatMap({ enabled[$0] }) else { continue }
+            scopes.append((subscription, account.id, account.times ?? subscription.times))
+        }
         var result: [Occurrence] = []
-        for subscription in subscriptions where subscription.enabled {
-            guard let zone = TimeZone(identifier: subscription.timezone) else { continue }
+        for scope in scopes {
+            guard let zone = TimeZone(identifier: scope.subscription.timezone) else { continue }
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = zone
             for offset in -1...1 {
                 guard let base = calendar.date(byAdding: .day, value: offset, to: now) else { continue }
                 let civil = calendar.dateComponents([.year, .month, .day], from: base)
-                for (slot, time) in subscription.times.enumerated() {
+                for (slot, time) in scope.times.sorted().enumerated() {
                     let parts = time.split(separator: ":").compactMap { Int($0) }
-                    guard parts.count == 2 else { continue }
-                    guard let target = resolveWallTime(civil, hour: parts[0], minute: parts[1], calendar: calendar),
+                    guard parts.count == 2,
+                          let target = resolveWallTime(civil, hour: parts[0], minute: parts[1], calendar: calendar),
                           target > now, day(target) == today,
-                          !taken.contains("\(subscription.id)@\(Int(target.timeIntervalSince1970))") else { continue }
+                          !taken.contains(key(scope.subscription.id, scope.account, target)) else { continue }
                     let formatter = ISO8601DateFormatter()
                     formatter.timeZone = zone
                     let civilDate = String(format: "%04d-%02d-%02d", civil.year ?? 0, civil.month ?? 0, civil.day ?? 0)
                     result.append(Occurrence(
-                        id: "upcoming.\(subscription.id).\(civilDate).\(time)", subscriptionId: subscription.id, accountId: nil,
-                        slot: slot, civilDate: civilDate, targetAt: formatter.string(from: target), prepareAt: nil,
+                        id: "upcoming.\(scope.subscription.id).\(scope.account ?? "-").\(civilDate).\(time)",
+                        subscriptionId: scope.subscription.id, accountId: scope.account,
+                        slot: slot + 1, civilDate: civilDate, targetAt: formatter.string(from: target), prepareAt: nil,
                         status: "planned", reason: nil, jobId: nil, updatedAt: formatter.string(from: now)
                     ))
                 }
@@ -416,13 +435,13 @@ struct OverviewPage: View {
         }
         .task(id: model.configRevision) {
             while !Task.isCancelled {
-                await data.load(model.client, subscriptions: model.config?.subscriptions ?? [])
+                await data.load(model.client, subscriptions: model.config?.subscriptions ?? [], accounts: model.config?.accounts ?? [])
                 try? await Task.sleep(for: .seconds(15))
             }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                SendNowMenu(model: model) { await data.load(model.client, subscriptions: model.config?.subscriptions ?? []) }
+                SendNowMenu(model: model) { await data.load(model.client, subscriptions: model.config?.subscriptions ?? [], accounts: model.config?.accounts ?? []) }
             }
         }
         .confirmationDialog(
@@ -718,7 +737,7 @@ private struct SetupChecklist: View {
                         sending = true
                         defer { sending = false }
                         await model.sendNow(model.firstEnabledDigest)
-                        await data.load(model.client, subscriptions: model.config?.subscriptions ?? [])
+                        await data.load(model.client, subscriptions: model.config?.subscriptions ?? [], accounts: model.config?.accounts ?? [])
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -763,7 +782,7 @@ private struct AttentionSection: View {
                                note: L10n.Attention.botWaitingNote(language), page: .connect))
         }
         for source in data.staleSources {
-            result.append(Item(id: "source-" + source.name, dot: .orange,
+            result.append(Item(id: "source-" + source.id, dot: .orange,
                                title: L10n.Attention.staleSource(language, ["source": source.name, "days": String(source.days)]),
                                note: L10n.Attention.staleSourceNote(language), page: .digests))
         }

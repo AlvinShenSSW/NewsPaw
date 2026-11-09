@@ -87,6 +87,8 @@ struct AppConfig: Decodable {
     struct Account: Decodable, Identifiable {
         let id, handle, priority: String
         let partition, subscriptionId: String?
+        let remoteId: String?
+        let times: [String]?
     }
 
     struct Profile: Decodable, Identifiable {

@@ -52,6 +52,8 @@ private final class XBackend {
     var posts: [String: [String]] = [:]
     private(set) var requests: [[String: Any]] = []
     private var serial = 0
+    /// Refuses any request this returns a code for (e.g. only route requests carrying post types).
+    var refuseWhen: (([String: Any]) -> String?)?
     /// Refuses the next request of an operation with this code, once.
     var failNext: [String: String] = [:]
     /// Per-operation delays before the reply is computed (to overlap requests).
@@ -165,6 +167,7 @@ private final class XBackend {
         let op = request["op"] as! String
         // A one-off refusal of the next request of this operation (e.g. a storage failure).
         if let code = failNext.removeValue(forKey: op) { return refuse(code) }
+        if let code = refuseWhen?(request) { return refuse(code) }
         let stale = (request["revision"] as? Int).map { $0 != revision } ?? false
         let id = request["account_id"] as? String ?? ""
         switch op {
@@ -1054,4 +1057,92 @@ private func connected(_ server: XBackend) async throws -> (AppModel, XAccountsD
     await data.load(model: model)
     #expect(server.calls("x.posts.list").count == 2)
     #expect(FailureCopy.table["x.partial_response"] != nil)
+}
+
+// MARK: - Review cycle 2
+
+@Test @MainActor func aFailedQueuedChangeIsRetriedAsItselfNeverAsJoiningTheDigest() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "elonmusk", remote: "1")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    // The first change (send alone) is slow and succeeds; the queued second one fails.
+    server.delays["x.accounts.route"] = [.milliseconds(150)]
+    server.refuseWhen = { $0["op"] as? String == "x.accounts.route" && $0["post_types"] != nil ? "storage_failed" : nil }
+    async let first: Void = data.sendAlone("a1", time: "21:30", bots: nil, style: nil, model: model)
+    try await Task.sleep(for: .milliseconds(20))
+    async let second: Void = data.setPostType("a1", "replied_to", on: true, model: model)
+    _ = await (first, second)
+    #expect(server.stored("a1")?["priority"] as? String == "special" && data.failures["route.a1"]?.code == "storage_failed")
+    #expect(data.canRetryRoute("a1"))
+
+    server.refuseWhen = nil
+    await data.retryRoute("a1", model: model)
+    // The post types were sent again; the account is still sent alone.
+    #expect(server.stored("a1")?["priority"] as? String == "special")
+    #expect(server.stored("a1")?["post_types"] as? [String] == ["original", "quoted", "replied_to"])
+    #expect(data.failures["route.a1"] == nil && !data.canRetryRoute("a1"))
+    // Nothing failed now: there is nothing to retry, and retrying changes nothing.
+    let sent = server.calls("x.accounts.route").count
+    await data.retryRoute("a1", model: model)
+    #expect(server.calls("x.accounts.route").count == sent)
+}
+
+@Test @MainActor func anAccountTheBackendAlreadyHasIsNotRoutedOrReadAgain() async throws {
+    let server = XBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    // Added elsewhere after the page last read the directory.
+    server.document["accounts"] = [XBackend.account("a2", "night", partition: "adult", subscription: "sub_xa", remote: "2")]
+    server.revision += 1
+    await data.add("night", partition: "normal", model: model)
+    #expect(data.outcome == .otherPartition("night", "adult"))
+
+    server.document["accounts"] = server.accounts + [XBackend.account("a1", "elonmusk", priority: "special", remote: "1", times: ["21:30"])]
+    server.revision += 1
+    await data.add("elonmusk", partition: "normal", model: model)
+    #expect(data.outcome == .exists("a1") && data.highlighted == "a1")
+    #expect(server.calls("x.accounts.add").count == 2)
+    #expect(server.calls("x.accounts.route").isEmpty && server.calls("x.accounts.verify").isEmpty)
+    #expect(server.stored("a1")?["priority"] as? String == "special" && server.stored("a2")?["partition"] as? String == "adult")
+}
+
+@Test @MainActor func aDraftThatCouldNotBeRemovedIsSaidAndRemovedOnRetry() async throws {
+    let server = XBackend()
+    server.failNext["x.accounts.remove"] = "storage_failed"
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    await data.add("nobody_here", partition: "normal", model: model)
+    let draft = try #require(server.stored(handle: "nobody_here")?["id"] as? String)
+    guard case let .cleanupFailed(failure, id, after) = data.outcome else { Issue.record("no cleanup failure: \(String(describing: data.outcome))"); return }
+    #expect(failure.code == "storage_failed" && id == draft && after == .missing("nobody_here"))
+
+    await data.retryCleanup(model: model)
+    #expect(server.stored(draft) == nil && data.outcome == .missing("nobody_here"))
+}
+
+@Test @MainActor func aFailedRuleCleanupIsShownAndCanBeRetried() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "elonmusk", priority: "special", remote: "1", times: ["21:30"])])
+    server.alerts["rules"] = [["subscription_id": "sub_x", "account_id": "a1", "phrase": "launch"]]
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    server.failNext["x.alerts.save"] = "storage_failed"
+    #expect(await data.remove("a1", model: model))
+    #expect(server.stored("a1") == nil && data.failures["rules"]?.code == "storage_failed")
+    #expect((server.alerts["rules"] as! [[String: Any]]).count == 1)
+
+    await data.retryRuleCleanup(model: model)
+    #expect(data.failures["rules"] == nil && (server.alerts["rules"] as! [[String: Any]]).isEmpty)
+}
+
+@Test @MainActor func aListNoteSaysAllMembersAreInOnlyWhenTheyAre() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "alice", remote: "101"), XBackend.account("a2", "carol", partition: nil, subscription: nil, remote: "103")])
+    server.lists["555"] = ["id": "555", "partition": "normal", "default_adult": false, "name": "AI people", "state": "ready",
+                           "members": [["account_id": "a1", "remote_id": "101"], ["account_id": "a2", "remote_id": "103"]], "checked_at": "2026-11-09T00:00:00+00:00"]
+    let (_, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let list = try #require(data.lists.first)
+    #expect(data.listNote(list) == L10n.XAccounts.listNotePending)
 }

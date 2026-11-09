@@ -604,6 +604,9 @@ enum L10n {
         static let joinTitle = Words("把 {handle} 并入汇总？", "Put {handle} in the digest?", "{handle} をまとめに入れますか？")
         static let membersOutside = Words("{count} 个成员还没并入汇总", "{count} members not in the digest", "まとめに入っていないメンバー {count} 人")
         static let listNoteOutside = Words("成员要并入汇总后才会被读取", "Members are read once they are in the digest", "メンバーはまとめに入ると読み取られます")
+        static let listNotePending = Words("有新成员等你选是哪一类，选好后并入汇总", "New members wait for you to choose their kind; then they join the digest", "新メンバーの種類を選ぶと、まとめに入ります")
+        static let draftLeft = Words("刚建的账号条目没能删掉。", "The entry just created could not be removed.", "作成したばかりの項目を削除できませんでした。")
+        static let rulesLeft = Words("账号已改好，但它的提醒规则没能一起删除。", "The account was changed, but its alert rules could not be removed with it.", "アカウントは変更しましたが、その通知ルールを一緒に削除できませんでした。")
         static let membersTitle = Words("「{name}」的新成员", "New members of \u{201C}{name}\u{201D}", "「{name}」の新メンバー")
         static let membersNote = Words("选普通或成人后并入那一类的汇总；忽略的成员不会被读取。", "Ordinary or adult adds a member to that digest; ignored members are not read.", "一般か成人向けを選ぶとそのまとめに入ります。無視したメンバーは読み取りません。")
         static let ignore = Words("忽略", "Ignore", "無視")
@@ -660,7 +663,7 @@ enum L10n {
             advancedNote, alerts, alertsNote, alertsNeedRule, rulePlaceholder, ruleScope, ruleDigest, addRule, removeRule, video,
             videoNote, videoNeedsModels, videoBudget, perDayMoney, noVideos, inspect, inspectTitle, inspectBody, viewResult,
             videoDone, videoPartial, transcript, partitionLimits, partitionLimitsNote, partitionLimitLabel,
-            notInDigest, joinTitle, membersOutside, listNoteOutside,
+            notInDigest, joinTitle, membersOutside, listNoteOutside, listNotePending, draftLeft, rulesLeft, listNotePending,
         ]
     }
 }

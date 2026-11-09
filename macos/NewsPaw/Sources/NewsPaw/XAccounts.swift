@@ -200,6 +200,9 @@ enum XAddOutcome: Equatable {
     case list(String)
     /// Reading a List's members failed; it is kept and can be read again.
     case listFailed(BackendError, String)
+    /// The draft the add created could not be removed again (X has no such account, or it is
+    /// already listed): what happened, and "Try Again" removes the leftover draft.
+    indirect case cleanupFailed(BackendError, String, XAddOutcome)
 }
 
 extension BackendClient {
@@ -306,8 +309,11 @@ final class XAccountsData {
     /// How long a read that outlived its socket deadline is followed before the page lets go.
     @ObservationIgnored var followLimit: Duration = .seconds(120)
     @ObservationIgnored private var queues: [String: Task<Void, Never>] = [:]
-    /// The last change sent for each account, so "Try Again" repeats it against the fresh state.
-    @ObservationIgnored private var lastRoutes: [String: RouteFields] = [:]
+    /// The change that failed last for each account, so "Try Again" repeats exactly that change
+    /// against the fresh state. Each queued change has its own identity: an earlier change
+    /// finishing never clears (or stands in for) a later one's failure.
+    private struct FailedRoute { let change: UUID; let fields: RouteFields }
+    @ObservationIgnored private var failedRoutes: [String: FailedRoute] = [:]
     /// Today's post counts are local but not free (one `x.posts.list` per account): they are
     /// read again only when the readable accounts change or after this long.
     @ObservationIgnored var activityInterval: Duration = .seconds(600)
@@ -355,6 +361,17 @@ final class XAccountsData {
     func notInDigest(_ list: XListItem) -> [XAccountItem] {
         let ids = Set(list.members.map(\.accountId))
         return accounts.filter { ids.contains($0.id) && $0.partition == list.partition && $0.subscriptionId == nil && !ignored.contains($0.id) }
+    }
+
+    /// Whether the account's failed change can be repeated ("Try Again" on its row).
+    func canRetryRoute(_ id: String) -> Bool { failedRoutes[id] != nil }
+
+    /// A List row's note: "all members are in the digest" only when none waits for a kind or
+    /// is outside the digest.
+    func listNote(_ list: XListItem) -> Words {
+        if !pending(list).isEmpty { return L10n.XAccounts.listNotePending }
+        if !notInDigest(list).isEmpty { return L10n.XAccounts.listNoteOutside }
+        return list.partition == "adult" ? L10n.XAccounts.listNoteAdult : L10n.XAccounts.listNote
     }
 
     /// Alert rules on this account (they go if it stops being sent alone).
@@ -479,9 +496,24 @@ final class XAccountsData {
         }
         var draft: String?
         do {
-            struct Added: Decodable { let account: XAccountItem }
+            struct Added: Decodable { let revision: Int; let account: XAccountItem }
+            var sent = 0
             let added: Added = try await client.revisioned { revision in
-                try BackendRPC.decode(await client.call(.xAccountsAdd, ["handle": name, "revision": revision, "partition": partition]))
+                sent = revision
+                return try BackendRPC.decode(await client.call(.xAccountsAdd, ["handle": name, "revision": revision, "partition": partition]))
+            }
+            // `add_account` returns an account it already has unchanged (same revision): one this
+            // page had not read yet. It is not a draft: no digest change and no read of X.
+            if added.revision == sent {
+                let existing = added.account
+                if let other = existing.partition, other != partition {
+                    outcome = .otherPartition(existing.handle, other)
+                } else {
+                    outcome = .exists(existing.id)
+                    highlighted = existing.id
+                }
+                await reload(model)
+                return
             }
             draft = added.account.id
             // Joins the digest of its kind first, so it is never left outside both choices.
@@ -505,24 +537,47 @@ final class XAccountsData {
             highlighted = draft
         case "unavailable":
             // Not on X: nothing is left behind.
-            _ = try? await removeAccount(draft, model: model)
-            outcome = .missing(handle)
+            await removeDraft(draft, then: .missing(handle), model: model)
         case "duplicate":
             // The same X account is already here under another (older) username.
             let canonical = reply.canonicalAccountId ?? reply.account?.id ?? draft
-            if canonical != draft { _ = try? await removeAccount(draft, model: model) }
             let existing = reply.account
-            if let existing, let other = existing.partition, other != partition {
-                outcome = .otherPartition(existing.handle, other)
+            let then: XAddOutcome = if let existing, let other = existing.partition, other != partition {
+                .otherPartition(existing.handle, other)
             } else {
-                outcome = .exists(canonical)
-                highlighted = canonical
+                .exists(canonical)
             }
+            if canonical != draft {
+                await removeDraft(draft, then: then, model: model)
+            } else {
+                outcome = then
+            }
+            if case let .exists(id) = outcome { highlighted = id }
         case "running":
             outcome = .failed(BackendError(code: "x_still_running", domain: "x"), draft)
         default:
             outcome = .failed(reply.failure ?? BackendError(code: reply.state, domain: "x"), draft)
         }
+    }
+
+    /// Removes a draft the add made, then says `then`; a failed removal is said with a retry.
+    private func removeDraft(_ draft: String, then: XAddOutcome, model: AppModel) async {
+        do {
+            try await removeAccount(draft, model: model)
+            outcome = then
+            if case let .exists(id) = then { highlighted = id }
+        } catch {
+            outcome = .cleanupFailed(BackendError.wrapping(error), draft, then)
+        }
+    }
+
+    /// Removes the leftover draft of a failed cleanup.
+    func retryCleanup(model: AppModel) async {
+        guard case let .cleanupFailed(_, draft, then) = outcome, !working.contains("add") else { return }
+        working.insert("add")
+        defer { working.remove("add") }
+        await removeDraft(draft, then: then, model: model)
+        await reload(model)
     }
 
     /// Keeps a protected (or not yet read) account as it is.
@@ -690,21 +745,17 @@ final class XAccountsData {
         }
     }
 
-    /// Repeats the account's last change that failed, against its fresh state; an account in
-    /// no digest joins its kind's digest.
+    /// Repeats the account's change that failed, as itself, against its fresh state. With no
+    /// failed change there is nothing to repeat (never a substitute change).
     func retryRoute(_ id: String, model: AppModel) async {
-        if let fields = lastRoutes[id] {
-            await route(id, model: model, fields: fields)
-        } else {
-            await joinDigest(id, model: model)
-        }
+        guard let failed = failedRoutes[id] else { return }
+        await route(id, model: model, change: failed.change, fields: failed.fields)
     }
 
     /// `x.accounts.route` against the account's newest stored state. The digest is the one it is
     /// in, else the X digest of its own kind; never one of the other kind.
-    private func route(_ id: String, model: AppModel, fields: @escaping RouteFields) async {
+    private func route(_ id: String, model: AppModel, change: UUID = UUID(), fields: @escaping RouteFields) async {
         let key = "route." + id
-        lastRoutes[id] = fields
         await queued(id) { [self] in
             working.insert(key)
             defer { working.remove(key) }
@@ -726,9 +777,10 @@ final class XAccountsData {
                     return try await client.call(.xAccountsRoute, request)
                 }
                 savedAt[key] = Date()
-                lastRoutes[id] = nil
+                if failedRoutes[id]?.change == change { failedRoutes[id] = nil }
             } catch {
                 failures[key] = BackendError.wrapping(error)
+                failedRoutes[id] = FailedRoute(change: change, fields: fields)
             }
             await reload(model)
             await pruneRules(model: model)
@@ -825,14 +877,14 @@ final class XAccountsData {
                 outcome = .otherPartition(list.name ?? list.id, list.partition)
                 return
             }
-            try await settleList(list.id, model: model)
+            await settleList(list.id, model: model)
         } catch {
             outcome = .failed(BackendError.wrapping(error), nil)
         }
         await reload(model)
     }
 
-    private func settleList(_ id: String, model: AppModel) async throws {
+    private func settleList(_ id: String, model: AppModel) async {
         do {
             let reply = try await readMembers(id, key: "add", model: model)
             if let failure = reply.failure {
@@ -853,7 +905,7 @@ final class XAccountsData {
         working.insert("add")
         defer { working.remove("add") }
         outcome = nil
-        try? await settleList(id, model: model)
+        await settleList(id, model: model)
         await reload(model)
     }
 
@@ -1032,10 +1084,15 @@ final class XAccountsData {
     /// `x.alerts.save` checks every stored rule, so a rule on an account that is no longer sent
     /// alone (moved into the digest, to the other kind, or removed) would make each later alert
     /// change fail. Such rules go with the account; alerts without a rule turn off.
+    /// The account change itself is already saved, so a failure here is the page's own
+    /// ("rules"), shown with a retry that reruns only this cleanup.
     private func pruneRules(model: AppModel) async {
         let alone = Set(accounts.filter(\.sendsAlone).map(\.id))
-        guard let rules = alerts?.rules, rules.contains(where: { $0.accountId.map { !alone.contains($0) } ?? false }) else { return }
-        await saveAlerts(model: model) { settings in
+        guard let rules = alerts?.rules, rules.contains(where: { $0.accountId.map { !alone.contains($0) } ?? false }) else {
+            failures["rules"] = nil
+            return
+        }
+        await saveAlerts("rules", model: model) { settings in
             var settings = settings
             let kept = (settings["rules"] as? [[String: Any]] ?? []).filter { entry in
                 (entry["account_id"] as? String).map(alone.contains) ?? true
@@ -1046,9 +1103,14 @@ final class XAccountsData {
         }
     }
 
+    /// Reruns only the cleanup of alert rules that failed after an account change.
+    func retryRuleCleanup(model: AppModel) async {
+        await load(model: model)
+        await pruneRules(model: model)
+    }
+
     @discardableResult
-    private func saveAlerts(model: AppModel, change: @escaping EditorState.Change) async -> Bool {
-        let key = "alerts"
+    private func saveAlerts(_ key: String = "alerts", model: AppModel, change: @escaping EditorState.Change) async -> Bool {
         guard !working.contains(key) else { return false }
         working.insert(key)
         defer { working.remove(key) }

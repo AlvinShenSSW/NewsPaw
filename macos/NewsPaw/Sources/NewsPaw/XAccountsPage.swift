@@ -25,6 +25,11 @@ struct XAccountsPage: View {
                 FailureNote(model: model, failure: failure) { Task { await data.load(model: model) } }
             }
             notices
+            if let failure = data.failures["rules"] {
+                XRetryNote(model: model, what: L10n.XAccounts.rulesLeft, failure: failure) {
+                    Task { await data.retryRuleCleanup(model: model) }
+                }
+            }
             XAddRow(model: model, data: data, partition: partition, blocked: addBlocked)
             XAccountList(model: model, data: data, partition: partition)
             ViewThatFits(in: .horizontal) {
@@ -72,6 +77,29 @@ struct XAccountsPage: View {
         if partition == "adult", !model.adultModelReady {
             XNotice(model: model, text: L10n.XAccounts.needsAdultKey, action: L10n.XAccounts.goConnect) { model.page = .connect }
         }
+    }
+}
+
+/// A step that failed after the main change was saved: what is left over, why, and a retry
+/// that repeats only that step.
+private struct XRetryNote: View {
+    let model: AppModel
+    let what: Words
+    let failure: BackendError
+    let retry: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red).accessibilityHidden(true)
+            Text(model.text(what) + " " + FailureCopy.message(for: failure, model.uiLanguage))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button(model.text(L10n.Shell.retry), action: retry)
+        }
+        .font(.callout)
+        .padding(10)
+        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -189,6 +217,13 @@ private struct XAddRow: View {
             FailureNote(model: model, failure: failure, action: fix(failure, model: model) {
                 Task { await data.retryList(id, model: model) }
             })
+        case let .cleanupFailed(failure, _, then):
+            VStack(alignment: .leading, spacing: 6) {
+                AnyView(result(then))
+                XRetryNote(model: model, what: L10n.XAccounts.draftLeft, failure: failure) {
+                    Task { await data.retryCleanup(model: model) }
+                }
+            }
         case let .list(id):
             if let list = data.lists.first(where: { $0.id == id }) {
                 HStack(spacing: 8) {
@@ -359,7 +394,7 @@ private struct XAccountRow: View {
     /// removal has nothing to repeat without asking again, so it offers no button.
     private func retry(_ prefix: String) -> (() -> Void)? {
         switch prefix {
-        case "route.": { Task { await data.retryRoute(account.id, model: model) } }
+        case "route.": data.canRetryRoute(account.id) ? { Task { await data.retryRoute(account.id, model: model) } } : nil
         case "verify.": { Task { await data.reverify(account.id, model: model) } }
         default: nil
         }
@@ -632,8 +667,7 @@ private struct XListRow: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     // Says "all members are in the digest" only when they are.
-                    Text(model.text(!outside.isEmpty ? L10n.XAccounts.listNoteOutside
-                                    : list.partition == "adult" ? L10n.XAccounts.listNoteAdult : L10n.XAccounts.listNote))
+                    Text(model.text(data.listNote(list)))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
                 Spacer(minLength: 8)
@@ -872,7 +906,7 @@ private struct XReadsCard: View {
                     Text(model.text(L10n.XAccounts.readsNote)).font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if let failure = data.failures["budget.daily"] {
-                        FailureNote(model: model, failure: failure) { edited = false; fill(); data.dismiss("budget.daily") }
+                        FailureNote(model: model, failure: failure)
                     }
                 }
                 .padding(4)
@@ -896,7 +930,7 @@ private struct XReadsCard: View {
         guard edited, let budget = data.budget else { return }
         edited = false
         guard text != (budget.dailyReads.map(String.init) ?? "") else { return }
-        Task { await data.saveDailyReads(text, model: model) }
+        Task { if !(await data.saveDailyReads(text, model: model)) { edited = true } }
     }
 }
 
@@ -1000,7 +1034,7 @@ private struct XAlertsBlock: View {
                     .disabled(!canAdd)
             }
             if let failure = data.failures["alerts"] {
-                FailureNote(model: model, failure: failure) { data.dismiss("alerts") }
+                FailureNote(model: model, failure: failure)
             }
         }
         .padding(.vertical, 10)
@@ -1072,7 +1106,7 @@ private struct XVideoBlock: View {
                     Button(model.text(L10n.XAccounts.goConnect)) { model.page = .connect }.buttonStyle(.link).font(.caption)
                 }
             }
-            if let failure = data.failures["video"] { FailureNote(model: model, failure: failure) { data.dismiss("video") } }
+            if let failure = data.failures["video"] { FailureNote(model: model, failure: failure) }
             if policy.enabled {
                 HStack(spacing: 8) {
                     Text(model.text(L10n.XAccounts.videoBudget))
@@ -1089,7 +1123,7 @@ private struct XVideoBlock: View {
                     Text(model.text(L10n.XAccounts.perDayMoney)).foregroundStyle(.secondary)
                 }
                 if let failure = data.failures["video.budget"] {
-                    FailureNote(model: model, failure: failure) { edited = false; fill(); data.dismiss("video.budget") }
+                    FailureNote(model: model, failure: failure)
                 }
                 candidates
             }
@@ -1143,7 +1177,7 @@ private struct XVideoBlock: View {
         guard edited, let video = data.video, video.enabled else { return }
         edited = false
         guard budgetText != BudgetSummary.dollarField(video.dailyModelLimit) else { return }
-        Task { await data.saveVideoBudget(budgetText, model: model) }
+        Task { if !(await data.saveVideoBudget(budgetText, model: model)) { edited = true } }
     }
 }
 
@@ -1224,7 +1258,7 @@ private struct XPartitionLimitRow: View {
                 Text(model.text(L10n.Connect.perDay)).foregroundStyle(.secondary)
             }
             if let failure = data.failures[key] {
-                FailureNote(model: model, failure: failure) { edited = false; fill(); data.dismiss(key) }
+                FailureNote(model: model, failure: failure)
             }
         }
         .onAppear(perform: fill)
@@ -1241,6 +1275,6 @@ private struct XPartitionLimitRow: View {
         guard edited, data.budget != nil else { return }
         edited = false
         guard text != (limit.map { String($0.value) } ?? "") else { return }
-        Task { await data.savePartitionReads(partition, text, model: model) }
+        Task { if !(await data.savePartitionReads(partition, text, model: model)) { edited = true } }
     }
 }

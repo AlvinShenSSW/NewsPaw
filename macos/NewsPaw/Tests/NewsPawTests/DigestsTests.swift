@@ -78,13 +78,18 @@ private final class DigestBackend {
             return commit { document["sources"] = sources.filter { $0["id"] as? String != source["id"] as? String } + [source] }
         case "sources.preview":
             let id = request["source_id"] as! String
-            let bad = (source(id)?["url"] as? String ?? "").contains("bad")
+            let url = source(id)?["url"] as? String ?? ""
+            if url.contains("held") {
+                return ok(["attempt": ["status": "interrupted", "error_kind": "collection_held"], "entries": [], "preview_ready": false])
+            }
+            if url.contains("quiet") {
+                return ok(["attempt": ["status": "empty", "error_kind": NSNull()], "entries": [], "preview_ready": false])
+            }
+            let bad = url.contains("bad")
             if !bad { ready.insert(id) }
-            return ok([
-                "attempt": ["status": bad ? "failed" : "fresh"],
-                "entries": bad ? [] : [["published_at": "2026-11-10T08:20:00+00:00"]],
-                "preview_ready": !bad,
-            ])
+            let attempt: [String: Any] = bad ? ["status": "failed", "error_kind": "http_error"] : ["status": "fresh", "error_kind": NSNull()]
+            let entries: [[String: Any]] = bad ? [] : [["published_at": "2026-11-10T08:20:00+00:00"]]
+            return ok(["attempt": attempt, "entries": entries, "preview_ready": !bad] as [String: Any])
         case "subscriptions.save":
             if let change = backgroundChange {
                 backgroundChange = nil
@@ -152,7 +157,8 @@ private func connected(_ server: DigestBackend) async throws -> (AppModel, () ->
     let nhk = try #require(server.sources.first { $0["url"] as? String == "https://nhk.example/rss" })
     let bad = try #require(server.sources.first { $0["url"] as? String == "https://bad.example/rss" })
     #expect(nhk["enabled"] as? Bool == true && bad["enabled"] as? Bool == false)
-    #expect(data.failures[bad["id"] as! String]?.code == "failed")
+    // The reason is the attempt's error kind, with its own copy.
+    #expect(data.failures[bad["id"] as! String]?.code == "http_error")
     // The digest is on, sent to the only usable Bot.
     let stored = try #require(server.subscription("sub_japan"))
     #expect(stored["enabled"] as? Bool == true && stored["bot_ids"] as? [String] == ["bot1"])
@@ -199,6 +205,7 @@ private func connected(_ server: DigestBackend) async throws -> (AppModel, () ->
         subscriptions: [subscription("sub_japan", enabled: true, bots: ["bot1"], extra: ["focus_weights": ["domestic": 70, "entertainment": 30]])],
         sources: [source("nhk", focus: "domestic"), source("oricon", focus: "entertainment")]
     )
+    server.ready = ["nhk"]
     let (model, cleanup) = try await connected(server)
     defer { cleanup() }
     let data = DigestsData()
@@ -284,6 +291,108 @@ private func connected(_ server: DigestBackend) async throws -> (AppModel, () ->
     for words in L10n.Digests.all {
         for language in AppLanguage.allCases {
             #expect(!words(language).isEmpty)
+        }
+    }
+}
+
+@Test @MainActor func anOnDigestIsNotLeftWithOnlySourcesItCannotRead() async throws {
+    // The domestic source was never tried: dividing would leave the enabled original with nothing usable.
+    let server = DigestBackend(
+        subscriptions: [subscription("sub_japan", enabled: true, bots: ["bot1"])],
+        sources: [source("nhk", focus: "domestic", enabled: false), source("oricon", focus: "entertainment")]
+    )
+    server.ready = ["oricon"]
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    await data.load(model.client)
+    let digest = try #require(model.config?.subscriptions.first)
+
+    let copyId = try #require(await data.split(digest, model: model))
+
+    #expect(server.subscription("sub_japan")?["source_ids"] as? [String] == [])
+    #expect(server.subscription(copyId)?["source_ids"] as? [String] == [])
+    #expect(server.subscription(copyId)?["enabled"] as? Bool == false)
+}
+
+@Test @MainActor func aTrialThatDidNotReallyReadSaysWhyAndLeavesTheSourceOff() async throws {
+    let server = DigestBackend(
+        subscriptions: [subscription("sub_japan")],
+        sources: [
+            ["id": "held", "name": "Held", "url": "https://held.example", "kind": "web", "partition": "normal", "category_ids": ["japan"], "enabled": false],
+            ["id": "quiet", "name": "Quiet", "url": "https://quiet.example", "kind": "web", "partition": "normal", "category_ids": ["japan"], "enabled": false],
+        ]
+    )
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    await data.load(model.client)
+
+    #expect(!(await data.trial("held", model: model)))
+    #expect(data.failures["held"]?.code == "collection_held" && data.notes["held"] == nil)
+    #expect(!(await data.trial("quiet", model: model)))
+    #expect(data.failures["quiet"]?.code == "preview_incomplete")
+    #expect(server.calls("sources.save").isEmpty)
+}
+
+@Test @MainActor func importedFeedsStayReachableUntilFiledUnderADigest() async throws {
+    let server = DigestBackend(
+        subscriptions: [subscription("sub_japan")],
+        sources: [["id": "source_1", "name": "Feed", "url": "https://feed.example/rss", "kind": "rss", "partition": NSNull(), "category_ids": [], "enabled": false]]
+    )
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    await data.load(model.client)
+    #expect(data.unfiled.map(\.id) == ["source_1"])
+
+    #expect(await data.file(["source_1"], under: "japan", model: model) == nil)
+
+    let filed = try #require(server.source("source_1"))
+    #expect(filed["partition"] as? String == "normal" && filed["category_ids"] as? [String] == ["japan"] && filed["enabled"] as? Bool == false)
+    #expect(data.unfiled.isEmpty)
+    #expect(data.listed(try #require(model.config?.subscriptions.first)).map(\.id) == ["source_1"])
+}
+
+@Test @MainActor func aMutedFocusDoesNotCountAsOn() async throws {
+    let server = DigestBackend(
+        subscriptions: [subscription("sub_japan", enabled: true, bots: ["bot1"], extra: ["focus_weights": ["domestic": 100, "entertainment": 0]])],
+        sources: [source("nhk", focus: "domestic"), source("oricon", focus: "entertainment")]
+    )
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    await data.load(model.client)
+    let digest = try #require(model.config?.subscriptions.first)
+    #expect(data.listed(digest).filter { data.included($0, in: digest) }.map(\.id) == ["nhk"])
+}
+
+@Test @MainActor func aRefusalIsDroppedOnceTheConfigurationChanges() async throws {
+    let server = DigestBackend(subscriptions: [subscription("sub_japan")])
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    #expect(!(await data.save("sub_japan", model: model, enable: true)))
+    #expect(data.failures["sub_japan"] != nil && data.previews["sub_japan"] != nil)
+    data.configurationChanged()
+    #expect(data.failures["sub_japan"] == nil && data.previews["sub_japan"] == nil)
+}
+
+@Test func everyCodeTheDigestsPageShowsHasItsOwnCopy() {
+    let codes = [
+        "subscription_not_ready", "source_preview_required", "preview_required", "source_disabled", "no_ready_bot",
+        "primary_unverified", "backup_unverified", "schedule_missing", "invalid_subscription_draft", "missing_subscription",
+        "missing_source", "duplicate_source", "unclassified_source", "adult_source_requires_adapter", "invalid_opml",
+        "discovery_failed", "failed", "http_error", "network_error", "interrupted", "collection_held", "cancelled",
+        "configuration_changed", "identity_changed", "redirect_rejected", "too_many_redirects", "private_address",
+        "tls_hostname_mismatch", "response_too_large", "oversized_feed", "parse_limit", "invalid_html",
+        "unsupported_encoding", "invalid_publication_date", "preview_incomplete", "unsupported_source", "timeout",
+        "rate_limited", "unsafe_url", "missing_primary_credential",
+    ]
+    for code in codes {
+        #expect(FailureCopy.table[code] != nil, "no copy for \(code)")
+        for language in AppLanguage.allCases {
+            #expect(FailureCopy.message(for: BackendError(code: code), language) != FailureCopy.fallback(language, ["code": code]))
         }
     }
 }

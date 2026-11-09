@@ -14,7 +14,7 @@ struct SourceItem: Decodable, Identifiable, Equatable {
         let focus: String?
     }
     struct Health: Decodable, Equatable {
-        struct Attempt: Decodable, Equatable { let status: String }
+        struct Attempt: Decodable, Equatable { let status: String; let errorKind: String? }
         let freshness: String
         let latestPublication: String?
         let lastAttempt: Attempt?
@@ -58,8 +58,11 @@ struct OPMLImport: Decodable, Equatable {
     }
 }
 
+/// Attempt outcomes that count as a successful read (src/newspaw/evidence.py).
+let readStatuses: Set<String> = ["fresh", "stale", "empty", "no_eligible", "not_modified"]
+
 private struct Trial: Decodable {
-    struct Attempt: Decodable { let status: String }
+    struct Attempt: Decodable { let status: String; let errorKind: String? }
     struct Entry: Decodable { let publishedAt: String? }
     let attempt: Attempt
     let entries: [Entry]
@@ -93,9 +96,21 @@ final class DigestsData {
     private(set) var notes: [String: String] = [:]
     private(set) var savedAt: [String: Date] = [:]
     private(set) var previews: [String: DigestPreview] = [:]
-    private(set) var sent: Set<String> = []
+    private(set) var sent: [String: Date] = [:]
     private(set) var impacts: [String: [String]] = [:]
     var imported: OPMLImport?
+
+    /// Sources with no category yet (OPML imports); no digest lists them until they are filed.
+    var unfiled: [SourceItem] { sources.filter { $0.source.partition == nil && $0.source.categoryIds.isEmpty } }
+
+    /// A refusal and its blockers describe the configuration they were made against; once the
+    /// configuration changes they may no longer hold, so they are dropped.
+    func configurationChanged() {
+        for (id, failure) in failures where failure.code == "subscription_not_ready" { failures[id] = nil }
+        previews = [:]
+    }
+
+    func isBusy(_ id: String) -> Bool { working.contains(id) || working.contains("on." + id) }
 
     func load(_ client: BackendClient, now: Date = Date()) async {
         do {
@@ -129,6 +144,8 @@ final class DigestsData {
     /// Whether the digest collects from this source now.
     func included(_ item: SourceItem, in subscription: AppConfig.Subscription) -> Bool {
         guard item.source.enabled else { return false }
+        // A source whose focus is weighted 0 is muted (`source_in_subscription`).
+        if let focus = item.source.focus, subscription.focusWeights?[focus] == 0 { return false }
         return subscription.followsCategory || (subscription.sourceIds ?? []).contains(item.id)
     }
 
@@ -180,6 +197,7 @@ final class DigestsData {
     /// What the next edition would use, and what still stops it (`subscriptions.preview`).
     func preview(_ id: String, model: AppModel) async {
         previews[id] = nil
+        if failures[id]?.code != "subscription_not_ready" { failures[id] = nil }
         do {
             let current = try await model.client.configDocument()
             let subscriptions = current.document["subscriptions"] as? [[String: Any]] ?? []
@@ -198,6 +216,9 @@ final class DigestsData {
     /// sources when it has none, choose the only usable Bot when none is chosen, then enable.
     @discardableResult
     func turnOn(_ subscription: AppConfig.Subscription, model: AppModel) async -> Bool {
+        guard !isBusy(subscription.id) else { return false }
+        working.insert("on." + subscription.id)
+        defer { working.remove("on." + subscription.id) }
         if listed(subscription).isEmpty {
             for entry in catalog where entry.categoryId == subscription.categoryId && entry.connection != "adapter_required" {
                 await addSource(name: entry.name, url: entry.url, kind: entry.kind, focus: entry.focus, to: subscription, model: model)
@@ -248,8 +269,10 @@ final class DigestsData {
             let result: Trial = try BackendRPC.decode(await model.client.call(.sourcesPreview, ["source_id": id]))
             let latest = result.entries.compactMap(\.publishedAt).max()
             failures[id] = nil
-            if ["failed", "rate_limited", "timeout", "unsupported"].contains(result.attempt.status) {
-                failures[id] = BackendError(code: result.attempt.status, domain: "sources")
+            if !readStatuses.contains(result.attempt.status) {
+                failures[id] = BackendError(code: result.attempt.errorKind ?? result.attempt.status, domain: "sources")
+            } else if !result.previewReady {
+                failures[id] = BackendError(code: "preview_incomplete", domain: "sources")
             } else {
                 note(id, L10n.Digests.trialResult(model.uiLanguage, [
                     "count": String(result.entries.count), "time": OverviewData.clock(latest),
@@ -283,7 +306,11 @@ final class DigestsData {
             } else if subscription.followsCategory {
                 try await setSource(item.id, enabled: on, model: model)
             }
-            if !subscription.followsCategory { await include(item.id, in: subscription.id, on, model: model) }
+            if !subscription.followsCategory {
+                await include(item.id, in: subscription.id, on, model: model)
+            } else {
+                savedAt[subscription.id] = Date()
+            }
         } catch {
             failures[item.id] = error as? BackendError ?? BackendError(code: "invalid_reply")
         }
@@ -375,7 +402,6 @@ final class DigestsData {
             }
             return document
         }
-        imported = nil
         await load(model.client)
         await model.refresh()
         return editor.failure
@@ -387,7 +413,10 @@ final class DigestsData {
         let id = "sub_" + String(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(20))
         let items = listed(subscription)
         let entertainment = items.filter { $0.source.focus == "entertainment" }.map(\.id)
-        let rest = items.filter { $0.source.focus != "entertainment" }.map(\.id)
+        let rest = items.filter { $0.source.focus != "entertainment" }
+        // An enabled digest must keep a source it can actually read; otherwise both follow the category.
+        let keepsUsable = !subscription.enabled || rest.contains { $0.source.enabled && $0.previewReady }
+        let restIds = keepsUsable ? rest.map(\.id) : []
         let title = model.digestTitle(subscription.id)
         let names = (title, title + " · " + model.text(L10n.Digests.entertainmentTag))
         let editor = EditorState(client: model.client)
@@ -403,9 +432,9 @@ final class DigestsData {
             copy["enabled"] = false
             copy.removeValue(forKey: "focus_weights")
             subscriptions[index]["name"] = names.0
-            if !entertainment.isEmpty, !rest.isEmpty {
+            if !entertainment.isEmpty, !restIds.isEmpty {
                 subscriptions[index]["source_mode"] = "explicit"
-                subscriptions[index]["source_ids"] = rest
+                subscriptions[index]["source_ids"] = restIds
                 subscriptions[index].removeValue(forKey: "focus_weights")
                 copy["source_mode"] = "explicit"
                 copy["source_ids"] = entertainment
@@ -414,7 +443,7 @@ final class DigestsData {
             document["subscriptions"] = subscriptions
             return document
         }
-        if !saved { failures[subscription.id] = editor.failure }
+        if saved { savedAt[subscription.id] = Date() } else { failures[subscription.id] = editor.failure }
         await model.refresh()
         await load(model.client)
         return saved ? id : nil
@@ -442,7 +471,7 @@ final class DigestsData {
     func sendNow(_ id: String, model: AppModel) async {
         working.insert(id)
         defer { working.remove(id) }
-        if await model.sendNow(id) { sent.insert(id) }
+        if await model.sendNow(id) { sent[id] = Date() }
         await load(model.client)
     }
 
@@ -525,6 +554,7 @@ struct DigestsPage: View {
     @State private var expanded: String?
     @State private var importing = false
     @State private var importFailure: BackendError?
+    @State private var filing: [String]?
 
     init(model: AppModel, config: AppConfig, expanded: String? = nil) {
         self.model = model
@@ -547,6 +577,17 @@ struct DigestsPage: View {
                 .padding(10)
                 .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
             }
+            if !data.unfiled.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "tray.and.arrow.down").foregroundStyle(.secondary).accessibilityHidden(true)
+                    Text(L10n.Digests.unfiled(model.uiLanguage, ["count": String(data.unfiled.count)]))
+                    Spacer()
+                    Button(model.text(L10n.Digests.fileThem)) { filing = data.unfiled.map(\.id) }
+                }
+                .font(.callout)
+                .padding(10)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            }
             ForEach(ordered) { subscription in
                 DigestRow(model: model, data: data, subscription: subscription,
                           expanded: Binding(get: { expanded == subscription.id },
@@ -554,7 +595,10 @@ struct DigestsPage: View {
                           reveal: { expanded = $0 })
             }
         }
-        .task(id: model.configRevision) { await data.load(model.client) }
+        .task(id: model.configRevision) {
+            data.configurationChanged()
+            await data.load(model.client)
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -573,11 +617,14 @@ struct DigestsPage: View {
                 importFailure = BackendError(code: "invalid_opml", domain: "sources")
                 return
             }
-            Task { importFailure = await data.importOPML(content, model: model) }
+            Task {
+                importFailure = await data.importOPML(content, model: model)
+                if importFailure == nil { filing = data.unfiled.map(\.id) }
+            }
         }
-        .sheet(isPresented: Binding(get: { data.imported != nil }, set: { if !$0 { data.imported = nil } })) {
-            if let result = data.imported {
-                ImportResult(model: model, data: data, result: result, choices: ordered) { importFailure = $0 }
+        .sheet(isPresented: Binding(get: { filing != nil }, set: { if !$0 { filing = nil; data.imported = nil } })) {
+            if let ids = filing {
+                ImportResult(model: model, data: data, result: data.imported, ids: ids, choices: ordered)
             }
         }
     }
@@ -591,19 +638,24 @@ struct DigestsPage: View {
 private struct ImportResult: View {
     let model: AppModel
     let data: DigestsData
-    let result: OPMLImport
+    let result: OPMLImport?
+    let ids: [String]
     let choices: [AppConfig.Subscription]
-    let failed: (BackendError?) -> Void
     @State private var category = ""
+    @State private var failure: BackendError?
+    @State private var saving = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(model.text(L10n.Digests.importOPML)).font(.headline)
-            Text(L10n.Digests.importSummary(model.uiLanguage, [
-                "added": String(result.added.count), "existing": String(result.existing.count), "rejected": String(result.rejected),
-            ]))
-            if !result.added.isEmpty {
+            Text(model.text(result == nil ? L10n.Digests.fileTitle : L10n.Digests.importOPML)).font(.headline)
+            if let result {
+                Text(L10n.Digests.importSummary(model.uiLanguage, [
+                    "added": String(result.added.count), "existing": String(result.existing.count), "rejected": String(result.rejected),
+                ]))
+            }
+            if !ids.isEmpty {
+                Text(L10n.Digests.unfiled(model.uiLanguage, ["count": String(ids.count)])).foregroundStyle(.secondary)
                 Picker(model.text(L10n.Digests.importInto), selection: $category) {
                     ForEach(categories, id: \.self) { id in
                         Text(model.digestTitle(choices.first { $0.categoryId == id }?.id ?? id)).tag(id)
@@ -612,17 +664,24 @@ private struct ImportResult: View {
                 .fixedSize()
                 Text(model.text(L10n.Digests.importNote)).font(.caption).foregroundStyle(.secondary)
             }
+            if let failure { FailureNote(model: model, failure: failure) }
             HStack {
                 Spacer()
-                if result.added.isEmpty {
+                if ids.isEmpty {
                     Button(model.text(L10n.Digests.done)) { dismiss() }.keyboardShortcut(.defaultAction)
                 } else {
+                    if saving { ProgressView().controlSize(.small) }
                     Button(model.text(L10n.Digests.later)) { dismiss() }
                     Button(model.text(L10n.Digests.add)) {
-                        Task { failed(await data.file(result.added, under: category, model: model)) }
+                        saving = true
+                        Task {
+                            failure = await data.file(ids, under: category, model: model)
+                            saving = false
+                            if failure == nil { dismiss() }
+                        }
                     }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(category.isEmpty)
+                    .disabled(category.isEmpty || saving)
                 }
             }
         }
@@ -660,6 +719,9 @@ private struct DigestRow: View {
         GroupBox {
             VStack(alignment: .leading, spacing: 0) {
                 header
+                if !expanded, let failure = data.failures[subscription.id] {
+                    FailureNote(model: model, failure: failure).padding(.top, 6)
+                }
                 if expanded {
                     Divider().padding(.vertical, 8)
                     DigestEditor(model: model, data: data, subscription: subscription, pause: { confirmOff = true }, reveal: reveal)
@@ -671,7 +733,9 @@ private struct DigestRow: View {
             if expanded { RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor, lineWidth: 1) }
         }
         .confirmationDialog(L10n.Digests.offTitle(model.uiLanguage, ["name": model.digestTitle(subscription.id)]), isPresented: $confirmOff) {
-            Button(model.text(L10n.Digests.turnOff)) { Task { await data.save(subscription.id, model: model, enable: false) } }
+            Button(model.text(L10n.Digests.turnOff)) {
+                Task { if !(await data.save(subscription.id, model: model, enable: false)) { reveal(subscription.id) } }
+            }
             Button(model.text(L10n.Shell.cancel), role: .cancel) {}
         } message: {
             Text(offBody)
@@ -714,12 +778,16 @@ private struct DigestRow: View {
             if missing == L10n.Digests.needsAdultSetup {
                 Button(model.text(L10n.Digests.completeSetup)) { model.page = .connect }.buttonStyle(.link)
             }
-            if data.working.contains(subscription.id) { ProgressView().controlSize(.small) }
+            if data.isBusy(subscription.id) { ProgressView().controlSize(.small) }
             Toggle(model.text(L10n.Digests.enabled), isOn: Binding(
                 get: { subscription.enabled },
                 set: { on in
                     if on {
-                        Task { if await data.turnOn(subscription, model: model) { reveal(subscription.id) } }
+                        // Open the row either way: on success to edit, on failure to show what blocks it.
+                        Task {
+                            await data.turnOn(subscription, model: model)
+                            reveal(subscription.id)
+                        }
                     } else {
                         confirmOff = true
                     }
@@ -727,7 +795,7 @@ private struct DigestRow: View {
             ))
             .toggleStyle(.switch)
             .labelsHidden()
-            .disabled(missing != nil || data.working.contains(subscription.id))
+            .disabled(missing != nil || data.isBusy(subscription.id))
             .accessibilityLabel(model.digestTitle(subscription.id))
             Button(model.text(expanded ? L10n.Digests.collapse : L10n.Digests.edit)) {
                 withAnimation(.snappy) { expanded.toggle() }
@@ -904,7 +972,10 @@ private struct DigestEditor: View {
         pending = Task {
             try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled else { return }
-            await data.save(subscription.id, model: model) { var d = $0; d["times"] = values; return d }
+            if await data.save(subscription.id, model: model, change: { var d = $0; d["times"] = values; return d }) {
+                // Show exactly what was stored (duplicates merged), even if it equals the old list.
+                times = values.compactMap(DigestTimes.parse)
+            }
         }
     }
 
@@ -985,7 +1056,7 @@ private struct DigestEditor: View {
                         VStack(alignment: .leading, spacing: 0) {
                             Text(bot.username.map { "@" + $0 } ?? bot.name)
                             if !allowed {
-                                Text(model.text(adult ? L10n.Digests.botNotAdult : L10n.Digests.botNotPaired))
+                                Text(model.text(bot.paused ? L10n.Digests.botPaused : adult && bot.paired ? L10n.Digests.botNotAdult : L10n.Digests.botNotPaired))
                                     .font(.caption2).foregroundStyle(.secondary)
                             }
                         }
@@ -1203,7 +1274,7 @@ private struct DigestEditor: View {
                 Text(L10n.Shell.savedAt(model.uiLanguage, ["time": saved.formatted(date: .omitted, time: .shortened)]))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if data.sent.contains(subscription.id) {
+            if let sent = data.sent[subscription.id], Date().timeIntervalSince(sent) < 3_600 {
                 HStack(spacing: 4) {
                     Text(model.text(L10n.Digests.sent))
                     Button(model.text(L10n.Digests.view)) { model.page = .overview }.buttonStyle(.link)
@@ -1214,7 +1285,7 @@ private struct DigestEditor: View {
             Button(model.text(L10n.Digests.preview)) { open(.preview) }
             Button(model.text(L10n.Overview.sendTrial)) { open(.send) }
                 .buttonStyle(.borderedProminent)
-                .disabled(!subscription.enabled || data.working.contains(subscription.id))
+                .disabled(!subscription.enabled || data.isBusy(subscription.id))
         }
         .popover(isPresented: Binding(get: { popover != nil }, set: { if !$0 { popover = nil } }), arrowEdge: .top) {
             previewPopover
@@ -1335,9 +1406,10 @@ private struct SourceRow: View {
         return parts.joined(separator: " · ")
     }
 
+    /// Why the last read failed: its error kind, else its status.
     private var failedStatus: String? {
-        guard let status = item.health?.lastAttempt?.status, ["failed", "rate_limited", "timeout"].contains(status) else { return nil }
-        return status
+        guard let attempt = item.health?.lastAttempt, !readStatuses.contains(attempt.status) else { return nil }
+        return attempt.errorKind ?? attempt.status
     }
 
     private var dot: Color {

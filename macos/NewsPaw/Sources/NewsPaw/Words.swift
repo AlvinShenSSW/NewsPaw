@@ -277,6 +277,10 @@ enum L10n {
         static let latest = Words("最近 {time}", "latest {time}", "最新 {time}")
         static let searchZone = Words("搜索时区", "Search time zones", "タイムゾーンを検索")
         static let systemZone = Words("跟随系统（{zone}）", "Use system ({zone})", "システムに合わせる（{zone}）")
+        static let unfiled = Words("{count} 个导入的来源还没归入简报", "{count} imported sources are not in a digest yet", "読み込んだソース {count} 件がまだダイジェストに入っていません")
+        static let fileThem = Words("归入简报…", "Add to a Digest…", "ダイジェストに追加…")
+        static let fileTitle = Words("归入简报", "Add to a Digest", "ダイジェストに追加")
+        static let botPaused = Words("已暂停", "Paused", "一時停止中")
         static let all: [Words] = [
             intro, importOPML, importSummary, importInto, importNote, done, later, add, adult, completeSetup, enabled, edit, collapse,
             offTitle, turnOff, offBody, offBodyToday, offPrefix, needsAdultSetup, needsBot, noTarget, offSummary, sourceCount,
@@ -287,6 +291,7 @@ enum L10n {
             fromCatalog, pasteLink, noSources, catalogEmpty, notReadable, pastePlaceholder, reading, identify, primaryModel,
             backupModel, defaultModel, pauseThis, sent, view, preview, previewReady, send, trialResult, unverified, unreadable,
             staleDays, healthy, unknownHealth, tryThenEnable, tryNow, more, latest, searchZone, systemZone,
+            unfiled, fileThem, fileTitle, botPaused,
         ]
     }
 }
@@ -299,6 +304,41 @@ enum FailureCopy {
     }
 
     static let table: [String: Entry] = [
+        "subscription_not_ready": Entry(message: Words("这份简报还不能开启，下面是还缺的。", "This digest cannot turn on yet; what is missing is listed below.", "このダイジェストはまだオンにできません。足りないものを下に示します。"), action: nil),
+        "source_preview_required": Entry(message: Words("有来源还没试采集成功，先在来源里点「试采集」。", "A source has not been tried successfully yet; use Try Now on it first.", "まだ試しに取得できていないソースがあります。先に「試しに取得」してください。"), action: nil),
+        "preview_required": Entry(message: Words("这个来源要先试采集成功才能启用。", "This source has to be tried successfully before it can be turned on.", "このソースは試しに取得できてから有効にできます。"), action: nil),
+        "source_disabled": Entry(message: Words("这份简报用到的来源有的被关掉了。勾选它或从列表里去掉。", "A source this digest uses is turned off. Turn it on or remove it from the list.", "このダイジェストのソースにオフのものがあります。オンにするか一覧から外してください。"), action: nil),
+        "no_ready_bot": Entry(message: Words("还没有可以发送的机器人。在「发送到」里选一个已配对的机器人。", "No Bot can receive it yet. Choose a paired Bot under Send to.", "送信できるボットがありません。「送信先」でペアリング済みのボットを選んでください。"), action: nil),
+        "primary_unverified": Entry(message: Words("主模型的 Key 还没测试通过。去「接入」重新测试。", "The main model's key has not passed its check. Check it again in Connect.", "メインモデルのキーがまだ確認できていません。「接続」で再確認してください。"), action: nil),
+        "backup_unverified": Entry(message: Words("备用模型的 Key 还没测试通过。去「接入」重新测试，或在高级里改回默认。", "The backup model's key has not passed its check. Check it in Connect, or switch back to Default under Advanced.", "予備モデルのキーがまだ確認できていません。「接続」で再確認するか、詳細でデフォルトに戻してください。"), action: nil),
+        "schedule_missing": Entry(message: Words("还没有发送时间，至少加一个。", "There is no send time yet; add at least one.", "送信時刻がありません。1 つ以上追加してください。"), action: nil),
+        "invalid_subscription_draft": Entry(message: Words("这次改动后台不接受，没有保存。", "The backend did not accept this change; nothing was saved.", "この変更はバックエンドに受け付けられず、保存されませんでした。"), action: nil),
+        "missing_subscription": Entry(message: Words("这份简报已经不存在了（可能在别处删除了）。", "This digest no longer exists (it may have been removed elsewhere).", "このダイジェストはもうありません（別の場所で削除された可能性があります）。"), action: nil),
+        "missing_source": Entry(message: Words("这个来源已经不存在了（可能在别处删除了）。", "This source no longer exists (it may have been removed elsewhere).", "このソースはもうありません（別の場所で削除された可能性があります）。"), action: nil),
+        "duplicate_source": Entry(message: Words("这个来源已经添加过了。", "This source is already added.", "このソースは追加済みです。"), action: nil),
+        "unclassified_source": Entry(message: Words("这个来源还没归入简报，先归入再试采集。", "This source is not in a digest yet; add it to one before trying it.", "このソースはまだダイジェストに入っていません。先に追加してください。"), action: nil),
+        "adult_source_requires_adapter": Entry(message: Words("这是成人站点，只能加到成人简报里。", "This is an adult site; it can only be added to an adult digest.", "成人向けサイトのため、成人向けダイジェストにのみ追加できます。"), action: nil),
+        "invalid_opml": Entry(message: Words("这个文件不是能读的 OPML。", "This file is not an OPML file NewsPaw can read.", "このファイルは読み込める OPML ではありません。"), action: nil),
+        "discovery_failed": Entry(message: Words("没能从这个链接识别出新闻源。", "Could not find a news feed at this link.", "このリンクからニュースソースを見つけられませんでした。"), action: nil),
+        "failed": Entry(message: Words("读取失败。", "Reading failed.", "読み込みに失敗しました。"), action: L10n.Shell.retry),
+        "http_error": Entry(message: Words("网站返回了错误。", "The site returned an error.", "サイトがエラーを返しました。"), action: L10n.Shell.retry),
+        "network_error": Entry(message: Words("连不上这个网站。", "Could not reach the site.", "サイトに接続できませんでした。"), action: L10n.Shell.retry),
+        "interrupted": Entry(message: Words("读取被中断了，再试一次。", "Reading was interrupted; try again.", "読み込みが中断されました。もう一度お試しください。"), action: L10n.Shell.retry),
+        "collection_held": Entry(message: Words("这个网站的读取暂时被暂停，稍后再试。", "Reading this site is on hold for now; try again later.", "このサイトの読み込みは一時的に止まっています。あとで再試行してください。"), action: L10n.Shell.retry),
+        "cancelled": Entry(message: Words("读取被取消了。", "Reading was cancelled.", "読み込みがキャンセルされました。"), action: L10n.Shell.retry),
+        "configuration_changed": Entry(message: Words("读取期间来源设置变了，再试一次。", "The source changed while it was being read; try again.", "読み込み中にソースの設定が変わりました。もう一度お試しください。"), action: L10n.Shell.retry),
+        "identity_changed": Entry(message: Words("读取期间来源设置变了，再试一次。", "The source changed while it was being read; try again.", "読み込み中にソースの設定が変わりました。もう一度お試しください。"), action: L10n.Shell.retry),
+        "redirect_rejected": Entry(message: Words("网站跳转到了不安全的地址，已停止。", "The site redirected somewhere unsafe, so reading stopped.", "サイトが安全でない場所へ転送したため停止しました。"), action: nil),
+        "too_many_redirects": Entry(message: Words("网站跳转次数太多。", "The site redirected too many times.", "サイトの転送が多すぎます。"), action: nil),
+        "private_address": Entry(message: Words("这个地址指向内网，不能读取。", "This address points to a private network and cannot be read.", "このアドレスは内部ネットワークを指しているため読み込めません。"), action: nil),
+        "tls_hostname_mismatch": Entry(message: Words("网站的安全证书和地址不符。", "The site's security certificate does not match its address.", "サイトの証明書がアドレスと一致しません。"), action: nil),
+        "response_too_large": Entry(message: Words("网站返回的内容太大。", "The site returned too much data.", "サイトのデータが大きすぎます。"), action: nil),
+        "oversized_feed": Entry(message: Words("这个订阅源太大了。", "This feed is too large.", "このフィードは大きすぎます。"), action: nil),
+        "parse_limit": Entry(message: Words("这个订阅源太复杂，读不完。", "This feed is too complex to read completely.", "このフィードは複雑すぎて読み切れません。"), action: nil),
+        "invalid_html": Entry(message: Words("网页内容读不懂。", "The page could not be understood.", "ページの内容を解釈できませんでした。"), action: nil),
+        "unsupported_encoding": Entry(message: Words("网站用的文字编码不支持。", "The site uses a text encoding NewsPaw does not support.", "サイトの文字コードに対応していません。"), action: nil),
+        "invalid_publication_date": Entry(message: Words("条目的发布时间读不懂。", "The entries' publication dates could not be read.", "記事の公開日時を読み取れませんでした。"), action: nil),
+        "preview_incomplete": Entry(message: Words("读到了网站，但还没有可用的条目，暂时不能启用。", "The site was read, but it has no usable entries yet, so it cannot be turned on.", "サイトは読めましたが、使える記事がまだないため有効にできません。"), action: L10n.Shell.retry),
         "invalid_token": Entry(message: Words("Telegram 不认这个 Token。请到 @BotFather 复制完整 Token 再试。", "Telegram did not accept this token. Copy the full token from @BotFather and try again.", "Telegram がこのトークンを受け付けませんでした。@BotFather から完全なトークンをコピーしてやり直してください。"), action: Words("重新粘贴", "Paste Again", "貼り直す")),
         "webhook_conflict": Entry(message: Words("这个机器人正被别的程序用 webhook 接管。关掉那边后再验证。", "Another program controls this bot through a webhook. Turn that off, then check again.", "別のプログラムが Webhook でこのボットを使っています。そちらを止めてから再確認してください。"), action: Words("重新验证", "Check Again", "再確認")),
         "duplicate_bot": Entry(message: Words("这个机器人已经添加过了。", "This bot is already added.", "このボットは追加済みです。"), action: nil),

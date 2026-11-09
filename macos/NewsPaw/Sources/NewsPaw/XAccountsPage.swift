@@ -71,7 +71,8 @@ struct XAccountsPage: View {
     private var addBlocked: Bool { !data.keyConfigured || (partition == "adult" && !model.adultModelReady) }
 
     @ViewBuilder private var notices: some View {
-        if data.loaded, !data.keyConfigured {
+        // Only a directory read that worked can say there is no key (a failed read is shown above).
+        if data.loaded, data.failures["load"] == nil, !data.keyConfigured {
             XNotice(model: model, text: L10n.XAccounts.needsXKey, action: L10n.XAccounts.goConnect) { model.page = .connect }
         }
         if partition == "adult", !model.adultModelReady {
@@ -342,7 +343,7 @@ private struct XAccountRow: View {
                     Button(model.text(L10n.XAccounts.goConnect)) { model.page = .connect }.buttonStyle(.link)
                 }
                 if state.removable {
-                    Button(model.text(L10n.XAccounts.remove)) { confirmRemove = true }
+                    Button(model.text(L10n.XAccounts.remove)) { askRemove() }
                         .disabled(working)
                 } else {
                     modeSwitch
@@ -365,7 +366,7 @@ private struct XAccountRow: View {
             Button(model.text(L10n.XAccounts.inDigest), role: .destructive) { Task { await data.joinDigest(account.id, model: model) } }
             Button(model.text(L10n.Shell.cancel), role: .cancel) {}
         } message: {
-            Text(L10n.XAccounts.rulesDropped(model.uiLanguage, ["count": String(data.rulesOn(account.id))]))
+            Text(L10n.XAccounts.rulesDropped(model.uiLanguage, ["count": String(data.rulesOn(account.id) ?? 0)]))
         }
         .confirmationDialog(L10n.XAccounts.removeTitle(model.uiLanguage, ["handle": "@" + account.handle]), isPresented: $confirmRemove) {
             Button(model.text(L10n.XAccounts.remove), role: .destructive) { Task { await data.remove(account.id, model: model) } }
@@ -387,6 +388,14 @@ private struct XAccountRow: View {
             Button(model.text(L10n.Shell.cancel), role: .cancel) {}
         } message: { impact in
             Text(moveImpact(impact))
+        }
+    }
+
+    /// Removal is confirmed with the rules it drops, so they are read first (unreadable: not asked).
+    private func askRemove() {
+        Task {
+            guard await data.rulesBeforeChange(account.id, key: "remove." + account.id, model: model) != nil else { return }
+            confirmRemove = true
         }
     }
 
@@ -450,10 +459,14 @@ private struct XAccountRow: View {
             segment(model.text(L10n.XAccounts.inDigest), selected: account.inDigest) {
                 guard !account.inDigest else { return }
                 // Alert rules on an account sent alone go with that choice: ask first.
-                if account.sendsAlone, data.rulesOn(account.id) > 0 {
-                    confirmJoin = true
-                } else {
+                guard account.sendsAlone else {
                     Task { await data.joinDigest(account.id, model: model) }
+                    return
+                }
+                Task {
+                    // Unknown rules are read first; unreadable, nothing changes (the reason is shown).
+                    guard let rules = await data.rulesBeforeChange(account.id, key: "route." + account.id, model: model) else { return }
+                    if rules > 0 { confirmJoin = true } else { await data.joinDigest(account.id, model: model) }
                 }
             }
         }
@@ -493,10 +506,13 @@ private struct XAccountRow: View {
             .disabled(digest == nil)
             Button(model.text(L10n.XAccounts.readAgainMenu)) { Task { await data.reverify(account.id, model: model) } }
             Button(L10n.XAccounts.moveMenu(model.uiLanguage, ["kind": kindName(other, model)])) {
-                Task { moving = await data.loadImpact(account.id, model: model) }
+                Task {
+                    guard await data.rulesBeforeChange(account.id, key: "move." + account.id, model: model) != nil else { return }
+                    moving = await data.loadImpact(account.id, model: model)
+                }
             }
             Divider()
-            Button(model.text(L10n.XAccounts.removeMenu), role: .destructive) { confirmRemove = true }
+            Button(model.text(L10n.XAccounts.removeMenu), role: .destructive) { askRemove() }
         } label: {
             Image(systemName: "ellipsis")
         }
@@ -515,8 +531,7 @@ private struct XAccountRow: View {
         if account.sendsAlone, let time = account.times?.first ?? digest?.times.first {
             lines.append(L10n.XAccounts.removeAlone(language, ["time": time, "bots": model.recipientsLine(recipients ?? [])]))
         }
-        let rules = data.alerts?.rules.filter { $0.accountId == account.id }.count ?? 0
-        if rules > 0 { lines.append(L10n.XAccounts.rulesDropped(language, ["count": String(rules)])) }
+        if let rules = data.rulesOn(account.id), rules > 0 { lines.append(L10n.XAccounts.rulesDropped(language, ["count": String(rules)])) }
         return lines.joined(separator: "\n")
     }
 
@@ -533,8 +548,7 @@ private struct XAccountRow: View {
         if impact.clearsPostTypes { lines.append(model.text(L10n.XAccounts.moveResetsTypes)) }
         if impact.cachedPosts > 0 { lines.append(L10n.XAccounts.moveKeepsPosts(language, ["count": String(impact.cachedPosts), "kind": from])) }
         if impact.pendingJobs > 0 { lines.append(L10n.XAccounts.movePending(language, ["count": String(impact.pendingJobs)])) }
-        let rules = data.alerts?.rules.filter { $0.accountId == account.id }.count ?? 0
-        if rules > 0 { lines.append(L10n.XAccounts.rulesDropped(language, ["count": String(rules)])) }
+        if let rules = data.rulesOn(account.id), rules > 0 { lines.append(L10n.XAccounts.rulesDropped(language, ["count": String(rules)])) }
         lines.append(L10n.XAccounts.moveJoins(language, ["kind": kindName(other, model)]))
         return lines.joined(separator: "\n")
     }

@@ -284,7 +284,8 @@ extension AppConfig {
 final class XAccountsData {
     private(set) var accounts: [XAccountItem] = []
     private(set) var lists: [XListItem] = []
-    private(set) var keyConfigured = true
+    /// Whether an X key exists; false until a directory read has shown one (adding stays closed).
+    private(set) var keyConfigured = false
     private(set) var loaded = false
     private(set) var activity: [String: XActivity] = [:]
     private(set) var budget: BudgetSummary?
@@ -375,7 +376,28 @@ final class XAccountsData {
     }
 
     /// Alert rules on this account (they go if it stops being sent alone).
-    func rulesOn(_ id: String) -> Int { alerts?.rules.filter { $0.accountId == id }.count ?? 0 }
+    /// nil while the alert policy has not been read: unknown, not "no rules".
+    func rulesOn(_ id: String) -> Int? { alerts.map { $0.rules.filter { $0.accountId == id }.count } }
+
+    /// The rules on an account, reading the alert policy first when it is not known yet, before a
+    /// change that may drop them is confirmed or sent. Unreadable: nil, and the reason under `key`.
+    func rulesBeforeChange(_ id: String, key: String, model: AppModel) async -> Int? {
+        if alerts == nil, let failure = await readAlerts(model.client) {
+            failures[key] = failure
+            return nil
+        }
+        return rulesOn(id)
+    }
+
+    @discardableResult
+    private func readAlerts(_ client: BackendClient) async -> BackendError? {
+        do {
+            alerts = XAlertPolicy(try BackendClient.record(await client.call(.xAlertsStatus), field: "settings").document)
+            return nil
+        } catch {
+            return BackendError.wrapping(error)
+        }
+    }
 
     // MARK: Loading
 
@@ -395,9 +417,7 @@ final class XAccountsData {
             failures["load"] = BackendError.wrapping(error)
         }
         if let data = try? await client.call(.budgetGet), let summary = try? BudgetSummary(data, now: now) { budget = summary }
-        if let data = try? await client.call(.xAlertsStatus), let record = try? BackendClient.record(data, field: "settings") {
-            alerts = XAlertPolicy(record.document)
-        }
+        await readAlerts(client)
         if let data = try? await client.call(.xVideoPolicy), let record = try? BackendClient.record(data, field: "settings") {
             video = XVideoPolicy(record.document)
         }
@@ -783,7 +803,7 @@ final class XAccountsData {
                 failedRoutes[id] = FailedRoute(change: change, fields: fields)
             }
             await reload(model)
-            await pruneRules(model: model)
+            await pruneRules(for: [id], model: model)
         }
     }
 
@@ -847,7 +867,7 @@ final class XAccountsData {
             try await removeAccount(id, model: model)
             if highlighted == id { highlighted = nil }
             await reload(model)
-            await pruneRules(model: model)
+            await pruneRules(for: [id], model: model)
             return true
         } catch {
             failures[key] = BackendError.wrapping(error)
@@ -1083,30 +1103,44 @@ final class XAccountsData {
 
     /// `x.alerts.save` checks every stored rule, so a rule on an account that is no longer sent
     /// alone (moved into the digest, to the other kind, or removed) would make each later alert
-    /// change fail. Such rules go with the account; alerts without a rule turn off.
-    /// The account change itself is already saved, so a failure here is the page's own
-    /// ("rules"), shown with a retry that reruns only this cleanup.
-    private func pruneRules(model: AppModel) async {
-        let alone = Set(accounts.filter(\.sendsAlone).map(\.id))
-        guard let rules = alerts?.rules, rules.contains(where: { $0.accountId.map { !alone.contains($0) } ?? false }) else {
+    /// change fail. Such rules go with the account; alerts without a rule turn off. Only the rules
+    /// of the accounts whose change caused it are touched, so a rule someone else saved meanwhile
+    /// (on another account) survives a conflict retry. The account change itself is already
+    /// saved: a failure here, including an unreadable policy, is the page's own ("rules"), and
+    /// its retry reruns only this cleanup.
+    private func pruneRules(for ids: Set<String>, model: AppModel) async {
+        cleanupPending.formUnion(ids)
+        let targets = cleanupPending
+        guard !targets.isEmpty else { return }
+        if alerts == nil, let failure = await readAlerts(model.client) {
+            failures["rules"] = failure
+            return
+        }
+        let stale = targets.subtracting(accounts.filter(\.sendsAlone).map(\.id))
+        guard let rules = alerts?.rules, rules.contains(where: { $0.accountId.map(stale.contains) ?? false }) else {
+            cleanupPending.subtract(targets)
             failures["rules"] = nil
             return
         }
-        await saveAlerts("rules", model: model) { settings in
+        let saved = await saveAlerts("rules", model: model) { settings in
             var settings = settings
             let kept = (settings["rules"] as? [[String: Any]] ?? []).filter { entry in
-                (entry["account_id"] as? String).map(alone.contains) ?? true
+                !((entry["account_id"] as? String).map(stale.contains) ?? false)
             }
             settings["rules"] = kept
             if kept.isEmpty { settings["enabled"] = false }
             return settings
         }
+        if saved { cleanupPending.subtract(targets) }
     }
+
+    /// Accounts whose alert-rule cleanup has not succeeded yet.
+    @ObservationIgnored private var cleanupPending: Set<String> = []
 
     /// Reruns only the cleanup of alert rules that failed after an account change.
     func retryRuleCleanup(model: AppModel) async {
         await load(model: model)
-        await pruneRules(model: model)
+        await pruneRules(for: [], model: model)
     }
 
     @discardableResult
@@ -1147,17 +1181,29 @@ final class XAccountsData {
     ]
 
     func setVideo(_ on: Bool, model: AppModel) async {
-        let models = Self.videoModels(model.config)
         await saveVideo("video", model: model) { settings in
             var settings = settings
             settings["enabled"] = on
             if on {
                 for (name, value) in Self.videoDefaults where (settings[name] as? Int ?? 0) == 0 { settings[name] = value }
-                if (settings["vision_profiles"] as? [String] ?? []).isEmpty { settings["vision_profiles"] = Array(models.vision.prefix(1)) }
-                if (settings["stt_profiles"] as? [String] ?? []).isEmpty { settings["stt_profiles"] = Array(models.speech.prefix(1)) }
             }
             return settings
         }
+    }
+
+    /// `x.video.save` checks every stored model id, on or off: an id that is no longer an
+    /// ordinary model able to do it (removed, changed, or its check lost) would refuse every save.
+    /// Such ids are dropped, and a list left empty while on is filled from the models that can.
+    nonisolated static func usableVideoModels(_ settings: [String: Any], config: AppConfig?) -> [String: Any] {
+        let models = videoModels(config)
+        var settings = settings
+        let on = settings["enabled"] as? Bool ?? false
+        for (key, valid) in [("vision_profiles", models.vision), ("stt_profiles", models.speech)] {
+            var kept = (settings[key] as? [String] ?? []).filter(valid.contains)
+            if on, kept.isEmpty { kept = Array(valid.prefix(1)) }
+            settings[key] = kept
+        }
+        return settings
     }
 
     /// Whole dollars a day for video checks (at least $1 while they are on).
@@ -1184,7 +1230,8 @@ final class XAccountsData {
             load: { try BackendClient.record(await client.call(.xVideoPolicy), field: "settings") },
             store: { _ = try await client.call(.xVideoSave, ["settings": $0, "revision": $1]) }
         )
-        let saved = await editor.apply(change)
+        let config = model.config
+        let saved = await editor.apply { Self.usableVideoModels(try change($0), config: config) }
         if saved {
             failures[key] = nil
             savedAt[key] = editor.savedAt

@@ -52,6 +52,8 @@ private final class XBackend {
     var posts: [String: [String]] = [:]
     private(set) var requests: [[String: Any]] = []
     private var serial = 0
+    /// Runs once just before the next `x.alerts.save` is checked.
+    var beforeAlertsSave: ((XBackend) -> Void)?
     /// Refuses any request this returns a code for (e.g. only route requests carrying post types).
     var refuseWhen: (([String: Any]) -> String?)?
     /// Refuses the next request of an operation with this code, once.
@@ -383,6 +385,11 @@ private final class XBackend {
             return ok(["revision": budgetRevision])
         case "x.alerts.status": return ok(["revision": alertsRevision, "settings": alerts, "occurrences": []])
         case "x.alerts.save":
+            if let change = beforeAlertsSave {
+                // Another writer saves first (a Telegram command, another window).
+                beforeAlertsSave = nil
+                change(self)
+            }
             if request["revision"] as? Int != alertsRevision { return refuse("alert_policy_changed") }
             let settings = request["settings"] as! [String: Any]
             let rules = settings["rules"] as! [[String: Any]]
@@ -409,6 +416,15 @@ private final class XBackend {
             }
             for key in ["vision_profiles", "stt_profiles"] where (settings[key] as! [String]).count < on {
                 return refuse("invalid_video_profiles", "media")
+            }
+            // configure(): every stored id must still be an ordinary model with that capability,
+            // whether video checks are being turned on or off.
+            let profiles = document["model_profiles"] as! [[String: Any]]
+            for (key, capability) in [("vision_profiles", "vision"), ("stt_profiles", "stt")] {
+                for identity in settings[key] as! [String] {
+                    guard let profile = profiles.first(where: { $0["id"] as? String == identity }), profile["partition"] as? String == "normal",
+                          (profile["capabilities"] as! [String]).contains(capability) else { return refuse("invalid_video_profiles", "media") }
+                }
             }
             video = settings
             videoRevision += 1
@@ -1145,4 +1161,94 @@ private func connected(_ server: XBackend) async throws -> (AppModel, XAccountsD
     defer { cleanup() }
     let list = try #require(data.lists.first)
     #expect(data.listNote(list) == L10n.XAccounts.listNotePending)
+}
+
+// MARK: - Review cycle 3
+
+@Test @MainActor func ruleImpactIsUnknownUntilThePolicyIsReadAndIsReadBeforeActing() async throws {
+    let server = XBackend(accounts: [
+        XBackend.account("a1", "elonmusk", priority: "special", remote: "1", times: ["21:30"]),
+        XBackend.account("a2", "karpathy", priority: "special", remote: "2", times: ["09:00"]),
+    ])
+    server.alerts["rules"] = [
+        ["subscription_id": "sub_x", "account_id": "a1", "phrase": "launch"],
+        ["subscription_id": "sub_x", "account_id": "a2", "phrase": "agents"],
+    ]
+    server.refuseWhen = { $0["op"] as? String == "x.alerts.status" ? "storage_failed" : nil }
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    // Not read: unknown, not "no rules"; and an unreadable policy is said where the action is.
+    #expect(data.rulesOn("a1") == nil)
+    #expect(await data.rulesBeforeChange("a1", key: "route.a1", model: model) == nil)
+    #expect(data.failures["route.a1"]?.code == "storage_failed")
+
+    // Unreadable when the cleanup runs: said, with a retry, never skipped.
+    #expect(await data.remove("a1", model: model))
+    #expect(data.failures["rules"]?.code == "storage_failed" && (server.alerts["rules"] as! [[String: Any]]).count == 2)
+
+    server.refuseWhen = nil
+    // Read before a confirmation is shown.
+    #expect(await data.rulesBeforeChange("a2", key: "route.a2", model: model) == 1)
+    await data.retryRuleCleanup(model: model)
+    #expect(data.failures["rules"] == nil)
+    #expect((server.alerts["rules"] as! [[String: Any]]).map { $0["phrase"] as! String } == ["agents"])
+}
+
+@Test @MainActor func ruleCleanupTouchesOnlyTheChangedAccountsRules() async throws {
+    let server = XBackend(accounts: [
+        XBackend.account("a1", "elonmusk", priority: "special", remote: "1", times: ["21:30"]),
+        XBackend.account("a2", "karpathy", remote: "2"),
+    ])
+    server.alerts["rules"] = [["subscription_id": "sub_x", "account_id": "a1", "phrase": "launch"]]
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    // While a1 is removed, another writer sends a2 alone and gives it a rule.
+    server.beforeAlertsSave = { server in
+        server.document["accounts"] = server.accounts.map { entry in
+            guard entry["id"] as? String == "a2" else { return entry }
+            var entry = entry
+            entry["priority"] = "special"
+            entry["bot_ids"] = NSNull()
+            return entry
+        }
+        server.revision += 1
+        server.alerts["rules"] = (server.alerts["rules"] as! [[String: Any]]) + [["subscription_id": "sub_x", "account_id": "a2", "phrase": "agents"]]
+        server.alertsRevision += 1
+    }
+    #expect(await data.remove("a1", model: model))
+    #expect((server.alerts["rules"] as! [[String: Any]]).map { $0["phrase"] as! String } == ["agents"])
+}
+
+@Test @MainActor func turningVideoOnOrOffReplacesModelsThatCanNoLongerDoIt() async throws {
+    let server = XBackend()
+    server.video["vision_profiles"] = ["old_model"]
+    server.video["stt_profiles"] = ["old_model"]
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    await data.setVideo(true, model: model)
+    #expect(data.failures["video"] == nil && server.video["enabled"] as? Bool == true)
+    #expect(server.video["vision_profiles"] as? [String] == ["normal_primary"] && server.video["stt_profiles"] as? [String] == ["normal_primary"])
+
+    server.video["vision_profiles"] = ["old_model", "normal_primary"]
+    await data.setVideo(false, model: model)
+    #expect(data.failures["video"] == nil && server.video["enabled"] as? Bool == false)
+    #expect(server.video["vision_profiles"] as? [String] == ["normal_primary"])
+}
+
+@Test @MainActor func addingWaitsUntilAnXKeyIsKnown() async throws {
+    #expect(!XAccountsData().keyConfigured)
+    let server = XBackend()
+    server.failNext["x.accounts.list"] = "storage_failed"
+    let name = "NewsPawXTests-" + UUID().uuidString
+    let defaults = try #require(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let model = AppModel(client: server.client, defaults: defaults)
+    await model.refresh()
+    let data = XAccountsData(defaults: defaults)
+    await data.load(model: model)
+    #expect(!data.keyConfigured && data.failures["load"] != nil)
+    await data.load(model: model)
+    #expect(data.keyConfigured)
 }

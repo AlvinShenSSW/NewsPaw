@@ -622,7 +622,7 @@ class ControlServer:
             writer.close()
             return
         self._handlers.add(task)
-        domain = "protocol"
+        domain, op = "protocol", None
         try:
             try:
                 if peer_uid(writer.get_extra_info("socket")) != os.getuid():
@@ -635,20 +635,24 @@ class ControlServer:
                     data = json.loads(raw)
                 except ValueError:
                     raise CredentialError("invalid_request") from None
-                if isinstance(data, dict) and data.get("op") in OPERATIONS:
-                    domain = data["op"].split(".", 1)[0]
+                if isinstance(data, dict) and isinstance(data.get("op"), str):
+                    op = data["op"]
+                    domain = op.split(".", 1)[0]
                 result = await self._dispatch(data)
                 response = {"ok": True, "result": result}
             except (CredentialError, BudgetError, ProviderError, TelegramError, SourceError) as exc:
                 response = self._failure(str(exc), domain, getattr(exc, "field", None))
             except ValueError as exc:
-                response = self._failure(code_of(exc, "invalid_request"), domain)
+                field = getattr(exc, "field", None)
+                response = self._failure(code_of(exc, "invalid_request"), domain, field)
             except Exception as exc:
-                _LOG.warning("Control %s failed (%s)", domain, type(exc).__name__)
-                response = self._failure("internal_error", domain)
+                logged = op if op in OPERATIONS else domain
+                _LOG.warning("Control %s failed (%s)", logged, type(exc).__name__)
+                response = self._failure("internal_error", domain, getattr(exc, "field", None))
             encoded = json.dumps(response, ensure_ascii=False).encode() + b"\n"
             if len(encoded) > MAX_FRAME:
-                encoded = b'{"ok":false,"error":"response_too_large"}\n'
+                too_large = self._failure("response_too_large", domain)
+                encoded = json.dumps(too_large).encode() + b"\n"
             writer.write(encoded)
             async with asyncio.timeout(10):
                 await writer.drain()

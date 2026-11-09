@@ -524,9 +524,18 @@ async def test_failures_carry_structured_detail_with_domain_and_field(control):
     unknown = await raw_request(server, {"op": "shell"})
     assert unknown["error_detail"] == {
         "code": "unknown_operation",
-        "domain": "protocol",
+        "domain": "shell",
         "retryable": False,
     }
+    namespaced = await raw_request(server, {"op": "bots.not_real"})
+    assert namespaced["error_detail"]["domain"] == "bots"
+    for shape in ([], {}, 7, None):
+        malformed = await raw_request(server, {"op": shape})
+        assert malformed["error_detail"] == {
+            "code": "invalid_request",
+            "domain": "protocol",
+            "retryable": False,
+        }
     stale = await raw_request(server, {"op": "budget.save", "document": {}, "revision": 99})
     assert stale["error_detail"]["domain"] == "budget"
 
@@ -557,7 +566,36 @@ async def test_unexpected_failures_are_internal_and_logged_without_message(
     assert reply["error_detail"]["retryable"] is (code == "rate_limited")
     assert "secret-token-value" not in json.dumps(reply) + caplog.text
     if code == "internal_error":
-        assert type(raised).__name__ in caplog.text
+        assert f"ops.diagnostics failed ({type(raised).__name__})" in caplog.text
+
+
+async def test_value_error_field_is_forwarded(control, monkeypatch):
+    server, _ = control
+
+    def fail():
+        error = ValueError("invalid_document")
+        error.field = "document"
+        raise error
+
+    monkeypatch.setattr(server.operations, "diagnostics", fail)
+    reply = await raw_request(server, {"op": "ops.diagnostics"})
+    assert reply["error_detail"] == {
+        "code": "invalid_document",
+        "domain": "ops",
+        "retryable": False,
+        "field": "document",
+    }
+
+
+async def test_oversized_reply_keeps_the_structured_envelope(control, monkeypatch):
+    server, _ = control
+    monkeypatch.setattr(server.operations, "diagnostics", lambda: "x" * (9 * 1024 * 1024))
+    reply = await raw_request(server, {"op": "ops.diagnostics"})
+    assert reply == {
+        "ok": False,
+        "error": "response_too_large",
+        "error_detail": {"code": "response_too_large", "domain": "ops", "retryable": False},
+    }
 
 
 async def test_status_lists_operations_and_readiness_is_served(control):

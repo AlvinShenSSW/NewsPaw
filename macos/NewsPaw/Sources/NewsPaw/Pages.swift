@@ -14,7 +14,7 @@ struct PageContent: View {
             switch page {
             case .overview: OverviewPage(model: model)
             case .digests: if let config = model.config { DigestsPage(model: model, config: config) }
-            case .xAccounts: XWorkspace(model: model)
+            case .xAccounts: XAccountsPage(model: model)
             case .connect: ConnectPage(model: model)
             case .settings: SettingsPage(model: model)
             }

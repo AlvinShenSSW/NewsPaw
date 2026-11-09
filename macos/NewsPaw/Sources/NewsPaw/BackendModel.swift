@@ -97,6 +97,10 @@ struct AppConfig: Decodable {
         let partition, subscriptionId: String?
         let remoteId: String?
         let times: [String]?
+        /// Sent alone: its own Bots (nil: its digest's). Always empty for an account in the digest.
+        let botIds: [String]?
+        let style: String?
+        let includeInAggregate: Bool?
     }
 
     struct Profile: Decodable, Identifiable {
@@ -179,6 +183,8 @@ final class AppModel {
     private(set) var busy = false
     private(set) var error: Phrase?
     var page: Page = .overview
+    /// A digest another page asked the digests page to open ("Edit in Digests").
+    var openDigest: String?
     var schedulingPaused: Bool { readiness.map { !$0.schedulingEnabled } ?? false }
 
     func defaultsValue(_ key: String) -> Bool { defaults.bool(forKey: key) }

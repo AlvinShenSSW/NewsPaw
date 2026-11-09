@@ -699,6 +699,13 @@ struct DigestsPage: View {
                           reveal: { expanded = $0 })
             }
         }
+        .onAppear {
+            // "Edit in Digests" from the X accounts page opens that digest.
+            if let id = model.openDigest {
+                expanded = id
+                model.openDigest = nil
+            }
+        }
         .task(id: model.configRevision) {
             data.configurationChanged(to: model.configRevision)
             // Deliveries and source checks change without a configuration change.
@@ -922,6 +929,16 @@ private struct DigestRow: View {
         .frame(minHeight: 36)
     }
 
+    /// An X digest is made of accounts, not sources: "3 accounts in the digest · 1 sent alone".
+    private var xAccounts: String? {
+        guard let config = model.config, ["x", "x_adult"].contains(subscription.categoryId) else { return nil }
+        let language = model.uiLanguage
+        var text = L10n.XAccounts.aggregateCount(language, ["count": String(config.aggregateAccounts(subscription).count)])
+        let alone = config.separateAccounts(subscription).count
+        if alone > 0 { text += " · " + L10n.XAccounts.separateCount(language, ["count": String(alone)]) }
+        return text
+    }
+
     private var summary: String {
         let language = model.uiLanguage
         if let missing { return model.text(L10n.Digests.offPrefix) + " · " + model.text(missing) }
@@ -932,13 +949,13 @@ private struct DigestRow: View {
             let recommended = data.catalog.filter { $0.categoryId == subscription.categoryId && $0.connection != "adapter_required" }.count
             return L10n.Digests.offSummary(language, [
                 "times": times,
-                "sources": count > 0 ? L10n.Digests.sourceCount(language, ["count": String(count)])
-                    : L10n.Digests.recommendedCount(language, ["count": String(recommended)]),
+                "sources": xAccounts ?? (count > 0 ? L10n.Digests.sourceCount(language, ["count": String(count)])
+                    : L10n.Digests.recommendedCount(language, ["count": String(recommended)])),
             ])
         }
         let count = data.listed(subscription).filter { data.included($0, in: subscription) }.count
         var parts = [L10n.Digests.everyDay(language, ["times": times]) + " " + target,
-                     L10n.Digests.sourceCount(language, ["count": String(count)])]
+                     xAccounts ?? L10n.Digests.sourceCount(language, ["count": String(count)])]
         if let next = NextSend.text(times: subscription.times, zone: subscription.timezone, now: Date(), language) {
             parts.append(L10n.Digests.next(language, ["when": next]))
         }

@@ -518,6 +518,158 @@ enum L10n {
             opSpeech, opSearch, opOther, xTitle, xReadsFine, xNeedsKey, xUnused, xRejected, xForbidden, xKeyNote,
         ]
     }
+
+    /// The X accounts page (interaction-spec §7).
+    enum XAccounts {
+        static let intro = Words("只跟踪你指定的账号。每个账号只需决定一件事：单独发，还是并入每天的汇总。", "Only the accounts you name are followed. Each needs one choice: sent alone, or in the daily digest.", "指定したアカウントだけを追います。各アカウントで決めるのは 1 つだけ：単独で送るか、毎日のまとめに入れるか。")
+        static let kind = Words("账号类别", "Kind of account", "アカウントの種類")
+        static let normalTab = Words("普通账号 · {count}", "Ordinary · {count}", "一般 · {count}")
+        static let adultTab = Words("成人博主 · {count}", "Adult creators · {count}", "成人向け · {count}")
+        static let normalKind = Words("普通账号", "Ordinary", "一般")
+        static let adultKind = Words("成人博主", "Adult creators", "成人向け")
+        static let needsXKey = Words("还没有填 X API Key。添加账号前先在「接入」填入。", "No X API key yet. Enter one in Connect before adding accounts.", "X API キーがまだありません。アカウントを追加する前に「接続」で入力してください。")
+        static let needsAdultKey = Words("成人博主需要成人模型 Key。列表可以浏览，添加要先在「接入」填入。", "Adult creators need an adult model key. You can browse the list; add one in Connect before adding accounts.", "成人向けには成人向けモデルのキーが必要です。一覧は見られますが、追加する前に「接続」で入力してください。")
+        static let goConnect = Words("去接入", "Open Connect", "接続を開く")
+        static let add = Words("添加", "Add", "追加")
+        static let addPlaceholder = Words("@用户名，或粘贴 X List 链接", "@username, or paste an X List link", "@ユーザー名、または X リストのリンク")
+        static let addNote = Words("会读一次账号资料（1 次读取），确认账号存在、是否受保护；List 会读取资料和成员（最多 5 次读取）。", "Reads the account's profile once (1 read) to confirm it exists and whether it is protected; a List reads its details and members (up to 5 reads).", "アカウント情報を 1 回読み取り（1 回）、存在するか・非公開かを確認します。リストは情報とメンバーを読み取ります（最大 5 回）。")
+        static let reading = Words("正在读取…", "Reading…", "読み取り中…")
+        static let stillGoing = Words("仍在进行，可以先做别的。", "Still going; you can do something else meanwhile.", "まだ続いています。ほかの作業をしていて構いません。")
+        static let added = Words("已加入 {handle}，并入汇总。", "{handle} was added to the digest.", "{handle} をまとめに追加しました。")
+        static let protectedResult = Words("{handle} 设了保护，读不到它的帖子。", "{handle} is protected; its posts cannot be read.", "{handle} は非公開のため、投稿を読み取れません。")
+        static let keepAnyway = Words("仍然添加", "Add Anyway", "それでも追加")
+        static let discard = Words("放弃", "Discard", "やめる")
+        static let missingResult = Words("X 上找不到 {handle}，账号不存在或已停用。", "{handle} was not found on X; it does not exist or was suspended.", "X に {handle} が見つかりません。存在しないか停止されています。")
+        static let alreadyListed = Words("{handle} 已经在列表里了。", "{handle} is already in the list.", "{handle} はすでに一覧にあります。")
+        static let inOtherKind = Words("{name} 已经在「{kind}」里了；要换类请到那边用「改为…」。", "{name} is already under \u{201C}{kind}\u{201D}; to switch, use \u{201C}Move to…\u{201D} there.", "{name} はすでに「{kind}」にあります。切り替えるにはそちらで「…へ移す」を使ってください。")
+        static let listResult = Words("「{name}」· {count} 个成员，默认整体并入汇总；新成员会先问你是哪一类。", "\u{201C}{name}\u{201D} · {count} members, all in the digest by default; new members are asked about first.", "「{name}」· メンバー {count} 人。既定ではまとめて追加します。新しいメンバーは先に確認します。")
+        static let emptyNormal = Words("还没有普通账号。在上面输入 @用户名 添加。", "No ordinary accounts yet. Type an @username above to add one.", "一般アカウントはまだありません。上に @ユーザー名 を入力して追加してください。")
+        static let emptyAdult = Words("还没有成人博主。在上面输入 @用户名 添加。", "No adult creators yet. Type an @username above to add one.", "成人向けアカウントはまだありません。上に @ユーザー名 を入力して追加してください。")
+        static let stateReadable = Words("可读", "Readable", "読み取り可")
+        static let stateProtected = Words("读不到", "Can't read", "読み取れません")
+        static let stateGone = Words("账号不存在或已停用", "Not found or suspended", "存在しないか停止中")
+        static let stateRecheck = Words("需要重新验证", "Needs a new check", "再確認が必要")
+        static let stateNoPermission = Words("X Key 没有读取权限", "X key may not read", "X キーに読み取り権限なし")
+        static let stateKeyRejected = Words("X Key 无效", "X key rejected", "X キーが無効")
+        static let stateUnverified = Words("待验证", "Not checked", "未確認")
+        static let protectedNote = Words("这个账号设了保护，NewsPaw 读不到它的帖子。", "This account is protected; NewsPaw cannot read its posts.", "このアカウントは非公開のため、NewsPaw は投稿を読み取れません。")
+        static let goneNote = Words("X 上已经找不到这个账号。", "This account can no longer be found on X.", "このアカウントは X で見つからなくなりました。")
+        static let lastRead = Words("{when} 读到", "read {when}", "{when} に読み取り")
+        static let newToday = Words("今天 {count} 条新帖", "{count} new today", "今日の新着 {count} 件")
+        static let notReadYet = Words("还没读过", "not read yet", "未読み取り")
+        static let readAgain = Words("重新验证", "Check Again", "再確認")
+        static let alone = Words("单独发", "Alone", "単独で送る")
+        static let aloneAt = Words("单独发 · {time}", "Alone · {time}", "単独 · {time}")
+        static let inDigest = Words("并入汇总", "In Digest", "まとめに入れる")
+        static let sendChoice = Words("单独发或并入汇总", "Send alone or in the digest", "単独で送るか、まとめに入れるか")
+        static let postTypes = Words("帖子类型", "Post Types", "投稿の種類")
+        static let typeOriginal = Words("原帖", "Posts", "オリジナル")
+        static let typeQuote = Words("引用", "Quotes", "引用")
+        static let typeReply = Words("回复", "Replies", "返信")
+        static let typeRepost = Words("转帖", "Reposts", "リポスト")
+        static let readAgainMenu = Words("重新读取账号资料（1 次读取）", "Read Profile Again (1 Read)", "アカウント情報を再読み取り（1 回）")
+        static let moveMenu = Words("改为{kind}…", "Move to {kind}…", "{kind}へ移す…")
+        static let removeMenu = Words("移除…", "Remove…", "削除…")
+        static let remove = Words("移除", "Remove", "削除")
+        static let moreFor = Words("{handle} 的更多操作", "More for {handle}", "{handle} のその他の操作")
+        static let removeTitle = Words("移除 {handle}？", "Remove {handle}?", "{handle} を削除しますか？")
+        static let removeBody = Words("它不会再被读取，也不会出现在汇总里。", "It will no longer be read or appear in the digest.", "今後は読み取られず、まとめにも入りません。")
+        static let removeAlone = Words("它每天 {time} 的单独发也会停止（{bots}）。", "Its own edition at {time} each day stops too ({bots}).", "毎日 {time} の単独配信も止まります（{bots}）。")
+        static let rulesDropped = Words("提到它的 {count} 条大事件提醒规则会一起删除。", "Its {count} alert rules are removed with it.", "このアカウントの通知ルール {count} 件も削除されます。")
+        static let moveTitle = Words("把 {handle} 改为{kind}？", "Move {handle} to {kind}?", "{handle} を{kind}へ移しますか？")
+        static let moveButton = Words("改过去", "Move", "移す")
+        static let moveLeavesDigest = Words("它会离开{kind}汇总（{bots}）。", "It leaves the {kind} digest ({bots}).", "{kind}のまとめから外れます（{bots}）。")
+        static let moveStopsAlone = Words("它的单独发会停止（{bots}），时间、机器人和样式会清除。", "Its own edition stops ({bots}); its time, Bots and style are cleared.", "単独配信は止まり（{bots}）、時刻・ボット・スタイルは消去されます。")
+        static let moveResetsTypes = Words("帖子类型会恢复为原帖 + 引用。", "Post types go back to posts + quotes.", "投稿の種類はオリジナル + 引用に戻ります。")
+        static let moveKeepsPosts = Words("已读到的 {count} 条帖子留在{kind}里，不会带过去。", "The {count} posts already read stay with {kind} and do not move.", "読み取り済みの投稿 {count} 件は{kind}に残り、移りません。")
+        static let movePending = Words("还有 {count} 期正在准备或等待发送的简报包含它。", "{count} editions being prepared or waiting to send include it.", "準備中または送信待ちのダイジェスト {count} 回にこのアカウントが含まれます。")
+        static let moveJoins = Words("改完后它会并入{kind}汇总。", "Afterwards it joins the {kind} digest.", "移した後は{kind}のまとめに入ります。")
+        static let aloneTitle = Words("单独发 {handle}", "Send {handle} alone", "{handle} を単独で送る")
+        static let aloneNote = Words("每天这个时间单独发一期，只含这个账号的帖子。", "One edition at this time every day, with only this account's posts.", "毎日この時刻に、このアカウントの投稿だけで 1 回送ります。")
+        static let botsInherit = Words("默认和汇总发到同一处。", "By default it goes where the digest goes.", "既定ではまとめと同じ送信先です。")
+        static let noBot = Words("还没有已配对的机器人。", "No paired Bot yet.", "ペアリング済みのボットがありません。")
+        static let noAdultBot = Words("还没有允许成人内容的已配对机器人。", "No paired Bot allows adult content yet.", "成人向けを許可したペアリング済みボットがありません。")
+        static let chooseBot = Words("至少选一个机器人。", "Choose at least one Bot.", "ボットを 1 つ以上選んでください。")
+        static let memberCount = Words("{count} 个成员", "{count} members", "メンバー {count} 人")
+        static let listNote = Words("成员全部并入汇总 · 新加入的成员会先问你是不是普通内容", "All members are in the digest · new members are asked about first", "メンバーは全員まとめに入ります · 新メンバーは一般か先に確認します")
+        static let listNoteAdult = Words("成员全部并入成人博主汇总 · 新加入的成员也按成人内容处理", "All members are in the adult digest · new members count as adult too", "メンバーは全員成人向けのまとめに入ります · 新メンバーも成人向けとして扱います")
+        static let pendingMembers = Words("{count} 个新成员待确认", "{count} new members to confirm", "新メンバー {count} 人が確認待ち")
+        static let view = Words("查看", "View", "表示")
+        static let readMembers = Words("重新读取成员（最多 5 次读取）", "Read Members Again (Up to 5 Reads)", "メンバーを再読み取り（最大 5 回）")
+        static let listRead = Words("成员已读取", "Members read", "メンバー読み取り済み")
+        static let listUnread = Words("还没读取成员", "Members not read yet", "メンバー未読み取り")
+        static let listPrivate = Words("私密 List，读不到", "Private List; can't read", "非公開リストのため読み取れません")
+        static let listIncomplete = Words("成员没读完整", "Members incomplete", "メンバーの読み取りが不完全")
+        static let notInDigest = Words("还没并入汇总", "not in the digest yet", "まだまとめに入っていません")
+        static let joinTitle = Words("把 {handle} 并入汇总？", "Put {handle} in the digest?", "{handle} をまとめに入れますか？")
+        static let membersOutside = Words("{count} 个成员还没并入汇总", "{count} members not in the digest", "まとめに入っていないメンバー {count} 人")
+        static let listNoteOutside = Words("成员要并入汇总后才会被读取", "Members are read once they are in the digest", "メンバーはまとめに入ると読み取られます")
+        static let listNotePending = Words("有新成员等你选是哪一类，选好后并入汇总", "New members wait for you to choose their kind; then they join the digest", "新メンバーの種類を選ぶと、まとめに入ります")
+        static let draftLeft = Words("刚建的账号条目没能删掉。", "The entry just created could not be removed.", "作成したばかりの項目を削除できませんでした。")
+        static let rulesLeft = Words("账号已改好，但它的提醒规则没能一起删除。", "The account was changed, but its alert rules could not be removed with it.", "アカウントは変更しましたが、その通知ルールを一緒に削除できませんでした。")
+        static let coveragePartial = Words("上次只读到一部分帖子（到了每次读取的上限）", "Only part of the posts were read last time (the per-read limit was reached)", "前回は投稿の一部しか読み取れませんでした（1 回の上限に達しました）")
+        static let coverageGap = Words("上次读取中间有缺口，可能漏了帖子", "The last read has a gap; some posts may be missing", "前回の読み取りに抜けがあり、投稿が欠けている可能性があります")
+        static let coverageUnfinished = Words("上次没读完，下次会接着读", "The last read did not finish; the next one continues", "前回の読み取りは終わっていません。次回続きを読みます")
+        static let membersTitle = Words("「{name}」的新成员", "New members of \u{201C}{name}\u{201D}", "「{name}」の新メンバー")
+        static let membersNote = Words("选普通或成人后并入那一类的汇总；忽略的成员不会被读取。", "Ordinary or adult adds a member to that digest; ignored members are not read.", "一般か成人向けを選ぶとそのまとめに入ります。無視したメンバーは読み取りません。")
+        static let ignore = Words("忽略", "Ignore", "無視")
+        static let membersDone = Words("都处理好了。", "All set.", "すべて確認しました。")
+        static let waitingNote = Words("还没决定是普通账号还是成人博主，决定后并入那一类的汇总。", "Not yet ordinary or adult; once chosen it joins that digest.", "一般か成人向けかがまだ決まっていません。選ぶとそのまとめに入ります。")
+        static let normalDigest = Words("普通账号汇总", "Ordinary digest", "一般のまとめ")
+        static let adultDigest = Words("成人博主汇总", "Adult digest", "成人向けのまとめ")
+        static let editInDigests = Words("在简报里改", "Edit in Digests", "ダイジェストで編集")
+        static let noDigest = Words("没有这一类的 X 简报。", "There is no X digest of this kind.", "この種類の X ダイジェストはありません。")
+        static let aggregateCount = Words("{count} 个并入汇总的账号", "{count} accounts in the digest", "まとめに入るアカウント {count} 件")
+        static let separateCount = Words("{count} 个单独发", "{count} sent alone", "単独 {count} 件")
+        static let listCount = Words("{count} 个 List", "{count} Lists", "リスト {count} 件")
+        static let readsTitle = Words("每天最多读取", "Reads per day", "1 日の読み取り上限")
+        static let readsLine = Words("条 / 天 · 今天已读 {count}", "reads / day · {count} read today", "件 / 日 · 今日 {count} 件読み取り")
+        static let readsNote = Words("普通和成人账号合计。想分开限额可以在「高级」里设。", "Ordinary and adult accounts together. Separate limits are under Advanced.", "一般と成人向けの合計です。別々の上限は「詳細」で設定できます。")
+        static let advancedTitle = Words("高级：大事件即时提醒 · 视频内容检查 · 普通 / 成人各自限额", "Advanced: event alerts · video checks · separate limits", "詳細：重要イベント通知 · 動画の確認 · 種類別の上限")
+        static let advancedNote = Words("默认都关闭，不会增加读取量或费用。", "All off by default; they add no reads or costs until turned on.", "既定ではすべてオフで、読み取りや費用は増えません。")
+        static let alerts = Words("大事件即时提醒", "Major event alerts", "重要イベントの即時通知")
+        static let alertsNote = Words("汇总里出现这些关键词时立刻提醒你，每天最多 {count} 条；普通和成人共用这个开关。", "Alerts you as soon as these phrases show up, up to {count} a day; one switch for ordinary and adult.", "まとめにこれらの語句が出たらすぐ通知します（1 日最大 {count} 件）。一般と成人向けで共通のスイッチです。")
+        static let alertsNeedRule = Words("先加一条规则。", "Add a rule first.", "先にルールを追加してください。")
+        static let rulePlaceholder = Words("关键词，例如：发布会", "Phrase, e.g. launch event", "語句（例：発表会）")
+        static let ruleScope = Words("范围", "Where", "範囲")
+        static let ruleDigest = Words("整个汇总", "Whole digest", "まとめ全体")
+        static let addRule = Words("加一条规则", "Add Rule", "ルールを追加")
+        static let removeRule = Words("删除规则", "Remove rule", "ルールを削除")
+        static let video = Words("视频内容检查", "Video checks", "動画の確認")
+        static let videoNote = Words("对已发出的普通 X 汇总里的视频，你点「检查」时看画面、转写声音。", "For videos in sent ordinary X digests: look at frames and transcribe audio when you choose Check.", "送信済みの一般 X まとめの動画について、「確認」を押したときに映像を見て音声を文字起こしします。")
+        static let videoNeedsModels = Words("需要一个能看图、一个能转写语音的普通模型，先在「接入 › 附加能力」开启。", "Needs ordinary models that can see images and transcribe voice; turn them on in Connect › Extras.", "画像認識と音声の文字起こしができる一般モデルが必要です。「接続 › 追加機能」でオンにしてください。")
+        static let videoBudget = Words("每天最多花", "Spend at most", "1 日の上限")
+        static let perDayMoney = Words("/ 天", "/ day", "/ 日")
+        static let noVideos = Words("最近发出的汇总里没有可以检查的视频。", "No videos to check in recently sent digests.", "最近送ったまとめに確認できる動画はありません。")
+        static let inspect = Words("检查", "Check", "確認")
+        static let inspectTitle = Words("检查这个视频？", "Check this video?", "この動画を確認しますか？")
+        static let inspectBody = Words("会读一次 X，并调用看图和转写模型，可能产生费用（计入每天的上限）。", "Reads X once and calls the vision and transcription models; this may cost money (within the daily limit).", "X を 1 回読み取り、画像認識と文字起こしのモデルを呼び出します。費用がかかる場合があります（1 日の上限内）。")
+        static let viewResult = Words("看结果", "View Result", "結果を見る")
+        static let videoDone = Words("检查完成", "Check complete", "確認完了")
+        static let videoPartial = Words("只检查了一部分", "Partly checked", "一部のみ確認")
+        static let transcript = Words("声音转写（原文）", "Audio transcript (original)", "音声の文字起こし（原文）")
+        static let partitionLimits = Words("普通 / 成人各自限额", "Separate limits", "種類別の上限")
+        static let partitionLimitsNote = Words("在每天总上限之内，再分别限制两类账号的读取；留空表示不单独限制。", "Within the daily total, limit each kind separately; empty means no separate limit.", "1 日の合計の範囲内で種類ごとに制限します。空欄は個別の上限なしです。")
+        static let partitionLimitLabel = Words("{kind}每天最多读取", "{kind} reads per day", "{kind}の 1 日の読み取り上限")
+
+        static let all: [Words] = [
+            intro, kind, normalTab, adultTab, normalKind, adultKind, needsXKey, needsAdultKey, goConnect, add, addPlaceholder,
+            addNote, reading, stillGoing, added, protectedResult, keepAnyway, discard, missingResult, alreadyListed, inOtherKind,
+            listResult, emptyNormal, emptyAdult, stateReadable, stateProtected, stateGone, stateRecheck, stateNoPermission,
+            stateKeyRejected, stateUnverified, protectedNote, goneNote, lastRead, newToday, notReadYet, readAgain, alone, aloneAt,
+            inDigest, sendChoice, postTypes, typeOriginal, typeQuote, typeReply, typeRepost, readAgainMenu, moveMenu, removeMenu,
+            remove, moreFor, removeTitle, removeBody, removeAlone, rulesDropped, moveTitle, moveButton, moveLeavesDigest,
+            moveStopsAlone, moveResetsTypes, moveKeepsPosts, movePending, moveJoins, aloneTitle, aloneNote, botsInherit, noBot,
+            noAdultBot, chooseBot, memberCount, listNote, listNoteAdult, pendingMembers, view, readMembers, listRead, listUnread,
+            listPrivate, listIncomplete, membersTitle, membersNote, ignore, membersDone, waitingNote, normalDigest, adultDigest,
+            editInDigests, noDigest, aggregateCount, separateCount, listCount, readsTitle, readsLine, readsNote, advancedTitle,
+            advancedNote, alerts, alertsNote, alertsNeedRule, rulePlaceholder, ruleScope, ruleDigest, addRule, removeRule, video,
+            videoNote, videoNeedsModels, videoBudget, perDayMoney, noVideos, inspect, inspectTitle, inspectBody, viewResult,
+            videoDone, videoPartial, transcript, partitionLimits, partitionLimitsNote, partitionLimitLabel,
+            notInDigest, joinTitle, membersOutside, listNoteOutside, listNotePending, draftLeft, rulesLeft,
+            coveragePartial, coverageGap, coverageUnfinished, listNotePending,
+        ]
+    }
 }
 
 /// "What happened. What to do." for a backend code (interaction-spec §2.4).
@@ -645,6 +797,60 @@ enum FailureCopy {
         "malformed_response": Entry(message: Words("Telegram 的回应看不懂，稍后再验证。", "Telegram's reply was not understood; check again later.", "Telegram の応答を解釈できません。あとで再確認してください。"), action: L10n.Shell.retry),
         "inbox_full": Entry(message: Words("这个机器人收到的消息太多还没处理完，稍后会继续。", "This bot has too many unprocessed messages; it continues shortly.", "このボットの未処理メッセージが多すぎます。少しすると続きを処理します。"), action: nil),
         "internal_error": Entry(message: Words("NewsPaw 内部出了问题，已记录在日志里。", "NewsPaw hit an internal problem and logged it.", "NewsPaw 内部で問題が起き、ログに記録しました。"), action: nil),
+        // X accounts (R11). Codes shared with model or Telegram copy carry the "x." domain prefix.
+        "x.authentication_failed": Entry(message: Words("X 拒绝了 X API Key（401）。到「接入」重新填入。", "X rejected the X API key (401). Enter it again in Connect.", "X が X API キーを拒否しました（401）。「接続」で入力し直してください。"), action: L10n.XAccounts.goConnect),
+        "x.permission_denied": Entry(message: Words("这个 X Key 没有读取权限（403）。到 X 开发者后台检查后，在「接入」重新填入。", "This X key may not read (403). Check it in the X developer portal, then enter it again in Connect.", "この X キーには読み取り権限がありません（403）。X の開発者ポータルで確認し、「接続」で入力し直してください。"), action: L10n.XAccounts.goConnect),
+        "x.credential_missing": Entry(message: Words("还没有填 X API Key。到「接入」填入后再试。", "No X API key yet. Enter one in Connect, then try again.", "X API キーがまだありません。「接続」で入力してから再試行してください。"), action: L10n.XAccounts.goConnect),
+        "x.rate_limited": Entry(message: Words("X 说读取太频繁（429）。稍等几分钟再试。", "X says there are too many reads (429). Wait a few minutes and try again.", "X から読み取りが多すぎると言われました（429）。数分待って再試行してください。"), action: L10n.Shell.retry),
+        "x.outcome_unknown": Entry(message: Words("X 没有及时回应，这次读取可能已经计入额度。确认后再试一次。", "X did not answer in time; this read may already count. Try once more.", "X が時間内に応答しませんでした。この読み取りは計上済みかもしれません。もう一度お試しください。"), action: L10n.Shell.retry),
+        "x.unavailable": Entry(message: Words("X 上找不到它，可能不存在或已停用。", "X cannot find it; it may not exist or was suspended.", "X で見つかりません。存在しないか停止されている可能性があります。"), action: nil),
+        "x.private": Entry(message: Words("这个 List 是私密的，读不到成员。", "This List is private, so its members cannot be read.", "このリストは非公開のため、メンバーを読み取れません。"), action: nil),
+        "x.request_rejected": Entry(message: Words("X 拒绝了这次请求（400）。检查用户名或链接后再试。", "X refused this request (400). Check the username or link and try again.", "X がこのリクエストを拒否しました（400）。ユーザー名かリンクを確認して再試行してください。"), action: L10n.Shell.retry),
+        "x.http_error": Entry(message: Words("X 出错了，稍后再试。", "X had an error; try again later.", "X でエラーが発生しました。あとで再試行してください。"), action: L10n.Shell.retry),
+        "x.malformed_response": Entry(message: Words("X 的回应看不懂，稍后再试。", "X's reply was not understood; try again later.", "X の応答を解釈できません。あとで再試行してください。"), action: L10n.Shell.retry),
+        "x.identity_mismatch": Entry(message: Words("这个用户名现在指向另一个账号（可能改过名）。重新验证一次。", "This username now belongs to another account (it may have been renamed). Check it again.", "このユーザー名は別のアカウントを指しています（名前が変わった可能性があります）。再確認してください。"), action: L10n.Shell.retry),
+        "x.identity_conflict": Entry(message: Words("这个账号和列表里另一个账号对不上。先移除旧的再试。", "This account conflicts with another one in the list. Remove the old one and try again.", "このアカウントは一覧の別のアカウントと食い違っています。古い方を削除してから再試行してください。"), action: nil),
+        "x.username_conflict": Entry(message: Words("这个用户名和列表里另一个账号冲突。先移除旧的再试。", "This username clashes with another account in the list. Remove the old one and try again.", "このユーザー名は一覧の別のアカウントと重なっています。古い方を削除してから再試行してください。"), action: nil),
+        "x.interrupted": Entry(message: Words("读取被中断了，再试一次。", "The read was interrupted; try again.", "読み取りが中断されました。もう一度お試しください。"), action: L10n.Shell.retry),
+        "x.cancelled": Entry(message: Words("读取被取消了，再试一次。", "The read was cancelled; try again.", "読み取りがキャンセルされました。もう一度お試しください。"), action: L10n.Shell.retry),
+        "x.partial": Entry(message: Words("只读到了部分成员（最多 100 个），再读一次。", "Only some members were read (100 at most); read them again.", "メンバーの一部しか読み取れませんでした（最大 100 人）。もう一度読み取ってください。"), action: L10n.Shell.retry),
+        "x.partial_response": Entry(message: Words("只读到了部分成员（最多 100 个），再读一次。", "Only some members were read (100 at most); read them again.", "メンバーの一部しか読み取れませんでした（最大 100 人）。もう一度読み取ってください。"), action: L10n.Shell.retry),
+        "x.account_limit": Entry(message: Words("最多只能添加 200 个账号。先移除一些再添加。", "At most 200 accounts can be added. Remove some first.", "追加できるアカウントは最大 200 件です。先にいくつか削除してください。"), action: nil),
+        "x_still_running": Entry(message: Words("X 还没回应。读完后结果会出现在列表里。", "X has not answered yet. The result appears in the list once it is read.", "X からまだ応答がありません。読み取りが終わると一覧に表示されます。"), action: nil),
+        "x_limit": Entry(message: Words("今天的 X 读取已到上限。调高「每天最多读取」，或明天再试。", "Today's X reads are used up. Raise the reads per day, or try tomorrow.", "今日の X 読み取り上限に達しました。上限を上げるか、明日再試行してください。"), action: nil),
+        "partition_limit": Entry(message: Words("这一类账号今天的 X 读取已到上限。在「高级」里调整。", "This kind of account has used up today's X reads. Adjust it under Advanced.", "この種類のアカウントは今日の X 読み取り上限に達しました。「詳細」で調整してください。"), action: nil),
+        "account_limit": Entry(message: Words("这个账号今天的 X 读取已到上限。到「接入 › 费用」调整。", "This account has used up today's X reads. Adjust it in Connect › Spending.", "このアカウントは今日の X 読み取り上限に達しました。「接続 › 費用」で調整してください。"), action: L10n.XAccounts.goConnect),
+        "task_limit": Entry(message: Words("这次读取超过了单次上限，没有进行。", "This read exceeded its own limit and did not run.", "この読み取りは 1 回あたりの上限を超えたため行いませんでした。"), action: nil),
+        "operation_busy": Entry(message: Words("它正在读取中，稍等再试。", "It is being read right now; try again shortly.", "現在読み取り中です。少し待って再試行してください。"), action: L10n.Shell.retry),
+        "missing_account": Entry(message: Words("这个账号已经不在列表里了（可能在别处移除了）。", "This account is no longer in the list (it may have been removed elsewhere).", "このアカウントはもう一覧にありません（別の場所で削除された可能性があります）。"), action: nil),
+        "missing_list": Entry(message: Words("这个 List 已经不在了。", "This List is no longer here.", "このリストはもうありません。"), action: nil),
+        "invalid_handle": Entry(message: Words("这不是有效的 X 用户名（1–15 个字母、数字或下划线）。", "This is not a valid X username (1–15 letters, digits or underscores).", "有効な X ユーザー名ではありません（英数字とアンダースコア 1〜15 文字）。"), action: nil),
+        "invalid_list": Entry(message: Words("认不出这个 List 链接。复制 x.com/i/lists/… 形式的链接再试。", "This List link was not recognised. Copy an x.com/i/lists/… link and try again.", "このリストのリンクを認識できません。x.com/i/lists/… 形式のリンクをコピーしてください。"), action: nil),
+        "list_conflict": Entry(message: Words("这个 List 已经加在另一类账号里了。", "This List is already added under the other kind of account.", "このリストはもう一方の種類にすでに追加されています。"), action: nil),
+        "list_limit": Entry(message: Words("最多只能添加 30 个 List。", "At most 30 Lists can be added.", "追加できるリストは最大 30 件です。"), action: nil),
+        "incompatible_subscription": Entry(message: Words("这个账号和那份汇总不是同一类（普通 / 成人），没有保存。", "This account and that digest are not the same kind (ordinary / adult); nothing was saved.", "このアカウントとまとめの種類（一般 / 成人向け）が違うため保存しませんでした。"), action: nil),
+        "invalid_post_types": Entry(message: Words("至少要读一种帖子。", "Read at least one kind of post.", "少なくとも 1 種類の投稿を読み取ってください。"), action: nil),
+        "invalid_account_overrides": Entry(message: Words("单独发的设置后台不接受，没有保存。", "The backend did not accept these send-alone settings; nothing was saved.", "単独配信の設定が受け付けられず、保存されませんでした。"), action: nil),
+        "duplicate_target": Entry(message: Words("同一个机器人选了两次。", "The same Bot was chosen twice.", "同じボットが 2 回選ばれています。"), action: nil),
+        "invalid_alert_rules": Entry(message: Words("提醒要先有至少一条规则才能开启。", "Alerts need at least one rule before they can be on.", "通知をオンにするにはルールが 1 つ以上必要です。"), action: nil),
+        "duplicate_alert_rule": Entry(message: Words("这条规则已经有了。", "This rule already exists.", "このルールはすでにあります。"), action: nil),
+        "invalid_alert_scope": Entry(message: Words("提醒只能用于汇总或单独发的账号。", "Alerts work only on the digest or on accounts sent alone.", "通知はまとめか単独で送るアカウントにのみ使えます。"), action: nil),
+        "invalid_alert_settings": Entry(message: Words("提醒设置后台不接受，没有保存。", "The backend did not accept these alert settings; nothing was saved.", "通知の設定が受け付けられず、保存されませんでした。"), action: nil),
+        "invalid_video_settings": Entry(message: Words("视频检查设置后台不接受，没有保存。", "The backend did not accept these video settings; nothing was saved.", "動画確認の設定が受け付けられず、保存されませんでした。"), action: nil),
+        "invalid_video_budget": Entry(message: Words("视频检查的金额或次数超出范围，没有保存。", "The video amount or count is out of range; nothing was saved.", "動画確認の金額または回数が範囲外のため保存されませんでした。"), action: nil),
+        "invalid_video_profiles": Entry(message: Words("视频检查需要能看图、能转写语音的普通模型（在「接入 › 附加能力」）。", "Video checks need ordinary models that see images and transcribe voice (Connect › Extras).", "動画の確認には画像認識と文字起こしができる一般モデルが必要です（「接続 › 追加機能」）。"), action: nil),
+        "x.invalid_video_amount": Entry(message: Words("请填至少 1 的整数美元。", "Enter a whole number of dollars, at least 1.", "1 以上のドルの整数を入力してください。"), action: nil),
+        "video_disabled": Entry(message: Words("视频内容检查还没开启。", "Video checks are not on.", "動画の確認はオンになっていません。"), action: nil),
+        "video_daily_budget": Entry(message: Words("今天的视频检查已到上限（次数或金额）。明天再试，或调高每天最多花。", "Today's video checks are used up (count or amount). Try tomorrow, or raise the daily amount.", "今日の動画確認の上限（回数または金額）に達しました。明日再試行するか、1 日の上限を上げてください。"), action: nil),
+        "video_request_in_progress": Entry(message: Words("另一个视频正在检查，等它完成再试。", "Another video is being checked; try when it is done.", "別の動画を確認中です。終わってから再試行してください。"), action: L10n.Shell.retry),
+        "video_already_requested": Entry(message: Words("这个视频已经检查过了。", "This video was already checked.", "この動画はすでに確認しました。"), action: nil),
+        "video_scope_changed": Entry(message: Words("检查设置或这期内容变了，之前的结果不再适用。", "The check settings or this edition changed, so the earlier result no longer applies.", "確認の設定かこの回の内容が変わったため、以前の結果は使えません。"), action: nil),
+        "missing_video_request": Entry(message: Words("找不到这次检查的记录。", "No record of this check was found.", "この確認の記録が見つかりません。"), action: nil),
+        "video_not_available": Entry(message: Words("这个帖子没有可以检查的视频。", "This post has no video to check.", "この投稿に確認できる動画はありません。"), action: nil),
+        "video_metadata_unavailable": Entry(message: Words("读不到这个视频的信息。", "This video's details could not be read.", "この動画の情報を読み取れません。"), action: nil),
+        "x.video_audio_unavailable": Entry(message: Words("没有声音可转写。", "There was no audio to transcribe.", "文字起こしできる音声がありませんでした。"), action: nil),
+        "x.video_stt_unavailable": Entry(message: Words("声音没能转写。", "The audio could not be transcribed.", "音声を文字起こしできませんでした。"), action: nil),
+        "x.video_vision_unavailable": Entry(message: Words("画面没能识别。", "The frames could not be analysed.", "映像を解析できませんでした。"), action: nil),
     ]
 
     static let conflict = Entry(
@@ -660,7 +866,9 @@ enum FailureCopy {
 
     static func entry(for error: BackendError) -> Entry {
         if error.isConflict { return conflict }
-        return table[error.code] ?? Entry(message: fallback, action: error.retryable ? L10n.Shell.retry : nil)
+        // A code several services share (a 401, a 429) can have words for one service: "x.rate_limited".
+        return table[error.domain + "." + error.code] ?? table[error.code]
+            ?? Entry(message: fallback, action: error.retryable ? L10n.Shell.retry : nil)
     }
 
     static func message(for error: BackendError, _ language: AppLanguage) -> String {

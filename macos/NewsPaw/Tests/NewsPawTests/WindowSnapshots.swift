@@ -46,6 +46,18 @@ private let environment = ProcessInfo.processInfo.environment
                     let image = try await render(open, appearance: appearance)
                     try image.write(to: folder.appendingPathComponent("digests-open-\(language.rawValue)-\(suffix).png"))
                 }
+                // The X accounts page with Advanced open, on each side (the toolbar switch is not
+                // part of an offscreen render).
+                if page == .xAccounts {
+                    defaults.set(true, forKey: "x.advancedOpen")
+                    for side in ["normal", "adult"] {
+                        let open = ScrollView { XAccountsPage(model: model, partition: side).padding(24) }
+                            .background(Color(nsColor: .windowBackgroundColor))
+                            .defaultAppStorage(defaults)
+                        let image = try await render(open, appearance: appearance, size: NSSize(width: 980, height: 1100))
+                        try image.write(to: folder.appendingPathComponent("xAccounts-\(side)-open-\(language.rawValue)-\(suffix).png"))
+                    }
+                }
                 // The connections page again with the add-Bot form and the extras open.
                 if page == .connect {
                     defaults.set(true, forKey: "connect.extrasOpen")

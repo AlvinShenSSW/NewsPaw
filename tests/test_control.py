@@ -1219,3 +1219,24 @@ async def test_speech_policies_naming_a_profile_survive_a_restore(two_controls):
     after = target.operations._current_policies()
     assert after["media"]["stt_profile"] == "normal_primary"
     assert after["x_video"]["stt_profiles"] == ["normal_primary"]
+
+
+async def test_finished_results_stay_capped_while_nobody_asks(control, monkeypatch):
+    from newspaw import control as module
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.01)
+    monkeypatch.setattr(module, "REQUEST_LIMIT", 3)
+    release = asyncio.Event()
+
+    async def preview(source_id):
+        await release.wait()
+        return source_id
+
+    monkeypatch.setattr(server.sources, "preview", preview)
+    for index in range(6):
+        reply = await raw_request(server, {"op": "sources.preview", "source_id": f"s{index}"})
+        assert reply["result"]["pending"] is True
+    release.set()
+    await asyncio.sleep(0.05)
+    assert len(server._requests) <= 3

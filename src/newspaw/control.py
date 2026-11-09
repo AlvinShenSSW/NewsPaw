@@ -758,6 +758,8 @@ class ControlServer:
             self._requests[handle][2] = time.monotonic()
         if not task.cancelled():
             task.exception()  # Kept for `requests.status`; never logged as unretrieved.
+        # Keep the cap even while nobody is asking (finished results only; nothing is cancelled).
+        self._prune_requests()
 
     def _prune_requests(self):
         now = time.monotonic()

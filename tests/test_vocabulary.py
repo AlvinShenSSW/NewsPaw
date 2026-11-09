@@ -17,14 +17,16 @@ DELIVERED = {"state": "delivered"}
         ("late", None, "late"),
         ("delivered", None, "delivered"),
         ("partial", "targets_unavailable", "partial"),
-        ("outcome_unknown", "model_outcome_unknown", "unknown"),
-        ("waiting", "model_outcome_unknown", "unknown"),
-        ("late", "delivery_outcome_unknown", "unknown"),
+        ("outcome_unknown", "model_outcome_unknown", "model_unknown"),
+        ("outcome_unknown", "catchup_expired", "delivery_unknown"),
+        ("outcome_unknown", None, "delivery_unknown"),
+        ("waiting", "model_outcome_unknown", "model_unknown"),
+        ("late", "delivery_outcome_unknown", "delivery_unknown"),
         ("waiting", "job_paused", "paused"),
         ("no_news", None, "skipped"),
         ("skipped", "catchup_expired", "skipped"),
         ("superseded", "newer_elapsed_slot", "skipped"),
-        ("rescheduled", "schedule_changed", "skipped"),
+        ("rescheduled", "schedule_changed", "waiting"),
         ("held", "partial_assignment_changed", "held"),
         ("blocked", "no_target", "failed"),
         ("cancelled", None, "failed"),
@@ -51,7 +53,7 @@ def test_a_skip_choice_reads_as_abandoned_only_once_nothing_is_unknown():
         ("inflight", "preparing"),
         ("waiting", "preparing"),
         ("awaiting_delivery", "preparing"),
-        ("outcome_unknown", "unknown"),
+        ("outcome_unknown", "model_unknown"),
         ("paused", "paused"),
         ("cancelled", "failed"),
         ("blocked", "failed"),
@@ -68,7 +70,7 @@ def test_job_statuses_use_the_same_words(status, state):
 @pytest.mark.parametrize(
     ("status", "state"),
     [
-        ("outcome_unknown", "unknown"),
+        ("outcome_unknown", "delivery_unknown"),
         ("inflight", "preparing"),
         ("pending", "preparing"),
         ("delivered", "delivered"),
@@ -80,6 +82,11 @@ def test_job_statuses_use_the_same_words(status, state):
 )
 def test_delivery_targets_use_the_same_words(status, state):
     assert target_state(status) == state
+
+
+def test_a_paused_jobs_targets_read_as_paused():
+    assert target_state("blocked", reason="job_paused") == "paused"
+    assert target_state("blocked", reason="token_revoked") == "failed"
 
 
 def test_every_state_is_in_the_vocabulary():

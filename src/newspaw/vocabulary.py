@@ -10,7 +10,8 @@ STATES = (
     "late",
     "delivered",
     "partial",
-    "unknown",
+    "model_unknown",
+    "delivery_unknown",
     "skipped",
     "abandoned",
     "paused",
@@ -26,18 +27,19 @@ _OCCURRENCE = {
     "late": "late",
     "delivered": "delivered",
     "partial": "partial",
-    "outcome_unknown": "unknown",
+    "outcome_unknown": "delivery_unknown",
     "no_news": "skipped",
     "skipped": "skipped",
     "superseded": "skipped",
-    "rescheduled": "skipped",
+    # Moved to a later time; it returns to planned when that time's preparation starts.
+    "rescheduled": "waiting",
     "held": "held",
     "blocked": "failed",
     "cancelled": "failed",
 }
 
 _JOB = {
-    "outcome_unknown": "unknown",
+    "outcome_unknown": "model_unknown",
     "paused": "paused",
     "cancelled": "failed",
     "blocked": "failed",
@@ -48,7 +50,7 @@ _JOB = {
 }
 
 _TARGET = {
-    "outcome_unknown": "unknown",
+    "outcome_unknown": "delivery_unknown",
     "inflight": "preparing",
     "pending": "preparing",
     "delivered": "delivered",
@@ -57,8 +59,6 @@ _TARGET = {
     "revoked": "failed",
     "blocked": "failed",
 }
-
-_UNKNOWN_REASONS = {"model_outcome_unknown", "delivery_outcome_unknown"}
 
 
 def abandoned(parts):
@@ -73,8 +73,11 @@ def occurrence_state(status, reason, *, parts=()):
         return "abandoned"
     if status in {"waiting", "late"} and reason == "job_paused":
         return "paused"
-    if status in {"waiting", "late", "outcome_unknown"} and reason in _UNKNOWN_REASONS:
-        return "unknown"
+    # Model and delivery unknowns need different recovery (jobs.resume vs delivery.resolve).
+    if status in {"waiting", "late", "outcome_unknown"} and reason == "model_outcome_unknown":
+        return "model_unknown"
+    if status in {"waiting", "late"} and reason == "delivery_outcome_unknown":
+        return "delivery_unknown"
     return _OCCURRENCE.get(status, "failed")
 
 
@@ -83,7 +86,9 @@ def job_state(status):
     return _JOB.get(status, "preparing")
 
 
-def target_state(status, parts=()):
+def target_state(status, parts=(), reason=None):
     if abandoned(parts):
         return "abandoned"
+    if reason == "job_paused":
+        return "paused"
     return _TARGET.get(status, "failed")

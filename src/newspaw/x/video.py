@@ -83,7 +83,9 @@ class Videos:
         ).fetchone()
         return dict(revision=revision, settings=json.loads(settings))
 
-    def configure(self, settings, revision):
+    def configure(self, settings, revision, *, restoring=False):
+        """``restoring``: a settings import onto a fresh instance, whose profiles have no keys
+        and so no checked capabilities yet; the capability is checked again before use."""
         if (
             not isinstance(settings, dict)
             or settings.keys() != _DEFAULT.keys()
@@ -122,7 +124,7 @@ class Videos:
                     raise MediaInputError("invalid_video_profiles") from None
                 if (
                     profile["partition"] != "normal"
-                    or capability not in profile["capabilities"]
+                    or (not restoring and capability not in profile["capabilities"])
                     or (capability == "stt" and not supported_stt_profile(profile))
                 ):
                     raise MediaInputError("invalid_video_profiles")

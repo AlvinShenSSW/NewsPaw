@@ -34,8 +34,8 @@ private func client(replying reply: String, sent: (@Sendable (Data, Int?) -> Voi
     _ = try await probe.send("models.probe", [:])
     _ = try await probe.call(.configGet)
     _ = try await probe.send("x.video.inspect", [:])
-    // Long operations answer within ~2 s (R05), so they use the socket default.
-    #expect(seen.value == [35_000, nil, nil])
+    // Long operations answer within ~1 s (R05) and get a short, fixed socket deadline.
+    #expect(seen.value == [35_000, nil, 5_000])
 }
 
 @Test @MainActor func aPendingLongOperationIsFollowedToItsResult() async throws {

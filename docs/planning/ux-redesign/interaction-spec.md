@@ -156,15 +156,16 @@ X 账号    普通 | 成人 分段；添加行；账号列表；汇总卡；读�
 
 | `state` | 界面 | occurrence `status`（`reason`） | job `status` | target `status` |
 |---|---|---|---|---|
-| `waiting` | 等待中 | `planned` | — | — |
+| `waiting` | 等待中 | `planned`、`rescheduled`（改到了更晚的时间） | — | — |
 | `preparing` | 准备中 | `preparing`、`waiting`、`delivering` | 收集 / 编辑 / `inflight` / `waiting` / `awaiting_delivery` | `pending`、`inflight` |
 | `late` | 延迟 | `late` | — | — |
 | `delivered` | 已发送 | `delivered` | — | `delivered` |
 | `partial` | 部分发送 | `partial` | — | `partial` |
-| `unknown` | 结果未知 | `outcome_unknown`；`waiting`/`late` 且 reason 为 `model_outcome_unknown` / `delivery_outcome_unknown` | `outcome_unknown` | `outcome_unknown` |
-| `skipped` | 已跳过 | `no_news`、`skipped`、`superseded`、`rescheduled` | `no_news`、`stale` | `skipped` |
+| `model_unknown` | 结果未知（模型） | reason `model_outcome_unknown`（`waiting`/`late`/`outcome_unknown`） | `outcome_unknown` | — |
+| `delivery_unknown` | 结果未知（投递） | `outcome_unknown`（其他 reason）；`waiting`/`late` 且 reason `delivery_outcome_unknown` | — | `outcome_unknown` |
+| `skipped` | 已跳过 | `no_news`、`skipped`、`superseded` | `no_news`、`stale` | `skipped` |
 | `abandoned` | 已放弃补发 | 投递有 part 的 `resolution.action == skip` 且没有仍未知的 part（优先于其他） | — | 同左 |
-| `paused` | 已暂停 | `waiting`/`late` 且 reason `job_paused` | `paused` | — |
+| `paused` | 已暂停 | `waiting`/`late` 且 reason `job_paused` | `paused` | reason `job_paused` |
 | `held` | 等你决定 | `held` | — | — |
 | `failed` | 未能发送 | `blocked`、`cancelled` | `cancelled`、`blocked`、`refused`、`collection_failed` | `blocked`、`revoked` |
 

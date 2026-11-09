@@ -368,7 +368,7 @@ class Outbox:
             )
             view = dict(
                 status=state,
-                state=target_state(state, parts),
+                state=target_state(state, parts, target["reason"] or reason),
                 selected=bool(target["selected"]),
                 chat_id=target["chat_id"],
                 reason=target["reason"] or reason or part_reason,

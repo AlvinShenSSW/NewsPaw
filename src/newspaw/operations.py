@@ -412,6 +412,7 @@ class Operations:
                 "model_profiles",
             )
         }
+        self._try_policies(settings, revision, policies)
         digest = hashlib.sha256(_json([revision, settings, omitted, policies]).encode()).hexdigest()
         return dict(
             revision=revision,
@@ -425,6 +426,28 @@ class Operations:
             scheduling="disabled",
             requires_pairing=bool(settings["bots"]),
         )
+
+    def _apply_policies(self, policies):
+        for name, (read, configure) in self.policies.items():
+            if name in policies:
+                configure(policies[name], read()[0])
+
+    def _try_policies(self, settings, revision, policies):
+        """Runs the import's writes and rolls them back, so the preview reports any policy an
+        owner would refuse against the imported configuration."""
+
+        class _Undo(Exception):
+            pass
+
+        if not policies:
+            return
+        try:
+            with self.store._write():
+                self.store._save_config_tx(settings, revision)
+                self._apply_policies(policies)
+                raise _Undo
+        except _Undo:
+            pass
 
     def preview_import(self, value):
         return self._preview(value)
@@ -441,9 +464,7 @@ class Operations:
             updated = self.store._save_config_tx(preview["settings"], revision)
             # Each owner validates and stores its policy against the configuration just saved;
             # any refusal rolls the whole import back.
-            for name, (read, configure) in self.policies.items():
-                if name in preview["policies"]:
-                    configure(preview["policies"][name], read()[0])
+            self._apply_policies(preview["policies"])
         return {
             "revision": updated,
             "scheduling": "disabled",

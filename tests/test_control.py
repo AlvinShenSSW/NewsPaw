@@ -946,17 +946,29 @@ async def test_a_deferred_failure_keeps_its_operations_domain(control, monkeypat
     }
 
 
-async def test_a_long_operation_past_its_deadline_finishes_as_timeout(control, monkeypatch):
+async def test_a_long_operation_past_its_deadline_answers_timeout_but_is_not_cut(
+    control, monkeypatch
+):
     from newspaw import control as module
 
     server, _ = control
     monkeypatch.setattr(module, "REQUEST_WAIT", 0.02)
     monkeypatch.setitem(module.LONG_OPERATIONS, "bots.verify", 0.1)
-    monkeypatch.setattr(server.bots, "verify", lambda bot_id, generation=None: _slow(5, {}))
+    finished = asyncio.Event()
+
+    async def verify(bot_id, generation=None):
+        # Cutting a Bot check midway would leave it unpaired; it must run to its end.
+        await asyncio.sleep(0.3)
+        finished.set()
+        return {}
+
+    monkeypatch.setattr(server.bots, "verify", verify)
     first = await raw_request(server, {"op": "bots.verify", "bot_id": "b1"})
     final = await _resolve(server, first)
     assert final["error"] == "timeout"
     assert final["error_detail"] == {"code": "timeout", "domain": "bots", "retryable": True}
+    assert not finished.is_set()
+    await asyncio.wait_for(finished.wait(), 2)
 
 
 async def test_handles_expire_are_bounded_and_unknown_ones_are_refused(control, monkeypatch):
@@ -986,11 +998,14 @@ async def test_handles_expire_are_bounded_and_unknown_ones_are_refused(control, 
     ] == "unknown_request"
 
 
-async def test_close_cancels_a_pending_long_operation(control, monkeypatch):
+async def test_close_lets_a_long_operation_finish_then_cancels_one_that_overruns(
+    control, monkeypatch
+):
     from newspaw import control as module
 
     server, _ = control
     monkeypatch.setattr(module, "REQUEST_WAIT", 0.01)
+    monkeypatch.setattr(module, "LONG_CLOSE_WAIT", 0.2)
     cancelled = asyncio.Event()
 
     async def hang(url):
@@ -1005,6 +1020,25 @@ async def test_close_cancels_a_pending_long_operation(control, monkeypatch):
     assert first["result"]["pending"] is True
     await server.close()
     assert cancelled.is_set()
+
+
+async def test_close_waits_for_a_long_operation_that_finishes_in_time(control, monkeypatch):
+    from newspaw import control as module
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.01)
+    done = asyncio.Event()
+
+    async def verify(bot_id, generation=None):
+        await asyncio.sleep(0.1)
+        done.set()
+        return {}
+
+    monkeypatch.setattr(server.bots, "verify", verify)
+    first = await raw_request(server, {"op": "bots.verify", "bot_id": "b1"})
+    assert first["result"]["pending"] is True
+    await server.close()
+    assert done.is_set()
 
 
 @pytest.fixture
@@ -1075,13 +1109,35 @@ async def test_policies_travel_with_exported_settings(two_controls):
     assert after["schedule"] == {**exported["policies"]["schedule"], "enabled": False}
 
 
-async def test_a_refused_policy_rolls_the_whole_import_back(two_controls):
+async def test_a_policy_the_owner_refuses_is_reported_by_preview(two_controls):
     (source, _), (target, target_store) = two_controls
     exported = (await request(source, {"op": "ops.export_settings"}))["result"]
     exported["policies"]["x_video"]["daily_limit"] = 999  # beyond the owner's limit of 20
-    preview = (await request(target, {"op": "ops.preview_import", "portable": exported}))["result"]
     before = target_store.config_revision(), target.operations._current_policies()
-    refused = await request(
+    refused = await request(target, {"op": "ops.preview_import", "portable": exported})
+    assert refused["ok"] is False and refused["error"] == "invalid_video_budget"
+    # The preview's trial writes were rolled back.
+    assert (target_store.config_revision(), target.operations._current_policies()) == before
+
+
+async def test_a_video_policy_naming_profiles_survives_a_restore(two_controls, monkeypatch):
+    (source, source_store), (target, _) = two_controls
+    read, configure = source.operations.policies["x_video"]
+    revision, config = source_store.load_config()
+    for profile in config["model_profiles"]:
+        if profile["id"] == "normal_primary":
+            profile["capabilities"] = ["text", "vision"]
+    with source_store._write():
+        source_store._db.execute(
+            "UPDATE app_configuration SET revision=revision+1,document=? WHERE id=1",
+            (json.dumps(config),),
+        )
+    video_revision, settings = read()
+    source.videos.configure({**settings, "vision_profiles": ["normal_primary"]}, video_revision)
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    assert exported["policies"]["x_video"]["vision_profiles"] == ["normal_primary"]
+    preview = (await request(target, {"op": "ops.preview_import", "portable": exported}))["result"]
+    applied = await request(
         target,
         {
             "op": "ops.apply_import",
@@ -1090,8 +1146,8 @@ async def test_a_refused_policy_rolls_the_whole_import_back(two_controls):
             "revision": preview["revision"],
         },
     )
-    assert refused["ok"] is False and refused["error"] == "invalid_video_budget"
-    assert (target_store.config_revision(), target.operations._current_policies()) == before
+    assert applied["ok"], applied
+    assert target.operations._current_policies()["x_video"]["vision_profiles"] == ["normal_primary"]
 
 
 async def test_an_export_from_before_policies_still_imports(two_controls):

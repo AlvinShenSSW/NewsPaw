@@ -155,7 +155,7 @@ async def test_unknown_send_needs_explicit_ack_and_does_not_block_peer(system):
     await outbox.advance(job, "bot1", now=NOW)
     await outbox.advance(job, "bot1", now=NOW + timedelta(hours=1))
     assert bot_status(outbox, job, "bot1")["status"] == "outcome_unknown"
-    assert bot_status(outbox, job, "bot1")["state"] == "unknown"
+    assert bot_status(outbox, job, "bot1")["state"] == "delivery_unknown"
     assert len(calls) == 1
     await outbox.advance(job, "bot2", now=NOW)
     assert bot_status(outbox, job, "bot2")["status"] == "delivered"

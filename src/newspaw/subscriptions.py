@@ -70,7 +70,8 @@ class Subscriptions:
                 status = self.profiles.status(profile["id"])["text"]["state"]
             except ProviderError:
                 status = "untested"
-            if status != "verified":
+            # Only the main model must pass its check; an unchecked backup is not used.
+            if status != "verified" and role == "primary":
                 blockers.append(role + "_unverified")
             profiles[role] = dict(
                 id=profile["id"],

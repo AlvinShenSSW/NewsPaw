@@ -27,3 +27,7 @@ Highest risk is silent cross-partition reuse or stale target dispatch; table-dri
 
 ## Handoff
 Run mandatory same-model design debate before tests-first implementation; Kimi sole external code gate. Issue allowance six repair cycles; initially zero. Keep existing AFK run and leave-open policy, no deployment.
+
+## Superseded by E10 (2026-11-10)
+
+`group_styles` and category-level `style` / primary-backup overrides are removed in schema v4; style precedence is request > single-send X account > subscription, and model overrides live on the subscription. See [docs/planning/ux-redesign/contract.md](../../planning/ux-redesign/contract.md) §5 for the replacement clause; the rest of this contract stays in force.

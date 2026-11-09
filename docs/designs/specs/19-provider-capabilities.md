@@ -47,3 +47,7 @@ Fourprovidersrequestfixtures includingMiMoauto/nonstrictJSONargs, no extra args/
 
 ## Handoff
 M01 allowance0/6. Prospective ignoredplan while S01 Kimi runs; no trackedtargetchange. Mandatorysame-modelcriticbeforeimplementation. Oneowner/backend, explicitKimi solecodegate, merge-when-green authorized, no deployment.
+
+## Superseded by E10 (2026-11-10)
+
+Saving a model key now triggers one automatic text probe with a built-in hold; vision / image / transcription are probed only when the matching feature is enabled; `tts` is removed from the capability list. See [docs/planning/ux-redesign/contract.md](../../planning/ux-redesign/contract.md) §5 for the replacement clause; the rest of this contract stays in force.

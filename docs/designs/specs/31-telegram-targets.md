@@ -33,3 +33,7 @@ No newexternal APIclaims. T01registeredstatus—notgetMeinvocation—issoleident
 Twoactualfixture-verifiedpairedBots with independent IDs: bothready, onepaused, unverified, unpaired, no-target, forgedconfigclaims; asserthealthycontinuesandownbindinggenerationrevalidated. Adultassignmentrequiresoptinthenexplicitselection, optoutremovesonlyadultroutes; noautoassignonoptin. SpecialNoneinheritance/[]none/explicit override, ordinaryoverride rejection, accountpartition bothdirectionsclearsallroutingoverrides andrequiresrebind. Categorybulk vs single-sub preservingallunrelatedfields; CAS rollback; impactlists inherited/explicit daily targets accurately andlosinglasttarget; deleteexistingkeycleanup/invalidation doesnotdeleteevidence. Preview/preflightaccountscopechecks preventspecial-onlyBotgrantingwholeaggregate. Bindingsafterpause/tokenrotation/removedtarget cannotpasspreflight; anotherblockedBotdoesnotstophealthy. Fullinternal+Kimi+actualCI waterfall.
 
 Handoff: prospectiveignored plan whileS04Kimi targetd09a56d runs, no trackededits. T02allowance0consumed0reserved/max6; mandatorydesigncritic next. Same all9epics authority/mergewhenchecks/no deployment.
+
+## Superseded by E10 (2026-11-10)
+
+The first paired ordinary Bot is automatically added to ordinary subscriptions whose `bot_ids` is empty; adult subscriptions are never auto-assigned. See [docs/planning/ux-redesign/contract.md](../../planning/ux-redesign/contract.md) §5 for the replacement clause; the rest of this contract stays in force.

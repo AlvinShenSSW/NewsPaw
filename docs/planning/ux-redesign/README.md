@@ -3,6 +3,7 @@
 2026-11-10 · 用户决定：对 Codex 实现的设置 App 做交互重构。前提是**单人私用、一台 Mac、一个后台、推送到自己的 Telegram 机器人**；目标是简单好用、符合人的使用逻辑、不过度工程。
 
 - [审计 2026-11-09](audit-2026-11-09.md)：架构 / 代码 / 产品功能 / 交互四路审计与根因。
+- [产品收敛契约（R01 冻结）](contract.md)：简报 = `subscriptions` 实体、v3→v4 字段去向、默认值表、状态词汇、被替代的 spec 条款。
 - [交互规格](interaction-spec.md)：词表、macOS 组件映射、六个界面逐控件的状态与文案、数据依赖、端到端验收。
 - [重构 mockup](../../mockup/redesign/README.md)：macOS 窗口样式的静态 HTML 与截图（新界面基线）。
 - Design 画布（可点击跳转）：https://claude.ai/artifact/PqJ1KV8JtV1C7LXNyGW4Pt
@@ -11,7 +12,7 @@
 
 | 决定 | 结果 |
 |---|---|
-| category / subscription / scope / route / target | 合并为一个「简报」对象，schema v3 → v4；拆分为显式动作 |
+| category / subscription / scope / route / target | 合并为一个「简报」对象：沿用 `subscriptions` 实体，分类级设置并入简报，schema v3 → v4；拆分为显式动作（见 contract §1） |
 | Key 保存时自动做一次文字探测（约 $0.001） | 接受；spec 19「保存零网络」条款由 R01 改写 |
 | 价格未知 | 照常执行并标注「未计价」，不再阻塞 |
 | 旧 `.env` 栈（bot.py / config.py / schedule.py / service.py / grok.py / ai.py） | 删除，git 历史保留 |

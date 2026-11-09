@@ -33,3 +33,7 @@ SQLite backup while a writer reservation exists must be experimentally verified 
 
 ## Tests and handoff
 RED tests for absent config/migration APIs, then defaults/independent locales/model IDs; strict unknown/secret fields, reference relationships and malformed URLs; migration from old populated DB including receipts/last_slot; repeat initialization/import; future schema rejection; corrupt file unchanged; backup success/failure; injected migration failure rollback and retry; concurrent writers/CAS; explicit secret-bearing .env imports omit secrets and remain disabled/unpaired. Disposable backup/transaction probe before implementation. Preserve existing full Store/config suite. No business job scheduler is added here. Debate must close before coding; implementation/internal/Kimi/final-suite/CI follow, per active run policy.
+
+## Superseded by E10 (2026-11-10)
+
+The Tokyo default timezone is replaced: new databases default to the system IANA timezone. See [docs/planning/ux-redesign/contract.md](../../planning/ux-redesign/contract.md) §5 for the replacement clause; the rest of this contract stays in force.

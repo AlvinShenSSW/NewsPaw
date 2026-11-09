@@ -10,7 +10,7 @@
 
 ### 0.1 五条原则
 
-1. **一个意图一个对象。** 用户想的是「世界新闻这一档」，界面就只有「简报」；category / subscription / scope / route / target 不出现在任何文案里。
+1. **一个意图一个对象。** 用户想的是「世界新闻这一档」，界面就只有「简报」；category / subscription / scope / route / target 不出现在任何文案里。数据契约见 [contract.md](contract.md)。
 2. **默认值先行，阻塞点后置。** 任何能有合理默认的字段都预填（时区 = 系统、时间 = 内置、Bot = 唯一可用、hold = 内置、价格未知 = 标注）；只有真的缺东西才打断。
 3. **就地编辑，就地反馈。** 不再使用 `.sheet`；编辑在行内展开、Popover 或独立窗口完成；每个错误显示在出错的那一行，格式固定为「发生了什么 + 怎么办 + 一个按钮」。
 4. **后端严谨，界面安静。** 普通/成人隔离、outcome_unknown、回执防重发、配对安全全部保留，但对用户只呈现为一行状态和一个动作。
@@ -20,9 +20,9 @@
 
 | 对外词 | 对内概念 | 禁止出现的词 |
 |---|---|---|
-| 简报 | digest（原 category + subscription + scope） | 订阅、分类、计划槽、路由、scope、edition |
+| 简报 | `subscriptions` 实体（吸收原分类级设置，见 [contract §1](contract.md)） | 订阅、分类、计划槽、路由、scope、edition |
 | 机器人 | Telegram bot | Bot（中文文案中）、目标、target |
-| 发送到 | digest.bot_ids | 分配、绑定目标 |
+| 发送到 | subscription.bot_ids | 分配、绑定目标 |
 | 模型 / Key | model profile / credential | provider、profile、credential_ref、探测、probe |
 | 可用 / 未填 Key / Key 无效 | capabilities.text verified / credential missing / 4xx | untested、verified、stale、pending |
 | 普通内容 / 成人内容 | partition normal / adult | 分区（可在说明文字里出现一次）、普通新闻、一般 |
@@ -415,7 +415,7 @@ List 行：方形图标、名称 · N 个成员、「成员全部并入汇总 ·
 |---|---|---|
 | 启动 / 概览 | service.status, config.get, bots.list, schedule.status, delivery.status, budget.get, sources.list, credentials.status | `setup.readiness`（R02）、`delivery.resolve` 文案所需 reason（R02）、unpriced 计数（R03） |
 | 首次设置 | credentials.set, bots.verify, bots.pair_code, bots.status, models.status, config.save | 保存即探测（R04）、单 Bot 自动目标（R04）、verify 轮询（R05） |
-| 简报 | config.get/save, subscriptions.preview/save, sources.list/discover/preview/save/assign/delete/import_opml/impact, targets.*, route.preview | digest 对象（R03）、discover/preview 轮询（R05）、立即试发一期 op（R03） |
+| 简报 | config.get/save, subscriptions.preview/save, sources.list/discover/preview/save/assign/delete/import_opml/impact, targets.*, route.preview | 简报字段收敛（v4，R03）、discover/preview 轮询（R05）、立即试发一期 op（R03） |
 | 接入 | bots.*, credentials.*, models.status/probe, budget.get/save, targets.bot_impact, newspaper.policy, media.policy | models.health（R04）、按需能力（R04）、月度 USD 上限（R03） |
 | X 账号 | x.accounts.*, x.lists.*, x.posts.coverage, x.alerts.*, x.video.*, budget.get | accounts.add 轮询（R05）、单独发/并入汇总映射到 priority + times（R11） |
 | 设置 | config.save locale, service.status/stop, ops.export_settings/preview_import/apply_import/cleanup/diagnostics, SMAppService | 暂停全部推送 = scheduler 单开关（R03）、策略并入导出（R05） |

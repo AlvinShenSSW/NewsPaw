@@ -171,11 +171,12 @@ private struct XAddRow: View {
                 }
                 Text(model.text(L10n.XAccounts.addNote)).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if data.slow.contains("add") {
+                if data.slow.contains("add"), data.outcomePartition == partition {
                     Text(model.text(L10n.XAccounts.stillGoing)).font(.caption).foregroundStyle(.secondary)
                 }
-                if let outcome = data.outcome { result(outcome) }
-                if let failure = data.failures["add"] { FailureNote(model: model, failure: failure) }
+                // An add made on the other side (the owner switched meanwhile) is not shown here.
+                if let outcome = data.outcome(in: partition) { result(outcome) }
+                if let failure = data.failures["add"], data.outcomePartition == partition { FailureNote(model: model, failure: failure) }
             }
             .padding(4)
         }
@@ -334,6 +335,11 @@ private struct XAccountRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("@" + account.handle).fontWeight(.medium)
                     Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    // A gap in what was read stays visible (other states say why it is not read).
+                    if state == .readable, let gap = data.activity[account.id]?.gap {
+                        Label(model.text(gap.words), systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
                 }
                 Spacer(minLength: 8)
                 StatusDot(color: state.color, text: model.text(state.words), busy: working)
@@ -656,7 +662,8 @@ private struct XAlonePopover: View {
 
     private func save() {
         // The digest's own Bots and style stay inherited, so a later change there follows here too.
-        let chosen = bots.sorted()
+        // Only Bots that can still receive it (one may have stopped allowing adult content meanwhile).
+        let chosen = bots.filter(usable.contains).sorted()
         let ownBots: [String]? = Set(chosen) == Set(inherited) ? nil : chosen
         let ownStyle: String? = style == (digest?.style ?? "text") ? nil : style
         let value = DigestTimes.format(time)
@@ -1057,16 +1064,23 @@ private struct XAlertsBlock: View {
             }
         }
         .padding(.vertical, 10)
+        // Another side, or the chosen account joined the digest: back to the whole digest.
+        .onChange(of: scopes.map(\.id)) { if chosenScope == nil { scope = "" } }
     }
 
     private var canAdd: Bool {
         let trimmed = phrase.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.count >= 2 && trimmed.count <= 100 && policy.rules.count < 20 && model.config?.xDigest(partition) != nil && !data.isBusy("alerts")
+            && chosenScope != nil
     }
 
+    /// The chosen scope if it is still offered (an account that joined the digest, or one from the
+    /// other side, is not); nil otherwise.
+    private var chosenScope: String? { XAccountsData.ruleScope(scope, among: scopes.map(\.id).filter { !$0.isEmpty }) }
+
     private func addRule() {
-        guard canAdd, let digest = model.config?.xDigest(partition) else { return }
-        let rule = XAlertRule(subscriptionId: digest.id, accountId: scope.isEmpty ? nil : scope,
+        guard canAdd, let digest = model.config?.xDigest(partition), let chosen = chosenScope else { return }
+        let rule = XAlertRule(subscriptionId: digest.id, accountId: chosen.isEmpty ? nil : chosen,
                               phrase: phrase.trimmingCharacters(in: .whitespacesAndNewlines))
         Task { if await data.addRule(rule, model: model) { phrase = "" } }
     }

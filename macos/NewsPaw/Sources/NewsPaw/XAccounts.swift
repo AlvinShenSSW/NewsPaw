@@ -73,6 +73,43 @@ struct XActivity: Equatable {
     var newToday: Int?
     /// Today's count reached the read limit (`XAccountsData.postsLimit`): "50+".
     var capped = false
+    /// What the last read of the account's posts missed, if anything (`x.posts.coverage`).
+    var gap: XCoverageGap?
+    /// The kind of content these were read under: after a move they no longer apply.
+    var partition: String?
+}
+
+/// A gap in what was read of an account's posts, kept visible (`x.posts.coverage`, x/timelines.py).
+enum XCoverageGap: Equatable {
+    /// Stopped at the read's page or window limit.
+    case partial
+    /// A pagination gap, or a fresh read that skipped past the earlier one.
+    case gap
+    /// Did not finish (rate limit, unknown outcome, read limit, interrupted, scope changed).
+    case unfinished
+
+    init?(state: String, reason: String?, historyGap: String?) {
+        if reason == "pagination_gap" || historyGap != nil {
+            self = .gap
+            return
+        }
+        switch state {
+        case "complete", "unobserved", "pending", "running": return nil
+        case "incomplete" where ["page_limit", "bounded_window", "checkpoint_limit"].contains(reason ?? ""): self = .partial
+        // Not collectable is the row's own state; a changed scope means earlier reads no longer cover it.
+        case "unavailable": guard ["coverage_scope_changed", "timeline_access_changed"].contains(reason ?? "") else { return nil }
+            self = .unfinished
+        default: self = .unfinished
+        }
+    }
+
+    var words: Words {
+        switch self {
+        case .partial: L10n.XAccounts.coveragePartial
+        case .gap: L10n.XAccounts.coverageGap
+        case .unfinished: L10n.XAccounts.coverageUnfinished
+        }
+    }
 }
 
 /// One opt-in alert rule (`x.alerts.save`): a phrase within one X digest, or one of its
@@ -298,6 +335,8 @@ final class XAccountsData {
     private(set) var impacts: [String: XPartitionImpact] = [:]
 
     var outcome: XAddOutcome?
+    /// The side the add row's result belongs to; it is shown only there.
+    private(set) var outcomePartition: String?
     private(set) var highlighted: String?
     private(set) var working: Set<String> = []
     /// Work that has run for more than ten seconds ("still going, you can do something else").
@@ -363,6 +402,14 @@ final class XAccountsData {
     func notInDigest(_ list: XListItem) -> [XAccountItem] {
         let ids = Set(list.members.map(\.accountId))
         return accounts.filter { ids.contains($0.id) && $0.partition == list.partition && $0.subscriptionId == nil && !ignored.contains($0.id) }
+    }
+
+    /// The add row's result for one side (nil on the other side).
+    func outcome(in partition: String) -> XAddOutcome? { outcomePartition == partition ? outcome : nil }
+
+    /// A rule scope still offered (the whole digest, "", or one of `ids`); nil when it no longer is.
+    nonisolated static func ruleScope(_ chosen: String, among ids: [String]) -> String? {
+        chosen.isEmpty || ids.contains(chosen) ? chosen : nil
     }
 
     /// Whether the account's failed change can be repeated ("Try Again" on its row).
@@ -436,9 +483,10 @@ final class XAccountsData {
                 newspaperReady = paper.settings.enabled && paper.settings.generationProfile != nil
             }
         }
-        let readable = Set(accounts.filter(\.canCollect).map(\.id))
+        // Keyed by account and kind: counts read under the other kind no longer apply.
+        let readable = Set(accounts.filter(\.canCollect).map { $0.id + "|" + ($0.partition ?? "") })
         if let last = activityRead, last.accounts == readable, ContinuousClock.now - last.at < activityInterval {
-            activity = activity.filter { readable.contains($0.key) }
+            activity = activity.filter { readable.contains($0.key + "|" + ($0.value.partition ?? "")) }
         } else if await loadActivity(client, now: now) {
             activityRead = (ContinuousClock.now, readable)
         }
@@ -451,7 +499,9 @@ final class XAccountsData {
     /// counts are read again on the next poll).
     private func loadActivity(_ client: BackendClient, now: Date) async -> Bool {
         struct Coverage: Decodable {
-            struct Observation: Decodable { let observedAt: String?; let throughTime: String? }
+            struct Observation: Decodable { let observedAt: String?; let throughTime: String?; let historyGap: String? }
+            let state: String
+            let reason: String?
             let latest: Observation?
         }
         struct Post: Decodable { let publishedAt: String }
@@ -459,10 +509,12 @@ final class XAccountsData {
         var complete = true
         let day = OverviewData.day(now)
         for account in accounts where account.canCollect {
-            var entry = activity[account.id] ?? XActivity()
+            var entry = activity[account.id].flatMap { $0.partition == account.partition ? $0 : nil } ?? XActivity()
+            entry.partition = account.partition
             let scope: [String: Any] = ["kind": "account", "scope": account.id]
             if let data = try? await client.call(.xPostsCoverage, scope), let coverage: Coverage = try? BackendRPC.decode(data) {
                 entry.lastRead = (coverage.latest?.observedAt ?? coverage.latest?.throughTime).flatMap(OverviewData.date)
+                entry.gap = XCoverageGap(state: coverage.state, reason: coverage.reason, historyGap: coverage.latest?.historyGap)
             } else {
                 complete = false
             }
@@ -507,6 +559,7 @@ final class XAccountsData {
         working.insert("add")
         defer { working.remove("add") }
         outcome = nil
+        outcomePartition = partition
         failures["add"] = nil
         highlighted = nil
         switch entry {
@@ -518,7 +571,10 @@ final class XAccountsData {
     private func addAccount(_ name: String, partition: String, model: AppModel) async {
         let client = model.client
         // The backend finds an existing username itself (case-insensitive); say so before any read.
-        if let existing = accounts.first(where: { $0.handle.lowercased() == name.lowercased() }) {
+        // An account known only from a List (not followed directly) of this kind goes to
+        // x.accounts.add, which follows it directly (no X read, no digest change).
+        if let existing = accounts.first(where: { $0.handle.lowercased() == name.lowercased() }),
+           !(existing.direct == false && (existing.partition == partition || existing.partition == nil)) {
             outcome = existing.partition == partition || existing.partition == nil
                 ? .exists(existing.id) : .otherPartition(existing.handle, existing.partition ?? partition)
             highlighted = existing.id

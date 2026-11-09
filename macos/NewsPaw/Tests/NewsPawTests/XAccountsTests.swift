@@ -52,6 +52,10 @@ private final class XBackend {
     var posts: [String: [String]] = [:]
     private(set) var requests: [[String: Any]] = []
     private var serial = 0
+    /// Accounts known only from a List (x_identities.direct = 0) until x.accounts.add follows them directly.
+    var listOnly: Set<String> = []
+    /// x.posts.coverage state, reason and history gap per account (default: complete).
+    var coverageState: [String: (String, String?, String?)] = [:]
     /// Operations whose next reply is lost after the backend handled the request, once each.
     var dropReply: Set<String> = []
     /// Runs once just before the next `x.alerts.save` is checked.
@@ -155,7 +159,7 @@ private final class XBackend {
         let expected = partition == "adult" ? "x_adult" : "x"
         let collect = state == "ready" && partition != nil && sub?["category_id"] as? String == expected && sub?["enabled"] as? Bool == true
         return account.merging([
-            "state": state, "observed_at": observed?.observed ?? NSNull(), "direct": true, "member_active": false, "can_collect": collect,
+            "state": state, "observed_at": observed?.observed ?? NSNull(), "direct": listOnly.contains(id) ? false : true, "member_active": false, "can_collect": collect,
         ]) { _, new in new }
     }
 
@@ -211,7 +215,11 @@ private final class XBackend {
             let partition = request["partition"] as? String
             if let partition, !["normal", "adult"].contains(partition) { return refuse("invalid_partition") }
             if stale { return refuse("config_conflict", "x") }
-            if let existing = stored(handle: name) { return ok(["revision": revision, "account": status(existing)]) }
+            if let existing = stored(handle: name) {
+                // add_account: an account it already has becomes a direct follow (no config change, no X read).
+                listOnly.remove(existing["id"] as! String)
+                return ok(["revision": revision, "account": status(existing)])
+            }
             if accounts.count >= 200 { return refuse("account_limit") }
             serial += 1
             let draft = Self.account("accounts_\(serial)", name.lowercased(), partition: partition, subscription: nil)
@@ -379,7 +387,11 @@ private final class XBackend {
             return ok(["request_id": request["request_id"]!, "state": "ready", "revision": revision, "list": listStatus(listId)])
         case "x.posts.coverage":
             let scope = request["scope"] as! String
-            return ok(["state": "complete", "latest": coverage[scope].map { ["observed_at": $0, "completed_pages": 1] as Any } ?? NSNull(), "last_complete": NSNull()])
+            let (state, reason, gap) = coverageState[scope] ?? ("complete", nil, nil)
+            return ok(["state": state, "reason": reason as Any? ?? NSNull(),
+                       "latest": coverage[scope].map { ["observed_at": $0, "completed_pages": 1, "state": state, "historical": false,
+                                                          "history_gap": gap as Any? ?? NSNull()] as Any } ?? NSNull(),
+                       "last_complete": NSNull()])
         case "x.posts.list":
             return ok((posts[request["scope"] as! String] ?? []).map { ["id": "1", "published_at": $0] })
         case "budget.get":
@@ -1461,4 +1473,83 @@ private func connected(_ server: XBackend) async throws -> (AppModel, XAccountsD
     await data.adoptMembers("321", model: model)
     #expect(data.outcome == nil && data.failures["add"] == nil)
     #expect(server.stored(handle: "alice")?["subscription_id"] as? String == "sub_x")
+}
+
+// MARK: - Review cycle 6 (Codex)
+
+@Test @MainActor func anAddResultIsShownOnlyOnTheSideItWasMadeFor() async throws {
+    let server = XBackend()
+    server.users["night"] = .init(remote: "9")
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    server.delays["x.accounts.verify"] = [.milliseconds(150)]
+    async let adding: Void = data.add("night", partition: "adult", model: model)
+    try await Task.sleep(for: .milliseconds(20))
+    data.outcome = nil  // the owner switched to the ordinary side
+    _ = await adding
+    let id = try #require(server.stored(handle: "night")?["id"] as? String)
+    #expect(data.outcome(in: "normal") == nil)
+    #expect(data.outcome(in: "adult") == .added(id))
+}
+
+@Test @MainActor func anAccountOnlyFromAListCanBeFollowedDirectly() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "alice", remote: "101")])
+    server.listOnly = ["a1"]
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    #expect(data.account("a1")?.direct == false)
+
+    await data.add("alice", partition: "normal", model: model)
+    #expect(server.calls("x.accounts.add").count == 1 && data.account("a1")?.direct == true)
+    #expect(data.outcome == .exists("a1"))
+    #expect(server.calls("x.accounts.route").isEmpty && server.calls("x.accounts.verify").isEmpty)
+}
+
+@Test @MainActor func activityFromTheOtherKindIsNotShownAfterAMove() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "elonmusk", remote: "1")])
+    let today = ISO8601DateFormatter().string(from: Date())
+    server.posts["a1"] = [today, today]
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    #expect(data.activity["a1"]?.newToday == 2)
+
+    // Moved to adult elsewhere; its adult posts are read separately.
+    server.document["accounts"] = server.accounts.map { entry in
+        var entry = entry
+        entry["partition"] = "adult"
+        entry["subscription_id"] = "sub_xa"
+        return entry
+    }
+    server.revision += 1
+    server.posts["a1"] = []
+    await data.load(model: model)
+    #expect(data.activity["a1"]?.newToday == 0)
+}
+
+@Test @MainActor func gapsInWhatWasReadAreShownOnTheAccount() async throws {
+    let server = XBackend(accounts: [
+        XBackend.account("a1", "elonmusk", remote: "1"), XBackend.account("a2", "karpathy", remote: "2"),
+        XBackend.account("a3", "sama", remote: "3"), XBackend.account("a4", "openai", remote: "4"),
+    ])
+    let now = ISO8601DateFormatter().string(from: Date())
+    for id in ["a1", "a2", "a3", "a4"] { server.coverage[id] = now }
+    server.coverageState = [
+        "a1": ("incomplete", "page_limit", nil), "a2": ("incomplete", "pagination_gap", nil), "a3": ("rate_limited", "rate_limited", nil),
+    ]
+    let (_, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    #expect(data.activity["a1"]?.gap == .partial && data.activity["a2"]?.gap == .gap)
+    #expect(data.activity["a3"]?.gap == .unfinished && data.activity["a4"]?.gap == nil)
+    for language in AppLanguage.allCases {
+        let words = [XCoverageGap.partial, .gap, .unfinished].map { $0.words(language) }
+        #expect(Set(words).count == 3 && words.allSatisfy { !$0.isEmpty })
+    }
+}
+
+@Test func anAlertRuleScopeThatIsNoLongerOfferedIsNotSent() {
+    #expect(XAccountsData.ruleScope("", among: ["a1"]) == "")
+    #expect(XAccountsData.ruleScope("a1", among: ["a1", "a2"]) == "a1")
+    #expect(XAccountsData.ruleScope("a9", among: ["a1"]) == nil)
 }

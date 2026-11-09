@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<title>NewsPaw 首次设置</title>
+</head>
+<body style="padding:40px;display:flex;justify-content:center">
+
+<style>
+body{margin:0;background:#D8D8DD;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Helvetica Neue",sans-serif;color:#1D1D1F;font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+a{color:#0A60FF;text-decoration:none}a:hover{color:#0040C0}
+.win{width:760px;height:580px;border-radius:10px;overflow:hidden;background:#F2F2F5;box-shadow:0 20px 50px rgba(0,0,0,.28),0 0 0 1px rgba(0,0,0,.18);display:flex;flex-direction:column;box-sizing:border-box}
+.lights{display:flex;gap:8px;padding:14px 14px 0;height:36px;box-sizing:border-box}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.cap{color:#6B6B70;font-size:11px}
+.btn{height:24px;padding:0 12px;border-radius:6px;border:1px solid #C6C6CB;background:linear-gradient(#fff,#F6F6F8);font:inherit;font-size:13px;color:#1D1D1F;display:inline-flex;align-items:center;gap:6px;cursor:pointer;box-shadow:0 .5px 1px rgba(0,0,0,.08);white-space:nowrap}
+.btn.def{background:linear-gradient(#2F7BFF,#0A60FF);border-color:#0A5BE8;color:#fff}
+.btn.lnk{border:0;background:none;box-shadow:none;color:#0A60FF;padding:0 4px}
+.pop{height:24px;padding:0 4px 0 10px;border-radius:6px;border:1px solid #C6C6CB;background:linear-gradient(#fff,#F6F6F8);font:inherit;font-size:13px;display:inline-flex;align-items:center;gap:8px;box-shadow:0 .5px 1px rgba(0,0,0,.08);white-space:nowrap;color:#1D1D1F;cursor:pointer}
+.pop b{width:16px;height:16px;border-radius:4px;background:#0A60FF;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+.pop b svg{width:10px;height:10px}
+.tf{height:24px;padding:0 8px;border-radius:6px;border:1px solid #C6C6CB;background:#fff;font:inherit;font-size:13px;box-sizing:border-box;color:#1D1D1F;box-shadow:inset 0 1px 1px rgba(0,0,0,.05)}
+.grp{background:#fff;border:1px solid #DCDCE0;border-radius:8px;overflow:hidden}
+.r{display:flex;align-items:center;gap:12px;min-height:40px;padding:8px 14px;border-top:1px solid #E9E9EC}
+.r:first-child{border-top:0}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap}
+.st i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.g{background:#28A745}
+.tag{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:9px;font-size:11px;font-weight:600;background:#ECECEF;color:#5A5A61}
+.steps{display:flex;align-items:center;gap:0}
+.sp{display:flex;align-items:center;gap:7px;font-size:12px;color:#6B6B70}
+.sp b{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;background:#fff;border:1.5px solid #C6C6CB;box-sizing:border-box;color:#8E8E93}
+.sp.done b{background:#28A745;border-color:#28A745;color:#fff}.sp.now{color:#1D1D1F;font-weight:600}.sp.now b{background:#0A60FF;border-color:#0A60FF;color:#fff}
+.sep{width:44px;height:1.5px;background:#C6C6CB;margin:0 10px}
+details summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:600}
+details summary::-webkit-details-marker{display:none}
+details summary::before{content:"";width:0;height:0;border-left:6px solid #6B6B70;border-top:4px solid transparent;border-bottom:4px solid transparent;margin-left:2px}
+details[open] summary::before{transform:rotate(90deg)}
+label{font-weight:500}
+</style>
+
+
+<div class="win">
+  <div class="lights" aria-hidden="true"><i style="background:#FF5F57"></i><i style="background:#D8D8DC"></i><i style="background:#D8D8DC"></i></div>
+
+  <div style="flex:1 1 auto;display:flex;flex-direction:column;padding:4px 36px 0;box-sizing:border-box">
+    <div style="display:flex;align-items:center;gap:14px">
+      <img src="../../../assets/branding/newspaw-logo-preview.jpg" alt="NewsPaw" style="width:48px;height:48px;border-radius:12px;object-fit:cover;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15)">
+      <div><div style="font-size:20px;font-weight:700">欢迎使用 NewsPaw</div><div class="cap" style="font-size:12px">三步完成设置，之后每天自动把新闻发到你的 Telegram。</div></div>
+    </div>
+
+    <div class="steps" style="margin:22px 0 18px" aria-label="设置进度">
+      <div class="sp done"><b aria-label="已完成">✓</b>连接 Telegram</div><span class="sep" aria-hidden="true"></span>
+      <div class="sp now" aria-current="step"><b>2</b>模型 Key</div><span class="sep" aria-hidden="true"></span>
+      <div class="sp"><b>3</b>选择简报</div>
+    </div>
+
+    <div class="grp">
+      <div class="r" style="min-height:44px">
+        <label for="model" style="width:120px;flex:0 0 auto">普通新闻用的模型</label>
+        <button id="model" class="pop" type="button">GPT-6 Luna（OpenAI）· 推荐<b aria-hidden="true"><svg viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="1.6"><path d="M2.5 4l2.5-2.5L7.5 4M2.5 6l2.5 2.5L7.5 6"/></svg></b></button>
+        <span class="cap">世界、日本、澳洲、中国、科技、AI、X 普通账号都用它。</span>
+      </div>
+      <div class="r" style="min-height:44px">
+        <label for="key" style="width:120px;flex:0 0 auto">OpenAI API Key</label>
+        <input id="key" class="tf" type="password" value="sk-proj-••••••••••••••••••••••••••7Qx2" style="flex:1 1 auto" aria-describedby="key-help">
+        <button class="btn" type="button">粘贴</button>
+      </div>
+      <div class="r" style="min-height:36px;background:#FAFAFB"><span style="width:120px;flex:0 0 auto"></span><span class="cap" id="key-help">只保存在这台 Mac 的钥匙串里，不写进配置文件。</span></div>
+      <div class="r" style="min-height:44px;background:#F3FAF4">
+        <span style="width:120px;flex:0 0 auto" class="st"><i class="g"></i>测试通过</span>
+        <span style="flex:1 1 auto">刚才发了一条很短的测试消息，模型正常回复（gpt-6-luna · 1.2 秒 · 约 $0.001）。</span>
+        <button class="btn lnk" type="button">再测一次</button>
+      </div>
+    </div>
+
+    <div class="grp" style="margin-top:12px">
+      <details><summary class="r" style="min-height:36px">我也想看 AV 产业 / X 成人博主 <span class="tag">可选</span></summary>
+        <div class="cap" style="padding:0 14px 10px 36px">成人内容不会送给 OpenAI，需要另一个模型（默认 DeepSeek Flash）和它的 Key。现在不填也可以，之后在「接入」里随时加。</div>
+      </details>
+      <details style="border-top:1px solid #E9E9EC"><summary class="r" style="min-height:36px;border-top:0">高级：自定义 API 地址 / 备用模型</summary>
+        <div class="cap" style="padding:0 14px 10px 36px">默认地址 https://api.openai.com/v1。备用模型在主模型出错时接手，不是必需。</div>
+      </details>
+    </div>
+
+    <div class="cap" style="margin-top:12px;font-size:12px">费用由你自己的 OpenAI 账号承担，一份 5 条的文字简报约 $0.01–0.03。默认每月最多花 <b style="color:#1D1D1F">$20</b>，到了就停发并提醒你。</div>
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px 18px;border-top:1px solid #DCDCE0;background:#ECECEF">
+    <button class="btn lnk" type="button">先跳过，稍后在「接入」里填</button>
+    <div style="display:flex;gap:10px"><button class="btn" type="button">上一步</button><a href="digests.html" class="btn def">继续</a></div>
+  </div>
+</div>
+
+</body>
+</html>

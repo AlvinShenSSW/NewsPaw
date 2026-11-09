@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<title>NewsPaw 设置</title>
+</head>
+<body style="padding:40px;display:flex;justify-content:center">
+
+<style>
+body{margin:0;background:#D8D8DD;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Helvetica Neue",sans-serif;color:#1D1D1F;font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+a{color:#0A60FF;text-decoration:none}a:hover{color:#0040C0}
+.win{width:1180px;height:780px;border-radius:10px;overflow:hidden;background:#F2F2F5;box-shadow:0 20px 50px rgba(0,0,0,.28),0 0 0 1px rgba(0,0,0,.18);display:flex}
+.sb{width:200px;background:#E7E7EA;border-right:1px solid #D4D4D8;display:flex;flex-direction:column;flex:0 0 auto}
+.lights{display:flex;gap:8px;padding:18px 16px 10px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.nav{display:flex;flex-direction:column;gap:2px;padding:6px 10px}
+.nav a{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:6px;color:#1D1D1F;font-size:13px}
+.nav a.on{background:#0A60FF;color:#fff}
+.ico{width:20px;height:20px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;color:#fff}
+.ico svg{width:13px;height:13px}
+.content{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+.tb{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid #D9D9DE;background:#F7F7F9;flex:0 0 auto}
+.tb h1{font-size:15px;font-weight:700;margin:0}
+.body{flex:1 1 auto;overflow:auto;padding:20px 24px 28px}
+.grp{background:#fff;border:1px solid #DCDCE0;border-radius:8px;overflow:hidden}
+.r{display:flex;align-items:center;gap:12px;min-height:40px;padding:8px 14px;border-top:1px solid #E9E9EC}
+.r:first-child{border-top:0}
+.h{font-size:13px;font-weight:600;margin:0 0 6px 2px}
+.cap{color:#6B6B70;font-size:11px}
+.btn{height:24px;padding:0 12px;border-radius:6px;border:1px solid #C6C6CB;background:linear-gradient(#fff,#F6F6F8);font:inherit;font-size:13px;color:#1D1D1F;display:inline-flex;align-items:center;gap:6px;cursor:pointer;box-shadow:0 .5px 1px rgba(0,0,0,.08);white-space:nowrap}
+.btn.danger{color:#A8201A}
+.pop{height:24px;padding:0 4px 0 10px;border-radius:6px;border:1px solid #C6C6CB;background:linear-gradient(#fff,#F6F6F8);font:inherit;font-size:13px;display:inline-flex;align-items:center;gap:8px;box-shadow:0 .5px 1px rgba(0,0,0,.08);white-space:nowrap;color:#1D1D1F;cursor:pointer;min-width:130px;justify-content:space-between}
+.pop b{width:16px;height:16px;border-radius:4px;background:#0A60FF;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+.pop b svg{width:10px;height:10px}
+.sw{width:38px;height:22px;border-radius:11px;background:#0A60FF;border:0;position:relative;padding:0;flex:0 0 auto;cursor:pointer}
+.sw::after{content:"";position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.sw.off{background:#D8D8DC}.sw.off::after{right:auto;left:2px}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap}
+.st i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.g{background:#28A745}
+details summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:600}
+details summary::-webkit-details-marker{display:none}
+details summary::before{content:"";width:0;height:0;border-left:6px solid #6B6B70;border-top:4px solid transparent;border-bottom:4px solid transparent;margin-left:2px}
+details[open] summary::before{transform:rotate(90deg)}
+.sect{margin-bottom:18px}
+</style>
+
+
+<div class="win">
+  <aside class="sb">
+    <div class="lights" aria-hidden="true"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i></div>
+    <div style="display:flex;align-items:center;gap:9px;padding:4px 16px 12px">
+      <img src="../../../assets/branding/newspaw-logo-preview.jpg" alt="NewsPaw" style="width:34px;height:34px;border-radius:8px;object-fit:cover;background:#fff">
+      <div><div style="font-weight:700;font-size:13px">NewsPaw</div><div class="cap">你的新闻伙伴</div></div>
+    </div>
+    <nav class="nav" aria-label="主导航">
+      <a href="overview.html"><span class="ico" style="background:#0A60FF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span>概览</a>
+      <a href="digests.html"><span class="ico" style="background:#F08C00"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h6M7 13h10M7 17h10"/></svg></span>简报</a>
+      <a href="x-accounts.html"><span class="ico" style="background:#1D1D1F"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M5 4l14 16M19 4L5 20"/></svg></span>X 账号</a>
+      <a href="connect.html"><span class="ico" style="background:#28A745"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>接入</a>
+      <a href="settings.html" class="on" aria-current="page"><span class="ico" style="background:#8E8E93;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></span>设置</a>
+    </nav>
+    <div style="flex:1 1 auto"></div>
+    <div style="padding:10px 16px 14px"><div class="st"><i class="g"></i>后台运行中</div><div class="cap" style="margin-top:2px">登录时自动启动 · 今天 07:02</div></div>
+  </aside>
+
+  <div class="content">
+    <div class="tb"><h1>设置</h1><span></span></div>
+    <div class="body">
+      <div class="cap" style="margin:-6px 0 14px 2px;font-size:12px">语言、后台和数据。排障工具都在最下面的「高级」里。</div>
+
+      <section class="sect" aria-labelledby="lang-h">
+        <h2 id="lang-h" class="h">语言</h2>
+        <div class="grp">
+          <div class="r"><div style="flex:1 1 auto"><label for="ui-lang" style="font-weight:500">界面语言</label><div class="cap">只影响这个窗口和 Telegram 里的管理回复。</div></div><button id="ui-lang" class="pop" type="button">简体中文<b aria-hidden="true"><svg viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="1.6"><path d="M2.5 4l2.5-2.5L7.5 4M2.5 6l2.5 2.5L7.5 6"/></svg></b></button></div>
+          <div class="r"><div style="flex:1 1 auto"><label for="news-lang" style="font-weight:500">新闻输出语言</label><div class="cap">所有简报的标题和摘要。改了之后，还没发出的那几期会按新语言重新生成。</div></div><button id="news-lang" class="pop" type="button">简体中文<b aria-hidden="true"><svg viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="1.6"><path d="M2.5 4l2.5-2.5L7.5 4M2.5 6l2.5 2.5L7.5 6"/></svg></b></button></div>
+        </div>
+      </section>
+
+      <section class="sect" aria-labelledby="bg-h">
+        <h2 id="bg-h" class="h">后台</h2>
+        <div class="grp">
+          <div class="r"><div style="flex:1 1 auto"><div style="font-weight:500">状态</div><div class="cap">运行中 · 今天 07:02 启动 · 版本 0.5.0 (6)</div></div><span class="st"><i class="g"></i>运行中</span><button class="btn" type="button">重启</button><button class="btn danger" type="button">停止</button></div>
+          <div class="r"><div style="flex:1 1 auto"><div style="font-weight:500">登录这台 Mac 时自动启动</div><div class="cap">关闭后，重启电脑要手动打开 NewsPaw 才会推送。</div></div><button class="sw" type="button" role="switch" aria-checked="true" aria-label="登录时自动启动"></button></div>
+          <div class="r"><div style="flex:1 1 auto"><div style="font-weight:500">暂停全部推送</div><div class="cap">暂停期间不采集、不花钱、不发送；恢复后只补最近一期。菜单栏里也有这个开关。</div></div><button class="sw off" type="button" role="switch" aria-checked="false" aria-label="暂停全部推送"></button></div>
+          <div class="r" style="min-height:32px;background:#FAFAFB"><span class="cap">关闭这个窗口不会停止后台，后台会一直在菜单栏里。</span></div>
+        </div>
+      </section>
+
+      <section class="sect" aria-labelledby="data-h">
+        <h2 id="data-h" class="h">数据</h2>
+        <div class="grp">
+          <div class="r"><div style="flex:1 1 auto"><div style="font-weight:500">存放位置</div><div class="cap" style="font-family:ui-monospace,Menlo,monospace">~/Library/Application Support/NewsPaw</div></div><button class="btn" type="button">在访达中显示</button></div>
+          <div class="r"><div style="flex:1 1 auto"><div style="font-weight:500">设置备份</div><div class="cap">导出不包含任何 Key 和 Token。导入前会先给你看会改什么。</div></div><button class="btn" type="button">导出设置…</button><button class="btn" type="button">导入…</button></div>
+          <div class="r"><div style="flex:1 1 auto"><label for="keep" style="font-weight:500">保留抓取记录和日志</label><div class="cap">还没发出的简报引用到的记录不会被清。</div></div><button id="keep" class="pop" type="button">30 天<b aria-hidden="true"><svg viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="1.6"><path d="M2.5 4l2.5-2.5L7.5 4M2.5 6l2.5 2.5L7.5 6"/></svg></b></button></div>
+        </div>
+      </section>
+
+      <div class="grp"><details><summary class="r" style="min-height:36px;font-size:12px">高级 / 排障：诊断信息 · 支持快照 · 备份校验 · 清理旧数据 · 查看任务与投递记录</summary><div class="cap" style="padding:0 14px 10px 36px">给开发者看的工具。正常使用不需要打开。</div></details></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

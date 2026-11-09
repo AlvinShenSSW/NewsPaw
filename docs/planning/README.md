@@ -7,7 +7,8 @@
 - [全盘审计](audit-2026-11-07.md)：16 项差距、已有实现证据和未决外部依赖。
 - [结构化 backlog](backlog.json)：范围、依赖、验收、验证、实现入口与非目标。
 - [AFK 交接](afk-handoff.md)：Codex 主导 / Kimi K3.1 Pro 单一外门 / leave-open。
-- [现有界面基线](../mockup/README.md)：沿用五页 mockup，不重设计。
+- [交互重构 E10](ux-redesign/README.md)：2026-11-10 用户决定重做交互；审计、规格与新界面基线。
+- [界面基线](../mockup/README.md)：2026-11-10 起以 redesign/ 为准，原五页 mockup 归档。
 - [Luna 费用与已领取额度](cost-assumptions.md)：透明假设、费用边界与官方依据。
 
 ## 阶段验收
@@ -17,6 +18,8 @@
 **M2：本次完整首版。** 增加 AI 仓库监控、X 普通/成人与独立账号日更、AV 独立管线、来源配图、1–2 页 AI 报纸和图片/语音交互。核验预算不越界、成人上下文不进入普通模型、三语报纸准确且手机可读。
 
 **Later：** 明确 opt-in 的重大事件提醒与视频理解。默认关闭，不作为 M1/M2 交付前提。
+
+**M3：交互重构（E10）。** 简报对象与 v4 配置、setup.readiness、保存即探测、macOS 原生六页界面；验收是全新数据目录三步完成设置并当天收到真实简报。详见 [ux-redesign/](ux-redesign/README.md)。
 
 所有阶段均为未完成。真实密钥和能力未配置时保留相应未验收标记，不以离线测试通过代替线上验证。第二成人站未知不阻碍已确认站点开发，但不能声称两个源已交付。
 
@@ -33,3 +36,4 @@
 | [E07 · 沿用现有 mockup 的原生 Mac App](https://github.com/AlvinShenSSW/NewsPaw/issues/7) | [U01 #33](https://github.com/AlvinShenSSW/NewsPaw/issues/33)、[U02 #34](https://github.com/AlvinShenSSW/NewsPaw/issues/34)、[U03 #35](https://github.com/AlvinShenSSW/NewsPaw/issues/35)、[U04 #36](https://github.com/AlvinShenSSW/NewsPaw/issues/36) |
 | [E08 · 来源配图、AI 报纸与媒体交互](https://github.com/AlvinShenSSW/NewsPaw/issues/8) | [D01 #37](https://github.com/AlvinShenSSW/NewsPaw/issues/37)、[D02 #38](https://github.com/AlvinShenSSW/NewsPaw/issues/38)、[D03 #39](https://github.com/AlvinShenSSW/NewsPaw/issues/39) |
 | [E09 · 运维、打包与发布验收](https://github.com/AlvinShenSSW/NewsPaw/issues/9) | [O01 #40](https://github.com/AlvinShenSSW/NewsPaw/issues/40)、[O02 #41](https://github.com/AlvinShenSSW/NewsPaw/issues/41)、[O03 #42](https://github.com/AlvinShenSSW/NewsPaw/issues/42) |
+| [E10 · 交互重构：单人 Mac App](https://github.com/AlvinShenSSW/NewsPaw/issues/78) | [R01 #79](https://github.com/AlvinShenSSW/NewsPaw/issues/79)、[R02 #80](https://github.com/AlvinShenSSW/NewsPaw/issues/80)、[R03 #81](https://github.com/AlvinShenSSW/NewsPaw/issues/81)、[R04 #82](https://github.com/AlvinShenSSW/NewsPaw/issues/82)、[R05 #83](https://github.com/AlvinShenSSW/NewsPaw/issues/83)、[R06 #84](https://github.com/AlvinShenSSW/NewsPaw/issues/84)、[R07 #85](https://github.com/AlvinShenSSW/NewsPaw/issues/85)、[R08 #86](https://github.com/AlvinShenSSW/NewsPaw/issues/86)、[R09 #87](https://github.com/AlvinShenSSW/NewsPaw/issues/87)、[R10 #88](https://github.com/AlvinShenSSW/NewsPaw/issues/88)、[R11 #89](https://github.com/AlvinShenSSW/NewsPaw/issues/89)、[R12 #90](https://github.com/AlvinShenSSW/NewsPaw/issues/90)、[R13 #91](https://github.com/AlvinShenSSW/NewsPaw/issues/91)、[R14 #92](https://github.com/AlvinShenSSW/NewsPaw/issues/92) |

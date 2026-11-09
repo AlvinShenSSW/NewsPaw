@@ -108,7 +108,7 @@ struct BackendClient {
         body["op"] = name
         let request = try JSONSerialization.data(withJSONObject: body)
         let reply = try await transport(request, Operation.timeoutMilliseconds(for: name))
-        guard let object = try JSONSerialization.jsonObject(with: reply) as? [String: Any],
+        guard let object = (try? JSONSerialization.jsonObject(with: reply)) as? [String: Any],
               let ok = object["ok"] as? NSNumber,
               CFGetTypeID(ok) == CFBooleanGetTypeID() else {
             throw BackendFailure.invalidReply

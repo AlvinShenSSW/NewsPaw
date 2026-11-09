@@ -249,6 +249,8 @@ final class AppModel {
     }
 
     private func saveLocale(_ field: LocaleField, _ value: AppLanguage) async {
+        // The shell retry calls this directly, so it keeps the same one-edit-at-a-time rule.
+        guard !busy else { return }
         generation += 1
         busy = true
         defer { busy = false }
@@ -273,11 +275,11 @@ final class AppModel {
     /// String-named requests from the settings views that predate the typed client.
     /// Removed together with those views (R07–R12).
     func request(_ operation: String, fields: [String: Any] = [:]) async throws -> Data {
-        guard connection == .connected else { throw SocketFailure.disconnected }
         // A failure from these views has no shell retry; never keep an older one.
         lastFailure = nil
         retryLast = nil
         do {
+            guard connection == .connected else { throw SocketFailure.disconnected }
             return try await client.send(operation, fields)
         } catch let failure as SocketFailure {
             lastFailure = BackendError(code: "backend_unreachable")

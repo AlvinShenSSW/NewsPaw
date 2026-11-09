@@ -339,7 +339,11 @@ final class AppModel {
             _ = try await client.call(.sendNow, ["subscription_id": subscriptionId])
             error = nil
         } catch {
-            lastFailure = (error as? BackendError) ?? BackendError(code: "backend_unreachable")
+            switch error {
+            case let failure as BackendError: lastFailure = failure
+            case is SocketFailure: lastFailure = BackendError(code: "backend_unreachable")
+            default: lastFailure = BackendError(code: "invalid_reply")
+            }
             retryLast = { [weak self] in await self?.sendNow(subscriptionId) }
             self.error = .saveFailed
         }

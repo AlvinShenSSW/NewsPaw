@@ -156,6 +156,9 @@ final class AppModel {
     var page: Page = .overview
     var schedulingPaused: Bool { readiness.map { !$0.schedulingEnabled } ?? false }
 
+    func defaultsValue(_ key: String) -> Bool { defaults.bool(forKey: key) }
+    func setDefaultsValue(_ value: Bool, _ key: String) { defaults.set(value, forKey: key) }
+
     convenience init(socket: LocalSocket, defaults: UserDefaults = .standard) {
         self.init(client: BackendClient(socket: socket), defaults: defaults)
     }

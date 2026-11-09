@@ -28,6 +28,12 @@ enum Operation: String, CaseIterable, Sendable {
     case sourcesPreview = "sources.preview"
     case sourcesImpact = "sources.impact"
     case sourcesImportOPML = "sources.import_opml"
+    case botsStatus = "bots.status"
+    case botsVerify = "bots.verify"
+    case botsPairCode = "bots.pair_code"
+    case credentialsSet = "credentials.set"
+    case modelsStatus = "models.status"
+    case modelsProbe = "models.probe"
 
     /// Socket deadline for an operation name, the one place the app sets timeouts.
     /// Network-bound operations wait for their bounded backend work; everything else

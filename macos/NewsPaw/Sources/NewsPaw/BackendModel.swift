@@ -274,12 +274,17 @@ final class AppModel {
     /// Removed together with those views (R07–R12).
     func request(_ operation: String, fields: [String: Any] = [:]) async throws -> Data {
         guard connection == .connected else { throw SocketFailure.disconnected }
+        // A failure from these views has no shell retry; never keep an older one.
         lastFailure = nil
+        retryLast = nil
         do {
             return try await client.send(operation, fields)
         } catch let failure as SocketFailure {
             lastFailure = BackendError(code: "backend_unreachable")
             throw failure
+        } catch BackendFailure.invalidReply {
+            lastFailure = BackendError(code: "invalid_reply")
+            throw BackendFailure.invalidReply
         } catch let failure as BackendError {
             lastFailure = failure
             // Keep the cases those views already distinguish.

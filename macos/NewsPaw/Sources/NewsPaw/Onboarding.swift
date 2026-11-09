@@ -82,6 +82,8 @@ final class OnboardingData {
 
     private(set) var working: Set<String> = []
     private(set) var failures: [String: BackendError] = [:]
+    /// Why a chosen digest could not turn on (`subscriptions.preview` blockers).
+    private(set) var blockers: [String: [String]] = [:]
 
     /// How often pairing and key checks are read back, and how long a key check may take.
     var pollInterval: Duration = .seconds(2)
@@ -94,7 +96,7 @@ final class OnboardingData {
     func start(model: AppModel) async {
         if botId == nil, let first = model.config?.bots?.first?.id { botId = first }
         if let botId { bot = try? BackendRPC.decode(await model.client.call(.botsStatus, ["bot_id": botId])) }
-        if botReady, pairedAt == nil { pairedAt = Date() }
+        // A Bot paired on an earlier visit shows as paired, without inventing when.
         for profile in ["normal_primary", "adult_primary"] {
             if let states: [String: ProbeState] = try? BackendRPC.decode(await model.client.call(.modelsStatus, ["profile_id": profile])) {
                 probes[profile] = states["text"]
@@ -118,7 +120,7 @@ final class OnboardingData {
             let current: BotStatus = try BackendRPC.decode(await model.client.call(.botsStatus, ["bot_id": id]))
             bot = try BackendRPC.decode(await model.client.call(.botsVerify, ["bot_id": id, "generation": current.generation ?? 0]))
             guard bot?.verified == true else {
-                throw BackendError(code: "bot_not_verified", domain: "bots")
+                throw BackendError(code: Self.botProblem(bot?.status), domain: "bots")
             }
             try await issueCode(model: model)
         } catch {
@@ -143,8 +145,15 @@ final class OnboardingData {
         bot = try BackendRPC.decode(await model.client.call(.botsStatus, ["bot_id": botId]))
     }
 
+    /// The Bot's own status when it names a problem (`bots.verify` records the error kind
+    /// there), else a generic "not confirmed".
+    nonisolated static func botProblem(_ status: String?) -> String {
+        guard let status, FailureCopy.table[status] != nil else { return "bot_not_verified" }
+        return status
+    }
+
     /// Reads the Bot until the owner has sent the pairing code (stops when paired, when the
-    /// code expires, or when the task is cancelled).
+    /// code expires, when the backend ends pairing, or when the task is cancelled).
     func waitForPairing(model: AppModel, now: @escaping () -> Date = Date.init) async {
         guard let botId, pair != nil else { return }
         while !Task.isCancelled, !botReady, let pair, now() < pair.expires {
@@ -152,6 +161,12 @@ final class OnboardingData {
             guard !Task.isCancelled else { return }
             if let status: BotStatus = try? BackendRPC.decode(await model.client.call(.botsStatus, ["bot_id": botId])) {
                 bot = status
+                // Too many wrong codes, or the token stopped working: waiting cannot succeed.
+                if status.status == "pair_attempts_exhausted" || !status.verified {
+                    failures["bot"] = BackendError(code: status.verified ? "pair_attempts_exhausted" : Self.botProblem(status.status), domain: "bots")
+                    self.pair = nil
+                    return
+                }
             }
         }
         if botReady {
@@ -275,13 +290,21 @@ final class OnboardingData {
         for id in order where chosen.contains(id) {
             failures[id] = nil
             guard let subscription = model.config?.subscriptions.first(where: { $0.id == id }), !subscription.enabled else { continue }
+            blockers[id] = nil
             if !(await digests.turnOn(subscription, model: model)) {
                 failures[id] = digests.failures[id] ?? digests.failures[subscription.categoryId] ?? BackendError(code: "subscription_not_ready")
+                blockers[id] = digests.previews[id]?.blockers
                 allOn = false
             }
         }
-        if sendTrial, let first = order.first(where: { id in chosen.contains(id) && model.config?.subscriptions.first { $0.id == id }?.enabled == true }) {
-            sentTrial = await model.sendNow(first)
+        failures["trial"] = nil
+        let ordinary = Set(model.config?.categories.filter { $0.partition == "normal" }.map(\.id) ?? [])
+        if sendTrial, let first = model.config?.subscriptions.first(where: { chosen.contains($0.id) && $0.enabled && ordinary.contains($0.categoryId) }) {
+            sentTrial = await model.sendNow(first.id)
+            if !sentTrial {
+                failures["trial"] = model.lastFailure ?? BackendError(code: "invalid_reply")
+                return false
+            }
         }
         return allOn
     }
@@ -339,6 +362,8 @@ struct OnboardingWindow: View {
         .frame(width: 760, height: 580)
         .background(Color(nsColor: .windowBackgroundColor))
         .task { await data.start(model: model) }
+        // Closing the window any way (title bar, ⌘W) counts as seen; it does not come back by itself.
+        .onDisappear { model.onboardingSeen = true }
     }
 
     private var footer: some View {
@@ -468,7 +493,11 @@ private struct TelegramStep: View {
                 }
             }
             if let failure = data.failures["bot"] {
-                FailureNote(model: model, failure: failure) { Task { await data.connect(token: token, model: model) } }
+                FailureNote(model: model, failure: failure) {
+                    Task {
+                        if data.bot?.verified == true { await data.newCode(model: model) } else { await data.connect(token: token, model: model) }
+                    }
+                }
             }
             if let bot = data.bot, bot.verified {
                 Label(L10n.Onboarding.verified(model.uiLanguage, ["name": bot.username.map { "@" + $0 } ?? bot.name]), systemImage: "checkmark.circle.fill")
@@ -478,13 +507,21 @@ private struct TelegramStep: View {
                 pairedBlock
             } else if let pair = data.pair {
                 PairBlock(model: model, data: data, pair: pair, username: data.bot?.username)
+            } else if data.bot?.verified == true, data.failures["bot"] == nil, !data.working.contains("bot") {
+                // Verified on an earlier visit but never paired: a fresh code continues from here.
+                HStack(spacing: 10) {
+                    Text(model.text(L10n.Onboarding.notPaired)).foregroundStyle(.secondary)
+                    Button(model.text(L10n.Onboarding.newCode)) { Task { await data.newCode(model: model) } }
+                        .keyboardShortcut(.defaultAction)
+                }
             }
             Text(model.text(L10n.Onboarding.moreBots)).font(.caption).foregroundStyle(.secondary)
         }
     }
 
     private var pairedBlock: some View {
-        Label(L10n.Onboarding.paired(model.uiLanguage, ["time": (data.pairedAt ?? Date()).formatted(date: .omitted, time: .shortened)]),
+        Label(data.pairedAt.map { L10n.Onboarding.paired(model.uiLanguage, ["time": $0.formatted(date: .omitted, time: .shortened)]) }
+                ?? model.text(L10n.Onboarding.pairedEarlier),
               systemImage: "checkmark.seal.fill")
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -662,6 +699,9 @@ private struct DigestStep: View {
             if data.sentTrial {
                 Label(model.text(L10n.Digests.sent), systemImage: "paperplane.fill").foregroundStyle(.green)
             }
+            if let failure = data.failures["trial"] {
+                FailureNote(model: model, failure: failure)
+            }
         }
     }
 
@@ -700,6 +740,10 @@ private struct DigestStep: View {
             }
             if let failure = data.failures[subscription.id] {
                 Text(FailureCopy.message(for: failure, model.uiLanguage)).font(.caption).foregroundStyle(.red)
+                ForEach(data.blockers[subscription.id] ?? [], id: \.self) { code in
+                    Text("• " + FailureCopy.message(for: BackendError(code: code, domain: "subscriptions"), model.uiLanguage))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
         .padding(.vertical, 7)

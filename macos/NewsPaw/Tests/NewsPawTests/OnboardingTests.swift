@@ -17,7 +17,11 @@ private final class SetupBackend {
     var probe: [String: Any] = ["state": "pending"]
     var probeReadsBeforeResult = 1
     var probeResult: [String: Any] = ["status": "verified", "state": "verified", "reported_model": "gpt-6-luna"]
-    var refuseToken = false
+    /// The Telegram error `bots.verify` records for a bad token (the real backend never refuses
+    /// the token in `credentials.set`; verify reports the problem in the Bot's status).
+    var tokenProblem: String?
+    var exhaustAfterReads: Int?
+    var sendNowRefusal: String?
     var readiness: [String: Any] = ["complete": false, "next": "bot", "scheduling_enabled": true, "steps": []]
     private(set) var requests: [[String: Any]] = []
     private var statusReads = 0
@@ -53,9 +57,20 @@ private final class SetupBackend {
         try! JSONSerialization.data(withJSONObject: ["ok": false, "error": code, "error_detail": ["code": code, "domain": domain, "retryable": false]])
     }
 
+    private var exhausted = false
     private var botStatus: [String: Any] {
-        ["id": bots.first?["id"] ?? "bot", "name": "Telegram", "verified": verified, "paired": paired, "paused": false,
-         "generation": generation, "status": paired ? "paired" : verified ? "awaiting_pair" : "unverified", "username": verified ? "np_bot" : NSNull()]
+        let status = exhausted ? "pair_attempts_exhausted" : paired ? "paired" : verified ? "awaiting_pair" : (tokenProblem ?? "unverified")
+        return ["id": bots.first?["id"] ?? "bot", "name": "Telegram", "verified": verified, "paired": paired, "paused": false,
+                "generation": generation, "status": status, "username": verified ? "np_bot" : NSNull()]
+    }
+
+    /// What the real route and preview check: a Bot, and a main model key that passed its check
+    /// (the backup is optional and never blocks).
+    private func blockers(_ draft: [String: Any]) -> [String] {
+        var codes: [String] = []
+        if (draft["bot_ids"] as? [String] ?? []).isEmpty { codes.append("no_ready_bot") }
+        if probe["state"] as? String != "verified" { codes.append("primary_unverified") }
+        return codes
     }
 
     private func answer(_ request: [String: Any]) -> Data {
@@ -74,18 +89,18 @@ private final class SetupBackend {
         case "bots.list": return ok(bots.isEmpty ? [] : [botStatus])
         case "credentials.set":
             if stale { return refuse("config_conflict") }
-            if request["kind"] as? String == "bots", refuseToken { return refuse("invalid_token", "bots") }
             revision += 1
             // The earlier key's result reads as stale until the new key's check finishes.
             if request["kind"] as? String == "model_profiles" { probeReads = 0; probe = ["state": "stale", "status": "failed", "error_kind": "invalid_credential"] }
             return ok(["revision": revision])
         case "bots.status":
             statusReads += 1
-            if verified, generation >= 2, statusReads > pairAfterReads { paired = true }
+            if let limit = exhaustAfterReads, verified, statusReads > limit { exhausted = true }
+            if !exhausted, verified, generation >= 2, statusReads > pairAfterReads { paired = true }
             return ok(botStatus)
         case "bots.verify":
             if request["generation"] as? Int != generation { return refuse("binding_changed", "bots") }
-            verified = true
+            verified = tokenProblem == nil
             generation += 1
             return ok(botStatus)
         case "bots.pair_code":
@@ -105,15 +120,19 @@ private final class SetupBackend {
         case "subscriptions.save":
             if stale { return refuse("config_conflict") }
             var draft = request["draft"] as! [String: Any]
-            if request["enable"] as? Bool == true, (draft["bot_ids"] as? [String] ?? []).isEmpty { return refuse("subscription_not_ready", "subscriptions") }
+            if request["enable"] as? Bool == true, !blockers(draft).isEmpty { return refuse("subscription_not_ready", "subscriptions") }
             draft["enabled"] = request["enable"] as? Bool ?? false
             var list = document["subscriptions"] as! [[String: Any]]
             if let index = list.firstIndex(where: { $0["id"] as? String == draft["id"] as? String }) { list[index] = draft }
             document["subscriptions"] = list
             revision += 1
             return ok(["revision": revision])
-        case "subscriptions.preview": return ok(["blockers": ["no_ready_bot"], "bots": [], "sources": []])
-        case "subscriptions.send_now": return ok(["job_id": "job1"])
+        case "subscriptions.preview":
+            let draft = request["draft"] as! [String: Any]
+            return ok(["blockers": blockers(draft), "bots": draft["bot_ids"] ?? [], "sources": []])
+        case "subscriptions.send_now":
+            if let code = sendNowRefusal { return refuse(code, "subscriptions") }
+            return ok(["job_id": "job1"])
         default: return refuse("unknown_operation")
         }
     }
@@ -150,7 +169,7 @@ private func connected(_ server: SetupBackend) async throws -> (AppModel, Onboar
 
 @Test @MainActor func aRefusedTokenSaysWhyInTheStep() async throws {
     let server = SetupBackend()
-    server.refuseToken = true
+    server.tokenProblem = "invalid_token"
     let (model, data, cleanup) = try await connected(server)
     defer { cleanup() }
 
@@ -228,6 +247,7 @@ private func connected(_ server: SetupBackend) async throws -> (AppModel, Onboar
     // The fake reports the Bot paired; the config entry mirrors it for usableBots.
     server.document["bots"] = server.bots.map { var bot = $0; bot["paired"] = true; bot["verified"] = true; return bot }
     await model.refresh()
+    await data.saveKey("sk", profile: "normal_primary", choice: nil, model: model)
 
     #expect(await data.finish(sendTrial: true, model: model))
 
@@ -266,5 +286,77 @@ private func connected(_ server: SetupBackend) async throws -> (AppModel, Onboar
         for language in AppLanguage.allCases {
             #expect(!words(language).isEmpty)
         }
+    }
+}
+
+
+@Test @MainActor func aVerifiedButUnpairedBotCanGetANewCodeAfterReopening() async throws {
+    let server = SetupBackend()
+    server.pairAfterReads = 1_000
+    let (model, first, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await first.connect(token: "123:abc", model: model)
+    await model.refresh()
+
+    // The window was closed before pairing; a new visit starts from the stored Bot.
+    let reopened = OnboardingData()
+    await reopened.start(model: model)
+    #expect(reopened.bot?.verified == true && !reopened.botReady && reopened.pair == nil && reopened.pairedAt == nil)
+    await reopened.newCode(model: model)
+    #expect(reopened.pair != nil && reopened.failures["bot"] == nil)
+}
+
+@Test @MainActor func waitingStopsWithTheReasonWhenPairingCanNoLongerSucceed() async throws {
+    let server = SetupBackend()
+    server.pairAfterReads = 1_000
+    server.exhaustAfterReads = 1
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.connect(token: "123:abc", model: model)
+
+    await data.waitForPairing(model: model)
+
+    #expect(data.failures["bot"]?.code == "pair_attempts_exhausted" && data.pair == nil && !data.botReady)
+}
+
+@Test @MainActor func aDigestThatCannotTurnOnListsWhatBlocksIt() async throws {
+    let server = SetupBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.document["bots"] = [["id": "bot_x", "name": "T", "credential_ref": NSNull(), "telegram_id": NSNull(), "chat_id": NSNull(), "verified": true, "paired": true, "adult_allowed": false]]
+    server.verified = true
+    server.paired = true
+    await model.refresh()
+
+    #expect(!(await data.finish(sendTrial: false, model: model)))
+
+    #expect(data.failures["sub_world"]?.code == "subscription_not_ready")
+    #expect(data.blockers["sub_world"] == ["primary_unverified"])
+    #expect(FailureCopy.table["primary_unverified"] != nil)
+}
+
+@Test @MainActor func aFailedTrialSendKeepsTheWindowWithItsReason() async throws {
+    let server = SetupBackend()
+    server.sendNowRefusal = "scheduling_paused"
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.document["bots"] = [["id": "bot_x", "name": "T", "credential_ref": NSNull(), "telegram_id": NSNull(), "chat_id": NSNull(), "verified": true, "paired": true, "adult_allowed": false]]
+    server.verified = true
+    server.paired = true
+    await model.refresh()
+    await data.saveKey("sk", profile: "normal_primary", choice: nil, model: model)
+
+    #expect(!(await data.finish(sendTrial: true, model: model)))
+
+    #expect(data.failures["trial"]?.code == "scheduling_paused" && !data.sentTrial)
+}
+
+@Test func botProblemsUseTheirOwnCopy() {
+    #expect(OnboardingData.botProblem("invalid_token") == "invalid_token")
+    #expect(OnboardingData.botProblem("token_revoked") == "token_revoked")
+    #expect(OnboardingData.botProblem("unverified") == "bot_not_verified")
+    #expect(OnboardingData.botProblem(nil) == "bot_not_verified")
+    for code in ["authentication_failed", "model_unavailable", "permission_denied", "provider_failed", "protocol_error", "invalid_probe_output"] {
+        #expect(FailureCopy.entry(for: BackendError(code: code, domain: "models")).action != nil, "no retry for \(code)")
     }
 }

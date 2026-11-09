@@ -208,6 +208,8 @@ enum L10n {
         static let expired = Words("配对码过期了。", "The pairing code expired.", "ペアリングコードの期限が切れました。")
         static let newCode = Words("重新生成", "New Code", "再発行")
         static let paired = Words("已配对 · {time}", "Paired · {time}", "ペアリング済み · {time}")
+        static let pairedEarlier = Words("已配对", "Paired", "ペアリング済み")
+        static let notPaired = Words("机器人已验证，但还没配对。", "The Bot is verified but not paired yet.", "ボットは確認済みですが、まだペアリングされていません。")
         static let moreBots = Words("这里只接一个机器人；还可以在「接入」里再加一个只收成人内容的机器人。", "This connects one Bot; you can add another, for adult content only, in Connect.", "ここでは 1 つだけ接続します。成人向け専用のボットは「接続」で追加できます。")
         static let modelIntro = Words("NewsPaw 用你的模型 Key 挑选和整理新闻。保存后会自动发一条很短的测试消息。", "NewsPaw uses your model key to choose and write up news. Saving it sends one very short test message.", "NewsPaw はあなたのモデルのキーでニュースを選んでまとめます。保存すると短いテストメッセージを 1 回送ります。")
         static let whichModel = Words("模型", "Model", "モデル")
@@ -234,7 +236,7 @@ enum L10n {
             back, next, finishAndSend, finishQuietly, telegramIntro, howTo, tokenPlaceholder, check, checking, verified,
             sendThis, copy, expiresIn, expired, newCode, paired, moreBots, modelIntro, whichModel, luna, mimo, custom,
             customURL, customModel, keyPlaceholder, paste, saveAndCheck, checkingKey, keyPassed, checkAgain, adultOptional,
-            adultNote, advanced, backupNote, costNote, sendTo, chooseLater,
+            adultNote, advanced, backupNote, costNote, sendTo, chooseLater, pairedEarlier, notPaired,
         ]
     }
 
@@ -364,6 +366,16 @@ enum FailureCopy {
     }
 
     static let table: [String: Entry] = [
+        "token_revoked": Entry(message: Words("Telegram 说这个 Token 已作废。到 @BotFather 重新生成后再粘贴。", "Telegram says this token was revoked. Make a new one with @BotFather and paste it.", "このトークンは無効になりました。@BotFather で再発行して貼り付けてください。"), action: L10n.Shell.retry),
+        "forbidden": Entry(message: Words("Telegram 拒绝了这个机器人的请求。", "Telegram refused this Bot's request.", "Telegram がこのボットの要求を拒否しました。"), action: L10n.Shell.retry),
+        "consumer_conflict": Entry(message: Words("另一个程序也在用这个 Token 读取消息。关掉它后再试。", "Another program is reading messages with this token. Stop it, then try again.", "別のプログラムがこのトークンでメッセージを読んでいます。止めてから再試行してください。"), action: L10n.Shell.retry),
+        "missing_backup_credential": Entry(message: Words("备用模型还没有 Key（可选）。", "The backup model has no key (optional).", "予備モデルのキーがありません（任意）。"), action: nil),
+        "authentication_failed": Entry(message: Words("模型服务说这个 Key 不对。复制完整 Key 再试。", "The model service says this key is wrong. Copy the full key and try again.", "モデルサービスによるとキーが正しくありません。完全なキーをコピーして再試行してください。"), action: L10n.Shell.retry),
+        "model_unavailable": Entry(message: Words("找不到这个模型。检查模型 ID 或换一个模型。", "This model was not found. Check the model ID or choose another model.", "このモデルが見つかりません。モデル ID を確認するか、別のモデルを選んでください。"), action: L10n.Shell.retry),
+        "permission_denied": Entry(message: Words("这个 Key 没有使用该模型的权限。", "This key is not allowed to use this model.", "このキーにはこのモデルを使う権限がありません。"), action: L10n.Shell.retry),
+        "provider_failed": Entry(message: Words("模型服务出错了，稍后再试。", "The model service had an error; try again later.", "モデルサービスでエラーが発生しました。あとで再試行してください。"), action: L10n.Shell.retry),
+        "protocol_error": Entry(message: Words("模型服务的回复格式不对。检查 API 地址是否兼容 OpenAI。", "The model service replied in an unexpected format. Check that the API address is OpenAI-compatible.", "モデルサービスの応答形式が想定と違います。API アドレスが OpenAI 互換か確認してください。"), action: L10n.Shell.retry),
+        "invalid_probe_output": Entry(message: Words("模型回复了，但内容不符合测试要求。再测一次或换一个模型。", "The model replied, but not as the check requires. Check again or choose another model.", "モデルは応答しましたが、確認の条件を満たしませんでした。もう一度確認するか別のモデルを選んでください。"), action: L10n.Shell.retry),
         "bot_not_verified": Entry(message: Words("Telegram 没有确认这个机器人。检查 Token 后再验证。", "Telegram did not confirm this bot. Check the token and try again.", "Telegram がこのボットを確認できませんでした。トークンを確認して再試行してください。"), action: L10n.Shell.retry),
         "missing_token": Entry(message: Words("还没有填 Token。", "No token has been entered yet.", "トークンがまだ入力されていません。"), action: nil),
         "probe_pending": Entry(message: Words("Key 测试还没有结果。稍后点「再测一次」。", "The key check has no result yet. Use Check Again in a moment.", "キーの確認結果がまだありません。少ししてから「もう一度確認」を押してください。"), action: L10n.Shell.retry),

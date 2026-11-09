@@ -44,9 +44,16 @@ private final class SetupBackend {
 
     func calls(_ op: String) -> [[String: Any]] { requests.filter { $0["op"] as? String == op } }
     var bots: [[String: Any]] { document["bots"] as? [[String: Any]] ?? [] }
+    func subscription(_ id: String) -> [String: Any]? {
+        (document["subscriptions"] as? [[String: Any]])?.first { $0["id"] as? String == id }
+    }
 
     /// The next models.probe connection fails like a socket timeout (the backend keeps checking).
     var probeConnectionDrops = false
+    /// Every request fails as if the backend were gone; `dropAfterSave` turns it on after the
+    /// first successful subscriptions.save.
+    var unreachable = false
+    var dropAfterSave = false
     /// How many calls for one probe id answer "pending" before its result.
     var probePendingCalls = 0
     private var probeCalls: [String: Int] = [:]
@@ -60,6 +67,7 @@ private final class SetupBackend {
                 return true
             }
             if drop { throw SocketFailure.timeout }
+            if await MainActor.run(body: { self.unreachable }) { throw SocketFailure.disconnected }
             let request = try JSONSerialization.jsonObject(with: body) as! [String: Any]
             return await MainActor.run { self.answer(request) }
         }
@@ -143,6 +151,7 @@ private final class SetupBackend {
             if let index = list.firstIndex(where: { $0["id"] as? String == draft["id"] as? String }) { list[index] = draft }
             document["subscriptions"] = list
             revision += 1
+            if dropAfterSave { unreachable = true }
             return ok(["revision": revision])
         case "subscriptions.preview":
             let draft = request["draft"] as! [String: Any]
@@ -413,4 +422,34 @@ private func connected(_ server: SetupBackend) async throws -> (AppModel, Onboar
     #expect(ModelChoice.matching(provider: "openai", baseURL: "https://api.openai.com/v1/", model: "gpt-6-luna") == .luna)
     #expect(ModelChoice.matching(provider: "openai", baseURL: "https://gateway.example/v1", model: "gpt-6-luna") == .custom)
     #expect(ModelChoice.matching(provider: "mimo", baseURL: "https://api.xiaomimimo.com/v1", model: "mimo-v2.6-flash") == .mimo)
+}
+
+
+@Test @MainActor func finishingWhileTheBackendDisappearsReportsItInsteadOfClosing() async throws {
+    let server = SetupBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.document["bots"] = [["id": "bot_x", "name": "T", "credential_ref": NSNull(), "telegram_id": NSNull(), "chat_id": NSNull(), "verified": true, "paired": true, "adult_allowed": false]]
+    server.verified = true
+    server.paired = true
+    await model.refresh()
+    await data.saveKey("sk", profile: "normal_primary", choice: nil, model: model)
+    // The first digest turns on, then the backend goes away before the second.
+    server.dropAfterSave = true
+
+    #expect(!(await data.finish(sendTrial: true, model: model)))
+
+    #expect(server.subscription("sub_world")?["enabled"] as? Bool == true)
+    #expect(data.failures["sub_japan"]?.code == "backend_unreachable")
+    #expect(!data.sentTrial)
+}
+
+@Test @MainActor func finishingWithNoConfigurationReportsIt() async throws {
+    let server = SetupBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.unreachable = true
+    await model.refresh()
+    #expect(!(await data.finish(sendTrial: false, model: model)))
+    #expect(data.failures["trial"]?.code == "backend_unreachable")
 }

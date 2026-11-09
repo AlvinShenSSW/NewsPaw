@@ -318,11 +318,22 @@ final class OnboardingData {
         defer { working.remove("finish") }
         let digests = DigestsData()
         await digests.load(model.client)
-        let order = model.config?.subscriptions.map(\.id) ?? []
+        failures["trial"] = nil
+        guard let order = model.config?.subscriptions.map(\.id) else {
+            failures["trial"] = BackendError(code: "backend_unreachable")
+            return false
+        }
         var allOn = true
         for id in order where chosen.contains(id) {
             failures[id] = nil
-            guard let subscription = model.config?.subscriptions.first(where: { $0.id == id }), !subscription.enabled else { continue }
+            // The configuration can vanish mid-way (the backend went away during a refresh):
+            // that is a failure to report, not a digest that is already on.
+            guard let config = model.config else {
+                failures[id] = BackendError(code: "backend_unreachable")
+                allOn = false
+                continue
+            }
+            guard let subscription = config.subscriptions.first(where: { $0.id == id }), !subscription.enabled else { continue }
             blockers[id] = nil
             if !(await digests.turnOn(subscription, model: model)) {
                 failures[id] = digests.failures[id] ?? digests.failures[subscription.categoryId] ?? BackendError(code: "subscription_not_ready")
@@ -668,6 +679,16 @@ private struct KeyRow: View {
     let profile: String
     @Binding var key: String
     let save: () async -> Void
+    @State private var confirmRecheck = false
+
+    /// A check whose outcome is unknown may already have been charged; checking again asks first.
+    private func recheck() {
+        if data.probes[profile]?.state == "outcome_unknown" {
+            confirmRecheck = true
+        } else {
+            Task { await data.recheck(profile, model: model) }
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -694,7 +715,7 @@ private struct KeyRow: View {
                 FailureNote(model: model, failure: failure) {
                     Task {
                         if key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            await data.recheck(profile, model: model)
+                            recheck()
                         } else {
                             await save()
                         }
@@ -710,10 +731,16 @@ private struct KeyRow: View {
                     .font(.callout)
                 } else {
                     FailureNote(model: model, failure: BackendError(code: probe.errorKind ?? probe.state, domain: "models")) {
-                        Task { await data.recheck(profile, model: model) }
+                        recheck()
                     }
                 }
             }
+        }
+        .confirmationDialog(model.text(L10n.Overview.retryModelTitle), isPresented: $confirmRecheck) {
+            Button(model.text(L10n.Onboarding.checkAgain)) { Task { await data.recheck(profile, model: model) } }
+            Button(model.text(L10n.Shell.cancel), role: .cancel) {}
+        } message: {
+            Text(model.text(L10n.Overview.retryModelBody))
         }
     }
 

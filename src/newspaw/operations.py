@@ -171,6 +171,34 @@ def _safe_counts(values, allowed):
     return dict(Counter(value if value in allowed else "other" for value in values))
 
 
+def _portable_policy_refs(policies, available):
+    """Policies may name model profiles the export leaves out (custom providers); those
+    references are cleared, and a policy left without the model it needs is turned off."""
+    policies = deepcopy(policies)
+    paper = policies.get("newspaper")
+    if paper:
+        for role in ("generation_profile", "backup_profile", "vision_profile"):
+            if paper.get(role) not in available:
+                paper[role] = None
+        if paper["generation_profile"] is None:
+            paper["enabled"] = False
+    media = policies.get("media")
+    if media:
+        for capability in ("vision", "stt"):
+            if media.get(capability + "_profile") not in available:
+                media[capability + "_profile"] = None
+                media[capability + "_hold"] = None
+    video = policies.get("x_video")
+    if video:
+        for capability in ("vision", "stt"):
+            video[capability + "_profiles"] = [
+                identity for identity in video[capability + "_profiles"] if identity in available
+            ]
+        if video["enabled"] and not (video["vision_profiles"] and video["stt_profiles"]):
+            video["enabled"] = False
+    return policies
+
+
 def _scrub_settings(document):
     config = deepcopy(document)
     omitted = Counter()
@@ -270,8 +298,12 @@ class Operations:
 
     def export_settings(self):
         config, omitted = _scrub_settings(self.store.load_config()[1])
+        available = {profile["id"] for profile in config["model_profiles"]}
         portable = dict(
-            format=_FORMAT, settings=config, omitted=omitted, policies=self._current_policies()
+            format=_FORMAT,
+            settings=config,
+            omitted=omitted,
+            policies=_portable_policy_refs(self._current_policies(), available),
         )
         if len(_json(portable).encode()) > _MAX_PORTABLE:
             raise OperationsError("settings_not_portable")

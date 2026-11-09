@@ -1240,3 +1240,21 @@ async def test_finished_results_stay_capped_while_nobody_asks(control, monkeypat
     release.set()
     await asyncio.sleep(0.05)
     assert len(server._requests) <= 3
+
+
+async def test_policies_naming_a_profile_the_export_leaves_out_still_restore(two_controls):
+    (source, source_store), (target, _) = two_controls
+    revision, config = source_store.load_config()
+    custom = next(p for p in config["model_profiles"] if p["id"] == "normal_backup")
+    config["model_profiles"].append(
+        {**custom, "id": "custom_vision", "provider": "self_hosted", "capabilities": ["vision"]}
+    )
+    source_store.save_config(config, expected_revision=revision)
+    media_revision, media = source.operations.policies["media"][0]()
+    source.media.configure({**media, "vision_profile": "custom_vision"}, media_revision)
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    assert "custom_vision" not in {p["id"] for p in exported["settings"]["model_profiles"]}
+    assert exported["policies"]["media"]["vision_profile"] is None
+    assert exported["policies"]["media"]["vision_hold"] is None
+    preview = await request(target, {"op": "ops.preview_import", "portable": exported})
+    assert preview["ok"], preview

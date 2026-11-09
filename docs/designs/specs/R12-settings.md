@@ -15,7 +15,7 @@
 
 - **§8.1 语言**：两行 `Picker(.menu)`。界面语言写 UserDefaults，并在连上后台时 `config.save ui_locale`；新闻输出语言 `config.save news_output_locale`（未连上时禁用并说明），说明「所有简报的标题和摘要。改了之后，还没发出的那几期会按新语言重新生成。」两者都经 `EditorState` 合并保存（R06 已有）。
 - **§8.2 后台**：状态行（色点 + 文字「运行中 / 已暂停全部推送 / 没有运行 / 正在停止」，11pt「今天 07:02 启动 · 版本 0.5.0 (5)」）+ `重启` + `停止`（红字，需确认）；后台没有运行时改为 `启动后台`。登录项开关、暂停全部推送开关（说明「暂停期间不采集、不花钱、不发送；恢复后只补最近一期。菜单栏里也有这个开关。」）、关窗说明。
-- **§8.3 菜单栏**：不可点的状态行「后台运行中 · 下一期 18:00 科技数码」（暂停时「已暂停全部推送」，没有已开启且有机器人的简报时只显示状态）；`打开 NewsPaw ⌘O`；`暂停全部推送` 切换项（暂停时带 ✓）；`退出 NewsPaw 界面 ⌘Q`（后台继续）。暂停时图标改为空心爪印并显示「已暂停」。菜单里没有停止后台。
+- **§8.3 菜单栏**：不可点的状态行「后台运行中 · 下一期 18:00 科技数码」（暂停时「已暂停全部推送」；「下一期」取调度的全部 scope——已开启的简报，以及其下有 remote id、按自己时间单独发的 X 账号（显示 @账号）——只算有机器人可发的，与概览共用 `OverviewData.slots`；都没有时只显示状态）；`打开 NewsPaw ⌘O`；`暂停全部推送` 切换项（暂停时带 ✓）；`退出 NewsPaw 界面 ⌘Q`（后台继续）。暂停时图标改为空心爪印并显示「已暂停」。菜单里没有停止后台。
 - **§8.4 数据**：存放位置（数据目录，`~` 缩写）+ `在访达中显示`；`导出设置…`（`ops.export_settings` → `NSSavePanel`，文件权限 0600，说明不含 Key 和 Token）/ `导入…`（见 A3）；「保留抓取记录和日志」`Picker` 7 / 30 / 90 天。
 - **§8.5 高级 / 排障**：`DisclosureGroup` 默认收起、展开状态存 UserDefaults，说明「给开发者看的工具。正常使用不需要打开。」诊断信息（`ops.diagnostics` → 复制 / 保存…）、支持快照（`ops.support_snapshot` → 保存…）、备份校验（在数据目录里选一个备份文件 → `ops.verify_backup`）、清理旧数据（`ops.cleanup` 预览 → 确认 → `apply`）、任务与投递记录（只读：`jobs.list`，展开一行读 `delivery.status`）。
 - **替换与删除**：`OperationsWorkspace`（诊断 sheet、`OperationsCopy`）与 `ResidentControls`（旧登录项区块）删除；`SettingsPage` 用新分区重写。「后台没有运行」卡片（§4.6）改用同一套后台控制：`启动后台` + `打开登录项设置`。
@@ -75,4 +75,9 @@
 - 事实：`ops.cleanup` 里 X 帖子正文的清理（`x/timelines.py` 的 `purge_expired`）固定按 24 小时（`_AGE`，与 24 小时采集窗口相同），不受 `retention_days` 影响；保留天数固定为 7 天时也是这样。
 - 分诊：让保留天数也决定 X 正文保留 30 / 90 天会改变 X 数据规则，超出本 issue 的冻结范围，不改后台。
 - 修正（契约说明）：保留天数只管抓取记录、快照、日志与图片。说明行写明「X 帖子正文不按这个天数，超过 24 小时就会清掉」；清理预览把这一项标为「超过 24 小时的 X 帖子正文 N」，不再让人以为它也按所选天数计。测试 `theTwentyFourHourRuleForXPostTextIsStatedBesideTheRetentionChoice`（修改前失败）。
+
+### 外部评审第 3 轮（Codex Sol 代 Kimi，已修复，回归测试先失败）
+
+- R12-11：「下一期」只看简报时间，漏了单独发的 X 账号（`scheduler._scopes` 给它们独立的时间）。抽出 `OverviewData.slots`（按 `_scopes` 生成昨天到明天、晚于现在的每个时段），概览的 `upcoming` 与菜单栏的 `nextDelivery` 都从这里取，不再有第二份实现；只算有机器人的时段：账号自己的 `bot_ids`（非 null 时，与 `routing` 一致），否则简报的。菜单栏对账号显示「@账号」。测试 `theNextDeliveryCountsASpecialXAccountsOwnTime`。
+- R12-12：导入差异列表放进最高 320pt 的 `ScrollView`，说明与「导入 / 取消」按钮在滚动区外始终可见；短列表保持紧凑。测试 `aLongImportListScrollsAndKeepsItsButtonsInView`（200 份长名称简报，改前高度远超上限）。
 

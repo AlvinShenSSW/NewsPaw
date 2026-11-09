@@ -578,6 +578,8 @@ enum MenuItem: Equatable {
 
 struct NextDelivery: Equatable {
     let subscriptionId: String
+    /// A special X account sent on its own (nil: the digest itself).
+    let accountId: String?
     let at: Date
 }
 
@@ -585,27 +587,14 @@ extension AppModel {
     /// The menu bar icon is greyed and says "paused" while every delivery is paused.
     var menuBarPaused: Bool { connection == .connected && schedulingPaused }
 
-    /// The next scheduled edition of an enabled digest that has somewhere to go.
+    /// The next scheduled edition — of an enabled digest or a special X account under one, the
+    /// same slots the overview lists — that has a Bot to go to (the account's own, else the digest's).
     func nextDelivery(now: Date = Date()) -> NextDelivery? {
         guard let config else { return nil }
-        var best: NextDelivery?
-        for subscription in config.subscriptions where subscription.enabled && !(subscription.botIds ?? []).isEmpty {
-            guard let zone = TimeZone(identifier: subscription.timezone) else { continue }
-            var calendar = Calendar(identifier: .gregorian)
-            calendar.timeZone = zone
-            for offset in 0...1 {
-                guard let base = calendar.date(byAdding: .day, value: offset, to: now) else { continue }
-                let civil = calendar.dateComponents([.year, .month, .day], from: base)
-                for time in subscription.times {
-                    let parts = time.split(separator: ":").compactMap { Int($0) }
-                    guard parts.count == 2,
-                          let target = OverviewData.resolveWallTime(civil, hour: parts[0], minute: parts[1], calendar: calendar),
-                          target > now, target < best?.at ?? .distantFuture else { continue }
-                    best = NextDelivery(subscriptionId: subscription.id, at: target)
-                }
-            }
-        }
-        return best
+        let next = OverviewData.slots(config.subscriptions, accounts: config.accounts, now: now)
+            .filter { slot in !(slot.account?.botIds ?? slot.subscription.botIds ?? []).isEmpty }
+            .min { $0.target < $1.target }
+        return next.map { NextDelivery(subscriptionId: $0.subscription.id, accountId: $0.account?.id, at: $0.target) }
     }
 
     /// "后台运行中 · 下一期 18:00 科技数码", or the plain state.
@@ -613,7 +602,9 @@ extension AppModel {
         guard connection == .connected, !schedulingPaused, let next = nextDelivery(now: now) else { return text(statusTitle) }
         let clock = Stamp.clock(next.at)
         let when = calendar.isDate(next.at, inSameDayAs: now) ? clock : L10n.Settings.tomorrowAt(uiLanguage, ["time": clock])
-        return L10n.Settings.menuNext(uiLanguage, ["status": text(statusTitle), "time": when, "digest": digestTitle(next.subscriptionId)])
+        let account = next.accountId.flatMap { id in config?.accounts.first { $0.id == id } }
+        let name = account.map { "@" + $0.handle } ?? digestTitle(next.subscriptionId)
+        return L10n.Settings.menuNext(uiLanguage, ["status": text(statusTitle), "time": when, "digest": name])
     }
 
     /// The menu's items in order. Stopping the backend is not one of them (Settings, confirmed).

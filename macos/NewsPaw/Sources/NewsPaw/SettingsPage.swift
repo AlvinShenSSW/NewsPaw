@@ -320,7 +320,7 @@ private struct DataSection: View {
 }
 
 /// The list of what an import would change; it is the confirmation (title, impact, two buttons).
-private struct ImportPopover: View {
+struct ImportPopover: View {
     let model: AppModel
     let data: SettingsData
     let preview: ImportPreview
@@ -336,11 +336,19 @@ private struct ImportPopover: View {
                 Text(model.text(L10n.Settings.importNothing)).font(.callout)
             } else {
                 Text(model.text(L10n.Settings.importChanges)).font(.callout).foregroundStyle(.secondary)
-                ForEach(Array(preview.changes.enumerated()), id: \.offset) { _, change in
-                    ForEach(lines(change), id: \.self) { line in
-                        Label(line, systemImage: "circle.fill").labelStyle(Bullet())
+                // A long file scrolls here; the notes and buttons below always stay in view.
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(preview.changes.enumerated()), id: \.offset) { _, change in
+                            ForEach(lines(change), id: \.self) { line in
+                                Label(line, systemImage: "circle.fill").labelStyle(Bullet())
+                            }
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .frame(maxHeight: 320)
+                .fixedSize(horizontal: false, vertical: true)
             }
             Divider()
             VStack(alignment: .leading, spacing: 4) {

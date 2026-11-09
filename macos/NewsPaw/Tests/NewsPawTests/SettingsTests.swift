@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import Foundation
 import Testing
 
@@ -1095,4 +1097,53 @@ private func write(_ object: Any, in folder: URL) throws -> URL {
     }
     #expect(L10n.Settings.retentionNote.zh.contains("X 帖子正文"))
     #expect(L10n.Settings.cleanupFound.zh.contains("超过 24 小时的 X 帖子正文 {posts}"))
+}
+
+// MARK: - Review cycle 4
+
+@Test @MainActor func theNextDeliveryCountsASpecialXAccountsOwnTime() async throws {
+    let backend = SettingsBackend()
+    var subscriptions = backend.document["subscriptions"] as! [[String: Any]]
+    subscriptions[0]["enabled"] = true
+    subscriptions[0]["bot_ids"] = ["bot1"]
+    subscriptions[0]["timezone"] = "UTC"
+    subscriptions[0]["times"] = ["18:00"]
+    backend.document["subscriptions"] = subscriptions
+    backend.document["accounts"] = [
+        // Sent on its own at 12:00 to the digest's Bot (bot_ids null = the digest's).
+        ["id": "acc_special", "handle": "breaking", "priority": "special", "partition": "normal", "subscription_id": "sub_world",
+         "remote_id": "42", "times": ["12:00"], "bot_ids": NSNull()],
+        // Its own empty recipient list: nothing is sent at 11:45.
+        ["id": "acc_nobody", "handle": "quiet", "priority": "special", "partition": "normal", "subscription_id": "sub_world",
+         "remote_id": "43", "times": ["11:45"], "bot_ids": [String]()],
+        // Not yet resolved on X (no remote id): the scheduler has no scope for it.
+        ["id": "acc_unresolved", "handle": "later", "priority": "special", "partition": "normal", "subscription_id": "sub_world",
+         "remote_id": NSNull(), "times": ["11:40"], "bot_ids": NSNull()],
+    ]
+    let (model, cleanup) = try await connected(backend)
+    defer { cleanup() }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "UTC")!
+    let eleven = calendar.date(from: DateComponents(year: 2026, month: 11, day: 10, hour: 11))!
+    let next = try #require(model.nextDelivery(now: eleven))
+    #expect(next.at == calendar.date(from: DateComponents(year: 2026, month: 11, day: 10, hour: 12)))
+    #expect(next.subscriptionId == "sub_world" && next.accountId == "acc_special")
+    #expect(model.menuStatus(now: eleven).contains("@breaking"))
+    // Late in the day the account's next slot is tomorrow 12:00, after the digest's 18:00 today.
+    let afternoon = calendar.date(from: DateComponents(year: 2026, month: 11, day: 10, hour: 13))!
+    #expect(model.nextDelivery(now: afternoon)?.accountId == nil)
+}
+
+@Test @MainActor func aLongImportListScrollsAndKeepsItsButtonsInView() throws {
+    let model = AppModel(client: BackendClient { _, _ in Data() })
+    let digests = (0..<200).map { index in
+        DigestRef(id: "sub_\(index)", categoryId: "world", name: "A digest with a fairly long name number \(index) for the morning")
+    }
+    let preview = ImportPreview(portable: [:], digest: "d", revision: 1, requiresPairing: true,
+                                changes: [.digests(changed: digests, removed: digests)], changedSincePreview: true)
+    let host = NSHostingView(rootView: ImportPopover(model: model, data: SettingsData(), preview: preview))
+    #expect(host.fittingSize.height <= 640, "popover is \(host.fittingSize.height) pt tall")
+    // A short list stays compact.
+    let short = ImportPreview(portable: [:], digest: "d", revision: 1, requiresPairing: false, changes: [.timezone("UTC")], changedSincePreview: false)
+    #expect(NSHostingView(rootView: ImportPopover(model: model, data: SettingsData(), preview: short)).fittingSize.height < 300)
 }

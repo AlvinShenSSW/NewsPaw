@@ -320,25 +320,31 @@ final class OverviewData {
         return nil
     }
 
-    /// Today's slots that the scheduler has not created yet (it creates an occurrence only when
-    /// preparation starts), so the list shows the whole day. Mirrors the scheduler's scopes
-    /// (`_scopes`): each enabled digest, and each special X account with a remote id under an
-    /// enabled digest, on its own times or the digest's. A slot already present is not repeated.
-    nonisolated static func upcoming(_ subscriptions: [AppConfig.Subscription], accounts: [AppConfig.Account] = [],
-                                     existing: [Occurrence], now: Date) -> [Occurrence] {
-        let today = day(now)
-        func key(_ subscription: String, _ account: String?, _ instant: Date) -> String {
-            "\(subscription)|\(account ?? "")@\(Int(instant.timeIntervalSince1970))"
-        }
-        let taken = Set(existing.compactMap { row in row.targetAt.flatMap(date).map { key(row.subscriptionId, row.accountId, $0) } })
+    /// One scheduled slot after `now`, from yesterday to tomorrow in the scope's time zone.
+    struct ScheduledSlot {
+        let subscription: AppConfig.Subscription
+        let account: AppConfig.Account?
+        /// 1-based position among the scope's sorted times.
+        let slot: Int
+        let time: String
+        let civil: DateComponents
+        let zone: TimeZone
+        let target: Date
+    }
+
+    /// The scheduler's scopes (`_scopes`): each enabled digest, and each special X account with a
+    /// remote id under an enabled digest, on its own times or the digest's, in the digest's zone.
+    /// The overview's day list and the menu bar's next delivery both read slots from here.
+    nonisolated static func slots(_ subscriptions: [AppConfig.Subscription], accounts: [AppConfig.Account] = [],
+                                  now: Date) -> [ScheduledSlot] {
         let enabled = Dictionary(uniqueKeysWithValues: subscriptions.filter(\.enabled).map { ($0.id, $0) })
-        var scopes: [(subscription: AppConfig.Subscription, account: String?, times: [String])] =
+        var scopes: [(subscription: AppConfig.Subscription, account: AppConfig.Account?, times: [String])] =
             subscriptions.filter(\.enabled).map { ($0, nil, $0.times) }
         for account in accounts where account.priority == "special" && account.remoteId != nil {
             guard let subscription = account.subscriptionId.flatMap({ enabled[$0] }) else { continue }
-            scopes.append((subscription, account.id, account.times ?? subscription.times))
+            scopes.append((subscription, account, account.times ?? subscription.times))
         }
-        var result: [Occurrence] = []
+        var result: [ScheduledSlot] = []
         for scope in scopes {
             guard let zone = TimeZone(identifier: scope.subscription.timezone) else { continue }
             var calendar = Calendar(identifier: .gregorian)
@@ -350,21 +356,37 @@ final class OverviewData {
                     let parts = time.split(separator: ":").compactMap { Int($0) }
                     guard parts.count == 2,
                           let target = resolveWallTime(civil, hour: parts[0], minute: parts[1], calendar: calendar),
-                          target > now, day(target) == today,
-                          !taken.contains(key(scope.subscription.id, scope.account, target)) else { continue }
-                    let formatter = ISO8601DateFormatter()
-                    formatter.timeZone = zone
-                    let civilDate = String(format: "%04d-%02d-%02d", civil.year ?? 0, civil.month ?? 0, civil.day ?? 0)
-                    result.append(Occurrence(
-                        id: "upcoming.\(scope.subscription.id).\(scope.account ?? "-").\(civilDate).\(time)",
-                        subscriptionId: scope.subscription.id, accountId: scope.account,
-                        slot: slot + 1, civilDate: civilDate, targetAt: formatter.string(from: target), prepareAt: nil,
-                        status: "planned", reason: nil, jobId: nil, updatedAt: formatter.string(from: now)
-                    ))
+                          target > now else { continue }
+                    result.append(ScheduledSlot(subscription: scope.subscription, account: scope.account, slot: slot + 1,
+                                                time: time, civil: civil, zone: zone, target: target))
                 }
             }
         }
         return result
+    }
+
+    /// Today's slots that the scheduler has not created yet (it creates an occurrence only when
+    /// preparation starts), so the list shows the whole day. A slot already present is not repeated.
+    nonisolated static func upcoming(_ subscriptions: [AppConfig.Subscription], accounts: [AppConfig.Account] = [],
+                                     existing: [Occurrence], now: Date) -> [Occurrence] {
+        let today = day(now)
+        func key(_ subscription: String, _ account: String?, _ instant: Date) -> String {
+            "\(subscription)|\(account ?? "")@\(Int(instant.timeIntervalSince1970))"
+        }
+        let taken = Set(existing.compactMap { row in row.targetAt.flatMap(date).map { key(row.subscriptionId, row.accountId, $0) } })
+        return slots(subscriptions, accounts: accounts, now: now).compactMap { slot in
+            guard day(slot.target) == today,
+                  !taken.contains(key(slot.subscription.id, slot.account?.id, slot.target)) else { return nil }
+            let formatter = ISO8601DateFormatter()
+            formatter.timeZone = slot.zone
+            let civilDate = String(format: "%04d-%02d-%02d", slot.civil.year ?? 0, slot.civil.month ?? 0, slot.civil.day ?? 0)
+            return Occurrence(
+                id: "upcoming.\(slot.subscription.id).\(slot.account?.id ?? "-").\(civilDate).\(slot.time)",
+                subscriptionId: slot.subscription.id, accountId: slot.account?.id,
+                slot: slot.slot, civilDate: civilDate, targetAt: formatter.string(from: slot.target), prepareAt: nil,
+                status: "planned", reason: nil, jobId: nil, updatedAt: formatter.string(from: now)
+            )
+        }
     }
 
     /// Target-time order across time zones: compare instants, not the offset strings.
@@ -874,11 +896,16 @@ extension AppModel {
         }
         let siblings = config.subscriptions.filter { $0.categoryId == subscription.categoryId }.count
         if siblings > 1, let name = subscription.name, !name.isEmpty { return name }
+        return categoryTitle(subscription.categoryId)
+    }
+
+    /// A built-in category's name in the interface language.
+    func categoryTitle(_ categoryId: String) -> String {
         let names: [String: Phrase] = [
             "world": .world, "japan": .japan, "australia": .australia, "china": .china,
             "electronics": .electronics, "ai": .ai, "av": .av, "x": .x, "x_adult": .xAdult,
         ]
-        return names[subscription.categoryId].map(text) ?? subscription.categoryId
+        return names[categoryId].map(text) ?? categoryId
     }
 
     /// "→ @bot" for where an edition goes (`targetsLine(row.subscriptionId, accountId: row.accountId)`).

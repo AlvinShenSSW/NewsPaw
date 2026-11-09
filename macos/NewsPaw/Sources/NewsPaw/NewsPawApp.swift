@@ -44,7 +44,11 @@ struct NewsPawApp: App {
             }
             .frame(minWidth: 900, minHeight: 600)
             .preferredColorScheme(developmentAppearance)
-            .task { model.startMonitoring() }
+            .task {
+                model.startMonitoring()
+                // A backend stopped from Settings starts again when NewsPaw is opened (§8.2).
+                await model.resident.startIfStopped(model: model)
+            }
         }
         .defaultSize(width: 1180, height: 820)
         .commands {
@@ -83,34 +87,60 @@ struct NewsPawApp: App {
         MenuBarExtra {
             ServiceMenu(model: model)
         } label: {
-            Label("NewsPaw", systemImage: model.schedulingPaused ? "pawprint" : "pawprint.fill")
+            MenuBarLabel(model: model)
         }
     }
 }
 
-/// Menu bar item (interaction-spec §8.3). Stopping the backend lives in Settings, behind a
-/// confirmation, so it cannot be chosen by accident from here.
+/// The menu bar icon: an outlined paw and "paused" while every delivery is paused.
+private struct MenuBarLabel: View {
+    let model: AppModel
+
+    var body: some View {
+        if model.menuBarPaused {
+            HStack(spacing: 3) {
+                Image(systemName: "pawprint")
+                Text(model.text(L10n.Settings.menuPaused))
+            }
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("NewsPaw · " + model.text(L10n.Shell.paused))
+        } else {
+            Image(systemName: "pawprint.fill").accessibilityLabel("NewsPaw")
+        }
+    }
+}
+
+/// Menu bar item (interaction-spec §8.3), built from `AppModel.menuItems`. Stopping the backend
+/// lives in Settings, behind a confirmation, so it cannot be chosen by accident from here.
 private struct ServiceMenu: View {
     @Environment(\.openWindow) private var openWindow
     let model: AppModel
 
     var body: some View {
-        Text(model.text(model.statusTitle))
-        Divider()
-        Button(model.text(L10n.Shell.openNewsPaw)) {
-            openWindow(id: "settings")
-            NSApp.activate()
-        }
-        .keyboardShortcut("o")
-        if model.connection == .connected {
-            Button(model.text(model.schedulingPaused ? L10n.Shell.resumeAll : L10n.Shell.pauseAll)) {
-                Task { await model.setPaused(!model.schedulingPaused) }
+        ForEach(Array(model.menuItems().enumerated()), id: \.offset) { _, item in
+            switch item {
+            case let .status(line):
+                Text(line)
+            case .divider:
+                Divider()
+            case .open:
+                Button(model.text(L10n.Shell.openNewsPaw)) {
+                    openWindow(id: "settings")
+                    NSApp.activate()
+                }
+                .keyboardShortcut("o")
+            case let .pause(checked):
+                // A checkmark item: ✓ while paused; choosing it again resumes.
+                Toggle(model.text(L10n.Shell.pauseAll), isOn: Binding(
+                    get: { checked },
+                    set: { value in Task { await model.setPaused(value) } }
+                ))
+                .disabled(model.busy)
+            case .quit:
+                Button(model.text(L10n.Shell.quitWindow)) { NSApp.terminate(nil) }
+                    .keyboardShortcut("q")
             }
-            .disabled(model.busy)
         }
-        Divider()
-        Button(model.text(L10n.Shell.quitWindow)) { NSApp.terminate(nil) }
-            .keyboardShortcut("q")
     }
 }
 
@@ -127,7 +157,7 @@ struct MainWindow: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if let error = model.error {
-                        if error != .stopFailed, let failure = model.lastFailure {
+                        if let failure = model.lastFailure {
                             FailureNote(model: model, failure: failure, action: model.retryLast.map { retry in
                                 { Task { await retry() } }
                             })

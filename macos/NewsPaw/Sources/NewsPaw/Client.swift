@@ -66,6 +66,14 @@ enum Operation: String, CaseIterable, Sendable {
     case xVideoCandidates = "x.video.candidates"
     case xVideoInspect = "x.video.inspect"
     case xVideoStatus = "x.video.status"
+    case jobsList = "jobs.list"
+    case opsDiagnostics = "ops.diagnostics"
+    case opsSupportSnapshot = "ops.support_snapshot"
+    case opsExportSettings = "ops.export_settings"
+    case opsPreviewImport = "ops.preview_import"
+    case opsApplyImport = "ops.apply_import"
+    case opsVerifyBackup = "ops.verify_backup"
+    case opsCleanup = "ops.cleanup"
 
     /// Socket deadline for an operation name, the one place the app sets timeouts.
     /// Network-bound operations wait for their bounded backend work; everything else

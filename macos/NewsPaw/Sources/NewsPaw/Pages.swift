@@ -40,45 +40,6 @@ struct BackendUnavailable: View {
     }
 }
 
-/// Minimal overview until R08: what is still missing before the first digest.
-struct OverviewPage: View {
-    let model: AppModel
-
-    private func title(_ step: Readiness.Step) -> Words {
-        switch step.step {
-        case "bot": L10n.Setup.bot
-        case "model": L10n.Setup.model
-        case "digest": L10n.Setup.digest
-        default: L10n.Setup.delivery
-        }
-    }
-
-    var body: some View {
-        if let readiness = model.readiness {
-            if readiness.complete {
-                Label(model.text(L10n.Setup.done), systemImage: "checkmark.circle.fill")
-            } else {
-                let remaining = readiness.steps.filter { !$0.done }.count
-                Form {
-                    Section(L10n.Setup.title(model.uiLanguage, ["count": String(remaining)])) {
-                        ForEach(readiness.steps) { step in
-                            Label {
-                                Text(model.text(title(step)))
-                            } icon: {
-                                Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(step.done ? Color.green : Color.secondary)
-                            }
-                            .accessibilityValue(step.done ? "done" : "pending")
-                        }
-                    }
-                }
-                .formStyle(.grouped)
-                .scrollDisabled(true)
-            }
-        }
-    }
-}
-
 /// Category cards and sources, hosted until the digest page is redesigned (R09).
 struct DigestsPage: View {
     let model: AppModel

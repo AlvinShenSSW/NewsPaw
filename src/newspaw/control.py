@@ -14,10 +14,12 @@ import socket
 import stat
 import struct
 import sys
+import time
 from contextlib import suppress
 from dataclasses import asdict
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from uuid import uuid4
 
 from .budget import BudgetError, BudgetLedger
 from .connectors.web_search import WebSearch
@@ -51,6 +53,20 @@ from .x.video import Videos
 MAX_FRAME = 8 * 1024 * 1024
 AUTO_PROBE_HOLD = 10_000  # $0.01 for one short capability check (E10 contract §2).
 _LOG = logging.getLogger(__name__)
+
+# E10 R05: operations that may wait on the network. Each runs as a background task with this
+# server-side deadline (seconds); the connection waits at most REQUEST_WAIT, then the reply is a
+# pending handle that `requests.status` resolves.
+LONG_OPERATIONS = {
+    "sources.discover": 60,
+    "sources.preview": 60,
+    "bots.verify": 45,
+    "x.accounts.add": 60,
+    "x.video.inspect": 170,
+}
+REQUEST_WAIT = 1.5
+REQUEST_KEEP = 600  # A finished result waits this long (seconds) to be read.
+REQUEST_LIMIT = 64
 # Only a bounded ASCII name may become an error domain; anything else stays "protocol".
 _OP_NAME = re.compile(r"[a-z][a-z0-9_]{0,31}(?:\.[a-z][a-z0-9_]{0,31}){0,3}")
 OPERATIONS = {
@@ -62,6 +78,7 @@ OPERATIONS = {
     "ops.verify_backup": ({"name"}, set()),
     "ops.cleanup": (set(), {"apply", "limit"}),
     "service.status": (set(), set()),
+    "requests.status": ({"request"}, set()),
     "setup.readiness": (set(), set()),
     "service.stop": (set(), set()),
     "schedule.status": (set(), {"limit"}),
@@ -264,6 +281,7 @@ class ControlServer:
         self._socket_identity = None
         self._stop_requested = asyncio.Event()
         self._background = set()
+        self._requests = {}  # handle -> [op, task, finished_at]
 
     async def start(self):
         if self._server is not None:
@@ -381,6 +399,8 @@ class ControlServer:
             raise error
         if op == "service.stop":
             self._stop_requested.set()
+        if op == "requests.status":
+            return self._request_status(data["request"])
         if op in {"service.status", "service.stop"}:
             return {
                 "protocol_version": 1,
@@ -674,6 +694,61 @@ class ControlServer:
             return await manager.import_preferences(data["path"], data["revision"])
         return await manager.import_secrets(data["path"], data["revision"])
 
+    async def _long(self, data):
+        """Runs a network-bound operation in the background (E10 R05).
+
+        The caller gets the reply if it is ready within REQUEST_WAIT, otherwise a handle to read
+        later with `requests.status`; the operation keeps its own deadline either way.
+        """
+        limit = LONG_OPERATIONS[data["op"]]
+
+        async def run():
+            try:
+                async with asyncio.timeout(limit):
+                    return await self._dispatch(data)
+            except TimeoutError:
+                raise CredentialError("timeout") from None
+
+        task = asyncio.create_task(run())
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+        done, _ = await asyncio.wait({task}, timeout=REQUEST_WAIT)
+        if done:
+            return task.result()
+        self._prune_requests()
+        handle = "req_" + uuid4().hex
+        self._requests[handle] = [data["op"], task, None]
+        task.add_done_callback(lambda finished: self._request_finished(handle, finished))
+        return {"pending": True, "request": handle}
+
+    def _request_finished(self, handle, task):
+        if handle in self._requests:
+            self._requests[handle][2] = time.monotonic()
+        if not task.cancelled():
+            task.exception()  # Kept for `requests.status`; never logged as unretrieved.
+
+    def _prune_requests(self):
+        now = time.monotonic()
+        finished = sorted(
+            (entry[2], handle) for handle, entry in self._requests.items() if entry[2] is not None
+        )
+        for when, handle in finished:
+            if now - when > REQUEST_KEEP or len(self._requests) >= REQUEST_LIMIT:
+                del self._requests[handle]
+
+    def _request_status(self, handle):
+        self._prune_requests()
+        entry = self._requests.get(handle) if isinstance(handle, str) else None
+        if entry is None:
+            raise CredentialError("unknown_request")
+        _, task, _ = entry
+        if not task.done():
+            return {"pending": True, "request": handle}
+        del self._requests[handle]
+        if task.cancelled():
+            raise CredentialError("service_stopping")
+        return task.result()
+
     @staticmethod
     def _failure(code, domain, field=None):
         return {"ok": False, "error": code, "error_detail": detail(code, domain, field)}
@@ -704,7 +779,15 @@ class ControlServer:
                 ):
                     op = data["op"]
                     domain = op.split(".", 1)[0]
-                result = await self._dispatch(data)
+                    handle = data.get("request") if op == "requests.status" else None
+                    pending = self._requests.get(handle) if isinstance(handle, str) else None
+                    if pending is not None:
+                        # A deferred failure keeps the domain of the operation that produced it.
+                        domain = pending[0].split(".", 1)[0]
+                if op in LONG_OPERATIONS and not self._stop_requested.is_set():
+                    result = await self._long(data)
+                else:
+                    result = await self._dispatch(data)
                 response = {"ok": True, "result": result}
             except (CredentialError, BudgetError, ProviderError, TelegramError, SourceError) as exc:
                 response = self._failure(str(exc), domain, getattr(exc, "field", None))

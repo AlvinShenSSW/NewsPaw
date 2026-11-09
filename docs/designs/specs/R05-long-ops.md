@@ -1,0 +1,17 @@
+# R05 / #83 — long operations, one state vocabulary, policy export, config changes
+
+Depends on R02 (structured errors). Single-user local backend: no queue, no new process.
+
+## Frozen issue contract
+
+1. **Long operations answer quickly.** `sources.discover`, `sources.preview`, `bots.verify`, `x.accounts.add` — and `x.video.inspect` (owner of deferred R06-09) — never hold a control connection longer than ~2 s. The server runs the operation as a background task with a server-side deadline and waits up to 1.5 s: a finished operation replies as before; otherwise the reply is `{"pending": true, "request": "<handle>"}`. `requests.status(request)` returns the same pending shape, or the operation's final reply (result or structured error, with the operation's own domain). A task past its deadline finishes with `timeout`. Finished results are kept until read or for 10 minutes (at most 64); an unknown/expired handle is `unknown_request`. `close()` cancels pending tasks with the other background work.
+   The app's `BackendClient` follows a pending reply transparently (poll every 0.5 s up to the operation's deadline), so callers keep one `call`; the 155 s socket entry disappears and the 35 s socket clamp no longer limits anything (closes R06-09).
+2. **One state vocabulary.** `jobs.get`, `schedule.status` occurrences and `delivery.status` targets each gain a `state` field computed by one function (`vocabulary.py`) into the contract §3 vocabulary (waiting, preparing, late, delivered, partial, skipped, abandoned, model_unknown, delivery_unknown, held, failed, paused-is-client-side). Existing `status`/`reason` fields stay. Documented as a table in interaction-spec §2.
+3. **Policies travel with settings.** `ops.export_settings` includes `policies` = schedule, budget, newspaper + telegram media (media), x alert + x video (x). `ops.preview_import` validates them with each owner's validator and lists which differ from the instance's current values; `ops.apply_import` writes them in the same transaction as the configuration (scheduling stays disabled after a restore, as today). Older exports without `policies` still import (policies untouched).
+4. **Config changes since a revision.** Every configuration save also records the document in `app_configuration_history` (migration v25, last 50 revisions). `config.changes_since(revision)` returns the current revision and the changed paths since `revision`: top-level fields, and per collection item `{collection, id, fields}` (added/removed items marked). A revision older than the kept history returns `history_unavailable` (the app then reloads everything). Probe, pairing and verification bumps are covered because they save the configuration.
+
+Non-goals: outbox receipt keys; a message queue; persisting pending long operations across restarts (a restart answers `unknown_request`; the app retries the operation).
+
+## Verification
+
+pytest: fast/slow/failing/timeout long operations through a real control socket (slow source injected), handle expiry and cap, cancellation on close, domain preserved on a deferred error; vocabulary table for every scheduler/job/delivery status; export → preview → apply round trip with all six policies on a fresh instance, preview diff listing, legacy export without policies; changes_since for field, item add/remove, history gap. swift test: client follows a pending reply to its result and to its error; strict-pool run.

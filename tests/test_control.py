@@ -875,3 +875,129 @@ async def test_a_keychain_failure_rejects_the_save_without_rotating(control, mon
     server.credentials.backend.failure = None
     assert reply == {"ok": False, "error": "keychain_denied"}
     assert store.load_config() == before
+
+
+async def _slow(seconds, result=None, error=None):
+    await asyncio.sleep(seconds)
+    if error is not None:
+        raise error
+    return result
+
+
+async def _resolve(server, reply, *, polls=200):
+    while reply.get("ok") and isinstance(reply["result"], dict) and reply["result"].get("pending"):
+        polls -= 1
+        assert polls > 0
+        await asyncio.sleep(0.01)
+        reply = await raw_request(server, {"op": "requests.status", "request": reply["result"]["request"]})
+    return reply
+
+
+async def test_a_fast_long_operation_replies_directly(control, monkeypatch):
+    from newspaw import control as module
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 1)
+    monkeypatch.setattr(server.sources, "preview", lambda source_id: _slow(0, {"done": source_id}))
+    reply = await raw_request(server, {"op": "sources.preview", "source_id": "s1"})
+    assert reply == {"ok": True, "result": {"done": "s1"}}
+    assert server._requests == {}
+
+
+async def test_a_slow_long_operation_returns_a_handle_then_its_result(control, monkeypatch):
+    from newspaw import control as module
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.02)
+    monkeypatch.setattr(server.sources, "preview", lambda source_id: _slow(0.15, {"done": source_id}))
+    started = asyncio.get_running_loop().time()
+    first = await raw_request(server, {"op": "sources.preview", "source_id": "s1"})
+    # The connection is answered long before the operation finishes.
+    assert asyncio.get_running_loop().time() - started < 0.12
+    assert first["ok"] and first["result"]["pending"] is True
+    handle = first["result"]["request"]
+    assert await raw_request(server, {"op": "requests.status", "request": handle}) == first
+    assert await _resolve(server, first) == {"ok": True, "result": {"done": "s1"}}
+    # A result is handed out once.
+    gone = await raw_request(server, {"op": "requests.status", "request": handle})
+    assert gone["error"] == "unknown_request"
+
+
+async def test_a_deferred_failure_keeps_its_operations_domain(control, monkeypatch):
+    from newspaw import control as module
+    from newspaw.source_manager import SourceError
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.02)
+    monkeypatch.setattr(
+        server.sources, "discover", lambda url: _slow(0.1, error=SourceError("unsupported_source"))
+    )
+    first = await raw_request(server, {"op": "sources.discover", "url": "https://example.com"})
+    assert first["result"]["pending"] is True
+    final = await _resolve(server, first)
+    assert final == {
+        "ok": False,
+        "error": "unsupported_source",
+        "error_detail": {"code": "unsupported_source", "domain": "sources", "retryable": False},
+    }
+
+
+async def test_a_long_operation_past_its_deadline_finishes_as_timeout(control, monkeypatch):
+    from newspaw import control as module
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.02)
+    monkeypatch.setitem(module.LONG_OPERATIONS, "bots.verify", 0.1)
+    monkeypatch.setattr(server.bots, "verify", lambda bot_id, generation=None: _slow(5, {}))
+    first = await raw_request(server, {"op": "bots.verify", "bot_id": "b1"})
+    final = await _resolve(server, first)
+    assert final["error"] == "timeout"
+    assert final["error_detail"] == {"code": "timeout", "domain": "bots", "retryable": True}
+
+
+async def test_handles_expire_are_bounded_and_unknown_ones_are_refused(control, monkeypatch):
+    from newspaw import control as module
+
+    server, _ = control
+    assert (await raw_request(server, {"op": "requests.status", "request": "req_nope"}))[
+        "error"
+    ] == "unknown_request"
+    assert (await raw_request(server, {"op": "requests.status", "request": ["x"]}))[
+        "error"
+    ] == "unknown_request"
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.01)
+    monkeypatch.setattr(module, "REQUEST_LIMIT", 3)
+    monkeypatch.setattr(server.sources, "preview", lambda source_id: _slow(0.05, source_id))
+    handles = []
+    for index in range(5):
+        reply = await raw_request(server, {"op": "sources.preview", "source_id": f"s{index}"})
+        handles.append(reply["result"]["request"])
+        await asyncio.sleep(0.08)  # each finishes before the next starts
+    # Only the newest finished results are kept.
+    assert len(server._requests) <= 3
+    assert handles[-1] in server._requests and handles[0] not in server._requests
+    monkeypatch.setattr(module, "REQUEST_KEEP", 0)
+    assert (await raw_request(server, {"op": "requests.status", "request": handles[-1]}))[
+        "error"
+    ] == "unknown_request"
+
+
+async def test_close_cancels_a_pending_long_operation(control, monkeypatch):
+    from newspaw import control as module
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.01)
+    cancelled = asyncio.Event()
+
+    async def hang(url):
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    monkeypatch.setattr(server.sources, "discover", hang)
+    first = await raw_request(server, {"op": "sources.discover", "url": "https://example.com"})
+    assert first["result"]["pending"] is True
+    await server.close()
+    assert cancelled.is_set()

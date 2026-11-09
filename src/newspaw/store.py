@@ -129,6 +129,7 @@ class Store:
         path.touch(mode=0o600, exist_ok=True)
         path.chmod(0o600)
         self._db = sqlite3.connect(path, timeout=10)
+        self._write_depth = 0
         try:
             check_version(self._db)
             self._db.execute("PRAGMA foreign_keys=ON")
@@ -141,7 +142,23 @@ class Store:
 
     @contextmanager
     def _write(self):
+        if self._write_depth:
+            # A write inside another (e.g. a settings import applying each policy through its
+            # owner): a savepoint that commits or rolls back with the outer write (E10 R05).
+            self._db.execute("SAVEPOINT nested_write")
+            self._write_depth += 1
+            try:
+                yield
+                self._db.execute("RELEASE nested_write")
+            except BaseException:
+                self._db.execute("ROLLBACK TO nested_write")
+                self._db.execute("RELEASE nested_write")
+                raise
+            finally:
+                self._write_depth -= 1
+            return
         self._db.execute("BEGIN IMMEDIATE")
+        self._write_depth = 1
         try:
             check_version(self._db)
             yield
@@ -149,6 +166,8 @@ class Store:
         except BaseException:
             self._db.rollback()
             raise
+        finally:
+            self._write_depth = 0
 
     def load_config(self) -> tuple[int, dict]:
         check_version(self._db)

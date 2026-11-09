@@ -889,7 +889,9 @@ async def _resolve(server, reply, *, polls=200):
         polls -= 1
         assert polls > 0
         await asyncio.sleep(0.01)
-        reply = await raw_request(server, {"op": "requests.status", "request": reply["result"]["request"]})
+        reply = await raw_request(
+            server, {"op": "requests.status", "request": reply["result"]["request"]}
+        )
     return reply
 
 
@@ -909,7 +911,9 @@ async def test_a_slow_long_operation_returns_a_handle_then_its_result(control, m
 
     server, _ = control
     monkeypatch.setattr(module, "REQUEST_WAIT", 0.02)
-    monkeypatch.setattr(server.sources, "preview", lambda source_id: _slow(0.15, {"done": source_id}))
+    monkeypatch.setattr(
+        server.sources, "preview", lambda source_id: _slow(0.15, {"done": source_id})
+    )
     started = asyncio.get_running_loop().time()
     first = await raw_request(server, {"op": "sources.preview", "source_id": "s1"})
     # The connection is answered long before the operation finishes.
@@ -1001,3 +1005,113 @@ async def test_close_cancels_a_pending_long_operation(control, monkeypatch):
     assert first["result"]["pending"] is True
     await server.close()
     assert cancelled.is_set()
+
+
+@pytest.fixture
+async def two_controls():
+    with (
+        tempfile.TemporaryDirectory(prefix="np-") as a,
+        tempfile.TemporaryDirectory(prefix="np-") as b,
+    ):
+        servers = []
+        for folder in (a, b):
+            store = Store(Path(folder) / "state.db")
+            server = ControlServer(Path(folder), CredentialManager(store, FakeKeychain()))
+            await server.start()
+            servers.append((server, store))
+        yield servers
+        for server, store in servers:
+            await server.close()
+            store.close()
+
+
+def _bump(read, configure, change):
+    revision, settings = read()
+    configure(change(json.loads(json.dumps(settings))), revision)
+
+
+async def test_policies_travel_with_exported_settings(two_controls):
+    (source, _), (target, _) = two_controls
+    policies = source.operations.policies
+
+    def budget(document):
+        document["model"]["monthly_limit"] = 30_000_000
+        return document
+
+    def schedule(settings):
+        settings["holds"]["normal"] = 700_000
+        return settings
+
+    _bump(*policies["budget"], budget)
+    _bump(*policies["schedule"], schedule)
+    _bump(*policies["newspaper"], lambda settings: {**settings, "pages": 2})
+    _bump(*policies["x_video"], lambda settings: {**settings, "daily_limit": 5})
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    assert set(exported["policies"]) == {
+        "budget",
+        "schedule",
+        "newspaper",
+        "media",
+        "x_video",
+        "x_alerts",
+    }
+
+    preview = (await request(target, {"op": "ops.preview_import", "portable": exported}))["result"]
+    assert preview["changed_policies"] == ["budget", "newspaper", "schedule", "x_video"]
+    applied = await request(
+        target,
+        {
+            "op": "ops.apply_import",
+            "portable": exported,
+            "digest": preview["digest"],
+            "revision": preview["revision"],
+        },
+    )
+    assert applied["ok"], applied
+    after = target.operations._current_policies()
+    for name in ("budget", "newspaper", "media", "x_video", "x_alerts"):
+        assert after[name] == exported["policies"][name], name
+    # Scheduling stays off after a restore; everything else in its policy arrived.
+    assert after["schedule"] == {**exported["policies"]["schedule"], "enabled": False}
+
+
+async def test_a_refused_policy_rolls_the_whole_import_back(two_controls):
+    (source, _), (target, target_store) = two_controls
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    exported["policies"]["x_video"]["daily_limit"] = 999  # beyond the owner's limit of 20
+    preview = (await request(target, {"op": "ops.preview_import", "portable": exported}))["result"]
+    before = target_store.config_revision(), target.operations._current_policies()
+    refused = await request(
+        target,
+        {
+            "op": "ops.apply_import",
+            "portable": exported,
+            "digest": preview["digest"],
+            "revision": preview["revision"],
+        },
+    )
+    assert refused["ok"] is False and refused["error"] == "invalid_video_budget"
+    assert (target_store.config_revision(), target.operations._current_policies()) == before
+
+
+async def test_an_export_from_before_policies_still_imports(two_controls):
+    (source, _), (target, _) = two_controls
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    unknown = {**exported, "policies": {"telemetry": {}}}
+    assert (await request(target, {"op": "ops.preview_import", "portable": unknown}))[
+        "error"
+    ] == "invalid_portable_settings"
+    exported.pop("policies")
+    before = target.operations._current_policies()
+    preview = (await request(target, {"op": "ops.preview_import", "portable": exported}))["result"]
+    assert preview["changed_policies"] == []
+    applied = await request(
+        target,
+        {
+            "op": "ops.apply_import",
+            "portable": exported,
+            "digest": preview["digest"],
+            "revision": preview["revision"],
+        },
+    )
+    assert applied["ok"] and target.operations._current_policies() == before

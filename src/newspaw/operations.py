@@ -244,8 +244,10 @@ class Operations:
         clock=_now,
         purge_x=None,
         log_directory=None,
+        policies=None,
     ):
         self.store, self.db = store, store._db
+        self.policies = policies or {}
         self.directory = Path(directory)
         self.database_name = Path(self.db.execute("PRAGMA database_list").fetchone()[2]).name
         self.process_status, self.clock = process_status, clock
@@ -262,9 +264,14 @@ class Operations:
     def _columns(db, name):
         return {row[0] for row in db.execute("SELECT name FROM pragma_table_info(?)", (name,))}
 
+    def _current_policies(self):
+        return {name: read()[1] for name, (read, _) in self.policies.items()}
+
     def export_settings(self):
         config, omitted = _scrub_settings(self.store.load_config()[1])
-        portable = dict(format=_FORMAT, settings=config, omitted=omitted)
+        portable = dict(
+            format=_FORMAT, settings=config, omitted=omitted, policies=self._current_policies()
+        )
         if len(_json(portable).encode()) > _MAX_PORTABLE:
             raise OperationsError("settings_not_portable")
         return portable
@@ -327,7 +334,14 @@ class Operations:
     def _portable(self, value):
         if (
             not isinstance(value, dict)
-            or set(value) != {"format", "settings", "omitted"}
+            or not {"format", "settings", "omitted"}
+            <= set(value)
+            <= {
+                "format",
+                "settings",
+                "omitted",
+                "policies",
+            }
             or type(value["format"]) is not int
             or value["format"] != _FORMAT
             or not isinstance(value["settings"], dict)
@@ -368,9 +382,24 @@ class Operations:
             raise OperationsError("invalid_portable_settings") from None
         return normalized, dict(Counter(omitted) + Counter(additional))
 
+    def _portable_policies(self, value):
+        """Policies in an export (absent in exports before E10 R05). Each owner validates its
+        own on apply; here only the shape is checked. Scheduling stays off after a restore."""
+        policies = value.get("policies", {}) if isinstance(value, dict) else {}
+        if not isinstance(policies, dict) or set(policies) - set(self.policies):
+            raise OperationsError("invalid_portable_settings")
+        if any(not isinstance(item, dict) for item in policies.values()):
+            raise OperationsError("invalid_portable_settings")
+        policies = deepcopy(policies)
+        if "schedule" in policies:
+            policies["schedule"]["enabled"] = False
+        return policies
+
     def _preview(self, value):
         revision = self._fresh()
         settings, omitted = self._portable(value)
+        policies = self._portable_policies(value)
+        current = self._current_policies()
         summary = {
             name: len(settings[name])
             for name in (
@@ -382,12 +411,15 @@ class Operations:
                 "model_profiles",
             )
         }
-        digest = hashlib.sha256(_json([revision, settings, omitted]).encode()).hexdigest()
+        digest = hashlib.sha256(_json([revision, settings, omitted, policies]).encode()).hexdigest()
         return dict(
             revision=revision,
             digest=digest,
             settings=settings,
             omitted=omitted,
+            policies=policies,
+            # Which policies the import would change on this instance.
+            changed_policies=sorted(name for name in policies if policies[name] != current[name]),
             counts=summary,
             scheduling="disabled",
             requires_pairing=bool(settings["bots"]),
@@ -406,6 +438,11 @@ class Operations:
             if digest != preview["digest"] or revision != preview["revision"]:
                 raise OperationsError("preview_changed")
             updated = self.store._save_config_tx(preview["settings"], revision)
+            # Each owner validates and stores its policy against the configuration just saved;
+            # any refusal rolls the whole import back.
+            for name, (read, configure) in self.policies.items():
+                if name in preview["policies"]:
+                    configure(preview["policies"][name], read()[0])
         return {
             "revision": updated,
             "scheduling": "disabled",

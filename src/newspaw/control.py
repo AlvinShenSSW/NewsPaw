@@ -274,6 +274,7 @@ class ControlServer:
             ),
             purge_x=self.x_posts.purge_expired,
             log_directory=log_directory,
+            policies=self._policies(),
         )
         self._server = None
         self._lock_fd = None
@@ -282,6 +283,23 @@ class ControlServer:
         self._stop_requested = asyncio.Event()
         self._background = set()
         self._requests = {}  # handle -> [op, task, finished_at]
+
+    def _policies(self):
+        """Policies that travel with exported settings (E10 R05), in import order: each is
+        `(read() -> (revision, settings), configure(settings, revision))` on its owner."""
+        ledger = BudgetLedger(self.credentials.store)
+
+        def read(owner):
+            return lambda: (lambda p: (p["revision"], p["settings"]))(owner.policy())
+
+        return {
+            "budget": (ledger.policy, ledger.configure),
+            "schedule": (read(self.scheduler), self.scheduler.configure),
+            "newspaper": (read(self.newspapers), self.newspapers.configure),
+            "media": (read(self.media), self.media.configure),
+            "x_video": (read(self.videos), self.videos.configure),
+            "x_alerts": (lambda: self.alerts._policy()[:2], self.alerts.configure),
+        }
 
     async def start(self):
         if self._server is not None:

@@ -96,6 +96,8 @@ final class SettingsBackend {
     var logAges: [Int] = [10, 40, 100]
     var recordAges: [Int] = [3, 45]
     var jobs: [[String: Any]] = []
+    /// Runs while an `ops.cleanup` preview is being answered (the owner acts meanwhile).
+    var duringCleanupPreview: (@MainActor () -> Void)?
     var manifests: [String: [String: Any]] = [:]
     private(set) var requests: [[String: Any]] = []
 
@@ -228,6 +230,10 @@ final class SettingsBackend {
             let days = request["retention_days"] as? Int ?? 7
             guard [7, 30, 90].contains(days) else { return refuse("invalid_cleanup", "ops") }
             let apply = request["apply"] as? Bool ?? false
+            if !apply, let during = duringCleanupPreview {
+                duringCleanupPreview = nil
+                during()
+            }
             let logs = logAges.filter { $0 > days }.count
             let records = recordAges.filter { $0 > days }.count
             if apply {
@@ -1014,4 +1020,64 @@ private func write(_ object: Any, in folder: URL) throws -> URL {
     #expect(throws: BackendError(code: "file_write_failed")) {
         try SettingsData.writePrivately(Data("{}".utf8), to: folder.appendingPathComponent("missing/out.json"))
     }
+}
+
+// MARK: - Review cycle 2
+
+@Test @MainActor func aCleanupPreviewForAnEarlierRetentionChoiceIsNotShown() async throws {
+    let backend = SettingsBackend()
+    let (model, cleanup) = try await connected(backend)
+    defer { cleanup() }
+    let data = SettingsData()
+    // The owner switches 30 → 90 while the 30-day preview is on its way.
+    backend.duringCleanupPreview = {
+        model.setRetentionDays(90)
+        data.retentionChanged(to: 90)
+    }
+    await data.previewCleanup(model: model)
+    #expect(data.cleanup == nil && data.cleanupDays == nil)
+    await data.applyCleanup(model: model)
+    #expect(backend.calls("ops.cleanup").count == 1 && backend.logAges == [10, 40, 100])
+    // Asked again, the preview matches the picker.
+    await data.previewCleanup(model: model)
+    #expect(data.cleanupDays == 90 && backend.calls("ops.cleanup").last?["retention_days"] as? Int == 90)
+}
+
+@Test @MainActor func aFileThatOnlyChangesADigestTypeIsNotShownAsChangingNothing() async throws {
+    let backend = SettingsBackend()
+    let (model, cleanup) = try await connected(backend)
+    defer { cleanup() }
+    let folder = try temporaryFolder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    var settings = backend.document
+    var categories = settings["categories"] as! [[String: Any]]
+    categories[0]["partition"] = "adult"
+    categories[1]["name"] = "Machine learning"
+    settings["categories"] = categories
+    let panels = Panels()
+    panels.openURL = try write(["format": 1, "settings": settings, "omitted": [String: Int]()], in: folder)
+    let data = SettingsData(files: panels.files)
+    await data.chooseImport(model: model)
+    let changes = try #require(data.importPreview).changes
+    #expect(!changes.isEmpty)
+    #expect(changes.contains(.digestTypes(
+        changed: [
+            DigestTypeChange(categoryId: "world", name: nil, partition: "adult", digests: [DigestRef(id: "sub_world", categoryId: "world", name: nil)]),
+            DigestTypeChange(categoryId: "ai", name: "Machine learning", partition: nil, digests: [DigestRef(id: "sub_ai", categoryId: "ai", name: nil)]),
+        ],
+        added: 0, removed: 0
+    )))
+}
+
+@Test func anyOtherDifferenceIsListedRatherThanReportedAsNothing() {
+    let current: [String: Any] = ["schema_version": 4, "ui_locale": "en", "owner_id": NSNull(), "x_api": ["credential_ref": NSNull()],
+                                  "categories": [], "subscriptions": [], "sources": [], "accounts": [], "bots": [], "model_profiles": []]
+    #expect(ImportChange.list(current: current, incoming: current, omitted: [:]).isEmpty)
+    var incoming = current
+    incoming["x_api"] = ["credential_ref": "keychain:00000000-0000-0000-0000-000000000000"]
+    #expect(ImportChange.list(current: current, incoming: incoming, omitted: [:]) == [.other])
+    var future = current
+    future["schema_version"] = 5
+    future["new_setting"] = true
+    #expect(ImportChange.list(current: current, incoming: future, omitted: [:]) == [.other])
 }

@@ -731,6 +731,11 @@ enum L10n {
         static let added = Words("新增 {count}", "{count} added", "追加 {count}")
         static let removed = Words("移除 {count}", "{count} removed", "削除 {count}")
         static let changed = Words("改动 {count}", "{count} changed", "変更 {count}")
+        static let kindDigestTypes = Words("简报类型", "Digest types", "ダイジェストの種類")
+        static let typeLine = Words("{digests}：{parts}", "{digests}: {parts}", "{digests}：{parts}")
+        static let typeMoved = Words("改为{partition}", "now {partition}", "{partition}に変更")
+        static let typeRenamed = Words("名称改为 {name}", "renamed to {name}", "名前を {name} に変更")
+        static let otherChanges = Words("还有其他设置会改动。", "Other settings would change too.", "ほかの設定も変わります。")
         static let collectionLine = Words("{kind}：{parts}", "{kind}: {parts}", "{kind}：{parts}")
         static let omittedLine = Words("有 {count} 项含 Key 或私有地址，没有带过来。", "{count} entries with keys or private addresses were left out.", "キーや非公開アドレスを含む {count} 件は持ち込みません。")
 
@@ -788,6 +793,7 @@ enum L10n {
             copied, imported, importTitle, importChanges, importNothing, importAgain, importStaysOff, importPairing,
             importKeys, importButton, changeUI, changeNews, changeTimezone, changeDigests, removeDigests, kindSources,
             kindBots, kindAccounts, kindModels, added, removed, changed, collectionLine, omittedLine,
+            kindDigestTypes, typeLine, typeMoved, typeRenamed, otherChanges,
             advanced, advancedSummary, advancedNote, diagnostics, diagnosticsNote, copy, saveFile, snapshot, snapshotNote,
             backupCheck, backupCheckNote, chooseBackup, backupOK, cleanup, previewCleanup, cleanupNothing, cleanupFound,
             cleanupDeferred, cleanButton, cleanTitle, cleanBody, cleanConfirm, cleaned, jobs, jobsLoad, jobsEmpty,

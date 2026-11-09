@@ -107,6 +107,15 @@ struct DigestRef: Equatable {
     let name: String?
 }
 
+/// A built-in digest type (`categories`) the file renames or moves to the other partition,
+/// with the digests of that type, so the change is named by what the owner knows.
+struct DigestTypeChange: Equatable {
+    let categoryId: String
+    let name: String?
+    let partition: String?
+    let digests: [DigestRef]
+}
+
 /// One line of "what would change" before an import (interaction-spec §8.4).
 enum ImportChange: Equatable {
     enum Kind: Equatable, CaseIterable {
@@ -139,6 +148,16 @@ enum ImportChange: Equatable {
     case collection(Kind, added: Int, removed: Int, changed: Int)
     /// Entries the export or the backend left out (keys, private addresses).
     case omitted(Int)
+    /// Digest types (`categories`) renamed, moved between ordinary and adult, added or removed.
+    case digestTypes(changed: [DigestTypeChange], added: Int, removed: Int)
+    /// Any other stored difference: never reported as "changes nothing".
+    case other
+
+    /// Every top-level field the lines above describe; a difference anywhere else is `.other`.
+    private static let described: Set<String> = [
+        "ui_locale", "news_output_locale", "timezone", "subscriptions", "categories",
+        "sources", "bots", "accounts", "model_profiles",
+    ]
 
     /// Compares the current configuration with the settings the backend would store.
     static func list(current: [String: Any], incoming: [String: Any], omitted: [String: Int]) -> [ImportChange] {
@@ -166,9 +185,38 @@ enum ImportChange: Equatable {
                 changes.append(.collection(kind, added: added, removed: result.removed.count, changed: result.changed))
             }
         }
+        let types = compare(current["categories"], incoming["categories"])
+        if !types.edited.isEmpty || !types.removed.isEmpty {
+            let before = Dictionary((current["categories"] as? [[String: Any]] ?? []).compactMap { entry in
+                (entry["id"] as? String).map { ($0, entry) }
+            }, uniquingKeysWith: { first, _ in first })
+            let digestsByType = Dictionary(grouping: (incoming["subscriptions"] as? [[String: Any]] ?? []).map(ref), by: \.categoryId)
+            let changed: [DigestTypeChange] = types.edited.compactMap { entry in
+                guard let id = entry["id"] as? String, let old = before[id] else { return nil }
+                let name = entry["name"] as? String
+                let partition = entry["partition"] as? String
+                return DigestTypeChange(
+                    categoryId: id,
+                    name: name != old["name"] as? String ? name : nil,
+                    partition: partition != old["partition"] as? String ? partition : nil,
+                    digests: digestsByType[id] ?? []
+                )
+            }
+            changes.append(.digestTypes(changed: changed, added: types.edited.count - types.changed, removed: types.removed.count))
+        }
         let left = omitted.values.reduce(0, +)
         if left > 0 { changes.append(.omitted(left)) }
+        let others = Set(current.keys).union(incoming.keys).subtracting(described)
+        if others.contains(where: { key in !same(current[key], incoming[key]) }) { changes.append(.other) }
         return changes
+    }
+
+    private static func same(_ a: Any?, _ b: Any?) -> Bool {
+        switch (a, b) {
+        case (nil, nil): true
+        case let (a?, b?): NSDictionary(dictionary: ["v": a]).isEqual(to: ["v": b])
+        default: false
+        }
     }
 
     /// Records by `id`: added or edited ones in the incoming order (with how many were edited),
@@ -454,8 +502,13 @@ final class SettingsData {
     func previewCleanup(model: AppModel) async {
         await run("cleanup", model: model) {
             cleaned = nil
+            cleanup = nil
+            cleanupDays = nil
             let days = model.retentionDays
-            cleanup = try BackendRPC.decode(await model.client.call(.opsCleanup, ["retention_days": days]))
+            let summary: CleanupSummary = try BackendRPC.decode(await model.client.call(.opsCleanup, ["retention_days": days]))
+            // The picker changed while this was counted: it no longer describes the choice shown.
+            guard model.retentionDays == days else { return }
+            cleanup = summary
             cleanupDays = days
         }
     }

@@ -399,6 +399,27 @@ private struct ImportPopover: View {
             return [L10n.Settings.collectionLine(language, ["kind": kind.title(language), "parts": parts.joined(separator: " · ")])]
         case let .omitted(count):
             return [L10n.Settings.omittedLine(language, ["count": String(count)])]
+        case let .digestTypes(changed, added, removed):
+            var result = changed.map { change -> String in
+                let names = change.digests.isEmpty
+                    ? (change.name ?? model.categoryTitle(change.categoryId))
+                    : change.digests.map(title).joined(separator: "、")
+                var parts: [String] = []
+                if let partition = change.partition {
+                    parts.append(L10n.Settings.typeMoved(language, ["partition": model.text(partition == "adult" ? .adult : .ordinary)]))
+                }
+                if let name = change.name { parts.append(L10n.Settings.typeRenamed(language, ["name": name])) }
+                return L10n.Settings.typeLine(language, ["digests": names, "parts": parts.joined(separator: " · ")])
+            }
+            let counts = [(L10n.Settings.added, added), (L10n.Settings.removed, removed)]
+                .filter { $0.1 > 0 }
+                .map { $0.0(language, ["count": String($0.1)]) }
+            if !counts.isEmpty {
+                result.append(L10n.Settings.collectionLine(language, ["kind": L10n.Settings.kindDigestTypes(language), "parts": counts.joined(separator: " · ")]))
+            }
+            return result
+        case .other:
+            return [L10n.Settings.otherChanges(language)]
         }
     }
 }

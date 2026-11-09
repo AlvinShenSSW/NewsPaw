@@ -45,8 +45,16 @@ struct AppConfig: Decodable {
     let modelProfiles: [Profile]
     let bots: [ConfiguredBot]?
     let groupStyles: [String: String]?
+    let xApi: XConnection?
 
-    struct ConfiguredBot: Decodable { let id: String; let adultAllowed: Bool }
+    struct ConfiguredBot: Decodable {
+        let id: String
+        let adultAllowed: Bool
+        let name: String?
+        let credentialRef: String?
+    }
+
+    struct XConnection: Decodable { let credentialRef: String? }
 
     func displaySubscription(for categoryId: String) -> Subscription? {
         let matching = subscriptions.filter { $0.categoryId == categoryId }
@@ -149,7 +157,6 @@ final class AppModel {
     private(set) var lastFailure: BackendError?
     /// Repeats the shell action that produced `lastFailure` (language or pause).
     @ObservationIgnored private(set) var retryLast: (@MainActor () async -> Void)?
-    var pendingModelProbes: [String: ModelProbeRequest] = [:]
     private(set) var uiLanguage: AppLanguage
     private(set) var busy = false
     private(set) var error: Phrase?

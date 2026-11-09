@@ -213,46 +213,6 @@ final class FixtureSocket {
     #expect(try await replies.value.count == script.count)
 }
 
-@Test @MainActor func modelProbeRetainsReceiptIdentityWhenStatusRefreshDisconnects() async throws {
-    let fixture = try FixtureSocket()
-    let running = #"{"ok":true,"result":{"protocol_version":1,"state":"running"}}"# + "\n"
-    let configuration = #"""
-    {"ok":true,"result":{"revision":2,"document":{"ui_locale":"en","news_output_locale":"ja","categories":[],"subscriptions":[],"sources":[],"accounts":[],"model_profiles":[{"id":"normal_primary","partition":"normal","role":"primary","provider":"openai","base_url":"https://example.com/v1","model":"fixture","capabilities":["text"]}]}}}
-    """# + "\n"
-    let emptyBots = #"{"ok":true,"result":[]}"# + "\n"
-    let verified = #"{"ok":true,"result":{"status":"verified"}}"# + "\n"
-    let statuses = #"{"ok":true,"result":{"text":{"state":"verified"}}}"# + "\n"
-    let replies = fixture.serve([
-        running, configuration, emptyBots,
-        verified, configuration, #"{"ok":true"#,
-        verified, configuration, statuses,
-    ])
-    let name = "NewsPawTests-" + UUID().uuidString
-    let defaults = try #require(UserDefaults(suiteName: name))
-    defer { defaults.removePersistentDomain(forName: name) }
-    let model = AppModel(socket: LocalSocket(path: fixture.path), defaults: defaults)
-    await model.refresh()
-    #expect(model.connection == .connected)
-    let profile = "normal_primary"
-    let identity = ["openai", "https://example.com/v1", "fixture"]
-    let request = ModelProbeRequest(revision: 1, capability: "text", units: 25)
-    model.pendingModelProbes[profile] = request
-    await #expect(throws: SocketFailure.invalidFrame) {
-        _ = try await model.resolveModelProbe(request, profileId: profile, identity: identity)
-    }
-    let retry = try #require(model.pendingModelProbes[profile])
-    #expect(retry.id == request.id)
-    let result = try await model.resolveModelProbe(retry, profileId: profile, identity: identity)
-    #expect(result.revision == 2)
-    #expect(result.result.status == "verified")
-    #expect(result.statuses["text"]?.state == "verified")
-    #expect(model.pendingModelProbes[profile] == nil)
-    let requests = try await replies.value
-    let first = try JSONSerialization.jsonObject(with: Data(requests[3].utf8)) as? NSDictionary
-    let second = try JSONSerialization.jsonObject(with: Data(requests[6].utf8)) as? NSDictionary
-    #expect(first != nil && first == second)
-}
-
 @Test(.enabled(if: ProcessInfo.processInfo.environment["NEWSPAW_UI_TEST_SOCKET"] != nil))
 @MainActor func realIsolatedBackendLanguageAndStop() async throws {
     let path = try #require(ProcessInfo.processInfo.environment["NEWSPAW_UI_TEST_SOCKET"])

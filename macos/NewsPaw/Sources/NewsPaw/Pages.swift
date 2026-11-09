@@ -15,7 +15,7 @@ struct PageContent: View {
             case .overview: OverviewPage(model: model)
             case .digests: if let config = model.config { DigestsPage(model: model, config: config) }
             case .xAccounts: XWorkspace(model: model)
-            case .connect: if let config = model.config { ConnectPage(model: model, config: config) }
+            case .connect: ConnectPage(model: model)
             case .settings: SettingsPage(model: model)
             }
         }
@@ -56,20 +56,6 @@ struct CategorySymbol: View {
                 "ai": "brain.head.profile", "x": "at", "x_adult": "at",
             ][id] ?? "newspaper")
             .font(.system(size: 16))
-        }
-    }
-}
-
-/// Bots, models and spending, hosted until the connections page is redesigned (R10).
-struct ConnectPage: View {
-    let model: AppModel
-    let config: AppConfig
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            BotWorkspace(model: model)
-            ModelWorkspace(model: model, config: config)
-            RuntimePolicyWorkspace(model: model)
         }
     }
 }

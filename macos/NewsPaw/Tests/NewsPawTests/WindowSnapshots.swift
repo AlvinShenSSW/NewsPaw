@@ -46,6 +46,15 @@ private let environment = ProcessInfo.processInfo.environment
                     let image = try await render(open, appearance: appearance)
                     try image.write(to: folder.appendingPathComponent("digests-open-\(language.rawValue)-\(suffix).png"))
                 }
+                // The connections page again with the add-Bot form and the extras open.
+                if page == .connect {
+                    defaults.set(true, forKey: "connect.extrasOpen")
+                    let open = ScrollView { ConnectPage(model: model, adding: true).padding(24) }
+                        .background(Color(nsColor: .windowBackgroundColor))
+                        .defaultAppStorage(defaults)
+                    let image = try await render(open, appearance: appearance, size: NSSize(width: 980, height: 1500))
+                    try image.write(to: folder.appendingPathComponent("connect-open-\(language.rawValue)-\(suffix).png"))
+                }
             }
         }
     }

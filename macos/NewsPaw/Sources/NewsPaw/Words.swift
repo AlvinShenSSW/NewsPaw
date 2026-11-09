@@ -357,6 +357,166 @@ enum L10n {
             unfiled, fileThem, fileTitle, botPaused, adultOnly, notAdult, mutedFocus,
         ]
     }
+
+    enum Connect {
+        static let intro = Words("Telegram 机器人、模型和费用上限。所有 Key 只存在这台 Mac 的钥匙串里。", "Telegram bots, models and spending limits. Every key stays in this Mac's keychain.", "Telegram ボット、モデル、費用の上限。キーはすべてこの Mac のキーチェーンにだけ保存されます。")
+        static let todayAt = Words("今天 {time}", "today {time}", "今日 {time}")
+        static let yesterdayAt = Words("昨天 {time}", "yesterday {time}", "昨日 {time}")
+        static let save = Words("保存", "Save", "保存")
+        static let saving = Words("正在保存…", "Saving…", "保存中…")
+        static let botsTitle = Words("Telegram 机器人", "Telegram Bots", "Telegram ボット")
+        static let addBot = Words("添加机器人", "Add Bot", "ボットを追加")
+        static let noBots = Words("还没有机器人。添加一个后，简报才有地方发。", "No bots yet. Add one so your digests have somewhere to go.", "まだボットがありません。追加するとダイジェストの送り先ができます。")
+        static let receives = Words("接收 {count} 份简报：{names}", "Receives {count} digests: {names}", "{count} 件のダイジェストを受信：{names}")
+        static let receivesNone = Words("还没有简报发到这里", "No digest is sent here yet", "まだどのダイジェストも送られていません")
+        static let rename = Words("改名", "Rename", "名前を変更")
+        static let statusUnverified = Words("未验证", "Not checked", "未確認")
+        static let statusWaiting = Words("等待配对", "Waiting to pair", "ペアリング待ち")
+        static let statusPaired = Words("已配对", "Paired", "ペアリング済み")
+        static let statusPaused = Words("已暂停", "Paused", "一時停止中")
+        static let statusUnpaired = Words("已解除配对", "Unpaired", "ペアリング解除済み")
+        static let statusProblem = Words("需要处理", "Needs attention", "対応が必要")
+        static let sendTest = Words("发测试消息", "Send Test Message", "テストメッセージを送信")
+        static let sending = Words("正在发送…", "Sending…", "送信中…")
+        static let testSent = Words("已发到你的 Telegram · {time}", "Sent to your Telegram · {time}", "Telegram に送信しました · {time}")
+        static let testUnknown = Words("Telegram 没有回应，测试消息可能已发出，也可能没有。", "Telegram did not answer; the test message may or may not have arrived.", "Telegram から応答がなく、テストメッセージが届いたか分かりません。")
+        static let checkResult = Words("检查结果", "Check Result", "結果を確認")
+        static let testStillUnknown = Words("还是不能确定。看看 Telegram 里有没有收到；没有就再发一次。", "Still unclear. See whether it arrived in Telegram; if not, send another.", "まだ分かりません。Telegram に届いたか確認し、届いていなければもう一度送ってください。")
+        static let sendAgain = Words("再发一次", "Send Again", "もう一度送信")
+        static let more = Words("更多", "More", "その他")
+        static let pause = Words("暂停", "Pause", "一時停止")
+        static let resume = Words("恢复", "Resume", "再開")
+        static let replaceToken = Words("更换 Token…", "Replace Token…", "トークンを変更…")
+        static let unpair = Words("解除配对…", "Unpair…", "ペアリングを解除…")
+        static let delete = Words("删除机器人…", "Delete Bot…", "ボットを削除…")
+        static let unpairTitle = Words("解除和 {name} 的配对？", "Unpair {name}?", "{name} のペアリングを解除しますか？")
+        static let unpairBody = Words("解除后它不会再收到简报，直到重新配对。", "It receives no digests until you pair it again.", "再びペアリングするまでダイジェストは届きません。")
+        static let unpairButton = Words("解除配对", "Unpair", "ペアリングを解除")
+        static let deleteTitle = Words("删除 {name}？", "Delete {name}?", "{name} を削除しますか？")
+        static let deleteButton = Words("删除", "Delete", "削除")
+        static let deleteNone = Words("没有简报发到它，删除不影响推送。", "No digest is sent to it; deleting changes no delivery.", "どのダイジェストも送られていないため、削除しても配信は変わりません。")
+        static let deleteAffects = Words("这些简报将不再发到它：{names}。", "These digests will no longer go to it: {names}.", "これらのダイジェストは送られなくなります：{names}。")
+        static let deleteNoTarget = Words("其中 {names} 将没有机器人可发（无目标），需要在「简报」里重新选。", "{names} will have no bot left to send to; choose another under Digests.", "{names} は送り先がなくなります（送信先なし）。「ダイジェスト」で選び直してください。")
+        static let deleteAccounts = Words("单独发的 X 账号也会受影响：{names}。", "Separately sent X accounts are affected too: {names}.", "個別配信の X アカウントも影響を受けます：{names}。")
+        static let needsPairing = Words("还没和你的 Telegram 账号配对。生成配对码，在 Telegram 里发给它。", "Not paired with your Telegram account yet. Make a pairing code and send it to the bot in Telegram.", "まだ Telegram アカウントとペアリングしていません。ペアリングコードを作り、Telegram でボットに送ってください。")
+        static let unpairedNote = Words("已解除配对。重新配对后才会收到简报。", "Unpaired. It receives digests again once paired.", "ペアリングを解除しました。再びペアリングするとダイジェストが届きます。")
+        static let makeCode = Words("生成配对码", "Make Pairing Code", "ペアリングコードを作成")
+        static let pairAgain = Words("重新配对", "Pair Again", "再ペアリング")
+        static let adultAllowed = Words("允许接收成人内容", "Allow adult content", "成人向けコンテンツを受け取る")
+        static let adultOnNote = Words("AV 产业、X 成人博主只能发到开了这项的机器人。", "AV industry and adult X creators go only to bots with this on.", "AV 業界と成人向け X 投稿者は、これがオンのボットにだけ送られます。")
+        static let adultOffNote = Words("关闭时，成人简报不能选这个机器人。", "While off, adult digests cannot choose this bot.", "オフの間、成人向けダイジェストはこのボットを選べません。")
+        static let adultOffTitle = Words("{name} 不再接收成人内容？", "Stop adult content for {name}?", "{name} で成人向けコンテンツを受け取らないようにしますか？")
+        static let adultOffBody = Words("这些成人简报会不再发到它：{names}。", "These adult digests will no longer go to it: {names}.", "これらの成人向けダイジェストは送られなくなります：{names}。")
+        static let adultOffButton = Words("不再接收", "Stop Adult Content", "受け取らない")
+        static let modelsTitle = Words("模型", "Models", "モデル")
+        static let modelsNote = Words("普通内容和成人内容分开用不同的模型；一边出错不会拿另一边兜底。", "Ordinary and adult content use separate models; one never stands in for the other.", "一般と成人向けは別のモデルを使い、片方の失敗をもう片方で補うことはありません。")
+        static let normalGroup = Words("普通内容", "Ordinary content", "一般コンテンツ")
+        static let adultGroup = Words("成人内容", "Adult content", "成人向けコンテンツ")
+        static let backupPrefix = Words("备用：", "Backup: ", "予備：")
+        static let xiaomi = Words("小米", "Xiaomi", "Xiaomi（小米）")
+        static let capText = Words("文字", "Text", "テキスト")
+        static let capVision = Words("视觉", "Vision", "画像認識")
+        static let capImage = Words("生图", "Images", "画像生成")
+        static let capSpeech = Words("转写", "Transcription", "文字起こし")
+        static let verifiedAt = Words("验证于{when}", "checked {when}", "{when} に確認")
+        static let statusUsable = Words("可用", "Working", "利用可")
+        static let statusNoKey = Words("未填 Key", "No key", "キー未入力")
+        static let statusUntested = Words("还没测试", "Not checked yet", "未確認")
+        static let statusKeyInvalid = Words("Key 无效", "Key rejected", "キーが無効")
+        static let statusUnavailable = Words("暂时不可用", "Temporarily unavailable", "一時的に利用不可")
+        static let statusCooldown = Words("暂停使用到 {time}", "Paused until {time}", "{time} まで休止")
+        static let statusBudget = Words("本月预算不够", "Over this month's budget", "今月の予算不足")
+        static let statusUncheckable = Words("暂不能测试", "Cannot be checked", "確認できません")
+        static let statusFailed = Words("未通过", "Check failed", "確認できず")
+        static let statusKeychain = Words("读不到 Key", "Key unreadable", "キーを読めません")
+        static let statusSaved = Words("已填 Key", "Key saved", "キー保存済み")
+        static let backupOptional = Words("可选。主模型出错时接手，没填就跳过那一期。", "Optional. Takes over when the main model fails; without it that edition is skipped.", "任意。メインモデルが失敗したときに引き継ぎます。なければその回はスキップします。")
+        static let primaryNeedsKey = Words("填入 Key 后才能写简报。", "Digests are written only once this key is entered.", "このキーを入力するとダイジェストを作成できます。")
+        static let rejected401 = Words("Key 被拒绝（401）。请到 {provider} 控制台确认 Key 没有过期，再重新填入。", "The key was rejected (401). Check in the {provider} console that it has not expired, then enter it again.", "キーが拒否されました（401）。{provider} のコンソールで期限切れでないか確認し、もう一度入力してください。")
+        static let rejected403 = Words("Key 没有使用这个模型的权限（403）。请到 {provider} 控制台检查权限，再重新填入。", "The key may not use this model (403). Check its permissions in the {provider} console, then enter it again.", "このキーにはこのモデルの権限がありません（403）。{provider} のコンソールで権限を確認し、もう一度入力してください。")
+        static let rejectedFormat = Words("这个 Key 的格式不对。复制完整 Key 再重新填入。", "This key is not in a valid form. Copy the full key and enter it again.", "キーの形式が正しくありません。完全なキーをコピーして入力し直してください。")
+        static let rateLimited = Words("{provider} 说请求太频繁（429）。稍等一分钟再试。", "{provider} says there are too many requests (429). Wait a minute, then check again.", "{provider} からリクエストが多すぎると返されました（429）。1 分ほど待って再確認してください。")
+        static let quotaExhausted = Words("{provider} 账户的额度用完了（429）。充值后再测一次。", "The {provider} account is out of credit (429). Add credit, then check again.", "{provider} アカウントの残高がありません（429）。チャージしてから再確認してください。")
+        static let unreachable = Words("连不上 {provider}。检查网络后再测一次。", "Could not reach {provider}. Check the network, then check again.", "{provider} に接続できませんでした。ネットワークを確認してから再確認してください。")
+        static let providerError = Words("{provider} 出错了。稍后再测一次。", "{provider} had an error. Check again later.", "{provider} でエラーが起きました。あとで再確認してください。")
+        static let noReply = Words("{provider} 没有及时回应（等了 90 秒）。这次调用可能已经扣费，确认后再试一次。", "{provider} did not answer in time (90 seconds). The call may have been charged; confirm before trying again.", "{provider} が時間内に応答しませんでした（90 秒）。課金された可能性があるため、確認してから再試行してください。")
+        static let interrupted = Words("测试被中断了，可能已经扣费。确认后再试一次。", "The check was interrupted and may have been charged. Confirm before trying again.", "確認が中断され、課金された可能性があります。確認してから再試行してください。")
+        static let cooldownNote = Words("连续失败 {count} 次，{time} 后自动恢复。", "Failed {count} times in a row; resumes by itself at {time}.", "{count} 回続けて失敗しました。{time} に自動で再開します。")
+        static let enterKey = Words("填入 Key", "Enter Key", "キーを入力")
+        static let replaceKey = Words("更换 Key", "Replace Key", "キーを変更")
+        static let reenterKey = Words("重新填入", "Enter Again", "入力し直す")
+        static let checkAndRetry = Words("检查并重试", "Check and Retry", "確認して再試行")
+        static let retryTitle = Words("再测一次？", "Check again?", "もう一度確認しますか？")
+        static let retryBody = Words("上一次可能已经扣费，再测一次可能再扣一次（最多 $0.01）。", "The last check may have been charged; checking again may charge once more (up to $0.01).", "前回の確認は課金された可能性があり、もう一度確認するとさらに課金されることがあります（最大 $0.01）。")
+        static let keyFor = Words("{model} 的 Key", "Key for {model}", "{model} のキー")
+        static let keySaveNote = Words("保存后会自动发一条很短的测试消息，看 Key 能不能用。", "Saving sends one very short test request to see whether the key works.", "保存すると、キーが使えるか短いテストを 1 回送ります。")
+        static let extrasTitle = Words("附加能力：AI 报纸生图 · 语音转写 · 自定义 API 地址", "Extras: AI newspaper images · voice transcription · custom API address", "追加機能：AI 新聞画像 · 音声の文字起こし · カスタム API アドレス")
+        static let extrasNote = Words("开启某项附加输出时，NewsPaw 会在那时验证对应能力，不需要提前逐项测试。", "When you turn an extra on, NewsPaw checks that capability then; nothing needs checking in advance.", "追加機能をオンにしたときに NewsPaw がその機能を確認します。事前の確認は不要です。")
+        static let newspaper = Words("AI 报纸生图", "AI newspaper images", "AI 新聞画像")
+        static let newspaperNote = Words("把一期简报排成报纸图片；生图费用另计。", "Lays out an edition as a newspaper image; image generation costs extra.", "ダイジェストを新聞風の画像にします。画像生成の費用は別にかかります。")
+        static let transcription = Words("语音转写", "Voice transcription", "音声の文字起こし")
+        static let transcriptionNote = Words("在 Telegram 里发给机器人的语音会先转成文字。", "Voice messages you send the bot in Telegram are turned into text first.", "Telegram でボットに送った音声メッセージを先に文字にします。")
+        static let useModel = Words("使用", "Use", "使用モデル")
+        static let off = Words("已关闭", "Off", "オフ")
+        static let checkingCapability = Words("等待检查", "Waiting for check", "確認待ち")
+        static let needsOpenAI = Words("需要一个使用 OpenAI 官方地址（api.openai.com）的普通内容模型；可以在下面的「自定义 API 地址」里改。", "Needs an ordinary-content model on OpenAI's own address (api.openai.com); change one under Custom API address below.", "OpenAI 公式アドレス（api.openai.com）を使う一般向けモデルが必要です。下の「カスタム API アドレス」で変更できます。")
+        static let endpoint = Words("自定义 API 地址", "Custom API address", "カスタム API アドレス")
+        static let endpointNote = Words("兼容 OpenAI 的地址和模型 ID。保存后会用已保存的 Key 再测一次。", "An OpenAI-compatible address and model ID. Saving checks the saved key again.", "OpenAI 互換のアドレスとモデル ID。保存すると保存済みのキーで再確認します。")
+        static let spendingTitle = Words("费用", "Spending", "費用")
+        static let monthly = Words("每月最多花", "Monthly limit", "毎月の上限")
+        static let monthlyNote = Words("到上限后停发并在概览里提醒；留空表示不限。", "At the limit deliveries stop and the overview tells you; leave empty for no limit.", "上限に達すると配信を止めて概要でお知らせします。空欄なら上限なし。")
+        static let perMonth = Words("/ 月", "/ month", "/ 月")
+        static let noLimit = Words("不限", "No limit", "上限なし")
+        static let usedLine = Words("本月已用 {amount}", "Used this month {amount}", "今月の使用額 {amount}")
+        static let since = Words("{date} 起", "Since {date}", "{date} から")
+        static let dailyReads = Words("X 每天最多读取", "X reads per day", "X の 1 日の読み取り上限")
+        static let dailyNote = Words("普通和成人账号合计；今天已读 {count} 条。", "Ordinary and adult accounts together; {count} read today.", "一般と成人向けアカウントの合計。今日は {count} 件読み取りました。")
+        static let perDay = Words("条 / 天", "reads / day", "件 / 日")
+        static let otherLimits = Words("其他上限", "Other limits", "その他の上限")
+        static let imageLimit = Words("生图每月最多 {amount}", "Images up to {amount} a month", "画像生成は毎月 {amount} まで")
+        static let providerLimit = Words("{provider} 每月最多 {amount}", "{provider} up to {amount} a month", "{provider} は毎月 {amount} まで")
+        static let normalReadsLimit = Words("X 普通账号每天最多 {count} 条", "Ordinary X accounts up to {count} reads a day", "一般の X アカウントは 1 日 {count} 件まで")
+        static let adultReadsLimit = Words("X 成人账号每天最多 {count} 条", "Adult X accounts up to {count} reads a day", "成人向け X アカウントは 1 日 {count} 件まで")
+        static let accountLimit = Words("{account} 每天最多 {count} 条", "{account} up to {count} reads a day", "{account} は 1 日 {count} 件まで")
+        static let readToday = Words("今天已读 {count} 条", "{count} read today", "今日 {count} 件")
+        static let limitReached = Words("已到上限", "Limit reached", "上限に達しました")
+        static let clear = Words("清除", "Clear", "解除")
+        static let pricingNote = Words("用量按模型返回的 token 数计价；没有价格信息的模型会标为「未计价」，不会因此停发。", "Usage is priced from the tokens each model reports; a model without a price is marked Unpriced and never stops deliveries.", "使用量はモデルが返すトークン数で計算します。価格情報のないモデルは「未計価」と表示され、それを理由に配信は止まりません。")
+        static let unpricedCount = Words("本月有 {count} 次调用未计价。", "{count} calls this month are unpriced.", "今月は {count} 回の呼び出しが未計価です。")
+        static let opText = Words("文字", "Text", "テキスト")
+        static let opImage = Words("报纸", "Newspaper", "新聞")
+        static let opVision = Words("看图", "Images read", "画像認識")
+        static let opSpeech = Words("转写", "Transcription", "文字起こし")
+        static let opSearch = Words("搜索", "Search", "検索")
+        static let opOther = Words("其他", "Other", "その他")
+        static let xTitle = Words("X 数据连接", "X data connection", "X データ接続")
+        static let xReadsFine = Words("读取账号正常", "Reading accounts works", "アカウントを読み取れています")
+        static let xNeedsKey = Words("填入后才能读取 X 账号。", "X accounts can be read once a key is entered.", "キーを入力すると X アカウントを読み取れます。")
+        static let xUnused = Words("添加或验证 X 账号时会用到它。", "Used when X accounts are added or checked.", "X アカウントの追加や確認で使います。")
+        static let xRejected = Words("X 拒绝了这个 Key（401）。到 X 开发者后台确认后重新填入。", "X rejected this key (401). Check it in the X developer portal, then enter it again.", "X がこのキーを拒否しました（401）。X の開発者ポータルで確認してから入力し直してください。")
+        static let xForbidden = Words("这个 Key 没有读取权限（403）。到 X 开发者后台检查权限后重新填入。", "This key may not read accounts (403). Check its permissions in the X developer portal, then enter it again.", "このキーには読み取り権限がありません（403）。X の開発者ポータルで権限を確認してから入力し直してください。")
+        static let xKeyNote = Words("Key 只存在这台 Mac 的钥匙串里。", "The key is kept only in this Mac's keychain.", "キーはこの Mac のキーチェーンにだけ保存されます。")
+
+        static let all: [Words] = [
+            intro, todayAt, yesterdayAt, save, saving, botsTitle, addBot, noBots, receives, receivesNone, rename,
+            statusUnverified, statusWaiting, statusPaired, statusPaused, statusUnpaired, statusProblem, sendTest,
+            sending, testSent, testUnknown, checkResult, testStillUnknown, sendAgain, more, pause, resume,
+            replaceToken, unpair, delete, unpairTitle, unpairBody, unpairButton, deleteTitle, deleteButton,
+            deleteNone, deleteAffects, deleteNoTarget, deleteAccounts, needsPairing, unpairedNote, makeCode,
+            pairAgain, adultAllowed, adultOnNote, adultOffNote, adultOffTitle, adultOffBody, adultOffButton,
+            modelsTitle, modelsNote, normalGroup, adultGroup, backupPrefix, xiaomi, capText, capVision, capImage,
+            capSpeech, verifiedAt, statusUsable, statusNoKey, statusUntested, statusKeyInvalid, statusUnavailable,
+            statusCooldown, statusBudget, statusUncheckable, statusFailed, statusKeychain, statusSaved,
+            backupOptional, primaryNeedsKey, rejected401, rejected403, rejectedFormat, rateLimited, quotaExhausted,
+            unreachable, providerError, noReply, interrupted, cooldownNote, enterKey, replaceKey, reenterKey,
+            checkAndRetry, retryTitle, retryBody, keyFor, keySaveNote, extrasTitle, extrasNote, newspaper,
+            newspaperNote, transcription, transcriptionNote, useModel, off, checkingCapability, needsOpenAI, endpoint,
+            endpointNote, spendingTitle, monthly, monthlyNote, perMonth, noLimit, usedLine, since, dailyReads,
+            dailyNote, perDay, otherLimits, imageLimit, providerLimit, normalReadsLimit, adultReadsLimit,
+            accountLimit, readToday, limitReached, clear, pricingNote, unpricedCount, opText, opImage, opVision,
+            opSpeech, opSearch, opOther, xTitle, xReadsFine, xNeedsKey, xUnused, xRejected, xForbidden, xKeyNote,
+        ]
+    }
 }
 
 /// "What happened. What to do." for a backend code (interaction-spec §2.4).
@@ -451,6 +611,38 @@ enum FailureCopy {
         "schedule_changed": Entry(message: Words("发送时间改了，这期按新时间处理。", "The time changed, so this edition follows the new time.", "時刻が変わったため、この回は新しい時刻で扱います。"), action: nil),
         "digest_not_enabled": Entry(message: Words("这份简报还没开启，开启后才能试发。", "Turn this digest on before sending one now.", "今すぐ送るには先にダイジェストをオンにしてください。"), action: nil),
         "scheduling_paused": Entry(message: Words("全部推送已暂停，恢复后才能发送。", "All deliveries are paused; resume them first.", "すべての配信が一時停止中です。先に再開してください。"), action: nil),
+        "invalid_amount": Entry(message: Words("请填整数美元，或留空表示不限。", "Enter a whole number of dollars, or leave it empty for no limit.", "ドルの整数を入力するか、空欄にして上限なしにしてください。"), action: nil),
+        "invalid_count": Entry(message: Words("请填整数条数，或留空表示不限。", "Enter a whole number of reads, or leave it empty for no limit.", "件数を整数で入力するか、空欄にして上限なしにしてください。"), action: nil),
+        "send_lane_busy": Entry(message: Words("这个机器人正在发别的消息，稍后再发测试消息。", "This bot is busy sending another message; send the test a little later.", "このボットは別のメッセージを送信中です。少ししてからテストを送ってください。"), action: L10n.Shell.retry),
+        "binding_not_ready": Entry(message: Words("这个机器人还没配对好（或已暂停），配对后才能发送。", "This bot is not paired (or is paused); pair it before sending.", "このボットはまだペアリングされていない（または一時停止中）ため送信できません。"), action: nil),
+        "request_id_conflict": Entry(message: Words("这条测试消息的记录对不上，请重新发一次。", "This test message's record does not match; send a new one.", "このテストメッセージの記録が一致しません。もう一度送ってください。"), action: L10n.Shell.retry),
+        "invalid_test_request": Entry(message: Words("这条测试消息的请求无效，请重新发一次。", "This test request was not valid; send a new one.", "このテストの要求は無効です。もう一度送ってください。"), action: L10n.Shell.retry),
+        "payload_rejected": Entry(message: Words("Telegram 不接受这条消息的内容。", "Telegram did not accept this message's content.", "Telegram がこのメッセージの内容を受け付けませんでした。"), action: nil),
+        "rate_limit_invalid": Entry(message: Words("Telegram 要求放慢，但没说等多久。稍等一会儿再试。", "Telegram asked to slow down without saying for how long; try again shortly.", "Telegram から待機を求められましたが期間が不明です。少し待って再試行してください。"), action: L10n.Shell.retry),
+        "invalid_bot_action": Entry(message: Words("这个机器人现在不能这样操作。", "This bot cannot do that right now.", "このボットは今その操作ができません。"), action: nil),
+        "missing_bot": Entry(message: Words("这个机器人已经不存在了（可能在别处删除了）。", "This bot no longer exists (it may have been removed elsewhere).", "このボットはもうありません（別の場所で削除された可能性があります）。"), action: nil),
+        "adult_permission_required": Entry(message: Words("这个机器人没有允许接收成人内容，先在「接入」里打开。", "This bot does not allow adult content; turn it on in Connect first.", "このボットは成人向けコンテンツを受け取れません。先に「接続」でオンにしてください。"), action: nil),
+        "invalid_adult_permission": Entry(message: Words("没能改这个机器人的成人内容设置。", "The adult content setting of this bot could not be changed.", "このボットの成人向け設定を変更できませんでした。"), action: L10n.Shell.retry),
+        "keychain_denied": Entry(message: Words("钥匙串拒绝了 NewsPaw 读取 Key。在钥匙串访问里允许后再试。", "The keychain refused to let NewsPaw read the key. Allow it in Keychain Access, then try again.", "キーチェーンが NewsPaw の読み取りを拒否しました。キーチェーンアクセスで許可してから再試行してください。"), action: L10n.Shell.retry),
+        "keychain_unavailable": Entry(message: Words("现在用不了钥匙串。确认已登录这台 Mac 后再试。", "The keychain cannot be used right now. Make sure you are logged in to this Mac, then try again.", "今はキーチェーンを使えません。この Mac にログインしているか確認してから再試行してください。"), action: L10n.Shell.retry),
+        "keychain_verification_failed": Entry(message: Words("Key 存进钥匙串后读回来不一致，没有保存。再试一次。", "The key read back from the keychain did not match, so nothing was saved. Try again.", "キーチェーンから読み戻したキーが一致せず、保存されませんでした。もう一度お試しください。"), action: L10n.Shell.retry),
+        "configuration_commit_failed": Entry(message: Words("保存没有完成，原来的设置保留着。再试一次。", "Saving did not finish; the earlier settings are kept. Try again.", "保存が完了せず、元の設定のままです。もう一度お試しください。"), action: L10n.Shell.retry),
+        "configuration_operation_failed": Entry(message: Words("保存没有完成，原来的设置保留着。再试一次。", "Saving did not finish; the earlier settings are kept. Try again.", "保存が完了せず、元の設定のままです。もう一度お試しください。"), action: L10n.Shell.retry),
+        "missing_credential_entity": Entry(message: Words("要保存 Key 的模型或机器人已经不存在了。", "The model or bot this key belongs to no longer exists.", "このキーの保存先のモデルまたはボットはもうありません。"), action: nil),
+        "invalid_credential_entity": Entry(message: Words("这个 Key 不能存到这里。", "This key cannot be stored here.", "このキーはここに保存できません。"), action: nil),
+        "protected_configuration_field": Entry(message: Words("Key 和配对状态只能在「接入」里改。", "Keys and pairing can only be changed in Connect.", "キーとペアリングは「接続」でのみ変更できます。"), action: nil),
+        "invalid_policy": Entry(message: Words("这个上限后台不接受，没有保存。", "The backend did not accept this limit; nothing was saved.", "この上限はバックエンドに受け付けられず、保存されませんでした。"), action: nil),
+        "invalid_units": Entry(message: Words("金额或条数超出了范围，没有保存。", "The amount or count is out of range; nothing was saved.", "金額または件数が範囲外のため保存されませんでした。"), action: nil),
+        "invalid_newspaper_settings": Entry(message: Words("这个模型不能用来生成报纸图，没有保存。", "This model cannot make newspaper images; nothing was saved.", "このモデルでは新聞画像を作れないため、保存されませんでした。"), action: nil),
+        "invalid_media_settings": Entry(message: Words("这个模型不能用来转写语音，没有保存。", "This model cannot transcribe voice; nothing was saved.", "このモデルでは音声を文字起こしできないため、保存されませんでした。"), action: nil),
+        "quota_exhausted": Entry(message: Words("模型服务的账户额度用完了。充值后再试。", "The model service account is out of credit. Add credit, then try again.", "モデルサービスの残高がありません。チャージしてから再試行してください。"), action: L10n.Shell.retry),
+        "transport_rejected": Entry(message: Words("这个模型服务的地址不安全，没有连接。", "This model service address is not safe to connect to.", "このモデルサービスのアドレスは安全でないため接続しませんでした。"), action: nil),
+        "missing_profile": Entry(message: Words("这个模型设置已经不存在了。", "This model setting no longer exists.", "このモデル設定はもうありません。"), action: nil),
+        "image_capability_unavailable": Entry(message: Words("这个模型不能生成图片（只支持 OpenAI 官方地址）。", "This model cannot make images (only OpenAI's own address can).", "このモデルは画像を作れません（OpenAI 公式アドレスのみ対応）。"), action: nil),
+        "stt_capability_unavailable": Entry(message: Words("这个模型不能转写语音（只支持 OpenAI 官方地址）。", "This model cannot transcribe voice (only OpenAI's own address can).", "このモデルは音声を文字起こしできません（OpenAI 公式アドレスのみ対応）。"), action: nil),
+        "malformed_identity": Entry(message: Words("Telegram 返回的机器人信息不对，确认这是机器人的 Token。", "Telegram's reply about the bot was not valid; make sure this is a bot token.", "Telegram から返ったボット情報が正しくありません。ボットのトークンか確認してください。"), action: L10n.Shell.retry),
+        "malformed_response": Entry(message: Words("Telegram 的回应看不懂，稍后再验证。", "Telegram's reply was not understood; check again later.", "Telegram の応答を解釈できません。あとで再確認してください。"), action: L10n.Shell.retry),
+        "inbox_full": Entry(message: Words("这个机器人收到的消息太多还没处理完，稍后会继续。", "This bot has too many unprocessed messages; it continues shortly.", "このボットの未処理メッセージが多すぎます。少しすると続きを処理します。"), action: nil),
         "internal_error": Entry(message: Words("NewsPaw 内部出了问题，已记录在日志里。", "NewsPaw hit an internal problem and logged it.", "NewsPaw 内部で問題が起き、ログに記録しました。"), action: nil),
     ]
 

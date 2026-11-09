@@ -239,7 +239,7 @@ private final class Box<Value>: @unchecked Sendable {
     await model.refresh()
     await model.setPaused(true)
     #expect(model.retryLast != nil)
-    // A result the view cannot decode (the bots.status path in BotWorkspace).
+    // A result a legacy view cannot decode.
     let reply = try await model.request("bots.status", fields: ["bot_id": "b"])
     #expect(throws: BackendFailure.invalidReply) { let _: BotStatus = try model.decodeReply(reply) }
     #expect(model.lastFailure?.code == "invalid_reply" && model.retryLast == nil)

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<title>NewsPaw 简报</title>
+</head>
+<body style="padding:40px;display:flex;justify-content:center">
+
+<style>
+body{margin:0;background:#D8D8DD;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Helvetica Neue",sans-serif;color:#1D1D1F;font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+a{color:#0A60FF;text-decoration:none}a:hover{color:#0040C0}
+.win{width:1180px;height:1040px;border-radius:10px;overflow:hidden;background:#F2F2F5;box-shadow:0 20px 50px rgba(0,0,0,.28),0 0 0 1px rgba(0,0,0,.18);display:flex}
+.sb{width:200px;background:#E7E7EA;border-right:1px solid #D4D4D8;display:flex;flex-direction:column;flex:0 0 auto}
+.lights{display:flex;gap:8px;padding:18px 16px 10px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.nav{display:flex;flex-direction:column;gap:2px;padding:6px 10px}
+.nav a{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:6px;color:#1D1D1F;font-size:13px}
+.nav a.on{background:#0A60FF;color:#fff}
+.ico{width:20px;height:20px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;color:#fff}
+.ico svg{width:13px;height:13px}
+.content{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+.tb{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid #D9D9DE;background:#F7F7F9;flex:0 0 auto}
+.tb h1{font-size:15px;font-weight:700;margin:0}
+.body{flex:1 1 auto;overflow:auto;padding:20px 24px 28px}
+.grp{background:#fff;border:1px solid #DCDCE0;border-radius:8px;overflow:hidden}
+.r{display:flex;align-items:center;gap:12px;min-height:40px;padding:8px 14px;border-top:1px solid #E9E9EC}
+.r:first-child{border-top:0}
+.cap{color:#6B6B70;font-size:11px}
+.btn{height:24px;padding:0 12px;border-radius:6px;border:1px solid #C6C6CB;background:linear-gradient(#fff,#F6F6F8);font:inherit;font-size:13px;color:#1D1D1F;display:inline-flex;align-items:center;gap:6px;cursor:pointer;box-shadow:0 .5px 1px rgba(0,0,0,.08);white-space:nowrap}
+.btn.def{background:linear-gradient(#2F7BFF,#0A60FF);border-color:#0A5BE8;color:#fff}
+.btn.lnk{border:0;background:none;box-shadow:none;color:#0A60FF;padding:0 4px}
+.pop{height:24px;padding:0 4px 0 10px;border-radius:6px;border:1px solid #C6C6CB;background:linear-gradient(#fff,#F6F6F8);font:inherit;font-size:13px;display:inline-flex;align-items:center;gap:8px;box-shadow:0 .5px 1px rgba(0,0,0,.08);white-space:nowrap;color:#1D1D1F;cursor:pointer}
+.pop b{width:16px;height:16px;border-radius:4px;background:#0A60FF;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+.pop b svg{width:10px;height:10px}
+.sw{width:38px;height:22px;border-radius:11px;background:#0A60FF;border:0;position:relative;padding:0;flex:0 0 auto;cursor:pointer}
+.sw::after{content:"";position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.sw.off{background:#D8D8DC}.sw.off::after{right:auto;left:2px}
+.sw:disabled{opacity:.45}
+.seg{display:inline-flex;background:#E3E3E7;border-radius:7px;padding:2px;gap:2px}
+.seg button{height:20px;padding:0 10px;border:0;border-radius:5px;background:transparent;font:inherit;font-size:12px;color:#1D1D1F;cursor:pointer;white-space:nowrap}
+.seg button.on{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.12);font-weight:600}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap}
+.st i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.g{background:#28A745}.y{background:#E5A100}.rd{background:#E0352B}.gr{background:#A9A9AE}
+.tag{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:9px;font-size:11px;font-weight:600;background:#F1E6FF;color:#6B21A8}
+.tile{width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex:0 0 auto;background:#E3EDFF;color:#0A60FF}
+.tile.ad{background:#F1E6FF;color:#6B21A8}.tile.off{background:#ECECEF;color:#8E8E93}
+.lab{width:88px;flex:0 0 auto;font-weight:500;text-align:right;color:#3A3A3F}
+.stp{display:inline-flex;align-items:center;border:1px solid #C6C6CB;border-radius:6px;background:#fff;height:24px;overflow:hidden;box-shadow:inset 0 1px 1px rgba(0,0,0,.05)}
+.stp span{padding:0 8px;font-variant-numeric:tabular-nums}
+.stp b{display:flex;flex-direction:column;border-left:1px solid #C6C6CB;height:100%}
+.stp b i{display:block;width:16px;height:11px;border-bottom:1px solid #C6C6CB;background:linear-gradient(#fff,#F0F0F3)}
+.stp b i:last-child{border-bottom:0}
+.stp .x{width:20px;height:100%;border:0;border-left:1px solid #C6C6CB;background:#fff;color:#6B6B70;cursor:pointer;font:inherit}
+input[type=checkbox]{width:14px;height:14px;margin:0;accent-color:#0A60FF}
+input[type=range]{accent-color:#0A60FF}
+details summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:600}
+details summary::-webkit-details-marker{display:none}
+details summary::before{content:"";width:0;height:0;border-left:6px solid #6B6B70;border-top:4px solid transparent;border-bottom:4px solid transparent;margin-left:2px}
+details[open] summary::before{transform:rotate(90deg)}
+</style>
+
+
+<div class="win">
+  <aside class="sb">
+    <div class="lights" aria-hidden="true"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i></div>
+    <div style="display:flex;align-items:center;gap:9px;padding:4px 16px 12px">
+      <img src="../../../assets/branding/newspaw-logo-preview.jpg" alt="NewsPaw" style="width:34px;height:34px;border-radius:8px;object-fit:cover;background:#fff">
+      <div><div style="font-weight:700;font-size:13px">NewsPaw</div><div class="cap">你的新闻伙伴</div></div>
+    </div>
+    <nav class="nav" aria-label="主导航">
+      <a href="overview.html"><span class="ico" style="background:#0A60FF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span>概览</a>
+      <a href="digests.html" class="on" aria-current="page"><span class="ico" style="background:#F08C00;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h6M7 13h10M7 17h10"/></svg></span>简报</a>
+      <a href="x-accounts.html"><span class="ico" style="background:#1D1D1F"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M5 4l14 16M19 4L5 20"/></svg></span>X 账号</a>
+      <a href="connect.html"><span class="ico" style="background:#28A745"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>接入</a>
+      <a href="settings.html"><span class="ico" style="background:#8E8E93"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></span>设置</a>
+    </nav>
+    <div style="flex:1 1 auto"></div>
+    <div style="padding:10px 16px 14px"><div class="st"><i class="g"></i>后台运行中</div><div class="cap" style="margin-top:2px">登录时自动启动 · 今天 07:02</div></div>
+  </aside>
+
+  <div class="content">
+    <div class="tb"><h1>简报</h1><div style="display:flex;gap:8px"><button class="btn" type="button">导入 OPML…</button><button class="btn" type="button">添加来源…</button></div></div>
+    <div class="body">
+      <div class="cap" style="margin:-6px 0 14px 2px;font-size:12px">每个分类一份简报。开关、时间、发给谁、用哪些来源，都在这里直接改，改完即存。</div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+
+        <div class="grp"><div class="r" style="min-height:44px"><span class="tile">世</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">世界新闻</div><div class="cap">每天 08:00 → @alvin_news_bot · 3 个来源 · 下一期 明天 08:00</div></div><span class="st"><i class="g"></i>今天已发送</span><button class="sw" type="button" role="switch" aria-checked="true" aria-label="开启世界新闻"></button><button class="btn lnk" type="button">编辑</button></div></div>
+
+        <div class="grp" style="border-color:#0A60FF;box-shadow:0 0 0 3px rgba(10,96,255,.10)" aria-label="日本简报（展开）">
+          <div class="r" style="min-height:48px;background:#F7F9FF"><span class="tile">日</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:600">日本</div><div class="cap">国内与娱乐 · 普通内容</div></div><span class="st"><i class="g"></i>今天已发送 08:31</span><button class="sw" type="button" role="switch" aria-checked="true" aria-label="开启日本"></button><button class="btn lnk" type="button">收起</button></div>
+
+          <div class="r"><span class="lab">发送时间</span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;flex:1 1 auto">
+              <span class="stp" aria-label="时间 08:30"><span>08 : 30</span><b aria-hidden="true"><i></i><i></i></b><button class="x" type="button" aria-label="删除 08:30">×</button></span>
+              <span class="stp" aria-label="时间 18:30"><span>18 : 30</span><b aria-hidden="true"><i></i><i></i></b><button class="x" type="button" aria-label="删除 18:30">×</button></span>
+              <button class="btn" type="button">＋ 加一个时间</button>
+              <span class="cap" style="margin-left:auto">时区 Asia/Tokyo（跟随系统）· <a href="#tz">改</a></span>
+            </div>
+          </div>
+          <div class="r"><span class="lab">发送到</span>
+            <div style="display:flex;gap:16px;align-items:center;flex:1 1 auto;flex-wrap:wrap">
+              <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" checked>@alvin_news_bot</label>
+              <label style="display:flex;align-items:center;gap:6px;color:#8E8E93"><input type="checkbox" disabled>@alvin_adult_bot <span class="cap">成人专用</span></label>
+              <span class="cap" style="margin-left:auto">只有一个可用机器人时会自动选中。</span>
+            </div>
+          </div>
+          <div class="r"><span class="lab">每期条数</span>
+            <button class="pop" type="button">最多 5 条<b aria-hidden="true"><svg viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="1.6"><path d="M2.5 4l2.5-2.5L7.5 4M2.5 6l2.5 2.5L7.5 6"/></svg></b></button>
+            <span class="cap">新闻不够时少发，不凑数。</span>
+            <span class="lab" style="margin-left:24px">样式</span>
+            <div class="seg" role="group" aria-label="样式"><button type="button" class="on">文字 + 链接</button><button type="button">带来源配图</button><button type="button">AI 报纸</button></div>
+          </div>
+          <div class="r"><span class="lab">国内 / 娱乐</span>
+            <div style="display:flex;align-items:center;gap:10px;flex:1 1 auto;max-width:520px"><span class="cap" style="width:52px">国内 70%</span><input type="range" min="0" max="100" value="70" style="flex:1 1 auto" aria-label="国内与娱乐比例"><span class="cap" style="width:52px;text-align:right">娱乐 30%</span></div>
+          </div>
+
+          <div class="r" style="min-height:36px;background:#FAFAFB;justify-content:space-between"><span style="font-weight:600">来源 <span class="cap">3 个启用</span></span><div style="display:flex;gap:4px"><button class="btn lnk" type="button">从推荐目录添加</button><button class="btn lnk" type="button">粘贴链接</button></div></div>
+          <div class="r"><input type="checkbox" checked id="s1" aria-label="启用 NHK 总合"><span class="tile">N</span><div style="flex:1 1 auto;min-width:0"><label for="s1" style="font-weight:500">NHK 总合</label><div class="cap">RSS · 国内 · 最后一条 08-08</div></div><span class="st"><i class="y"></i>3 个月没更新</span><button class="btn lnk" type="button">试采集</button></div>
+          <div class="r"><input type="checkbox" checked id="s2" aria-label="启用 Yahoo Japan 新闻"><span class="tile">Y</span><div style="flex:1 1 auto;min-width:0"><label for="s2" style="font-weight:500">Yahoo! Japan 新闻</label><div class="cap">网页 · 国内 + 娱乐 · 今天 08:20 有新条目</div></div><span class="st"><i class="g"></i>正常</span><button class="btn lnk" type="button">试采集</button></div>
+          <div class="r"><input type="checkbox" checked id="s3" aria-label="启用 朝日新闻"><span class="tile">朝</span><div style="flex:1 1 auto;min-width:0"><label for="s3" style="font-weight:500">朝日新闻デジタル</label><div class="cap">RSS · 国内 · 今天 07:55 有新条目</div></div><span class="st"><i class="g"></i>正常</span><button class="btn lnk" type="button">试采集</button></div>
+          <div class="r" style="background:#FAFAFB"><input type="checkbox" id="s4" disabled aria-label="Oricon 娱乐（待验证）"><span class="tile off">O</span><div style="flex:1 1 auto;min-width:0"><label for="s4" style="font-weight:500;color:#6B6B70">Oricon 娱乐</label><div class="cap">刚粘贴的链接 · 娱乐 · 还没试过能不能采到</div></div><span class="st"><i class="gr"></i>待验证</span><button class="btn" type="button">试采集后启用</button></div>
+
+          <details><summary class="r" style="min-height:36px;font-size:12px">高级：换模型 · 拆成「国内」「娱乐」两份 · 暂停这份简报</summary><div class="cap" style="padding:0 14px 10px 36px">默认用「接入」里的普通模型。拆分后每份有自己的时间和机器人。</div></details>
+
+          <div class="r" style="min-height:40px;background:#F7F7F9;justify-content:space-between"><span class="cap">已自动保存 · 08:40</span><div style="display:flex;gap:8px"><button class="btn" type="button">预览这期会选什么</button><button class="btn def" type="button">立即试发一期</button></div></div>
+        </div>
+
+        <div class="grp"><div class="r" style="min-height:44px"><span class="tile off">澳</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">澳洲</div><div class="cap">关闭中 · 开启后默认每天 09:00 → @alvin_news_bot · 推荐 3 个来源</div></div><button class="sw off" type="button" role="switch" aria-checked="false" aria-label="开启澳洲"></button><button class="btn lnk" type="button">编辑</button></div></div>
+        <div class="grp"><div class="r" style="min-height:44px"><span class="tile">中</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">中国</div><div class="cap">每天 09:30 → @alvin_news_bot · 4 个来源</div></div><span class="st"><i class="y"></i>今天 09:30 结果未知</span><button class="sw" type="button" role="switch" aria-checked="true" aria-label="开启中国"></button><button class="btn lnk" type="button">编辑</button></div></div>
+        <div class="grp"><div class="r" style="min-height:44px"><span class="tile">数</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">科技数码</div><div class="cap">每天 18:00 → @alvin_news_bot · 5 个来源 · 下一期 今天 18:00</div></div><button class="sw" type="button" role="switch" aria-checked="true" aria-label="开启科技数码"></button><button class="btn lnk" type="button">编辑</button></div></div>
+        <div class="grp"><div class="r" style="min-height:44px"><span class="tile">AI</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">AI 动态</div><div class="cap">每天 18:30 → @alvin_news_bot · 6 个来源（含 GitHub / Hugging Face）</div></div><button class="sw" type="button" role="switch" aria-checked="true" aria-label="开启 AI 动态"></button><button class="btn lnk" type="button">编辑</button></div></div>
+        <div class="grp"><div class="r" style="min-height:44px"><span class="tile ad">AV</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">AV 产业 <span class="tag" style="margin-left:4px">成人</span></div><div class="cap">关闭中 · 需要成人模型 Key 和一个允许成人内容的机器人</div></div><a href="connect.html" class="btn">去接入补齐</a><button class="sw off" type="button" role="switch" aria-checked="false" aria-label="开启 AV 产业" disabled></button><button class="btn lnk" type="button">编辑</button></div></div>
+        <div class="grp"><div class="r" style="min-height:44px"><span class="tile">X</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">X 普通账号汇总</div><div class="cap">每天 20:30 → @alvin_news_bot · 5 个账号 + 1 个 List · <a href="x-accounts.html">管理账号 ›</a></div></div><button class="sw" type="button" role="switch" aria-checked="true" aria-label="开启 X 普通账号汇总"></button><button class="btn lnk" type="button">编辑</button></div></div>
+        <div class="grp"><div class="r" style="min-height:44px"><span class="tile ad">X</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">X 成人博主汇总 <span class="tag" style="margin-left:4px">成人</span></div><div class="cap">关闭中 · 需要成人模型 Key；机器人 @alvin_adult_bot 等待配对</div></div><a href="connect.html" class="btn">去接入补齐</a><button class="sw off" type="button" role="switch" aria-checked="false" aria-label="开启 X 成人博主汇总" disabled></button><button class="btn lnk" type="button">编辑</button></div></div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

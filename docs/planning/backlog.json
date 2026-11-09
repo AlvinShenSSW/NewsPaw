@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "date": "2026-11-07",
+  "date": "2026-11-10",
   "baseline": "1504d445579c7d03c88a6352fad58f6fbb485d17",
   "epics": [
     {
@@ -47,6 +47,11 @@
       "id": "E09",
       "title": "运维、打包与发布验收",
       "outcome": "诊断、数据生命周期、安装升级及有真实证据的交付验证。"
+    },
+    {
+      "id": "E10",
+      "title": "交互重构：单人 Mac App 的简报对象、默认值与原生界面",
+      "outcome": "把 category/subscription/scope/route/target 收敛为「简报」对象，补齐单人默认值与 setup.readiness，按 macOS 原生 Settings 风格重做六个界面；首次安装到收到第一份简报在一个窗口内三步完成。"
     }
   ],
   "issues": [
@@ -883,6 +888,304 @@
       "validation": "现有 pytest/ruff 基线；CI触发/失败场景；最终以两Bot、双语言、故障恢复、成人隔离和费用上限做端到端验收。",
       "paths": ".github/workflows/, tests/, macos tests, docs/testing/",
       "non_goals": "本issue初期搭框架，具体功能测试随子issue提交；不一次实现所有业务。"
+    },
+    {
+      "id": "R01",
+      "epic": "E10",
+      "title": "产品收敛契约：简报对象、默认值表与冻结规格修订",
+      "priority": "P0",
+      "phase": "M3",
+      "depends_on": [],
+      "requirements": [
+        "R01",
+        "R02",
+        "R04",
+        "R07",
+        "R08"
+      ],
+      "scope": "见 GitHub #79 与 docs/planning/ux-redesign/interaction-spec.md。",
+      "acceptance": [
+        "以 GitHub #79 验收标准为准"
+      ],
+      "validation": "见 issue。",
+      "paths": "docs/planning/ux-redesign/, docs/designs/specs/, docs/mockup/README.md",
+      "non_goals": "见 issue。界面以 docs/mockup/redesign 为基线。"
+    },
+    {
+      "id": "R02",
+      "epic": "E10",
+      "title": "后端：setup.readiness 聚合与结构化错误",
+      "priority": "P0",
+      "phase": "M3",
+      "depends_on": [
+        "R01"
+      ],
+      "requirements": [
+        "R01",
+        "R07",
+        "R10"
+      ],
+      "scope": "见 GitHub #80 与 docs/planning/ux-redesign/interaction-spec.md。",
+      "acceptance": [
+        "以 GitHub #80 验收标准为准"
+      ],
+      "validation": "见 issue。",
+      "paths": "src/newspaw/control.py, routing.py, operations.py, pipeline.py, scheduler.py",
+      "non_goals": "见 issue。界面以 docs/mockup/redesign 为基线。"
+    },
+    {
+      "id": "R03",
+      "epic": "E10",
+      "title": "后端：简报对象（配置 v4）、调度跟随与预算默认值",
+      "priority": "P0",
+      "phase": "M3",
+      "depends_on": [
+        "R01"
+      ],
+      "requirements": [
+        "R02",
+        "R04",
+        "R07"
+      ],
+      "scope": "见 GitHub #81 与 docs/planning/ux-redesign/interaction-spec.md。",
+      "acceptance": [
+        "以 GitHub #81 验收标准为准"
+      ],
+      "validation": "见 issue。",
+      "paths": "src/newspaw/app_config.py, migrations.py, scheduler.py, budget.py, subscriptions.py, routing.py, telegram/targets.py",
+      "non_goals": "见 issue。界面以 docs/mockup/redesign 为基线。"
+    },
+    {
+      "id": "R04",
+      "epic": "E10",
+      "title": "后端：Key 保存即探测、按需能力验证与单 Bot 默认目标",
+      "priority": "P0",
+      "phase": "M3",
+      "depends_on": [
+        "R01",
+        "R03"
+      ],
+      "requirements": [
+        "R04",
+        "R08"
+      ],
+      "scope": "见 GitHub #82 与 docs/planning/ux-redesign/interaction-spec.md。",
+      "acceptance": [
+        "以 GitHub #82 验收标准为准"
+      ],
+      "validation": "见 issue。",
+      "paths": "src/newspaw/providers.py, credentials.py, telegram/registry.py, telegram/targets.py",
+      "non_goals": "见 issue。界面以 docs/mockup/redesign 为基线。"
+    },
+    {
+      "id": "R05",
+      "epic": "E10",
+      "title": "后端：长任务统一轮询、状态词汇与策略导出",
+      "priority": "P1",
+      "phase": "M3",
+      "depends_on": [
+        "R02"
+      ],
+      "requirements": [
+        "R07",
+        "R10"
+      ],
+      "scope": "见 GitHub #83 与 docs/planning/ux-redesign/interaction-spec.md。",
+      "acceptance": [
+        "以 GitHub #83 验收标准为准"
+      ],
+      "validation": "见 issue。",
+      "paths": "src/newspaw/control.py, source_manager.py, telegram/registry.py, x/accounts.py, operations.py",
+      "non_goals": "见 issue。界面以 docs/mockup/redesign 为基线。"
+    },
+    {
+      "id": "R06",
+      "epic": "E10",
+      "title": "Swift：原生 Settings 外壳、typed 客户端与无 sheet 原则",
+      "priority": "P0",
+      "phase": "M3",
+      "depends_on": [
+        "R02"
+      ],
+      "requirements": [
+        "R01"
+      ],
+      "scope": "见 GitHub #84 与 docs/planning/ux-redesign/interaction-spec.md。",
+      "acceptance": [
+        "以 GitHub #84 验收标准为准"
+      ],
+      "validation": "见 issue。",
+      "paths": "macos/NewsPaw/Sources/NewsPaw/",
+      "non_goals": "见 issue。界面以 docs/mockup/redesign 为基线。"
+    },
+    {
+      "id": "R07",
+      "epic": "E10",
+      "title": "Swift：首次设置窗口",
+      "priority": "P0",
+      "phase": "M3",
+      "depends_on": [
+        "R04",
+        "R06"
+      ],
+      "requirements": [
+        "R01",
+        "R04",
+        "R08"
+      ],
+      "scope": "见 GitHub #85 与 docs/planning/ux-redesign/interaction-spec.md。",
+      "acceptance": [
+        "以 GitHub #85 验收标准为准"
+      ],
+      "validation": "见 issue。",
+      "paths": "macos/NewsPaw/Sources/NewsPaw/Pages/Onboarding*",
+      "non_goals": "见 issue。界面以 docs/mockup/redesign 为基线。"
+    },
+    {
+      "id": "R08",
+      "epic": "E10",
+      "title": "Swift：概览页",
+      "priority": "P0",
+      "phase": "M3",
+      "depends_on": [
+        "R02",
+        "R06"
+      ],
+      "requirements": [
+        "R07",
+        "R10"
+      ],
+      "scope": "见 GitHub #86 与 docs/planning/ux-redesign/interaction-spec.md。",
+      "acceptance": [
+        "以 GitHub #86 验收标准为准"
+      ],
+      "validation": "见 issue。",
+      "paths": "macos/NewsPaw/Sources/NewsPaw/Pages/Overview*",
+      "non_goals": "见 issue。界面以 docs/mockup/redesign 为基线。"
+    },
+    {
+      "id": "R09",
+      "epic": "E10",
+      "title": "Swift：简报页",
+      "priority": "P0",
+      "phase": "M3",
+      "depends_on": [
+        "R03",
+        "R06"
+      ],
+      "requirements": [
+        "R02",
+        "R03",
+        "R05",
+        "R07"
+      ],
+      "scope": "见 GitHub #87 与 docs/planning/ux-redesign/interaction-spec.md。",
+      "acceptance": [
+        "以 GitHub #87 验收标准为准"
+      ],
+      "validation": "见 issue。",
+      "paths": "macos/NewsPaw/Sources/NewsPaw/Pages/Digests*",
+      "non_goals": "见 issue。界面以 docs/mockup/redesign 为基线。"
+    },
+    {
+      "id": "R10",
+      "epic": "E10",
+      "title": "Swift：接入页",
+      "priority": "P1",
+      "phase": "M3",
+      "depends_on": [
+        "R04",
+        "R06"
+      ],
+      "requirements": [
+        "R04",
+        "R08"
+      ],
+      "scope": "见 GitHub #88 与 docs/planning/ux-redesign/interaction-spec.md。",
+      "acceptance": [
+        "以 GitHub #88 验收标准为准"
+      ],
+      "validation": "见 issue。",
+      "paths": "macos/NewsPaw/Sources/NewsPaw/Pages/Connect*",
+      "non_goals": "见 issue。界面以 docs/mockup/redesign 为基线。"
+    },
+    {
+      "id": "R11",
+      "epic": "E10",
+      "title": "Swift：X 账号页",
+      "priority": "P1",
+      "phase": "M3",
+      "depends_on": [
+        "R05",
+        "R06"
+      ],
+      "requirements": [
+        "R06"
+      ],
+      "scope": "见 GitHub #89 与 docs/planning/ux-redesign/interaction-spec.md。",
+      "acceptance": [
+        "以 GitHub #89 验收标准为准"
+      ],
+      "validation": "见 issue。",
+      "paths": "macos/NewsPaw/Sources/NewsPaw/Pages/XAccounts*",
+      "non_goals": "见 issue。界面以 docs/mockup/redesign 为基线。"
+    },
+    {
+      "id": "R12",
+      "epic": "E10",
+      "title": "Swift：设置页与菜单栏",
+      "priority": "P1",
+      "phase": "M3",
+      "depends_on": [
+        "R06"
+      ],
+      "requirements": [
+        "R01",
+        "R10"
+      ],
+      "scope": "见 GitHub #90 与 docs/planning/ux-redesign/interaction-spec.md。",
+      "acceptance": [
+        "以 GitHub #90 验收标准为准"
+      ],
+      "validation": "见 issue。",
+      "paths": "macos/NewsPaw/Sources/NewsPaw/Pages/Settings*",
+      "non_goals": "见 issue。界面以 docs/mockup/redesign 为基线。"
+    },
+    {
+      "id": "R13",
+      "epic": "E10",
+      "title": "清理：删除 .env 旧栈并拆出 newsparse",
+      "priority": "P1",
+      "phase": "M3",
+      "depends_on": [],
+      "requirements": [
+        "R11"
+      ],
+      "scope": "见 GitHub #91 与 docs/planning/ux-redesign/interaction-spec.md。",
+      "acceptance": [
+        "以 GitHub #91 验收标准为准"
+      ],
+      "validation": "见 issue。",
+      "paths": "src/newspaw/, tests/, pyproject.toml, README.md",
+      "non_goals": "见 issue。界面以 docs/mockup/redesign 为基线。"
+    },
+    {
+      "id": "R14",
+      "epic": "E10",
+      "title": "测试基线：修复 X 测试时钟炸弹并补 Swift 视图层测试骨架",
+      "priority": "P0",
+      "phase": "M3",
+      "depends_on": [],
+      "requirements": [
+        "R11"
+      ],
+      "scope": "见 GitHub #92 与 docs/planning/ux-redesign/interaction-spec.md。",
+      "acceptance": [
+        "以 GitHub #92 验收标准为准"
+      ],
+      "validation": "见 issue。",
+      "paths": "tests/test_x_*.py, macos/NewsPaw/Tests, .github/workflows/checks.yml",
+      "non_goals": "见 issue。界面以 docs/mockup/redesign 为基线。"
     }
   ]
 }

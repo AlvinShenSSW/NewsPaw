@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<title>NewsPaw 接入</title>
+</head>
+<body style="padding:40px;display:flex;justify-content:center">
+
+<style>
+body{margin:0;background:#D8D8DD;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Helvetica Neue",sans-serif;color:#1D1D1F;font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+a{color:#0A60FF;text-decoration:none}a:hover{color:#0040C0}
+.win{width:1180px;height:940px;border-radius:10px;overflow:hidden;background:#F2F2F5;box-shadow:0 20px 50px rgba(0,0,0,.28),0 0 0 1px rgba(0,0,0,.18);display:flex}
+.sb{width:200px;background:#E7E7EA;border-right:1px solid #D4D4D8;display:flex;flex-direction:column;flex:0 0 auto}
+.lights{display:flex;gap:8px;padding:18px 16px 10px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.nav{display:flex;flex-direction:column;gap:2px;padding:6px 10px}
+.nav a{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:6px;color:#1D1D1F;font-size:13px}
+.nav a.on{background:#0A60FF;color:#fff}
+.ico{width:20px;height:20px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;color:#fff}
+.ico svg{width:13px;height:13px}
+.content{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+.tb{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid #D9D9DE;background:#F7F7F9;flex:0 0 auto}
+.tb h1{font-size:15px;font-weight:700;margin:0}
+.body{flex:1 1 auto;overflow:auto;padding:20px 24px 28px}
+.grp{background:#fff;border:1px solid #DCDCE0;border-radius:8px;overflow:hidden}
+.r{display:flex;align-items:center;gap:12px;min-height:40px;padding:8px 14px;border-top:1px solid #E9E9EC}
+.r:first-child{border-top:0}
+.h{font-size:13px;font-weight:600;margin:0 0 6px 2px}
+.cap{color:#6B6B70;font-size:11px}
+.btn{height:24px;padding:0 12px;border-radius:6px;border:1px solid #C6C6CB;background:linear-gradient(#fff,#F6F6F8);font:inherit;font-size:13px;color:#1D1D1F;display:inline-flex;align-items:center;gap:6px;cursor:pointer;box-shadow:0 .5px 1px rgba(0,0,0,.08);white-space:nowrap}
+.btn.def{background:linear-gradient(#2F7BFF,#0A60FF);border-color:#0A5BE8;color:#fff}
+.btn.lnk{border:0;background:none;box-shadow:none;color:#0A60FF;padding:0 4px}
+.sw{width:38px;height:22px;border-radius:11px;background:#0A60FF;border:0;position:relative;padding:0;flex:0 0 auto;cursor:pointer}
+.sw::after{content:"";position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.sw.off{background:#D8D8DC}.sw.off::after{right:auto;left:2px}
+.tf{height:24px;padding:0 8px;border-radius:6px;border:1px solid #C6C6CB;background:#fff;font:inherit;font-size:13px;box-sizing:border-box;color:#1D1D1F;box-shadow:inset 0 1px 1px rgba(0,0,0,.05)}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap}
+.st i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.g{background:#28A745}.y{background:#E5A100}.rd{background:#E0352B}.gr{background:#A9A9AE}
+.tag{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:9px;font-size:11px;font-weight:600;background:#F1E6FF;color:#6B21A8}
+.tile{width:30px;height:30px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex:0 0 auto;background:#E3EDFF;color:#0A60FF}
+.tile.ad{background:#F1E6FF;color:#6B21A8}
+.bar{height:5px;border-radius:3px;background:#E3E3E7;overflow:hidden}.bar i{display:block;height:100%;background:#0A60FF}
+details summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:600}
+details summary::-webkit-details-marker{display:none}
+details summary::before{content:"";width:0;height:0;border-left:6px solid #6B6B70;border-top:4px solid transparent;border-bottom:4px solid transparent;margin-left:2px}
+details[open] summary::before{transform:rotate(90deg)}
+.sect{margin-bottom:20px}
+</style>
+
+
+<div class="win">
+  <aside class="sb">
+    <div class="lights" aria-hidden="true"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i></div>
+    <div style="display:flex;align-items:center;gap:9px;padding:4px 16px 12px">
+      <img src="../../../assets/branding/newspaw-logo-preview.jpg" alt="NewsPaw" style="width:34px;height:34px;border-radius:8px;object-fit:cover;background:#fff">
+      <div><div style="font-weight:700;font-size:13px">NewsPaw</div><div class="cap">你的新闻伙伴</div></div>
+    </div>
+    <nav class="nav" aria-label="主导航">
+      <a href="overview.html"><span class="ico" style="background:#0A60FF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span>概览</a>
+      <a href="digests.html"><span class="ico" style="background:#F08C00"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h6M7 13h10M7 17h10"/></svg></span>简报</a>
+      <a href="x-accounts.html"><span class="ico" style="background:#1D1D1F"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M5 4l14 16M19 4L5 20"/></svg></span>X 账号</a>
+      <a href="connect.html" class="on" aria-current="page"><span class="ico" style="background:#28A745;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>接入</a>
+      <a href="settings.html"><span class="ico" style="background:#8E8E93"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></span>设置</a>
+    </nav>
+    <div style="flex:1 1 auto"></div>
+    <div style="padding:10px 16px 14px"><div class="st"><i class="g"></i>后台运行中</div><div class="cap" style="margin-top:2px">登录时自动启动 · 今天 07:02</div></div>
+  </aside>
+
+  <div class="content">
+    <div class="tb"><h1>接入</h1><button class="btn" type="button">＋ 添加机器人</button></div>
+    <div class="body">
+      <div class="cap" style="margin:-6px 0 14px 2px;font-size:12px">Telegram 机器人、模型和费用上限。所有 Key 只存在这台 Mac 的钥匙串里。</div>
+
+      <section class="sect" aria-labelledby="bots-h">
+        <h2 id="bots-h" class="h">Telegram 机器人</h2>
+        <div class="grp" style="margin-bottom:10px">
+          <div class="r" style="min-height:48px"><span class="tile">N</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">@alvin_news_bot <span class="cap">· 新闻机器人</span></div><div class="cap">接收 6 份简报：世界、日本、中国、科技数码、AI、X 普通</div></div><span class="st"><i class="g"></i>已配对 · 08:05</span><button class="btn" type="button">发测试消息</button><button class="btn" type="button" aria-label="更多操作" style="padding:0 8px">⋯</button></div>
+          <div class="r"><div style="flex:1 1 auto"><div style="font-weight:500">允许接收成人内容</div><div class="cap">关闭时，成人简报不能选这个机器人。</div></div><button class="sw off" type="button" role="switch" aria-checked="false" aria-label="允许接收成人内容"></button></div>
+        </div>
+        <div class="grp" style="border-color:#E5A100">
+          <div class="r" style="min-height:48px"><span class="tile ad">A</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">@alvin_adult_bot <span class="tag" style="margin-left:4px">成人</span></div><div class="cap">Token 有效 · 还没和你的 Telegram 账号配对</div></div><span class="st"><i class="y"></i>等待配对</span><button class="btn" type="button" aria-label="更多操作" style="padding:0 8px">⋯</button></div>
+          <div class="r" style="background:#FFFAF0;align-items:center;gap:18px">
+            <div style="flex:1 1 240px"><div style="font-weight:500">在 Telegram 里打开这个机器人，发送：</div><div class="cap">只对你自己的账号有效 · 9 分 40 秒后失效 · 收到后这里会自动变为「已配对」</div></div>
+            <code style="font-size:17px;font-weight:700;letter-spacing:1px;background:#fff;border:1px solid #E5A100;border-radius:6px;padding:3px 12px;font-family:ui-monospace,Menlo,monospace">/pair 482 913</code>
+            <div style="display:flex;gap:6px"><button class="btn" type="button">复制</button><button class="btn lnk" type="button">重新生成</button></div>
+          </div>
+          <div class="r"><div style="flex:1 1 auto"><div style="font-weight:500">允许接收成人内容</div><div class="cap">AV 产业、X 成人博主只能发到开了这项的机器人。</div></div><button class="sw" type="button" role="switch" aria-checked="true" aria-label="允许接收成人内容"></button></div>
+        </div>
+      </section>
+
+      <section class="sect" aria-labelledby="models-h">
+        <h2 id="models-h" class="h">模型 <span class="cap" style="font-weight:400;margin-left:6px">普通内容和成人内容分开用不同的模型；一边出错不会拿另一边兜底。</span></h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="grp">
+            <div class="r" style="min-height:34px;background:#FAFAFB"><span style="font-weight:600">普通内容</span><span class="cap">世界 · 日本 · 澳洲 · 中国 · 科技 · AI · X 普通</span></div>
+            <div class="r" style="align-items:flex-start;min-height:52px"><div style="flex:1 1 auto"><div style="font-weight:500">GPT-6 Luna <span class="cap">· OpenAI</span></div><div class="cap">Key ••••7Qx2 · 文字 ✓ 视觉 ✓ · 验证于今天 08:12</div></div><span class="st" style="margin-top:2px"><i class="g"></i>可用</span><button class="btn" type="button">更换 Key</button></div>
+            <div class="r" style="align-items:flex-start;min-height:52px;background:#FAFAFB"><div style="flex:1 1 auto"><div style="font-weight:500;color:#6B6B70">备用：MiMo Flash <span class="cap">· 小米</span></div><div class="cap">可选。主模型出错时接手，没填就跳过那一期。</div></div><span class="st" style="margin-top:2px"><i class="gr"></i>未填 Key</span><button class="btn" type="button">填入 Key</button></div>
+          </div>
+          <div class="grp">
+            <div class="r" style="min-height:34px;background:#FAFAFB"><span style="font-weight:600">成人内容</span><span class="tag">AV 产业 · X 成人博主</span></div>
+            <div class="r" style="align-items:flex-start;min-height:52px;background:#FFF6F5"><div style="flex:1 1 auto"><div style="font-weight:500">DeepSeek Flash <span class="cap">· DeepSeek</span></div><div class="cap" style="color:#A8201A">Key 被拒绝（401）。请到 DeepSeek 控制台确认 Key 没有过期，再重新填入。</div></div><span class="st" style="margin-top:2px"><i class="rd"></i>Key 无效</span><button class="btn def" type="button">重新填入</button></div>
+            <div class="r" style="align-items:flex-start;min-height:52px;background:#FAFAFB"><div style="flex:1 1 auto"><div style="font-weight:500;color:#6B6B70">备用：Grok 4.3 <span class="cap">· xAI</span></div><div class="cap">可选。</div></div><span class="st" style="margin-top:2px"><i class="gr"></i>未填 Key</span><button class="btn" type="button">填入 Key</button></div>
+          </div>
+        </div>
+        <div class="grp" style="margin-top:10px"><details><summary class="r" style="min-height:36px;font-size:12px">附加能力：AI 报纸生图 · 语音转写 · 自定义 API 地址</summary><div class="cap" style="padding:0 14px 10px 36px">开启某项附加输出时，NewsPaw 会在那时验证对应能力，不需要提前逐项测试。</div></details></div>
+      </section>
+
+      <section class="sect" aria-labelledby="cost-h">
+        <h2 id="cost-h" class="h">费用</h2>
+        <div class="grp">
+          <div class="r"><div style="flex:1 1 auto"><div style="font-weight:500">每月最多花</div><div class="cap">到上限后停发并在概览里提醒；留空表示不限。</div></div><div style="display:flex;align-items:center;gap:6px"><span>$</span><input class="tf" type="number" value="20" min="0" step="1" style="width:72px" aria-label="每月费用上限，美元"><span class="cap">/ 月</span></div></div>
+          <div class="r" style="min-height:34px;background:#FAFAFB"><div style="flex:1 1 auto"><div style="display:flex;justify-content:space-between" class="cap"><span>本月已用 <b style="color:#1D1D1F">$3.42</b> · 文字 $3.10 · 报纸 $0.32</span><span>11 月 1 日起</span></div><div class="bar" style="margin-top:5px"><i style="width:17%"></i></div></div></div>
+          <div class="r"><div style="flex:1 1 auto"><div style="font-weight:500">X 每天最多读取</div><div class="cap">普通和成人账号合计；今天已读 84 条。</div></div><div style="display:flex;align-items:center;gap:6px"><input class="tf" type="number" value="200" min="0" step="10" style="width:72px" aria-label="X 每日读取上限"><span class="cap">条 / 天</span></div></div>
+          <div class="r" style="min-height:32px;background:#FAFAFB"><span class="cap">用量按模型返回的 token 数计价；没有价格信息的模型会标为「未计价」，不会因此停发。</span></div>
+        </div>
+      </section>
+
+      <section aria-labelledby="x-h">
+        <h2 id="x-h" class="h">X 数据连接</h2>
+        <div class="grp"><div class="r"><div style="flex:1 1 auto"><div style="font-weight:500">X API Key</div><div class="cap">••••••••Rk2m · 读取账号正常 · 验证于昨天 20:28</div></div><span class="st"><i class="g"></i>可用</span><button class="btn" type="button">更换 Key</button></div></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -29,3 +29,7 @@ Concurrency two separate Store connections racing last capacity, commit rollback
 
 ## Handoff
 Mandatory design debate before tests; Kimi sole code gate. Six repair cycles initially0. Existing run active, operator now authorizes merge-when-green, no deployment. Preserve mockup.
+
+## Superseded by E10 (2026-11-10)
+
+An unconfigured price no longer blocks dispatch: the call proceeds and settles as `unpriced`; budget period time zones follow the global timezone. See [docs/planning/ux-redesign/contract.md](../../planning/ux-redesign/contract.md) §5 for the replacement clause; the rest of this contract stays in force.

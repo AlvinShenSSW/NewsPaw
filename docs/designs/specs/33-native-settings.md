@@ -26,3 +26,7 @@ U01 delivers the native shell and read-only real lists plus language editing and
 | docs/designs/specs/33-native-settings.md | This frozen contract |
 
 Native commands swift build --package-path macos/NewsPaw and swift test --package-path macos/NewsPaw; development app build script writes ignored .build only. Python regression suite uv run pytest -q / uv run ruff check . / uv build. Test malformed/missing socket, bounded timeouts and same-owner real fixture roundtrip, config locale CAS and only selected field changes, three locales and text, stop versus UI quit, and monitor disconnect. Use actual SwiftUI window/menu and isolated temp-directory backend for accessibility tree and visual QA in light/dark and narrow window; no real credential or Telegram send. Model/collection/UI simulation status never substitutes for actual backend observations. No claim that production packaging/activation or VoiceOver spoken interaction was verified beyond observed controls.
+
+## Superseded by E10 (2026-11-10)
+
+The five-page structure and the 2026-11-07 mockup baseline are replaced by docs/planning/ux-redesign/interaction-spec.md and docs/mockup/redesign/. See [docs/planning/ux-redesign/contract.md](../../planning/ux-redesign/contract.md) §5 for the replacement clause; the rest of this contract stays in force.

@@ -23,3 +23,7 @@ Implement #40 and R10. Use the existing same-owner ControlServer, Store/SQLite, 
 ## Verification
 
 Synthetic unavailable provider with process alive, redaction against hostile nested tokens/URLs/names and exception text, current/no-config/unknown budgets and receipts, concurrent CAS and fresh-only cross-directory restore, restore disabled/no replay, damaged/newer portable document, migration backup failure/full disk transactional refusal, old version integrity, active/referenced versus expired independent evidence, crash/orphan, old reused asset during a paused preparation callback, and malformed/symlink media, no removal of receipt/dedup or active feed cache, preview and actual bounded cleanup. No live calls or sensitive diagnostic export to GitHub. Version bump only if genuinely needed after approved predecessor.
+
+## Superseded by E10 (2026-11-10)
+
+Import rules are unchanged; diagnostics, snapshots and backup checks move under the Settings › Advanced disclosure (interaction-spec §8.5). See [docs/planning/ux-redesign/contract.md](../../planning/ux-redesign/contract.md) §5 for the replacement clause; the rest of this contract stays in force.

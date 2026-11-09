@@ -9,3 +9,7 @@ Add multiple Bots for the single owner. Token storage, identity verification, pa
 A test message uses a fixed local-language sample and the same remote Bot send lane as news. A durable request records one send outcome and never automatically replays an uncertain request. Reading a test receipt sends nothing. Budget reporting separates text, search, image and X, and preserves the distinction between provider reports, derived estimates and unresolved holds. Global schedule and styles have their own local versioned controls.
 
 Tests use synthetic tokens and model configurations, bounded fake Telegram transport, and native Swift data contracts in the current interface. No live sends or deployment are part of verification.
+
+## Superseded by E10 (2026-11-10)
+
+User-entered micro-USD holds and manual capability verification are replaced by interaction-spec §6. See [docs/planning/ux-redesign/contract.md](../../planning/ux-redesign/contract.md) §5 for the replacement clause; the rest of this contract stays in force.

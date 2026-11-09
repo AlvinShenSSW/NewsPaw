@@ -9,3 +9,7 @@ Explicit source selection is distinct from category inheritance. An empty explic
 The source editor reads the actual backend catalog, identifies pasted links on request, saves inactive records and runs a separate collection preview. It displays the observed counts, dates, freshness and coverage. Suggested or discovered entries do not imply a verified source. Pause and removal show scoped impact and require a matching revision. An explicitly selected OPML file is read with a byte limit and imported as inactive drafts with added, duplicate and rejected counts.
 
 Three-language Swift contracts, actual socket smoke and the Python source, routing, scheduling and revision tests cover the workflow. The approved mockup stays unchanged. Visual operation of the new sheets remains a separate macOS desktop check.
+
+## Superseded by E10 (2026-11-10)
+
+Sheet-based editors and the unchanged-mockup rule are replaced by inline editing (interaction-spec §5). See [docs/planning/ux-redesign/contract.md](../../planning/ux-redesign/contract.md) §5 for the replacement clause; the rest of this contract stays in force.

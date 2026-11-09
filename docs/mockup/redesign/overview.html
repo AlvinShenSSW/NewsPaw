@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<title>NewsPaw 概览</title>
+</head>
+<body style="padding:40px;display:flex;justify-content:center">
+
+<style>
+body{margin:0;background:#D8D8DD;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Helvetica Neue",sans-serif;color:#1D1D1F;font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+a{color:#0A60FF;text-decoration:none}a:hover{color:#0040C0}
+.win{width:1180px;height:820px;border-radius:10px;overflow:hidden;background:#F2F2F5;box-shadow:0 20px 50px rgba(0,0,0,.28),0 0 0 1px rgba(0,0,0,.18);display:flex}
+.sb{width:200px;background:#E7E7EA;border-right:1px solid #D4D4D8;display:flex;flex-direction:column;flex:0 0 auto}
+.lights{display:flex;gap:8px;padding:18px 16px 10px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.nav{display:flex;flex-direction:column;gap:2px;padding:6px 10px}
+.nav a{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:6px;color:#1D1D1F;font-size:13px}
+.nav a.on{background:#0A60FF;color:#fff}
+.ico{width:20px;height:20px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;color:#fff}
+.ico svg{width:13px;height:13px}
+.content{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+.tb{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid #D9D9DE;background:#F7F7F9;flex:0 0 auto}
+.tb h1{font-size:15px;font-weight:700;margin:0}
+.body{flex:1 1 auto;overflow:auto;padding:20px 24px 28px}
+.grp{background:#fff;border:1px solid #DCDCE0;border-radius:8px;overflow:hidden}
+.r{display:flex;align-items:center;gap:12px;min-height:40px;padding:8px 14px;border-top:1px solid #E9E9EC}
+.r:first-child{border-top:0}
+.h{font-size:13px;font-weight:600;margin:0 0 6px 2px}
+.cap{color:#6B6B70;font-size:11px}
+.btn{height:24px;padding:0 12px;border-radius:6px;border:1px solid #C6C6CB;background:linear-gradient(#fff,#F6F6F8);font:inherit;font-size:13px;color:#1D1D1F;display:inline-flex;align-items:center;gap:6px;cursor:pointer;box-shadow:0 .5px 1px rgba(0,0,0,.08);white-space:nowrap}
+.btn.def{background:linear-gradient(#2F7BFF,#0A60FF);border-color:#0A5BE8;color:#fff}
+.btn.lnk{border:0;background:none;box-shadow:none;color:#0A60FF;padding:0 4px}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap}
+.st i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.g{background:#28A745}.y{background:#E5A100}.rd{background:#E0352B}.gr{background:#A9A9AE}
+.tile{width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex:0 0 auto;background:#E3EDFF;color:#0A60FF}
+.dot{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;font-size:11px;font-weight:700}
+.dot.done{background:#28A745;color:#fff}.dot.now{background:#0A60FF;color:#fff}.dot.todo{background:#fff;border:1.5px solid #C6C6CB;color:#8E8E93;box-sizing:border-box}
+.bar{height:5px;border-radius:3px;background:#E3E3E7;overflow:hidden}.bar i{display:block;height:100%;background:#0A60FF}
+.t{width:44px;font-variant-numeric:tabular-nums;font-weight:600;flex:0 0 auto}
+</style>
+
+
+<div class="win">
+  <aside class="sb">
+    <div class="lights" aria-hidden="true"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i></div>
+    <div style="display:flex;align-items:center;gap:9px;padding:4px 16px 12px">
+      <img src="../../../assets/branding/newspaw-logo-preview.jpg" alt="NewsPaw" style="width:34px;height:34px;border-radius:8px;object-fit:cover;background:#fff">
+      <div><div style="font-weight:700;font-size:13px">NewsPaw</div><div class="cap">你的新闻伙伴</div></div>
+    </div>
+    <nav class="nav" aria-label="主导航">
+      <a href="overview.html" class="on" aria-current="page"><span class="ico" style="background:#0A60FF;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span>概览</a>
+      <a href="digests.html"><span class="ico" style="background:#F08C00"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h6M7 13h10M7 17h10"/></svg></span>简报</a>
+      <a href="x-accounts.html"><span class="ico" style="background:#1D1D1F"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M5 4l14 16M19 4L5 20"/></svg></span>X 账号</a>
+      <a href="connect.html"><span class="ico" style="background:#28A745"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>接入</a>
+      <a href="settings.html"><span class="ico" style="background:#8E8E93"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></span>设置</a>
+    </nav>
+    <div style="flex:1 1 auto"></div>
+    <div style="padding:10px 16px 14px"><div class="st"><i class="g"></i>后台运行中</div><div class="cap" style="margin-top:2px">登录时自动启动 · 今天 07:02</div></div>
+  </aside>
+
+  <div class="content">
+    <div class="tb"><h1>概览</h1><div style="display:flex;gap:8px"><button class="btn" type="button">立即发一期…</button><a href="digests.html" class="btn def">管理简报</a></div></div>
+    <div class="body">
+      <div class="cap" style="margin:-6px 0 14px 2px;font-size:12px">2026 年 11 月 9 日 星期日 · Asia/Tokyo（跟随系统）</div>
+
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start">
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <section aria-labelledby="setup-h">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:0 2px 6px"><h2 id="setup-h" class="h" style="margin:0">还差 2 步，就能收到第一份简报</h2><div style="display:flex;align-items:center;gap:8px;width:170px"><div class="bar" style="flex:1 1 auto"><i style="width:50%"></i></div><span class="cap">2 / 4</span></div></div>
+            <div class="grp">
+              <div class="r"><span class="dot done" aria-label="已完成">✓</span><div style="flex:1 1 auto"><div style="font-weight:500">Telegram 机器人已配对</div><div class="cap">@alvin_news_bot · 今天 08:05 配对成功</div></div><a href="connect.html" class="btn">查看</a></div>
+              <div class="r"><span class="dot done" aria-label="已完成">✓</span><div style="flex:1 1 auto"><div style="font-weight:500">模型 Key 已验证</div><div class="cap">GPT-6 Luna · 文字测试通过 · 08:12</div></div><a href="connect.html" class="btn">查看</a></div>
+              <div class="r" style="background:#F3F7FF"><span class="dot now" aria-label="当前步骤">3</span><div style="flex:1 1 auto"><div style="font-weight:600">选择要收的简报</div><div class="cap">目前 0 个已开启。推荐先开「世界新闻」和「日本」，默认早上 08:00 发到 @alvin_news_bot。</div></div><a href="digests.html" class="btn def">去开启</a></div>
+              <div class="r"><span class="dot todo" aria-label="待完成">4</span><div style="flex:1 1 auto"><div style="font-weight:500;color:#6B6B70">发一期试试</div><div class="cap">开启任一简报后，可立即试发一期到你的手机。</div></div></div>
+            </div>
+            <div class="cap" style="margin:6px 2px 0">完成后这个区域会自动消失。</div>
+          </section>
+
+          <section aria-labelledby="today-h">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:0 2px 6px"><h2 id="today-h" class="h" style="margin:0">今天的推送</h2><a href="#history" class="cap" style="color:#0A60FF">最近 7 天 ›</a></div>
+            <div class="grp">
+              <div class="r"><span class="t">08:00</span><span class="tile">世</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">世界新闻</div><div class="cap">→ @alvin_news_bot · 5 条</div></div><span class="st"><i class="g"></i>已发送 07:59</span></div>
+              <div class="r"><span class="t">08:30</span><span class="tile">日</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">日本</div><div class="cap">→ @alvin_news_bot · 4 条</div></div><span class="st"><i class="g"></i>已发送 08:31</span></div>
+              <div class="r" style="background:#FFFAF0"><span class="t">09:30</span><span class="tile">中</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">中国</div><div class="cap">Telegram 没有回应，这期可能已发出，也可能没有。</div></div><span class="st"><i class="y"></i>结果未知</span><button class="btn" type="button">检查并补发</button></div>
+              <div class="r"><span class="t">18:00</span><span class="tile">数</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">科技数码</div><div class="cap">17:45 开始准备</div></div><span class="st"><i class="gr"></i>等待中</span></div>
+              <div class="r"><span class="t">18:30</span><span class="tile">AI</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">AI 动态</div><div class="cap">18:15 开始准备</div></div><span class="st"><i class="gr"></i>等待中</span></div>
+              <div class="r"><span class="t">20:30</span><span class="tile">X</span><div style="flex:1 1 auto;min-width:0"><div style="font-weight:500">X 普通账号汇总</div><div class="cap">今日已读 84 条新帖</div></div><span class="st"><i class="gr"></i>等待中</span></div>
+            </div>
+          </section>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <section aria-labelledby="cost-h">
+            <h2 id="cost-h" class="h">本月费用</h2>
+            <div class="grp" style="padding:12px 14px">
+              <div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:24px;font-weight:700;font-variant-numeric:tabular-nums">$3.42</span><span class="cap">/ 上限 $20</span></div>
+              <div class="bar" style="margin-top:8px"><i style="width:17%"></i></div>
+              <div class="cap" style="margin-top:8px">文字 $3.10 · 报纸生图 $0.32 · 11 月 1 日起</div>
+              <div style="border-top:1px solid #E9E9EC;margin-top:10px;padding-top:10px;display:flex;justify-content:space-between"><span>X 今日读取</span><span style="font-variant-numeric:tabular-nums"><b>84</b> <span class="cap">/ 200 条</span></span></div>
+            </div>
+          </section>
+          <section aria-labelledby="attn-h">
+            <h2 id="attn-h" class="h">需要注意</h2>
+            <div class="grp">
+              <div class="r" style="align-items:flex-start"><span class="st" style="margin-top:3px"><i class="y"></i></span><div style="flex:1 1 auto"><div style="font-weight:500">NHK 总合 已 3 个月没有新条目</div><div class="cap">最后一条 08-08。日本简报现在只靠另外 2 个来源。</div><a href="digests.html" style="font-size:12px">查看日本简报的来源 ›</a></div></div>
+              <div class="r" style="align-items:flex-start"><span class="st" style="margin-top:3px"><i class="gr"></i></span><div style="flex:1 1 auto"><div style="font-weight:500">还没有备用模型</div><div class="cap">GPT-6 Luna 出错时会跳过那一期。想要兜底可以给 MiMo Flash 填一个 Key。</div><a href="connect.html" style="font-size:12px">去接入 ›</a></div></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

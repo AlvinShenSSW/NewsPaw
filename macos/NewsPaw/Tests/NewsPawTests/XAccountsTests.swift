@@ -1252,3 +1252,89 @@ private func connected(_ server: XBackend) async throws -> (AppModel, XAccountsD
     await data.load(model: model)
     #expect(data.keyConfigured)
 }
+
+// MARK: - Review cycle 4
+
+@Test @MainActor func ruleCleanupWaitsForAFreshDirectoryReadAndIsNotDroppedSilently() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "elonmusk", priority: "special", remote: "1", times: ["21:30"])])
+    server.alerts["rules"] = [["subscription_id": "sub_x", "account_id": "a1", "phrase": "launch"]]
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    // Once the change is sent, the directory cannot be read: the old view still says "sent alone".
+    server.refuseWhen = { [unowned server] request in
+        request["op"] as? String == "x.accounts.list" && !server.calls("x.accounts.route").isEmpty ? "storage_failed" : nil
+    }
+    await data.joinDigest("a1", model: model)
+    #expect(server.stored("a1")?["priority"] as? String == "normal")
+    #expect(data.failures["rules"]?.code == "storage_failed" && data.hasPendingRuleCleanup)
+    #expect((server.alerts["rules"] as! [[String: Any]]).count == 1)
+
+    // The next successful poll finishes it.
+    server.refuseWhen = nil
+    await data.retryRuleCleanup(model: model)
+    #expect(data.failures["rules"] == nil && !data.hasPendingRuleCleanup)
+    #expect((server.alerts["rules"] as! [[String: Any]]).isEmpty)
+}
+
+@Test @MainActor func twoAccountChangesAtOnceBothCleanUpTheirRules() async throws {
+    let server = XBackend(accounts: [
+        XBackend.account("a1", "elonmusk", priority: "special", remote: "1", times: ["21:30"]),
+        XBackend.account("a2", "karpathy", priority: "special", remote: "2", times: ["09:00"]),
+        XBackend.account("a3", "sama", priority: "special", remote: "3", times: ["10:00"]),
+    ])
+    server.alerts["rules"] = [
+        ["subscription_id": "sub_x", "account_id": "a1", "phrase": "launch"],
+        ["subscription_id": "sub_x", "account_id": "a2", "phrase": "agents"],
+        ["subscription_id": "sub_x", "account_id": "a3", "phrase": "funding"],
+    ]
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    server.delays["x.alerts.save"] = [.milliseconds(150)]
+    async let first: Void = data.joinDigest("a1", model: model)
+    try await Task.sleep(for: .milliseconds(20))
+    async let second: Void = data.joinDigest("a2", model: model)
+    _ = await (first, second)
+    #expect((server.alerts["rules"] as! [[String: Any]]).map { $0["phrase"] as! String } == ["funding"])
+    #expect(data.failures["rules"] == nil && !data.hasPendingRuleCleanup)
+}
+
+@Test @MainActor func rulesAreReadFreshBeforeEveryDecisionThatCanDropThem() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "elonmusk", priority: "special", remote: "1", times: ["21:30"])])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    #expect(data.rulesOn("a1") == 0)
+
+    // Another writer adds a rule after the page read the policy.
+    server.alerts["rules"] = [["subscription_id": "sub_x", "account_id": "a1", "phrase": "launch"]]
+    server.alertsRevision += 1
+    #expect(await data.rulesBeforeChange("a1", key: "route.a1", model: model) == 1)
+
+    // A cached answer is not used when the fresh read fails.
+    server.failNext["x.alerts.status"] = "storage_failed"
+    #expect(await data.rulesBeforeChange("a1", key: "route.a1", model: model) == nil)
+    #expect(data.failures["route.a1"]?.code == "storage_failed")
+}
+
+@Test @MainActor func aFailedActivityReadKeepsWhatWasKnownAndNeverShowsZero() async throws {
+    let server = XBackend(accounts: [XBackend.account("a1", "elonmusk", remote: "1")])
+    let today = ISO8601DateFormatter().string(from: Date())
+    server.posts["a1"] = [today, today]
+    server.coverage["a1"] = today
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    data.activityInterval = .zero
+    #expect(data.activity["a1"]?.newToday == 2 && data.activity["a1"]?.lastRead != nil)
+
+    server.refuseWhen = { ["x.posts.list", "x.posts.coverage"].contains($0["op"] as? String ?? "") ? "storage_failed" : nil }
+    await data.load(model: model)
+    #expect(data.activity["a1"]?.newToday == 2 && data.activity["a1"]?.lastRead != nil)
+
+    // An account whose count was never read has no count, not 0.
+    server.document["accounts"] = server.accounts + [XBackend.account("a2", "sama", remote: "2")]
+    server.identities["a2"] = ("ready", "2026-11-10T00:00:00+00:00")
+    server.revision += 1
+    await data.load(model: model)
+    #expect(data.activity["a2"]?.newToday == nil)
+}

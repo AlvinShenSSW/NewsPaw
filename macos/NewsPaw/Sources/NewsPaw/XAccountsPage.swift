@@ -51,6 +51,8 @@ struct XAccountsPage: View {
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled else { return }
                 await data.load(model: model)
+                // A rule cleanup left pending by a failed read is finished once reads work again.
+                if data.hasPendingRuleCleanup { await data.retryRuleCleanup(model: model) }
             }
         }
         .onChange(of: partition) { data.outcome = nil }
@@ -429,7 +431,9 @@ private struct XAccountRow: View {
             if let read = activity.lastRead {
                 parts.append(L10n.XAccounts.lastRead(language, ["when": Stamp.relative(read, language)]))
             }
-            parts.append(L10n.XAccounts.newToday(language, ["count": String(activity.newToday) + (activity.capped ? "+" : "")]))
+            if let count = activity.newToday {
+                parts.append(L10n.XAccounts.newToday(language, ["count": String(count) + (activity.capped ? "+" : "")]))
+            }
         } else if account.observedAt == nil {
             parts.append(model.text(L10n.XAccounts.notReadYet))
         }

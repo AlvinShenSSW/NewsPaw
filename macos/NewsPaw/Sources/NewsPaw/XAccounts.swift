@@ -69,7 +69,8 @@ struct XPartitionImpact: Decodable, Equatable {
 /// When an account was last read and how many of its posts arrived today.
 struct XActivity: Equatable {
     var lastRead: Date?
-    var newToday = 0
+    /// nil until a count was read: an unread count is never shown as 0.
+    var newToday: Int?
     /// Today's count reached the read limit (`XAccountsData.postsLimit`): "50+".
     var capped = false
 }
@@ -379,10 +380,11 @@ final class XAccountsData {
     /// nil while the alert policy has not been read: unknown, not "no rules".
     func rulesOn(_ id: String) -> Int? { alerts.map { $0.rules.filter { $0.accountId == id }.count } }
 
-    /// The rules on an account, reading the alert policy first when it is not known yet, before a
-    /// change that may drop them is confirmed or sent. Unreadable: nil, and the reason under `key`.
+    /// The rules on an account, read fresh from the backend right before a change that may drop
+    /// them is confirmed or sent (another writer may have added one since the page last read).
+    /// Unreadable: nil, and the reason under `key` — a cached answer is not used instead.
     func rulesBeforeChange(_ id: String, key: String, model: AppModel) async -> Int? {
-        if alerts == nil, let failure = await readAlerts(model.client) {
+        if let failure = await readAlerts(model.client) {
             failures[key] = failure
             return nil
         }
@@ -437,8 +439,7 @@ final class XAccountsData {
         let readable = Set(accounts.filter(\.canCollect).map(\.id))
         if let last = activityRead, last.accounts == readable, ContinuousClock.now - last.at < activityInterval {
             activity = activity.filter { readable.contains($0.key) }
-        } else {
-            await loadActivity(client, now: now)
+        } else if await loadActivity(client, now: now) {
             activityRead = (ContinuousClock.now, readable)
         }
         loaded = true
@@ -446,30 +447,39 @@ final class XAccountsData {
 
     /// When each readable account was last read and how many of its posts were published today.
     /// Local reads only (`x.posts.coverage`, `x.posts.list`); nothing is fetched from X.
-    private func loadActivity(_ client: BackendClient, now: Date) async {
+    /// Returns whether every read worked; a failed read keeps what was known before (and the
+    /// counts are read again on the next poll).
+    private func loadActivity(_ client: BackendClient, now: Date) async -> Bool {
         struct Coverage: Decodable {
             struct Observation: Decodable { let observedAt: String?; let throughTime: String? }
             let latest: Observation?
         }
         struct Post: Decodable { let publishedAt: String }
         var next: [String: XActivity] = [:]
+        var complete = true
         let day = OverviewData.day(now)
         for account in accounts where account.canCollect {
-            var entry = XActivity()
+            var entry = activity[account.id] ?? XActivity()
             let scope: [String: Any] = ["kind": "account", "scope": account.id]
             if let data = try? await client.call(.xPostsCoverage, scope), let coverage: Coverage = try? BackendRPC.decode(data) {
                 entry.lastRead = (coverage.latest?.observedAt ?? coverage.latest?.throughTime).flatMap(OverviewData.date)
+            } else {
+                complete = false
             }
             var request = scope
             request["limit"] = Self.postsLimit
             if let data = try? await client.call(.xPostsList, request), let posts: [Post] = try? BackendRPC.decode(data) {
                 // Newest first: today's posts are the first ones.
-                entry.newToday = posts.filter { OverviewData.date($0.publishedAt).map(OverviewData.day) == day }.count
-                entry.capped = entry.newToday >= Self.postsLimit
+                let count = posts.filter { OverviewData.date($0.publishedAt).map(OverviewData.day) == day }.count
+                entry.newToday = count
+                entry.capped = count >= Self.postsLimit
+            } else {
+                complete = false
             }
             next[account.id] = entry
         }
         activity = next
+        return complete
     }
 
     // MARK: Adding
@@ -1103,23 +1113,49 @@ final class XAccountsData {
 
     /// `x.alerts.save` checks every stored rule, so a rule on an account that is no longer sent
     /// alone (moved into the digest, to the other kind, or removed) would make each later alert
-    /// change fail. Such rules go with the account; alerts without a rule turn off. Only the rules
-    /// of the accounts whose change caused it are touched, so a rule someone else saved meanwhile
-    /// (on another account) survives a conflict retry. The account change itself is already
-    /// saved: a failure here, including an unreadable policy, is the page's own ("rules"), and
-    /// its retry reruns only this cleanup.
+    /// change fail. Such rules go with the account; alerts without a rule turn off.
+    ///
+    /// - Only the rules of the accounts whose change caused it (and earlier ones still pending)
+    ///   are touched, so a rule someone else saved meanwhile survives a conflict retry.
+    /// - Whether an account is still sent alone is decided from a directory read made now, after
+    ///   the change, never from the page's cached view; the policy is read fresh too.
+    /// - Cleanups run one at a time; what is not done stays pending, shown as the page's own
+    ///   failure ("rules") with a retry, and the page's poll finishes it once reads work again.
     private func pruneRules(for ids: Set<String>, model: AppModel) async {
         cleanupPending.formUnion(ids)
+        let prior = cleanupQueue
+        let mine = Task { @MainActor [self] in
+            _ = await prior?.value
+            await runCleanup(model: model)
+        }
+        cleanupQueue = mine
+        await mine.value
+    }
+
+    private func runCleanup(model: AppModel) async {
         let targets = cleanupPending
-        guard !targets.isEmpty else { return }
-        if alerts == nil, let failure = await readAlerts(model.client) {
+        guard !targets.isEmpty else {
+            failures["rules"] = nil
+            return
+        }
+        let client = model.client
+        let fresh: [XAccountItem]
+        do {
+            struct Directory: Decodable { let accounts: [XAccountItem] }
+            let directory: Directory = try BackendRPC.decode(await client.call(.xAccountsList))
+            fresh = directory.accounts
+        } catch {
+            failures["rules"] = BackendError.wrapping(error)
+            return
+        }
+        if let failure = await readAlerts(client) {
             failures["rules"] = failure
             return
         }
-        let stale = targets.subtracting(accounts.filter(\.sendsAlone).map(\.id))
+        let stale = targets.subtracting(fresh.filter(\.sendsAlone).map(\.id))
         guard let rules = alerts?.rules, rules.contains(where: { $0.accountId.map(stale.contains) ?? false }) else {
             cleanupPending.subtract(targets)
-            failures["rules"] = nil
+            failures["rules"] = cleanupPending.isEmpty ? nil : failures["rules"]
             return
         }
         let saved = await saveAlerts("rules", model: model) { settings in
@@ -1136,10 +1172,11 @@ final class XAccountsData {
 
     /// Accounts whose alert-rule cleanup has not succeeded yet.
     @ObservationIgnored private var cleanupPending: Set<String> = []
+    @ObservationIgnored private var cleanupQueue: Task<Void, Never>?
+    var hasPendingRuleCleanup: Bool { !cleanupPending.isEmpty }
 
-    /// Reruns only the cleanup of alert rules that failed after an account change.
+    /// Reruns only the pending cleanup of alert rules (the note's retry, and the page's poll).
     func retryRuleCleanup(model: AppModel) async {
-        await load(model: model)
         await pruneRules(for: [], model: model)
     }
 

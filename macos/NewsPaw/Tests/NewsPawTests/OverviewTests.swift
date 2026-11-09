@@ -262,3 +262,28 @@ private func realisticDelivery(_ server: ScriptedBackend, parts: String) {
     #expect(model.config != nil && model.firstEnabledDigest == nil)
     #expect(try await replies.value.count == 3)
 }
+
+
+@Test @MainActor func aSkippedPartStaysAbandonedWhileTheEditionIsStillOpen() async {
+    let now = Date()
+    let server = backend(now: now, rows: [occurrence("o", status: "waiting", reason: "delivery_outcome_unknown", date: fixtureDay(0, from: now))])
+    realisticDelivery(server, parts: #"[{"ordinal":0,"state":"skipped","resolution":{"action":"skip"}}]"#)
+    let data = OverviewData()
+    await data.load(server.client, now: now)
+    #expect(data.abandoned == ["o"])
+}
+
+@Test @MainActor func onlyAMissingDeliveryRecordIsTreatedAsNothingSkipped() async {
+    let now = Date()
+    let server = backend(now: now, rows: [occurrence("p", status: "partial", date: fixtureDay(0, from: now))],
+                         delivery: #"{"ok":false,"error":"storage_error","error_detail":{"code":"storage_error","domain":"delivery","retryable":true}}"#)
+    let data = OverviewData()
+    await data.load(server.client, now: now)
+    #expect(data.failure?.code == "storage_error")
+}
+
+@Test func aRetimedEditionIsSkippedNotFailed() {
+    let row = try! BackendRPC.decode(Data(occurrence("r", status: "rescheduled", reason: "schedule_changed", date: "2026-11-10").utf8)) as Occurrence
+    #expect(OccurrenceState(row, paused: false, abandoned: false) == .skipped)
+    #expect(OccurrenceRow.skipNote(status: "rescheduled", reason: "schedule_changed") == L10n.Overview.retimed)
+}

@@ -43,7 +43,7 @@ enum OccurrenceState: Equatable {
             case "late": self = .late
             case "delivered": self = .delivered
             case "partial": self = .partial
-            case "no_news", "skipped", "superseded": self = .skipped
+            case "no_news", "skipped", "superseded", "rescheduled": self = .skipped
             case "outcome_unknown": self = occurrence.reason == "model_outcome_unknown" ? .modelUnknown : .deliveryUnknown
             case "held": self = .held
             default: self = .failed
@@ -107,10 +107,13 @@ final class OverviewData {
             week = rows.occurrences.filter { $0.civilDate >= start && $0.civilDate < day }
                 .sorted { $0.civilDate != $1.civilDate ? $0.civilDate > $1.civilDate : Self.byTarget($1, $0) }
             var skipped: Set<String> = []
-            for row in today + week where ["partial", "skipped", "outcome_unknown"].contains(row.status) {
-                // An edition stopped before delivery has no delivery record; that only means
-                // nothing was skipped, never that the overview cannot load.
-                if let job = row.jobId, (try? await Self.abandoned(job, client)) == true { skipped.insert(row.id) }
+            for row in today + week where Self.mayHaveSkippedParts(row) {
+                guard let job = row.jobId else { continue }
+                do {
+                    if try await Self.abandoned(job, client) { skipped.insert(row.id) }
+                } catch let error as BackendError where error.code == "missing_delivery" {
+                    // Stopped before delivery: there is nothing to skip, and nothing to show as failed.
+                }
             }
             abandoned = skipped
             spending = Self.spending(try BackendRPC.decode(await client.call(.budgetGet)), now: now)
@@ -210,6 +213,13 @@ final class OverviewData {
         }
         let document: Document
         let report: Report
+    }
+
+    /// Rows whose parts may carry a skip resolution, including an open edition still waiting
+    /// on an unknown delivery (scheduler keeps it `waiting`/`late` until it settles).
+    nonisolated static func mayHaveSkippedParts(_ row: Occurrence) -> Bool {
+        ["partial", "skipped", "outcome_unknown"].contains(row.status)
+            || (["waiting", "late"].contains(row.status) && row.reason == "delivery_outcome_unknown")
     }
 
     /// Each target Bot's parts for a job: the summary names the Bots, then each is read alone.

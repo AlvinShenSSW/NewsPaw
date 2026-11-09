@@ -31,6 +31,8 @@ _POLICY = dict(
     stt_hold=None,
     listen_enabled=False,
 )
+# Filled in when a profile is chosen without an amount (E10 contract §2): $0.05 each.
+DEFAULT_HOLD = 50_000
 _SAFE_QUERY = re.compile(r"^[^\x00-\x1f\x7f<>]{1,120}$")
 
 
@@ -109,6 +111,13 @@ class MediaCommands:
             or revision < 1
         ):
             raise MediaInputError("invalid_media_settings")
+        settings = dict(settings)
+        for capability in ("vision", "stt"):
+            if (
+                settings[capability + "_profile"] is not None
+                and settings[capability + "_hold"] is None
+            ):
+                settings[capability + "_hold"] = DEFAULT_HOLD
         with self.store._write():
             current = self.policy()
             if current["revision"] != revision:

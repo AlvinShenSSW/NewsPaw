@@ -24,7 +24,7 @@ from .credentials import CredentialError
 from .transport import SafeHTTPError, checked_url, provider_client
 
 PROVIDERS = {"openai", "mimo", "deepseek", "grok"}
-CAPABILITIES = ("text", "vision", "image", "stt", "tts")
+CAPABILITIES = ("text", "vision", "image", "stt")  # Speech output uses macOS `say`.
 IDENTITY_FIELDS = ("id", "partition", "role", "provider", "base_url", "model", "credential_ref")
 _ID = re.compile(r"[A-Za-z0-9_.:-]{1,140}")
 

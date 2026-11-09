@@ -28,6 +28,8 @@ _POLICY = {
     "vision_hold": None,
     "task_limit": None,
 }
+# Filled in when the owner turns the newspaper on without amounts (E10 contract §2).
+DEFAULT_HOLDS = {"generation_hold": 400_000, "vision_hold": 50_000, "task_limit": 1_000_000}
 _QUOTE = {"known": False, "source": "manual_hold"}
 _VISION_SCHEMA = {
     "type": "object",
@@ -97,6 +99,11 @@ class Newspapers:
             or revision < 1
         ):
             raise PaperError("invalid_newspaper_settings")
+        if settings["enabled"]:
+            settings = {
+                **settings,
+                **{k: v for k, v in DEFAULT_HOLDS.items() if settings[k] is None},
+            }
         for key in ("generation_hold", "vision_hold", "task_limit"):
             value = settings[key]
             if value is not None and (type(value) is not int or not 1 <= value <= 2**53):

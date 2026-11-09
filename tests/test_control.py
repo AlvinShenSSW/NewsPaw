@@ -632,3 +632,116 @@ async def test_unbounded_or_odd_op_names_stay_in_the_protocol_domain(control, op
         "error": "unknown_operation",
         "error_detail": {"code": "unknown_operation", "domain": "protocol", "retryable": False},
     }
+
+
+async def _drain(server):
+    await asyncio.gather(*list(server._background))
+
+
+async def test_saving_a_model_key_checks_text_once_per_key(control, monkeypatch):
+    server, store = control
+    calls = []
+
+    async def probe(probe_id, profile_id, capability, hold, *, revision=None):
+        calls.append((probe_id, profile_id, capability, hold))
+        return {"status": "verified"}
+
+    monkeypatch.setattr(server.probes, "probe", probe)
+    saved = await request(
+        server,
+        {
+            "op": "credentials.set",
+            "kind": "model_profiles",
+            "id": "normal_primary",
+            "value": "sk-fixture-value",
+            "revision": store.config_revision(),
+        },
+    )
+    assert saved["ok"]
+    await _drain(server)
+    assert len(calls) == 1
+    probe_id, profile, capability, hold = calls[0]
+    assert (profile, capability, hold) == ("normal_primary", "text", 10_000)
+    assert probe_id.startswith("auto.normal_primary.text.g")
+    bot = await request(
+        server,
+        {
+            "op": "credentials.set",
+            "kind": "bots",
+            "id": "missing",
+            "value": "999:fixture_credential_abcdefghijklmnop",
+            "revision": store.config_revision(),
+        },
+    )
+    assert not bot["ok"]
+    await _drain(server)
+    assert len(calls) == 1
+
+
+async def test_enabling_newspaper_and_media_fills_holds_and_checks_capabilities(
+    control, monkeypatch
+):
+    server, _ = control
+    calls = []
+
+    async def probe(probe_id, profile_id, capability, hold, *, revision=None):
+        calls.append((profile_id, capability))
+        return {"status": "verified"}
+
+    monkeypatch.setattr(server.probes, "probe", probe)
+    paper = (await request(server, {"op": "newspaper.policy"}))["result"]
+    settings = dict(
+        paper["settings"],
+        enabled=True,
+        generation_profile="normal_primary",
+        vision_profile="normal_backup",
+    )
+    saved = await request(
+        server, {"op": "newspaper.configure", "settings": settings, "revision": paper["revision"]}
+    )
+    assert saved["ok"], saved
+    assert {
+        k: saved["result"]["settings"][k] for k in ("generation_hold", "vision_hold", "task_limit")
+    } == {
+        "generation_hold": 400_000,
+        "vision_hold": 50_000,
+        "task_limit": 1_000_000,
+    }
+    media = (await request(server, {"op": "media.policy"}))["result"]
+    chosen = dict(media["settings"], vision_profile="normal_primary")
+    stored = await request(
+        server, {"op": "media.configure", "settings": chosen, "revision": media["revision"]}
+    )
+    assert stored["ok"] and stored["result"]["settings"]["vision_hold"] == 50_000
+    await _drain(server)
+    assert sorted(calls) == [
+        ("normal_backup", "vision"),
+        ("normal_primary", "image"),
+        ("normal_primary", "vision"),
+    ]
+    health = await request(server, {"op": "models.health"})
+    assert health["ok"] and health["result"] == {"profiles": []}
+
+
+async def test_an_already_verified_capability_is_not_checked_again(control, monkeypatch):
+    from newspaw.providers import ProfileRegistry
+
+    server, store = control
+    registry = ProfileRegistry(store)
+    registry.begin("manual.vision", "normal_primary", "vision", 1)
+    registry.finish("manual.vision", {"status": "verified"})
+    calls = []
+
+    async def probe(*args, **kwargs):
+        calls.append(args)
+
+    monkeypatch.setattr(server.probes, "probe", probe)
+    media = (await request(server, {"op": "media.policy"}))["result"]
+    chosen = dict(media["settings"], vision_profile="normal_primary")
+    assert (
+        await request(
+            server, {"op": "media.configure", "settings": chosen, "revision": media["revision"]}
+        )
+    )["ok"]
+    await _drain(server)
+    assert calls == []

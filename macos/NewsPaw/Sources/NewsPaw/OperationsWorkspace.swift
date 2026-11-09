@@ -181,7 +181,7 @@ private struct OperationsSheet: View {
     }
 
     private func load() async throws {
-        diagnostics = try BackendRPC.decode(await model.request("ops.diagnostics"))
+        diagnostics = try model.decodeReply(await model.request("ops.diagnostics"))
     }
 
     private func run(_ action: @MainActor () async throws -> Void) async {
@@ -227,7 +227,7 @@ private struct OperationsSheet: View {
             throw BackendFailure.rejected
         }
         let reply = try await model.request("ops.preview_import", fields: ["portable": object])
-        let view: RestorePreview = try BackendRPC.decode(reply)
+        let view: RestorePreview = try model.decodeReply(reply)
         let document = try ProtectedSettings.record(reply, revision: view.revision, field: "settings")
         let pretty = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
         normalizedSettings = String(decoding: pretty, as: UTF8.self)
@@ -248,7 +248,7 @@ private struct OperationsSheet: View {
     }
 
     private func previewCleanup() async throws {
-        cleanup = try BackendRPC.decode(await model.request("ops.cleanup"))
+        cleanup = try model.decodeReply(await model.request("ops.cleanup"))
     }
 
     private func clean() async throws {
@@ -260,6 +260,6 @@ private struct OperationsSheet: View {
 
     private func verify() async throws {
         backup = nil
-        backup = try BackendRPC.decode(await model.request("ops.verify_backup", fields: ["name": snapshot]))
+        backup = try model.decodeReply(await model.request("ops.verify_backup", fields: ["name": snapshot]))
     }
 }

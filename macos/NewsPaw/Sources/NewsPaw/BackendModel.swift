@@ -299,6 +299,33 @@ final class AppModel {
         }
     }
 
+    /// Decodes a result for the settings views that predate the typed client. A result
+    /// they cannot read is their failure: it replaces the shell's, like a malformed reply.
+    func decodeReply<Value: Decodable>(_ data: Data) throws -> Value {
+        do {
+            return try BackendRPC.decode(data)
+        } catch {
+            replaceFailure(BackendError(code: "invalid_reply"))
+            throw BackendFailure.invalidReply
+        }
+    }
+
+    /// What a pre-redesign view shows for `error` (they all say `.saveFailed`). The view's own
+    /// failure replaces the shell's, so `text(.saveFailed)` never names an unrelated earlier
+    /// one; an error with no backend code gets the generic sentence.
+    func viewFailed(_ error: Error) -> Phrase {
+        switch error {
+        case let failure as BackendError: replaceFailure(failure)
+        case is SocketFailure: replaceFailure(BackendError(code: "backend_unreachable"))
+        case BackendFailure.invalidReply, is DecodingError: replaceFailure(BackendError(code: "invalid_reply"))
+        // `request` already recorded the backend failure these stand for.
+        case BackendFailure.incompatible where lastFailure?.code == "unknown_operation": break
+        case BackendFailure.freshInstanceRequired where lastFailure?.code == "restore_requires_fresh_instance": break
+        default: replaceFailure(nil)
+        }
+        return .saveFailed
+    }
+
     private func replaceFailure(_ failure: BackendError?) {
         lastFailure = failure
         retryLast = nil

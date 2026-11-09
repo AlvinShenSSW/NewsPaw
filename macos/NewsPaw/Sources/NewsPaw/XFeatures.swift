@@ -276,14 +276,14 @@ private struct XFeatureSheet: View {
     private func load() async {
         do {
             let data = try await model.request(feature.readOperation)
-            let view: SettingsRevision = try BackendRPC.decode(data)
+            let view: SettingsRevision = try model.decodeReply(data)
             document = try ProtectedSettings.record(data, revision: view.revision, field: "settings")
             revision = view.revision
             enabled = document["enabled"] as? Bool ?? false
             timezone = document["timezone"] as? String ?? "Asia/Tokyo"
             daily = number("daily_limit")
             if feature == .alerts {
-                let feed: XAlertFeed = try BackendRPC.decode(data)
+                let feed: XAlertFeed = try model.decodeReply(data)
                 rules = feed.settings.rules
                 occurrences = feed.occurrences
                 cooldown = number("cooldown_minutes")
@@ -300,7 +300,7 @@ private struct XFeatureSheet: View {
                 visionBackup = vision.dropFirst().first ?? ""
                 speechPrimary = speech.first ?? ""
                 speechBackup = speech.dropFirst().first ?? ""
-                candidates = try BackendRPC.decode(await model.request("x.video.candidates"))
+                candidates = try model.decodeReply(await model.request("x.video.candidates"))
             }
         } catch { failure = XCopy.failed.text(model.uiLanguage) }
     }
@@ -347,7 +347,7 @@ private struct XFeatureSheet: View {
         failure = nil
         defer { busy = false }
         do {
-            video = try BackendRPC.decode(await model.request("x.video.inspect", fields: [
+            video = try model.decodeReply(await model.request("x.video.inspect", fields: [
                 "request_id": request, "job_id": selected.jobId, "post_id": selected.postId,
             ]))
         } catch { failure = XCopy.failed.text(model.uiLanguage) }
@@ -361,7 +361,7 @@ private struct XFeatureSheet: View {
         failure = nil
         defer { busy = false }
         do {
-            video = try BackendRPC.decode(await model.request("x.video.status", fields: ["request_id": request]))
+            video = try model.decodeReply(await model.request("x.video.status", fields: ["request_id": request]))
         } catch { failure = XCopy.failed.text(model.uiLanguage) }
     }
 }

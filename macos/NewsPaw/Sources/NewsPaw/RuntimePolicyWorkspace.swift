@@ -156,11 +156,11 @@ private struct RuntimePolicyEditor: View {
         do {
             let operation = kind == .budget ? "budget.get" : "schedule.status"
             let data = try await model.request(operation)
-            let state: SettingsRevision = try BackendRPC.decode(data)
+            let state: SettingsRevision = try model.decodeReply(data)
             document = try ProtectedSettings.record(data, revision: state.revision, field: kind == .schedule ? "settings" : "document")
             revision = state.revision
             if kind == .budget {
-                let usage: BudgetReport = try BackendRPC.decode(data)
+                let usage: BudgetReport = try model.decodeReply(data)
                 report = visiblePeriods(usage.report.periods)
                 let model = document["model"] as? [String: Any] ?? [:]
                 let x = document["x"] as? [String: Any] ?? [:]
@@ -173,7 +173,7 @@ private struct RuntimePolicyEditor: View {
                 normalHold = (holds["normal"] as? Int).map(String.init) ?? ""
                 adultHold = (holds["adult"] as? Int).map(String.init) ?? ""
             }
-        } catch { failure = .saveFailed }
+        } catch { failure = model.viewFailed(error) }
     }
 
     private func save() async {
@@ -206,6 +206,6 @@ private struct RuntimePolicyEditor: View {
             await model.refresh()
             dismiss()
         } catch BackendFailure.conflict { failure = .conflict }
-        catch { failure = .saveFailed }
+        catch { failure = model.viewFailed(error) }
     }
 }

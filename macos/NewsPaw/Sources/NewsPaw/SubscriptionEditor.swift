@@ -358,7 +358,7 @@ struct SubscriptionEditor: View {
         defer { busy = false }
         do {
             let fields: [String: Any] = ["draft": draft.fields, "revision": revision]
-            route = try BackendRPC.decode(await model.request("subscriptions.preview", fields: fields))
+            route = try model.decodeReply(await model.request("subscriptions.preview", fields: fields))
             previewKey = draftKey
             if save {
                 guard !enable || route?.blockers.isEmpty == true else { return }
@@ -369,7 +369,7 @@ struct SubscriptionEditor: View {
         } catch BackendFailure.conflict {
             failure = .conflict
         } catch {
-            failure = .saveFailed
+            failure = model.viewFailed(error)
         }
     }
 }

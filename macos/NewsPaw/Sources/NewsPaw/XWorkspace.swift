@@ -269,8 +269,8 @@ struct XWorkspace: View {
         do {
             async let accountsData = model.request("x.accounts.list")
             async let listsData = model.request("x.lists.list")
-            let next: XDirectoryView = try BackendRPC.decode(await accountsData)
-            let nextLists: [XList] = try BackendRPC.decode(await listsData)
+            let next: XDirectoryView = try model.decodeReply(await accountsData)
+            let nextLists: [XList] = try model.decodeReply(await listsData)
             guard !Task.isCancelled else { return }
             directory = next
             lists = nextLists
@@ -399,7 +399,7 @@ private struct XOfficialRead: View {
                 ])
                 : model.request("x.operation", fields: ["request_id": request.id])
             )
-            let result: XReceipt = try BackendRPC.decode(data)
+            let result: XReceipt = try model.decodeReply(data)
             receipt = result
             if result.state != "running" && result.state != "outcome_unknown" { self.request = nil }
             await model.refresh()
@@ -609,8 +609,8 @@ private struct XAccountEditor: View {
         do {
             async let state = model.request("x.accounts.status", fields: ["account_id": account.id])
             async let report = model.request("x.posts.coverage", fields: ["kind": "account", "scope": account.id])
-            account = try BackendRPC.decode(await state)
-            coverage = try BackendRPC.decode(await report)
+            account = try model.decodeReply(await state)
+            coverage = try model.decodeReply(await report)
         } catch { failure = xFailure(error, model) }
     }
 
@@ -618,7 +618,7 @@ private struct XAccountEditor: View {
         busy = true
         defer { busy = false }
         do {
-            let next: XPartitionImpact = try BackendRPC.decode(
+            let next: XPartitionImpact = try model.decodeReply(
                 await model.request("x.accounts.partition_impact", fields: ["account_id": account.id])
             )
             guard next.revision == revision else { throw BackendFailure.conflict }
@@ -698,12 +698,12 @@ private struct XListEditor: View {
             let fields = ["kind": "list", "scope": list.id]
             async let states = model.request("x.lists.list")
             async let report = model.request("x.posts.coverage", fields: fields)
-            let entries: [XList] = try BackendRPC.decode(await states)
+            let entries: [XList] = try model.decodeReply(await states)
             guard let latest = entries.first(where: { $0.id == list.id }) else {
                 throw BackendFailure.conflict
             }
             list = latest
-            coverage = try BackendRPC.decode(await report)
+            coverage = try model.decodeReply(await report)
             failure = nil
         } catch { failure = xFailure(error, model) }
     }
@@ -807,8 +807,8 @@ private struct XBudgetEditor: View {
     private func load() async {
         do {
             let data = try await model.request("budget.get")
-            let version: SettingsRevision = try BackendRPC.decode(data)
-            let usage: XBudgetReport = try BackendRPC.decode(data)
+            let version: SettingsRevision = try model.decodeReply(data)
+            let usage: XBudgetReport = try model.decodeReply(data)
             document = try ProtectedSettings.record(data, revision: version.revision)
             guard let x = document["x"] as? [String: Any],
                   let partitionLimits = x["partition_limits"] as? [String: Any],

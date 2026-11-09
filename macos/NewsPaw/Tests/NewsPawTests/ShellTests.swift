@@ -221,6 +221,38 @@ private final class Box<Value>: @unchecked Sendable {
     #expect(try await replies.value.count == 11)
 }
 
+@Test @MainActor func aViewFailureAfterASuccessfulRequestNamesItselfNotTheShellFailure() async throws {
+    struct LocalCheck: Error {}
+    let fixture = try FixtureSocket()
+    let running = #"{"ok":true,"result":{"protocol_version":1,"state":"running","operations":["setup.readiness"]}}"# + "\n"
+    let ready = #"{"ok":true,"result":{"complete":false,"next":"bot","scheduling_enabled":true,"steps":[]}}"# + "\n"
+    let configuration = #"{"ok":true,"result":{"revision":1,"document":{"ui_locale":"en","news_output_locale":"en","categories":[],"subscriptions":[],"sources":[],"accounts":[],"model_profiles":[]}}}"# + "\n"
+    let bots = #"{"ok":true,"result":[]}"# + "\n"
+    let policy = #"{"ok":true,"result":{"revision":3,"settings":{"enabled":true},"activated_at":null,"occurrences":[]}}"# + "\n"
+    let refused = #"{"ok":false,"error":"rate_limited","error_detail":{"code":"rate_limited","domain":"schedule","retryable":true}}"# + "\n"
+    let malformed = #"{"ok":true,"result":{"unexpected":true}}"# + "\n"
+    let replies = fixture.serve([running, ready, configuration, bots, policy, refused, running, ready, configuration, bots, malformed])
+    let name = "NewsPawTests-" + UUID().uuidString
+    let defaults = try #require(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let model = AppModel(socket: LocalSocket(path: fixture.path), defaults: defaults)
+    await model.refresh()
+    await model.setPaused(true)
+    #expect(model.retryLast != nil)
+    // A result the view cannot decode (the bots.status path in BotWorkspace).
+    let reply = try await model.request("bots.status", fields: ["bot_id": "b"])
+    #expect(throws: BackendFailure.invalidReply) { let _: BotStatus = try model.decodeReply(reply) }
+    #expect(model.lastFailure?.code == "invalid_reply" && model.retryLast == nil)
+    #expect(model.viewFailed(BackendFailure.invalidReply) == .saveFailed)
+    #expect(model.text(.saveFailed) == FailureCopy.message(for: BackendError(code: "invalid_reply"), .en))
+    // A view's own check (no backend code) gets the generic sentence, not an older failure.
+    _ = model.viewFailed(LocalCheck())
+    #expect(model.lastFailure == nil && model.text(.saveFailed) == AppLanguage.en.text(.saveFailed))
+    _ = model.viewFailed(BackendError(code: "invalid_token", domain: "bots"))
+    #expect(model.text(.saveFailed) == FailureCopy.message(for: BackendError(code: "invalid_token", domain: "bots"), .en))
+    #expect(try await replies.value.count == 11)
+}
+
 @Test @MainActor func aLegacyRequestWhileDisconnectedDropsTheShellRetry() async throws {
     let fixture = try FixtureSocket()
     let running = #"{"ok":true,"result":{"protocol_version":1,"state":"running","operations":["setup.readiness"]}}"# + "\n"

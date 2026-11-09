@@ -212,7 +212,7 @@ X 账号    普通 | 成人 分段；添加行；账号列表；汇总卡；读�
 | paused | 灰「已暂停」 | 「全部推送已暂停」 | `恢复`（跳设置） |
 | partial | 黄「部分发送」 | 「3 / 5 段已到达」 | `检查并补发` |
 | outcome_unknown，reason `model_outcome_unknown` | 黄「结果未知」 | 「写简报的模型调用发出去了但没收到结果，可能已经扣费。」 | `确认后重试` → 确认框说明可能重复扣费 → `jobs.resume(acknowledge_duplicate_charge: true)` |
-| outcome_unknown（投递 part） | 黄「结果未知」 | 「Telegram 没有回应，这期可能已发出，也可能没有。」 | `检查并补发` → 确认框说明可能重复 → `delivery.resolve(action: retry, acknowledge_duplicate_send: true)`；`已收到` → `delivery.resolve(action: confirm)` |
+| outcome_unknown（投递 part） | 黄「结果未知」 | 「Telegram 没有回应，这期可能已发出，也可能没有。」 | `检查并补发` → 确认框说明可能重复 → `delivery.resolve(action: retry, acknowledge_duplicate_send: true)`；`不用补发`（手机上已经收到）→ `delivery.resolve(action: skip)` |
 | held（reason `partial_assignment_changed`） | 黄「等你决定」 | 「这期已发出一部分，之后发送对象变了。」 | `继续发剩下的` → `schedule.resolve(continue)`；`停止` → `schedule.resolve(stop)` |
 | blocked、cancelled；target blocked / revoked | 红「未能发送」 | 具体 reason 文案（§2.4） | reason 对应的修复按钮 |
 
@@ -335,7 +335,7 @@ X 账号    普通 | 成人 分段；添加行；账号列表；汇总卡；读�
 - 「X 每天最多读取」`TextField` 条数 + 「今天已读 84 条」。
 - 「其他上限」行：仅当生图月额、供应商额、X 分区 / 账号额任一非空时出现，逐项列出（如「生图每月最多 $5」）并各带 `清除`；对应 reason（`image_limit`、`provider_limit`、`partition_limit`、`account_limit`）按 §2.4 显示。
 - 说明行「用量按模型返回的 token 数计价；没有价格信息的模型会标为「未计价」，不会因此停发。」
-- 不出现：hold、价格表、cycle_day、供应商额。
+- 不出现：hold、价格表、cycle_day；次级上限只在「其他上限」行出现（见上）。
 
 ### 6.4 X 数据连接
 
@@ -428,7 +428,7 @@ List 行：方形图标、名称 · N 个成员、「成员全部并入汇总 ·
 
 ## 10. 验收清单（跨 issue，端到端）
 
-1. 全新数据目录 → 首次设置窗口 → 不离开窗口完成配对、Key、两份简报 → `完成并试发一期` → 手机收到一期 → 概览无清单、今天的推送出现两行。另走一遍 `完成，等定时推送`：概览只剩第 4 步「发一期试试」，第一份定时简报到达后清单消失。
+1. 全新数据目录 → 首次设置窗口 → 不离开窗口完成配对、Key、两份简报 → `完成并试发一期` → 手机收到一期 → 概览无清单、今天的推送出现三行（试发的一期显示「已发送」，两份简报的定时期次显示「等待中」）。另走一遍 `完成，等定时推送`：概览只剩第 4 步「发一期试试」，第一份定时简报到达后清单消失。
 2. 把系统时间推到 08:00 → 概览行变「已发送」，Telegram（假服务器）收到一条。
 3. 拔网线后触发一期 → 概览出现「结果未知」+ `检查并补发` → 恢复网络点击 → 变为「已发送」且 Telegram 只收到一条。
 4. 在 Telegram 里用命令改时间 → App 3 秒内刷新；同时在 App 改同一字段 → 出现「用我的 / 用它的」，不出现任何 revision 字样。

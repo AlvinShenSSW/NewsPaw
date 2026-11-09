@@ -39,8 +39,14 @@ struct LocalSocket: Sendable {
     let path: String
     var timeoutMilliseconds: Int = 1_800
 
+    /// The exchange blocks in `poll`, so it runs on a Dispatch thread: a blocked thread from
+    /// Swift's small cooperative pool would stall every other task, including other requests.
     func request(_ body: Data) async throws -> Data {
-        try await Task.detached(priority: .utility) { try exchange(body) }.value
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                continuation.resume(with: Result { try exchange(body) })
+            }
+        }
     }
 
     private func exchange(_ body: Data) throws -> Data {

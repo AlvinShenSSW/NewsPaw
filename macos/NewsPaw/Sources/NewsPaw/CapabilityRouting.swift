@@ -79,7 +79,7 @@ struct CategoryRoutingEditor: View {
             await model.refresh()
             dismiss()
         } catch BackendFailure.conflict { failure = .conflict }
-        catch { failure = .saveFailed }
+        catch { failure = model.viewFailed(error) }
     }
 }
 
@@ -195,10 +195,10 @@ private struct MediaPolicyEditor: View {
     private func load() async {
         do {
             let data = try await model.request(kind.rawValue + ".policy")
-            let current: SettingsRevision = try BackendRPC.decode(data)
+            let current: SettingsRevision = try model.decodeReply(data)
             values = try ProtectedSettings.record(data, revision: current.revision, field: "settings")
             revision = current.revision
-        } catch { failure = .saveFailed }
+        } catch { failure = model.viewFailed(error) }
     }
 
     private func save() async {
@@ -216,6 +216,6 @@ private struct MediaPolicyEditor: View {
             _ = try await model.request(kind.rawValue + ".configure", fields: ["settings": settings, "revision": revision])
             dismiss()
         } catch BackendFailure.conflict { failure = .conflict }
-        catch { failure = .saveFailed }
+        catch { failure = model.viewFailed(error) }
     }
 }

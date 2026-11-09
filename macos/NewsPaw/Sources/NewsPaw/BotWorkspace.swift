@@ -187,12 +187,12 @@ private struct BotEditor: View {
         defer { busy = false }
         do { try await action() }
         catch BackendFailure.conflict { failure = .conflict }
-        catch { failure = .saveFailed }
+        catch { failure = model.viewFailed(error) }
     }
 
     private func refreshBot() async throws {
-        status = try BackendRPC.decode(await model.request("bots.status", fields: ["bot_id": selection.id]))
-        let snapshot: ConfigSnapshot = try BackendRPC.decode(await model.request("config.get"))
+        status = try model.decodeReply(await model.request("bots.status", fields: ["bot_id": selection.id]))
+        let snapshot: ConfigSnapshot = try model.decodeReply(await model.request("config.get"))
         revision = snapshot.revision
         adult = snapshot.document.bots?.first(where: { $0.id == selection.id })?.adultAllowed ?? false
         if status?.paired == true { pairCode = nil }
@@ -229,7 +229,7 @@ private struct BotEditor: View {
         await perform {
             var request: [String: Any] = ["bot_id": selection.id, "generation": status?.generation ?? 0]
             if action == "pair" {
-                pairCode = try BackendRPC.decode(await model.request("bots.pair_code", fields: request))
+                pairCode = try model.decodeReply(await model.request("bots.pair_code", fields: request))
             } else if action == "verify" {
                 _ = try await model.request("bots.verify", fields: request)
                 pairCode = nil
@@ -254,7 +254,7 @@ private struct BotEditor: View {
     private func test(send: Bool) async {
         guard let request = testRequest else { return }
         await perform {
-            receipt = try BackendRPC.decode(await model.request(send ? "bots.test_send" : "bots.test_status", fields: [
+            receipt = try model.decodeReply(await model.request(send ? "bots.test_send" : "bots.test_status", fields: [
                 "bot_id": selection.id, "generation": request.generation, "request_id": request.id,
             ]))
             try await refreshBot()
@@ -263,7 +263,7 @@ private struct BotEditor: View {
 
     private func previewRemoval() async {
         await perform {
-            impact = try BackendRPC.decode(await model.request("targets.bot_impact", fields: ["bot_id": selection.id]))
+            impact = try model.decodeReply(await model.request("targets.bot_impact", fields: ["bot_id": selection.id]))
             confirmRemove = true
         }
     }

@@ -149,14 +149,14 @@ struct SourceWorkspace: View {
             let limit = 1024 * 1024
             guard let data = try file.read(upToCount: limit + 1), data.count <= limit,
                   let text = String(data: data, encoding: .utf8) else { throw BackendFailure.invalidReply }
-            importResult = try BackendRPC.decode(await model.request(
+            importResult = try model.decodeReply(await model.request(
                 "sources.import_opml", fields: ["content": text, "revision": importRevision]
             ))
             await model.refresh()
         } catch BackendFailure.conflict {
             failure = .conflict
         } catch {
-            failure = .saveFailed
+            failure = model.viewFailed(error)
         }
     }
 }
@@ -338,19 +338,19 @@ private struct SourceEditor: View {
         } catch BackendFailure.conflict {
             failure = .conflict
         } catch {
-            failure = .saveFailed
+            failure = model.viewFailed(error)
         }
     }
 
     private func readCatalog() async {
         await perform {
-            catalog = try BackendRPC.decode(await model.request("sources.catalog"))
+            catalog = try model.decodeReply(await model.request("sources.catalog"))
         }
     }
 
     private func discover() async {
         await perform {
-            discovery = try BackendRPC.decode(await model.request("sources.discover", fields: ["url": draft.url]))
+            discovery = try model.decodeReply(await model.request("sources.discover", fields: ["url": draft.url]))
             if discovery?.kind == "draft" { draft.kind = "draft" }
         }
     }
@@ -359,7 +359,7 @@ private struct SourceEditor: View {
         await perform {
             var target = draft
             target.enabled = enabled
-            let result: SourceMutation = try BackendRPC.decode(await model.request(
+            let result: SourceMutation = try model.decodeReply(await model.request(
                 "sources.save", fields: ["source": target.fields, "revision": revision]
             ))
             draft = target
@@ -373,13 +373,13 @@ private struct SourceEditor: View {
     private func preview() async {
         await perform {
             trial = nil
-            trial = try BackendRPC.decode(await model.request("sources.preview", fields: ["source_id": draft.id]))
+            trial = try model.decodeReply(await model.request("sources.preview", fields: ["source_id": draft.id]))
         }
     }
 
     private func review(_ action: String) async {
         await perform {
-            impact = try BackendRPC.decode(await model.request(
+            impact = try model.decodeReply(await model.request(
                 "sources.impact", fields: ["source_id": draft.id, "action": action]
             ))
             showImpact = true
@@ -394,7 +394,7 @@ private struct SourceEditor: View {
                 dismiss()
             } else if var target = saved, preview.revision == revision {
                 target.enabled = false
-                let result: SourceMutation = try BackendRPC.decode(await model.request(
+                let result: SourceMutation = try model.decodeReply(await model.request(
                     "sources.save", fields: ["source": target.fields, "revision": preview.revision]
                 ))
                 draft = target

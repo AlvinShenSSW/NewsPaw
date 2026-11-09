@@ -31,33 +31,36 @@ struct NewsPawApp: App {
 
     var body: some Scene {
         Window("NewsPaw", id: "settings") {
-            SettingsWindow(model: model) { action in
+            MainWindow(model: model) { action in
                 lifetime.revealSettings = {
                     action(id: "settings")
                     NSApp.activate()
                 }
             }
-                .frame(minWidth: 680, minHeight: 450)
-                .preferredColorScheme(developmentAppearance)
-                .task { model.startMonitoring() }
+            .frame(minWidth: 900, minHeight: 600)
+            .preferredColorScheme(developmentAppearance)
+            .task { model.startMonitoring() }
         }
-        .defaultSize(width: 990, height: 680)
+        .defaultSize(width: 1180, height: 820)
         .commands {
             CommandGroup(replacing: .appSettings) {
-                Button(model.text(.openSettings)) { lifetime.revealSettings?() }
-                    .keyboardShortcut(",")
+                Button(model.text(L10n.Page.settings)) {
+                    model.page = .settings
+                    lifetime.revealSettings?()
+                }
+                .keyboardShortcut(",")
             }
             CommandGroup(replacing: .appTermination) {
-                Button(model.text(.quitSettings)) { NSApp.terminate(nil) }
+                Button(model.text(L10n.Shell.quitWindow)) { NSApp.terminate(nil) }
                     .keyboardShortcut("q")
             }
-            CommandMenu(model.text(.settings)) {
-                ForEach(Array(SettingsPage.allCases.enumerated()), id: \.element) { index, page in
+            CommandMenu("NewsPaw") {
+                ForEach(Array(Page.allCases.enumerated()), id: \.element) { index, page in
                     Button(model.text(page.title)) { model.page = page }
-                        .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: [.command, .option])
+                        .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
                 }
                 Divider()
-                Button(model.text(.refresh)) { Task { await model.refresh() } }
+                Button(model.text(L10n.Shell.refresh)) { Task { await model.refresh() } }
                     .keyboardShortcut("r")
             }
         }
@@ -65,326 +68,173 @@ struct NewsPawApp: App {
         MenuBarExtra {
             ServiceMenu(model: model)
         } label: {
-            Label("NewsPaw", systemImage: "pawprint.fill")
+            Label("NewsPaw", systemImage: model.schedulingPaused ? "pawprint" : "pawprint.fill")
         }
     }
 }
 
+/// Menu bar item (interaction-spec §8.3). Stopping the backend lives in Settings, behind a
+/// confirmation, so it cannot be chosen by accident from here.
 private struct ServiceMenu: View {
     @Environment(\.openWindow) private var openWindow
     let model: AppModel
 
     var body: some View {
-        Text(model.text(model.connection.phrase))
+        Text(model.text(model.statusTitle))
         Divider()
-        Button(model.text(.openSettings)) {
+        Button(model.text(L10n.Shell.openNewsPaw)) {
             openWindow(id: "settings")
             NSApp.activate()
         }
-        Button(model.text(.refresh)) { Task { await model.refresh() } }
+        .keyboardShortcut("o")
+        if model.connection == .connected {
+            Button(model.text(model.schedulingPaused ? L10n.Shell.resumeAll : L10n.Shell.pauseAll)) {
+                Task { await model.setPaused(!model.schedulingPaused) }
+            }
+            .disabled(model.busy)
+        }
         Divider()
-        Button(model.text(.stopBackend)) { Task { await model.stopBackend() } }
-            .disabled(model.connection != .connected || model.busy)
-        Button(model.text(.quitSettings)) { NSApp.terminate(nil) }
+        Button(model.text(L10n.Shell.quitWindow)) { NSApp.terminate(nil) }
+            .keyboardShortcut("q")
     }
 }
 
-struct SettingsWindow: View {
+struct MainWindow: View {
     @Environment(\.openWindow) private var openWindow
     @Bindable var model: AppModel
-    @State private var subscriptionEditor: SubscriptionSelection?
     var registerOpen: ((OpenWindowAction) -> Void)? = nil
 
     var body: some View {
         NavigationSplitView {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 9) {
-                    BrandMark(size: 42)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("NewsPaw").font(.headline)
-                        Text(model.text(.tagline))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.top, 12)
-                List(SettingsPage.allCases, selection: $model.page) { page in
-                    Label(model.text(page.title), systemImage: page.symbol)
-                        .tag(page)
-                        .accessibilityIdentifier("page-\(page.id)")
-                }
-                .listStyle(.sidebar)
-                ConnectionBadge(model: model)
-                    .padding(.horizontal, 13)
-                    .padding(.bottom, 12)
-            }
-            .navigationSplitViewColumnWidth(min: 188, ideal: 215, max: 265)
+            Sidebar(model: model)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 200, max: 240)
         } detail: {
-            let page = model.page ?? .subscriptions
             ScrollView {
-                VStack(alignment: .leading, spacing: 21) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(model.text(page.title))
-                            .font(.title2.weight(.semibold))
-                            .accessibilityAddTraits(.isHeader)
-                            .accessibilityIdentifier("page-title")
-                        Text(model.text(page.subtitle))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                VStack(alignment: .leading, spacing: 18) {
                     if let error = model.error {
-                        Label(model.text(error), systemImage: "exclamationmark.circle")
-                            .foregroundStyle(.secondary)
+                        if error != .stopFailed, let failure = model.lastFailure {
+                            FailureNote(model: model, failure: failure, action: model.retryLast.map { retry in
+                                { Task { await retry() } }
+                            })
+                        } else {
+                            Label(model.text(error), systemImage: "exclamationmark.circle.fill")
+                                .foregroundStyle(.red)
+                        }
                     }
-                    pageContent(page)
+                    PageContent(model: model, page: model.page)
                 }
-                .frame(maxWidth: 880, alignment: .leading)
-                .padding(25)
+                .frame(maxWidth: 960, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .background(Color(nsColor: .windowBackgroundColor))
+            .navigationTitle(model.text(model.page.title))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         Task { await model.refresh() }
                     } label: {
-                        Label(model.text(.refresh), systemImage: "arrow.clockwise")
+                        Label(model.text(L10n.Shell.refresh), systemImage: "arrow.clockwise")
                     }
-                    .help(model.text(.refresh))
+                    .help(model.text(L10n.Shell.refresh))
                 }
             }
-        }
-        .sheet(item: $subscriptionEditor) { selection in
-            SubscriptionEditor(model: model, selection: selection)
         }
         .onAppear { registerOpen?(openWindow) }
     }
+}
 
-    @ViewBuilder private func pageContent(_ page: SettingsPage) -> some View {
-        if page == .language {
-            languagePage
-        } else if page == .delivery {
-            VStack(alignment: .leading, spacing: 16) {
-                ResidentControls(model: model)
-                if model.config != nil {
-                    delivery
-                } else {
-                    statusCard(model.text(model.connection.phrase), note: model.text(.offlineNote))
+private struct Sidebar: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 9) {
+                BrandMark(size: 34)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("NewsPaw").font(.headline)
+                    Text(model.text(L10n.Shell.tagline)).font(.caption).foregroundStyle(.secondary)
                 }
             }
-        } else if let config = model.config {
-            switch page {
-            case .subscriptions: subscriptions(config)
-            case .accounts: XWorkspace(model: model)
-            case .models: models(config)
-            case .delivery, .language: EmptyView()
-            }
-        } else {
-            statusCard(model.text(model.connection.phrase), note: model.text(.offlineNote))
-        }
-    }
-
-    private func subscriptions(_ config: AppConfig) -> some View {
-        let revision = model.configRevision
-        return VStack(alignment: .leading, spacing: 17) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 305), spacing: 11)], spacing: 11) {
-                ForEach(config.categories) { category in
-                    let entries = config.subscriptions.filter { $0.categoryId == category.id }
-                    let time = config.displaySubscription(for: category.id)
-                    let enabled = time?.enabled == true
-                    HStack(alignment: .center, spacing: 11) {
-                        CategorySymbol(id: category.id)
-                            .foregroundStyle(enabled ? Color.accentColor : Color.secondary)
-                            .frame(width: 23)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(categoryTitle(category)).font(.headline)
-                            Text(model.text(category.partition == "adult" ? .adult : .ordinary))
-                                .font(.caption).foregroundStyle(.secondary)
-                            if let time, !time.times.isEmpty {
-                                Text(time.times.joined(separator: " · ") + "  " + time.timezone)
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 5)
-                        CategorySubscriptionToggle(
-                            model: model, category: category, title: categoryTitle(category),
-                            subscriptions: entries, enabled: enabled, revision: revision
-                        ) { subscriptionEditor = $0 }
-                        Menu {
-                            ForEach(entries) { subscription in
-                                Button(subscription.name ?? categoryTitle(category)) {
-                                    subscriptionEditor = SubscriptionSelection(
-                                        category: category, subscription: subscription, revision: revision
-                                    )
-                                }
-                            }
-                            Button(SubscriptionCopy.new.text(model.uiLanguage)) {
-                                subscriptionEditor = SubscriptionSelection(
-                                    category: category, subscription: nil, revision: revision
-                                )
-                            }
-                        } label: {
-                            Image(systemName: "slider.horizontal.3")
-                        }
-                        .accessibilityLabel(SubscriptionCopy.edit.text(model.uiLanguage))
-                        .fixedSize()
-                    }
-                    .padding(13)
-                    .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
-                    .background(cardBackground)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(enabled ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: 1)
-                    }
-                    .accessibilityElement(children: .contain)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            List(Page.allCases, selection: Binding(get: { model.page }, set: { model.page = $0 ?? .overview })) { page in
+                Label {
+                    Text(model.text(page.title))
+                } icon: {
+                    PageIcon(page: page)
                 }
+                .tag(page)
+                .accessibilityIdentifier("page-\(page.id)")
             }
-            SourceWorkspace(model: model, sources: config.sources)
+            .listStyle(.sidebar)
+            StatusLine(model: model)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 12)
         }
-    }
-
-    private func models(_ config: AppConfig) -> some View {
-        ModelWorkspace(model: model, config: config)
-    }
-
-    private var delivery: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            BotWorkspace(model: model)
-            RuntimePolicyWorkspace(model: model)
-            OperationsWorkspace(model: model)
-            VStack(alignment: .leading, spacing: 11) {
-                ConnectionBadge(model: model)
-                Text(model.text(.lifecycleNote)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                ViewThatFits(in: .horizontal) {
-                    HStack { stopButton; quitButton }
-                    VStack(alignment: .leading) { stopButton; quitButton }
-                }
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(cardBackground)
-        }
-    }
-
-    private var stopButton: some View {
-        Button(model.text(.stopBackend)) { Task { await model.stopBackend() } }
-            .disabled(model.connection != .connected || model.busy)
-            .accessibilityIdentifier("stop-backend")
-    }
-
-    private var quitButton: some View {
-        Button(model.text(.quitSettings)) { NSApp.terminate(nil) }
-            .accessibilityIdentifier("quit-settings")
-    }
-
-    private var languagePage: some View {
-        VStack(alignment: .leading, spacing: 17) {
-            VStack(alignment: .leading, spacing: 7) {
-                Picker(model.text(.appLanguage), selection: Binding(
-                    get: { model.uiLanguage },
-                    set: { value in Task { await model.chooseDisplayLanguage(value) } }
-                )) {
-                    ForEach(AppLanguage.allCases) { option in
-                        Text(option.displayName).tag(option)
-                    }
-                }
-                .disabled(model.busy)
-                .accessibilityIdentifier("display-language")
-                Text(model.text(.displayLocal)).font(.caption).foregroundStyle(.secondary)
-            }
-            .padding(15)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(cardBackground)
-            VStack(alignment: .leading, spacing: 7) {
-                if let current = model.config?.newsOutputLocale {
-                    Picker(model.text(.newsLanguage), selection: Binding(
-                        get: { model.config?.newsOutputLocale ?? current },
-                        set: { value in Task { await model.chooseNewsLanguage(value) } }
-                    )) {
-                        ForEach(AppLanguage.allCases) { option in
-                            Text(option.displayName).tag(option)
-                        }
-                    }
-                    .disabled(model.busy)
-                    .accessibilityIdentifier("news-language")
-                } else {
-                    Text(model.text(.newsLanguage)).font(.headline)
-                    Text(model.text(.newsUnavailable)).foregroundStyle(.secondary)
-                }
-            }
-            .padding(15)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(cardBackground)
-        }
-    }
-
-    private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor))
-    }
-
-    private func sectionTitle(_ key: Phrase) -> some View {
-        Text(model.text(key)).font(.headline).accessibilityAddTraits(.isHeader)
-    }
-
-    private func line(_ title: String, note: String? = nil, status: Phrase? = nil) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            if let status {
-                Text(model.text(status)).font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .padding(12)
-        .accessibilityElement(children: .combine)
-    }
-
-    private func statusCard(_ title: String, note: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.headline)
-            if let note { Text(note).foregroundStyle(.secondary) }
-        }
-        .padding(15)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardBackground)
-    }
-
-    private func categoryTitle(_ category: AppConfig.Category) -> String {
-        let names: [String: Phrase] = [
-            "world": .world, "japan": .japan, "australia": .australia,
-            "china": .china, "electronics": .electronics, "ai": .ai,
-            "av": .av, "x": .x, "x_adult": .xAdult,
-        ]
-        return names[category.id].map(model.text) ?? category.name
     }
 }
 
-private struct ConnectionBadge: View {
-    let model: AppModel
+/// 20pt rounded colour tile with a white symbol, as in System Settings.
+struct PageIcon: View {
+    let page: Page
+
+    private var tint: Color {
+        switch page {
+        case .overview: .blue
+        case .digests: .orange
+        case .xAccounts: .black
+        case .connect: .green
+        case .settings: .gray
+        }
+    }
 
     var body: some View {
-        Label {
-            Text(model.text(model.connection.phrase))
-                .foregroundStyle(.primary)
-        } icon: {
-            Image(systemName: model.connection == .connected ? "checkmark.circle.fill" : "circle.dashed")
-                .foregroundStyle(model.connection == .connected ? Color.accentColor : Color.secondary)
+        Image(systemName: page.symbol)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 20, height: 20)
+            .background(tint, in: RoundedRectangle(cornerRadius: 5))
+            .accessibilityHidden(true)
+    }
+}
+
+/// Connection and pause state in words, never colour alone.
+struct StatusLine: View {
+    let model: AppModel
+
+    private var dot: Color {
+        switch model.connection {
+        case .connected: model.schedulingPaused ? .orange : .green
+        case .connecting, .stopping: .gray
+        case .offline, .incompatible: .red
         }
-        .font(.caption)
-        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(dot).frame(width: 8, height: 8).accessibilityHidden(true)
+            Text(model.text(model.statusTitle)).font(.caption)
+        }
+        .accessibilityElement(children: .combine)
         .accessibilityIdentifier("backend-state")
     }
 }
 
-private struct BrandMark: View {
+extension AppModel {
+    var statusTitle: Words {
+        switch connection {
+        case .connected: schedulingPaused ? L10n.Shell.paused : L10n.Shell.running
+        case .connecting: L10n.Shell.connecting
+        case .offline: L10n.Shell.notRunning
+        case .stopping: L10n.Shell.stopping
+        case .incompatible: L10n.Shell.incompatible
+        }
+    }
+}
+
+struct BrandMark: View {
     let size: CGFloat
 
     var body: some View {
@@ -404,22 +254,26 @@ private struct BrandMark: View {
     }
 }
 
-private struct CategorySymbol: View {
-    let id: String
+/// "What happened. What to do." with at most one action (interaction-spec §2.4).
+struct FailureNote: View {
+    let model: AppModel
+    let failure: BackendError
+    var action: (() -> Void)? = nil
 
     var body: some View {
-        if id == "av",
-           let url = Bundle.module.url(forResource: "newspaw-female-head-preview", withExtension: "png"),
-           let image = NSImage(contentsOf: url) {
-            Image(nsImage: image).renderingMode(.template).resizable().scaledToFit()
-                .frame(width: 17, height: 17)
-        } else {
-            Image(systemName: [
-                "world": "globe", "japan": "location", "australia": "map",
-                "china": "building.columns", "electronics": "desktopcomputer",
-                "ai": "brain.head.profile", "x": "at", "x_adult": "at",
-            ][id] ?? "newspaper")
-            .font(.system(size: 16))
+        let entry = FailureCopy.entry(for: failure)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red).accessibilityHidden(true)
+            Text(FailureCopy.message(for: failure, model.uiLanguage))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            if let action, let label = entry.action {
+                Button(model.text(label), action: action)
+            }
         }
+        .font(.callout)
+        .padding(10)
+        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .combine)
     }
 }

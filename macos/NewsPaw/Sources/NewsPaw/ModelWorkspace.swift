@@ -188,15 +188,15 @@ extension AppModel {
         _ request: ModelProbeRequest, profileId: String, identity: [String]
     ) async throws -> (revision: Int, result: ProbeResult, statuses: [String: ProbeProjection]) {
         do {
-            let result: ProbeResult = try BackendRPC.decode(await self.request(
+            let result: ProbeResult = try self.decodeReply(await self.request(
                 "models.probe", fields: request.fields(profileId: profileId)
             ))
-            let current: ConfigSnapshot = try BackendRPC.decode(await self.request("config.get"))
+            let current: ConfigSnapshot = try self.decodeReply(await self.request("config.get"))
             guard let saved = current.document.modelProfiles.first(where: { $0.id == profileId }),
                   identity == [saved.provider, saved.baseUrl ?? "", saved.model] else {
                 throw BackendFailure.conflict
             }
-            let statuses: [String: ProbeProjection] = try BackendRPC.decode(await self.request(
+            let statuses: [String: ProbeProjection] = try self.decodeReply(await self.request(
                 "models.status", fields: ["profile_id": profileId]
             ))
             if result.status != "pending" { pendingModelProbes[profileId] = nil }
@@ -316,11 +316,11 @@ private struct ProfileEditor: View {
         defer { busy = false }
         do { try await action() }
         catch BackendFailure.conflict { failure = .conflict }
-        catch { failure = .saveFailed }
+        catch { failure = model.viewFailed(error) }
     }
 
     private func refreshStatuses() async throws {
-        statuses = try BackendRPC.decode(await model.request("models.status", fields: ["profile_id": selection.id]))
+        statuses = try model.decodeReply(await model.request("models.status", fields: ["profile_id": selection.id]))
     }
 
     private func saveProfile() async {
@@ -331,7 +331,7 @@ private struct ProfileEditor: View {
                 current, collection: "model_profiles", id: selection.id, fields: fields,
                 new: ["id": selection.id, "partition": selection.partition, "role": role, "credential_ref": NSNull(), "capabilities": []]
             )
-            let result: SettingsRevision = try BackendRPC.decode(await model.request(
+            let result: SettingsRevision = try model.decodeReply(await model.request(
                 "config.save", fields: ["revision": revision, "document": changed]
             ))
             revision = result.revision
@@ -348,7 +348,7 @@ private struct ProfileEditor: View {
         await perform {
             var fields: [String: Any] = ["kind": "model_profiles", "id": selection.id, "revision": revision]
             if !clear { fields["value"] = value }
-            let result: SettingsRevision = try BackendRPC.decode(await model.request(
+            let result: SettingsRevision = try model.decodeReply(await model.request(
                 clear ? "credentials.remove" : "credentials.set", fields: fields
             ))
             revision = result.revision

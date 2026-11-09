@@ -63,19 +63,12 @@ def account(config, sub, *, priority="special"):
 def test_precedence_does_not_mutate_config():
     config, sub = configured()
     item = account(config, sub)
-    category = config["categories"][0]
-    config["group_styles"]["normal"] = "source_image"
-    sub["style"] = None
+    sub["style"] = "newspaper"
     before = deepcopy(config)
-    assert (
-        resolve_route(config, 1, sub["id"], account_id=item["id"]).effective["style"]
-        == "source_image"
-    )
+    route = resolve_route(config, 1, sub["id"], account_id=item["id"])
+    assert route.effective["style"] == "newspaper"
+    assert route.explanation["style"] == "subscription"
     assert config == before
-    category["style"] = "newspaper"
-    assert (
-        resolve_route(config, 1, sub["id"], account_id=item["id"]).effective["style"] == "newspaper"
-    )
     sub["style"] = "text"
     item["style"] = "source_image"
     route = resolve_route(config, 1, sub["id"], account_id=item["id"], style="newspaper")
@@ -92,11 +85,10 @@ def test_partition_slots_and_adult_explicit_target(partition):
     assert not route.blockers
     assert route.effective["primary"]["id"] == partition + "_primary"
     assert route.effective["backup"]["partition"] == partition
-    category = next(c for c in config["categories"] if c["id"] == sub["category_id"])
-    category["primary_profile_id"] = "adult_primary" if partition == "normal" else "normal_primary"
+    sub["primary_profile_id"] = "adult_primary" if partition == "normal" else "normal_primary"
     with pytest.raises(ValueError, match="Cross-partition"):
         validate_config(config)
-    category["primary_profile_id"] = None
+    sub["primary_profile_id"] = None
     if partition == "adult":
         config["bots"][0]["adult_allowed"] = False
         with pytest.raises(ValueError, match="Adult"):
@@ -235,9 +227,11 @@ def test_same_group_override_and_wrong_role_rejected():
     custom = deepcopy(config["model_profiles"][0])
     custom.update(id="custom", model="custom-model")
     config["model_profiles"].append(custom)
-    config["categories"][0]["primary_profile_id"] = "custom"
-    assert resolve_route(config, 1, sub["id"]).effective["primary"]["model"] == "custom-model"
-    config["categories"][0]["backup_profile_id"] = "custom"
+    sub["primary_profile_id"] = "custom"
+    route = resolve_route(config, 1, sub["id"])
+    assert route.effective["primary"]["model"] == "custom-model"
+    assert route.explanation["primary"] == "subscription"
+    sub["backup_profile_id"] = "custom"
     with pytest.raises(ValueError, match="role"):
         validate_config(config)
 

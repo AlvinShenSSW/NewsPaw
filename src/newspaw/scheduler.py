@@ -69,12 +69,20 @@ def resolve_wall_time(day, value, timezone):
     return None
 
 
+DEFAULT_HOLD = 500_000  # $0.50 per edition; bounds a runaway preparation (E10 contract §2).
+# Configured slots are numbered from 1; slot 0 is the owner's "send one now" edition.
+MANUAL_SLOT = 0
+_MANUAL_LEAD = timedelta(minutes=2)
+
+
 def _policy():
+    # On by default: enabling a digest is what starts delivery. activated_at stays NULL
+    # until the first plan() so the first scan, not database creation, bounds catch-up.
     return dict(
-        enabled=False,
+        enabled=True,
         catchup_minutes=360,
         preparation_lead_minutes=15,
-        holds={"normal": None, "adult": None},
+        holds={"normal": DEFAULT_HOLD, "adult": DEFAULT_HOLD},
     )
 
 
@@ -210,7 +218,9 @@ class Scheduler:
                 raise ScheduleError("schedule_policy_changed")
             if current["settings"] != settings:
                 activated = current["activated_at"]
-                if settings["enabled"] and not current["settings"]["enabled"]:
+                if settings["enabled"] and (
+                    not current["settings"]["enabled"] or activated is None
+                ):
                     activated = now.isoformat()
                 self.db.execute(
                     "UPDATE schedule_policy SET revision=revision+1,settings=?,activated_at=? WHERE id=1",
@@ -349,6 +359,10 @@ class Scheduler:
         ):
             if row["id"] in active:
                 continue
+            if row["slot"] == MANUAL_SLOT:
+                if now > datetime.fromisoformat(row["cutoff_at"]):
+                    self._expire(row, "skipped", "catchup_expired", now)
+                continue
             if changed:
                 value, enabled = slots[str(row["slot"])]
                 desired = (
@@ -407,6 +421,11 @@ class Scheduler:
             settings = policy["settings"]
             if not settings["enabled"]:
                 return []
+            if policy["activated_at"] is None:
+                policy["activated_at"] = now.isoformat()
+                self.db.execute(
+                    "UPDATE schedule_policy SET activated_at=? WHERE id=1", (policy["activated_at"],)
+                )
             first_scan = (
                 self.db.execute("SELECT last_scan FROM schedule_policy WHERE id=1").fetchone()[0]
                 is None
@@ -451,6 +470,45 @@ class Scheduler:
                    ORDER BY o.updated_at,o.target_at,o.id LIMIT 200""",
                 (now.isoformat(), now.isoformat()),
             )
+
+    def send_now(self, subscription_id, *, now=None):
+        """Queue one extra edition of an enabled digest, delivered as soon as it is ready.
+
+        One per digest per local day: repeating the request returns the same occurrence,
+        so a double click or a retry cannot send twice.
+        """
+        now = _time(now) if now is not None else self.clock()
+        self.plan(now)
+        with self.store._write():
+            settings = self.policy()["settings"]
+            if not settings["enabled"]:
+                raise ScheduleError("scheduling_paused")
+            scope = _key("scope", subscription_id, None)
+            rows = self._rows(
+                "SELECT shape FROM schedule_scopes WHERE id=? AND active=1", (scope,)
+            )
+            if not rows:
+                raise ScheduleError("digest_not_enabled")
+            zone = json.loads(rows[0]["shape"])["zone"]
+            day = now.astimezone(ZoneInfo(zone)).date().isoformat()
+            target = now + _MANUAL_LEAD
+            prepare, deadline = _window(settings, target)
+            identity = _key("schedule", scope, MANUAL_SLOT, day)
+            self.db.execute(
+                """INSERT OR IGNORE INTO schedule_occurrences VALUES
+                   (?,?,?,?,?,?,?,'planned',NULL,1,NULL,NULL,NULL,?)""",
+                (
+                    identity,
+                    scope,
+                    MANUAL_SLOT,
+                    day,
+                    target.isoformat(),
+                    min(prepare, now).isoformat(),
+                    deadline.isoformat(),
+                    now.isoformat(),
+                ),
+            )
+            return self._view(self._occurrence(identity))
 
     def _set(self, row, state, reason, now):
         self.db.execute(

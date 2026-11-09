@@ -469,11 +469,13 @@ async def test_outbox_rpc_exposes_status_and_resolution_without_dispatch(control
     ] == "unknown_operation"
 
 
-async def test_schedule_policy_defaults_disabled_and_updates_independently(control):
+async def test_schedule_policy_defaults_enabled_and_updates_independently(control):
     server, store = control
     config_revision = store.config_revision()
     current = (await request(server, {"op": "schedule.status"}))["result"]
-    assert not current["settings"]["enabled"] and current["occurrences"] == []
+    # E10 contract §2: on by default with built-in holds; nothing runs until a digest is enabled.
+    assert current["settings"]["enabled"] and current["occurrences"] == []
+    assert current["settings"]["holds"] == {"normal": 500_000, "adult": 500_000}
     assert current["settings"]["catchup_minutes"] == 360
     edited = await request(
         server,

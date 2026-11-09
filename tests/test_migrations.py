@@ -222,6 +222,9 @@ def version1_database(path, *, revision=1):
     store = Store(path)
     _, config = store.load_config()
     store.close()
+    from test_app_config import downgrade_to_v3
+
+    config = downgrade_to_v3(config)
     config["schema_version"] = 1
     del config["group_styles"]
     del config["x_api"]
@@ -245,7 +248,7 @@ def test_v1_upgrade_preserves_import_eligibility_and_preferences(tmp_path, revis
     store = Store(path)
     new_revision, config = store.load_config()
     assert new_revision == revision + 1
-    assert config["schema_version"] == 3
+    assert config["schema_version"] == 4
     assert config["model_profiles"] == original["model_profiles"]
     assert store.get("last_slot") == "historic"
     env = tmp_path / "legacy.env"
@@ -345,8 +348,8 @@ def test_v3_budget_upgrade_failure_rolls_back_and_retries(tmp_path, monkeypatch)
         db.execute("PRAGMA user_version=3")
     initialize = budget.initialize
 
-    def fail(db):
-        initialize(db)
+    def fail(db, *args):
+        initialize(db, *args)
         raise RuntimeError("injected budget migration failure")
 
     monkeypatch.setattr(budget, "initialize", fail)
@@ -625,3 +628,62 @@ def test_v10_source_readiness_migration_rollback_and_old_history(tmp_path, monke
         "SELECT epoch,attempt_id FROM source_readiness WHERE id=?", ("s",)
     ).fetchone() == (1, None)
     reopened.close()
+
+def _old_schedule(path, *, enabled_subscription):
+    store = Store(path)
+    revision, config = store.load_config()
+    if enabled_subscription:
+        from test_routing import configured
+
+        config, _ = configured()
+        store.save_config(config, expected_revision=revision)
+    store.close()
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "UPDATE schedule_policy SET settings=?,activated_at=NULL WHERE id=1",
+            (
+                json.dumps(
+                    dict(
+                        enabled=False,
+                        catchup_minutes=360,
+                        preparation_lead_minutes=15,
+                        holds={"normal": 1234, "adult": None},
+                    )
+                ),
+            ),
+        )
+        db.execute("PRAGMA user_version=23")
+
+
+@pytest.mark.parametrize("enabled_subscription", [False, True])
+def test_v24_upgrade_turns_scheduling_on_only_when_nothing_would_start(
+    tmp_path, enabled_subscription
+):
+    path = tmp_path / "state.db"
+    _old_schedule(path, enabled_subscription=enabled_subscription)
+    with closing(Store(path)) as store:
+        revision, settings, activated = store._db.execute(
+            "SELECT revision,settings,activated_at FROM schedule_policy WHERE id=1"
+        ).fetchone()
+    settings = json.loads(settings)
+    assert settings["enabled"] is (not enabled_subscription)
+    assert settings["holds"] == {"normal": 1234, "adult": 500_000}
+    assert revision == 2 and activated is None
+
+
+def test_new_database_takes_system_timezone_and_single_user_limits(tmp_path, monkeypatch):
+    from newspaw import migrations
+
+    monkeypatch.setattr(migrations, "system_timezone", lambda: "Europe/Paris")
+    with closing(Store(tmp_path / "state.db")) as store:
+        _, config = store.load_config()
+        assert config["timezone"] == "Europe/Paris"
+        assert {s["timezone"] for s in config["subscriptions"]} == {"Europe/Paris"}
+        db = store._db
+        budget = json.loads(db.execute("SELECT document FROM budget_policy").fetchone()[0])
+        assert budget["model"]["monthly_limit"] == 20_000_000
+        assert budget["x"]["daily_limit"] == 200
+        assert budget["model"]["timezone"] == budget["x"]["timezone"] == "Europe/Paris"
+        for table in ("x_alert_policy", "x_video_policy"):
+            settings = json.loads(db.execute(f"SELECT settings FROM {table}").fetchone()[0])
+            assert settings["timezone"] == "Europe/Paris"

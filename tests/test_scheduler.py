@@ -497,3 +497,49 @@ async def test_paused_pipeline_job_is_not_marked_late_before_status_sync(system)
     await scheduler.step(paused)
     assert scheduler.status()["occurrences"][0]["reason"] == "job_paused"
     assert not calls
+
+
+def test_default_policy_activates_on_first_plan_not_at_database_creation(planner):
+    scheduler, store = planner
+    policy = scheduler.policy()
+    assert policy["settings"]["enabled"] and policy["activated_at"] is None
+    assert policy["settings"]["holds"] == {"normal": 500_000, "adult": 500_000}
+    scheduler.plan(moment(4))
+    assert scheduler.policy()["activated_at"] == moment(4).isoformat()
+
+
+def test_send_now_queues_one_extra_edition_per_day_that_survives_retiming(planner):
+    from newspaw.scheduler import MANUAL_SLOT
+
+    scheduler, store = planner
+    activate(scheduler)
+    sub = next(s for s in store.load_config()[1]["subscriptions"] if s["enabled"])
+    first = scheduler.send_now(sub["id"], now=moment(4))
+    assert first["slot"] == MANUAL_SLOT and first["status"] == "planned"
+    assert first["target_at"] == (moment(4) + timedelta(minutes=2)).isoformat()
+    assert scheduler.send_now(sub["id"], now=moment(4, 1))["id"] == first["id"]
+    ready = scheduler.plan(moment(4, 1))
+    assert first["id"] in {row["id"] for row in ready}
+    revision, config = store.load_config()
+    changed = next(s for s in config["subscriptions"] if s["id"] == sub["id"])
+    changed["times"] = ["10:00"]
+    store.save_config(config, expected_revision=revision)
+    scheduler.plan(moment(4, 2))
+    kept = next(r for r in scheduler.status()["occurrences"] if r["id"] == first["id"])
+    assert kept["status"] in {"planned", "late"}
+    scheduler.plan(moment(11))  # past the six-hour catch-up window
+    expired = next(r for r in scheduler.status()["occurrences"] if r["id"] == first["id"])
+    assert (expired["status"], expired["reason"]) == ("skipped", "catchup_expired")
+
+
+def test_send_now_requires_an_enabled_digest_and_active_scheduling(planner):
+    scheduler, store = planner
+    activate(scheduler)
+    disabled = next(s for s in store.load_config()[1]["subscriptions"] if not s["enabled"])
+    with pytest.raises(ScheduleError, match="digest_not_enabled"):
+        scheduler.send_now(disabled["id"], now=moment(4))
+    policy = scheduler.policy()
+    scheduler.configure(dict(policy["settings"], enabled=False), policy["revision"], now=moment(4))
+    enabled = next(s for s in store.load_config()[1]["subscriptions"] if s["enabled"])
+    with pytest.raises(ScheduleError, match="scheduling_paused"):
+        scheduler.send_now(enabled["id"], now=moment(4))

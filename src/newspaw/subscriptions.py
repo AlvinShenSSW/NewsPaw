@@ -20,6 +20,8 @@ _REQUIRED = {
     "max_items",
     "style",
 }
+_OVERRIDES = ("primary_profile_id", "backup_profile_id")
+_OPTIONAL = {"focus_weights", *_OVERRIDES}
 
 
 class SubscriptionError(CredentialError):
@@ -33,14 +35,14 @@ class Subscriptions:
         self.profiles = ProfileRegistry(self.store)
 
     def _candidate(self, config, draft, revision):
-        if not isinstance(draft, dict) or not _REQUIRED <= draft.keys() <= _REQUIRED | {
-            "focus_weights"
-        }:
+        if not isinstance(draft, dict) or not _REQUIRED <= draft.keys() <= _REQUIRED | _OPTIONAL:
             raise SubscriptionError("invalid_subscription_draft")
         value = deepcopy(draft)
         value["enabled"] = False
         entries = config["subscriptions"]
         existing = next((row for row in entries if row["id"] == value["id"]), None)
+        for key in _OVERRIDES:  # Editors that do not show model overrides keep them.
+            value.setdefault(key, existing[key] if existing is not None else None)
         if existing is not None and existing["category_id"] != value["category_id"]:
             raise SubscriptionError("subscription_category_is_fixed")
         if existing is None:

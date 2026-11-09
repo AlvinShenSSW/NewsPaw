@@ -10,9 +10,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from .app_config import default_config, upgrade_v1, upgrade_v2
+from .app_config import (
+    SCHEMA_VERSION,
+    default_config,
+    system_timezone,
+    upgrade_config,
+    upgrade_v1,
+)
 
-DATABASE_VERSION = 23
+DATABASE_VERSION = 24
 _LEGACY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -96,7 +102,7 @@ def _initialize(db: sqlite3.Connection) -> None:
     db.execute("CREATE TABLE migration_info (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     db.execute(
         "INSERT INTO app_configuration VALUES (1, 1, ?)",
-        (json.dumps(default_config(), ensure_ascii=False),),
+        (json.dumps(default_config(system_timezone()), ensure_ascii=False),),
     )
     db.execute("INSERT INTO migration_info VALUES ('cutover', ?)", (datetime.now(UTC).isoformat(),))
 
@@ -120,14 +126,14 @@ def _upgrade_v2(db: sqlite3.Connection) -> None:
     )
 
 
-def _upgrade_x_config(db: sqlite3.Connection) -> None:
+def _upgrade_config(db: sqlite3.Connection) -> None:
     revision, raw = db.execute(
         "SELECT revision,document FROM app_configuration WHERE id=1"
     ).fetchone()
     document = json.loads(raw)
-    if document["schema_version"] != 2:
+    if document["schema_version"] == SCHEMA_VERSION:
         return
-    updated = upgrade_v2(document)
+    updated = upgrade_config(document)
     prior = db.execute(
         "SELECT value FROM migration_info WHERE key='untouched_import_revision'"
     ).fetchone()
@@ -140,6 +146,42 @@ def _upgrade_x_config(db: sqlite3.Connection) -> None:
         "UPDATE app_configuration SET revision=revision+1,document=? WHERE id=1",
         (json.dumps(updated, ensure_ascii=False),),
     )
+
+
+def _upgrade_schedule(db: sqlite3.Connection) -> None:
+    """E10 contract §2: fill missing holds; turn scheduling on unless that would start
+    delivery of digests the owner had enabled while scheduling was off."""
+    from .scheduler import DEFAULT_HOLD
+
+    revision, raw = db.execute(
+        "SELECT revision,settings FROM schedule_policy WHERE id=1"
+    ).fetchone()
+    settings = json.loads(raw)
+    config = json.loads(
+        db.execute("SELECT document FROM app_configuration WHERE id=1").fetchone()[0]
+    )
+    updated = json.loads(json.dumps(settings))
+    for partition, hold in settings["holds"].items():
+        if hold is None:
+            updated["holds"][partition] = DEFAULT_HOLD
+    newly_enabled = not settings["enabled"] and not any(
+        sub["enabled"] for sub in config["subscriptions"]
+    )
+    if newly_enabled:
+        updated["enabled"] = True
+    if updated != settings:
+        db.execute(
+            "UPDATE schedule_policy SET revision=revision+1,settings=?,"
+            "activated_at=CASE WHEN ? THEN NULL ELSE activated_at END WHERE id=1",
+            (json.dumps(updated, ensure_ascii=False), newly_enabled),
+        )
+        if revision == 1:
+            # Like untouched_import_revision: an owner who never edited the policy still
+            # has a fresh instance for settings import after this upgrade.
+            db.execute(
+                "INSERT OR REPLACE INTO migration_info VALUES ('untouched_schedule_revision', ?)",
+                (str(revision + 1),),
+            )
 
 
 def migrate(db: sqlite3.Connection, path: Path) -> None:
@@ -160,11 +202,14 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         elif version == 1:
             _upgrade_v2(db)
         else:
-            _upgrade_x_config(db)
+            _upgrade_config(db)
+        zone = json.loads(
+            db.execute("SELECT document FROM app_configuration WHERE id=1").fetchone()[0]
+        )["timezone"]
         db.execute("CREATE TABLE IF NOT EXISTS credential_intents (ref TEXT PRIMARY KEY)")
         from .budget import initialize as initialize_budget
 
-        initialize_budget(db)
+        initialize_budget(db, zone)
         from .evidence import initialize as initialize_evidence
 
         initialize_evidence(db)
@@ -198,6 +243,8 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         from .scheduler import initialize as initialize_scheduler
 
         initialize_scheduler(db)
+        if version:
+            _upgrade_schedule(db)
         from .telegram.commands import initialize as initialize_commands
 
         initialize_commands(db)
@@ -221,10 +268,10 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         initialize_x_digests(db)
         from .x.alerts import initialize as initialize_x_alerts
 
-        initialize_x_alerts(db)
+        initialize_x_alerts(db, zone)
         from .x.video import initialize as initialize_x_video
 
-        initialize_x_video(db)
+        initialize_x_video(db, zone)
         db.execute(f"PRAGMA user_version={DATABASE_VERSION}")
         db.commit()
     except BaseException:

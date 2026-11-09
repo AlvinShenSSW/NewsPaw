@@ -49,7 +49,7 @@ def test_redacted_diagnostics_do_not_copy_untrusted_text(tmp_path):
         ops = Operations(store, tmp_path, process_status=lambda: "running")
         status = ops.diagnostics()
         assert status["process"] == "running"
-        assert status["business"]["scheduling"] == "disabled"
+        assert status["business"]["scheduling"] == "enabled"
         encoded = json.dumps(ops.support_snapshot())
         assert "private-fixture-name" not in encoded and REF not in encoded
         assert "https://" not in encoded
@@ -245,16 +245,17 @@ def test_backup_with_matching_version_but_missing_tables_is_rejected(tmp_path):
             Operations(store, path.parent).verify_backup(backup.name)
 
 
-def test_export_omits_unsupported_profile_and_clears_category_override(tmp_path):
+def test_export_omits_unsupported_profile_and_clears_subscription_override(tmp_path):
     with closing(Store(tmp_path / "state.db")) as store:
-        config, _ = configured()
+        config, subscription = configured()
         profile = config["model_profiles"][0]
         profile["provider"] = "valid-custom-provider"
-        config["categories"][0]["primary_profile_id"] = profile["id"]
+        subscription["primary_profile_id"] = profile["id"]
         store.save_config(config, expected_revision=1)
         portable = Operations(store, tmp_path).export_settings()
         assert portable["omitted"]["model_profiles"] == 1
-        assert portable["settings"]["categories"][0]["primary_profile_id"] is None
+        exported = {s["id"]: s for s in portable["settings"]["subscriptions"]}
+        assert exported[subscription["id"]]["primary_profile_id"] is None
         assert "valid-custom-provider" not in json.dumps(portable)
 
 
@@ -370,3 +371,36 @@ def test_cleanup_preserves_referenced_paper_assets_and_cleans_old_orphans(tmp_pa
             )
         result = Operations(store, tmp_path, clock=lambda: now).cleanup(apply=True)
         assert result["media_removed"] == 1 and pinned.exists() and not orphan.exists()
+
+
+def test_upgraded_untouched_instance_still_accepts_a_restore(tmp_path):
+    """An install that only went through the v24 upgrade is still fresh for import."""
+    import sqlite3
+
+    from test_app_config import downgrade_to_v3
+
+    from newspaw.budget import default_policy
+
+    source = tmp_path / "source"
+    source.mkdir()
+    with closing(Store(source / "state.db")) as store:
+        portable = Operations(store, source).export_settings()
+    path = tmp_path / "state.db"
+    with closing(Store(path)) as store:
+        _, config = store.load_config()
+    legacy_budget = default_policy()
+    legacy_budget["model"]["monthly_limit"] = None
+    legacy_budget["x"]["daily_limit"] = None
+    legacy_schedule = dict(
+        enabled=False,
+        catchup_minutes=360,
+        preparation_lead_minutes=15,
+        holds={"normal": None, "adult": None},
+    )
+    with sqlite3.connect(path) as db:
+        db.execute("UPDATE app_configuration SET document=?", (json.dumps(downgrade_to_v3(config)),))
+        db.execute("UPDATE budget_policy SET document=?", (json.dumps(legacy_budget),))
+        db.execute("UPDATE schedule_policy SET settings=?", (json.dumps(legacy_schedule),))
+        db.execute("PRAGMA user_version=23")
+    with closing(Store(path)) as upgraded:
+        assert Operations(upgraded, tmp_path).preview_import(portable)["counts"] is not None

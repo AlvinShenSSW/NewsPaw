@@ -38,3 +38,9 @@ def offline_network(monkeypatch, tmp_path):
     # Keep explicit dotenv_values(tmp_path / "fixture.env") tests functional.
     monkeypatch.setattr(dotenv.main, "find_dotenv", lambda *args, **kwargs: "")
     monkeypatch.setattr(dotenv, "find_dotenv", lambda *args, **kwargs: "")
+
+
+@pytest.fixture(autouse=True)
+def tokyo_system_timezone(monkeypatch):
+    """New databases take the Mac's time zone; pin it so results do not depend on the host."""
+    monkeypatch.setattr("newspaw.migrations.system_timezone", lambda: "Asia/Tokyo")

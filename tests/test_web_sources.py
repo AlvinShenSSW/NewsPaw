@@ -246,6 +246,7 @@ async def test_schedule_hold_stops_next_public_web_request(tmp_path, hold_before
 def test_web_discovery_upgrade_preserves_x_directory_and_schedule(tmp_path):
     from newspaw.control import ControlServer
     from newspaw.migrations import DATABASE_VERSION
+    from newspaw.scheduler import DEFAULT_HOLD
 
     path = tmp_path / "state.db"
     keys = FakeKeychain()
@@ -264,5 +265,9 @@ def test_web_discovery_upgrade_preserves_x_directory_and_schedule(tmp_path):
         server = ControlServer(tmp_path, CredentialManager(store, keys))
         assert store._db.execute("PRAGMA user_version").fetchone() == (DATABASE_VERSION,)
         assert server.x.list_status("456")["id"] == "456"
-        assert server.scheduler.policy() == expected
+        upgraded = server.scheduler.policy()
+        # E10 contract §2: an upgrade fills empty holds with the built-in default.
+        assert upgraded["settings"]["holds"] == {"normal": 100, "adult": DEFAULT_HOLD}
+        assert upgraded["revision"] == expected["revision"] + 1
+        assert upgraded["activated_at"] == expected["activated_at"]
         assert server.web_search.policy()["profile_id"] is None

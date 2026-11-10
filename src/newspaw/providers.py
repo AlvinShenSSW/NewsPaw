@@ -259,6 +259,14 @@ class ProviderAdapter:
             self.endpoint = base.copy_with(path=base.path.rstrip("/") + "/responses")
         except SafeHTTPError:
             raise ProviderError("invalid_endpoint") from None
+        # A MiMo Token Plan key (tp-…) is only accepted on the plan's own regional address;
+        # the pay-as-you-go one answers 401. Say so instead of sending the key there.
+        if (
+            profile["provider"] == "mimo"
+            and key.startswith("tp-")
+            and base.host == "api.xiaomimimo.com"
+        ):
+            raise ProviderError("token_plan_endpoint")
         self.key = key
         self.client = (
             client

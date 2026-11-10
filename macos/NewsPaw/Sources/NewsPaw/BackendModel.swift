@@ -167,6 +167,9 @@ final class AppModel {
     let client: BackendClient
     /// The folder holding the database and the control socket (nil for an injected client).
     let dataDirectory: URL?
+    /// The packaged app's version. A running backend that reports another one (or none: it
+    /// predates the field) was left over from before an upgrade and is not used; nil skips the check.
+    let appVersion: String?
     /// The login item and starting / restarting the backend, shared by every window.
     let resident: BackendControl
     private let defaults: UserDefaults
@@ -206,17 +209,19 @@ final class AppModel {
     func defaultsValue(_ key: String) -> Bool { defaults.bool(forKey: key) }
     func setDefaultsValue(_ value: Bool, _ key: String) { defaults.set(value, forKey: key) }
 
-    convenience init(socket: LocalSocket, defaults: UserDefaults = .standard) {
+    convenience init(socket: LocalSocket, defaults: UserDefaults = .standard, appVersion: String? = nil) {
         self.init(
             client: BackendClient(socket: socket), defaults: defaults,
-            dataDirectory: URL(fileURLWithPath: socket.path).deletingLastPathComponent()
+            dataDirectory: URL(fileURLWithPath: socket.path).deletingLastPathComponent(),
+            appVersion: appVersion
         )
     }
 
     init(
         client: BackendClient, defaults: UserDefaults = .standard, dataDirectory: URL? = nil,
-        resident: (any ResidentService)? = nil
+        resident: (any ResidentService)? = nil, appVersion: String? = nil
     ) {
+        self.appVersion = appVersion
         self.client = client
         self.defaults = defaults
         self.dataDirectory = dataDirectory
@@ -279,6 +284,7 @@ final class AppModel {
                 return
             }
             guard status.state == "running" else { throw BackendFailure.invalidReply }
+            if let appVersion, status.version != appVersion { throw BackendFailure.incompatible }
             let ready = status.operations?.contains(Operation.setupReadiness.rawValue) == true
                 ? try await client.readiness() : nil
             let current = try await client.config()
@@ -464,7 +470,8 @@ final class AppModel {
     }
 
     func stopBackend() async {
-        guard connection == .connected, !busy else { return }
+        // A backend from another version still answers `service.stop`; that is how it is replaced.
+        guard connection == .connected || connection == .incompatible, !busy else { return }
         generation += 1
         busy = true
         error = nil

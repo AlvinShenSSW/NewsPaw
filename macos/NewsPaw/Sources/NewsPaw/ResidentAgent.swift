@@ -331,10 +331,11 @@ final class BackendControl {
         }
     }
 
-    /// Stop, wait for the process to exit, start it again.
+    /// Stop, wait for the process to exit, start it again. Also how a backend left running from
+    /// another version is replaced by the one in this app.
     func restart(model: AppModel) async {
         reload()
-        guard !busy, canRestart, model.connection == .connected else { return }
+        guard !busy, canRestart, model.connection == .connected || model.connection == .incompatible else { return }
         busy = true
         failure = nil
         defer {
@@ -356,7 +357,8 @@ final class BackendControl {
     }
 
     /// Once per launch: a backend that starts at login but is not running (it was stopped from
-    /// Settings) starts again when NewsPaw opens, as the stop confirmation says.
+    /// Settings) starts again when NewsPaw opens, as the stop confirmation says. One still running
+    /// from before an upgrade is restarted, so the app never keeps talking to the old version.
     func startIfStopped(model: AppModel) async {
         guard !launched else { return }
         launched = true
@@ -368,8 +370,12 @@ final class BackendControl {
             if model.connection == .connecting { try? await Task.sleep(for: settleInterval) }
         }
         reload()
-        guard model.connection == .offline, state == .on else { return }
-        await start(model: model)
+        guard state == .on else { return }
+        if model.connection == .incompatible {
+            await restart(model: model)
+        } else if model.connection == .offline {
+            await start(model: model)
+        }
     }
 
     private func settle(_ model: AppModel) async {

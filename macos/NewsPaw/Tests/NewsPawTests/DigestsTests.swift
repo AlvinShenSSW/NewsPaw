@@ -574,3 +574,27 @@ private func connected(_ server: DigestBackend) async throws -> (AppModel, () ->
     await data.removeSource("nhk", model: model)
     #expect(server.source("nhk") == nil)
 }
+
+// MARK: - #107 follow-ups
+
+@Test @MainActor func tryingASourceTheOwnerTurnedOffLeavesItOff() async throws {
+    // R09-17: verified once, then unchecked; "Try Now" reads it without turning it back on.
+    let server = DigestBackend(subscriptions: [subscription("sub_japan", enabled: true, bots: ["bot1"])],
+                               sources: [source("nhk", focus: "domestic", enabled: false)])
+    server.ready = ["nhk"]
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    await data.load(model.client)
+
+    #expect(!(await data.trial("nhk", model: model)))
+
+    #expect(server.calls("sources.preview").count == 1 && data.failures["nhk"] == nil && data.notes["nhk"] != nil)
+    #expect(server.source("nhk")?["enabled"] as? Bool == false && server.calls("sources.save").isEmpty)
+
+    // "Try, Then Turn On" (the checkbox) still turns it on after a good read.
+    let digest = try #require(model.config?.subscriptions.first)
+    let nhk = try #require(data.sources.first { $0.id == "nhk" })
+    await data.toggle(nhk, in: digest, true, model: model)
+    #expect(server.source("nhk")?["enabled"] as? Bool == true)
+}

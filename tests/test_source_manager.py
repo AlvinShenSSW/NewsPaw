@@ -410,14 +410,16 @@ async def test_reading_a_previewed_source_again_does_not_make_it_unready(setup):
     assert later["id"] != previewed and later["status"] in {"fresh", "not_modified"}
     assert manager._ready(enabled) and manager.list()[0]["preview_ready"]
     await manager.save({**enabled, "name": "Renamed"}, store.config_revision())
-    # So does a collection that failed: the preview of this address still stands.
+    # A read that failed since still takes it back (#17: no later failure) ...
     failed = await collect(500, 10)
-    assert failed["status"] == "failed" and manager._ready(enabled)
-    assert manager._epoch("s")[1] == previewed
+    assert failed["status"] == "failed" and not manager._ready(enabled)
+    # ... until the source is read successfully again; the recorded preview is the same one.
+    await collect(200, 15)
+    assert manager._ready(enabled) and manager._epoch("s")[1] == previewed
 
     # A new preview replaces the record, so one that fails takes the source back (F2).
     manager.client_factory = lambda: httpx.AsyncClient(
         transport=httpx.MockTransport(lambda r: httpx.Response(500))
     )
-    assert not (await manager.preview("s", now=NOW + timedelta(minutes=15)))["preview_ready"]
+    assert not (await manager.preview("s", now=NOW + timedelta(minutes=20)))["preview_ready"]
     assert not manager._ready(enabled)

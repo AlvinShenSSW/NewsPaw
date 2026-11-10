@@ -266,3 +266,69 @@ async def test_a_digest_turns_on_with_a_checked_main_model_and_no_backup_key(tmp
         assert result["enabled"]
         states["normal_primary"] = "failed"
         assert "primary_unverified" in service.preview(draft, result["revision"])["blockers"]
+
+
+async def test_a_turned_on_digest_can_still_be_edited_after_it_collected(tmp_path, monkeypatch):
+    """R17 F3: the digest's own collection must not leave its sources "not previewed"."""
+    from contextlib import closing
+    from datetime import timedelta
+
+    import httpx
+    from test_credentials import FakeKeychain
+    from test_evidence import NOW, rss
+
+    from newspaw.credentials import CredentialManager
+    from newspaw.evidence import FeedCollector
+    from newspaw.source_manager import SourceManager
+    from newspaw.store import Store
+    from newspaw.subscriptions import SubscriptionError, Subscriptions
+    from newspaw.telegram.registry import BotRegistry
+
+    def client(status=200):
+        return httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda r: httpx.Response(status, content=rss()))
+        )
+
+    with closing(Store(tmp_path / "state.db")) as store:
+        config, sub = configured()
+        config["sources"][0]["enabled"] = False
+        sub["enabled"] = False
+        store.save_config(config, expected_revision=1)
+        keychain = FakeKeychain()
+        manager = CredentialManager(store, keychain)
+        registry = BotRegistry(store, keychain)
+        sources = SourceManager(manager, client_factory=client)
+        service = Subscriptions(manager, sources, registry)
+        monkeypatch.setattr(service.profiles, "status", lambda p: {"text": {"state": "verified"}})
+        monkeypatch.setattr(registry, "snapshot", lambda b: type("B", (), {"owner_id": 123})())
+
+        async def collect(status, minutes):
+            collector = FeedCollector(sources.evidence, client=client(status))
+            try:
+                await collector.collect([sub["id"]], now=NOW + timedelta(minutes=minutes))
+            finally:
+                await collector.close()
+
+        draft = {key: value for key, value in sub.items() if key != "enabled"}
+        draft["source_mode"] = "category"
+        await sources.preview("feed1", now=NOW)
+        await sources.save(
+            {**store.load_config()[1]["sources"][0], "enabled": True}, store.config_revision()
+        )
+        assert (await service.save(draft, store.config_revision(), enable=True))["enabled"]
+
+        await collect(200, 5)
+        preview = service.preview(draft, store.config_revision())
+        assert preview["blockers"] == [] and preview["sources"][0]["ready"]
+        edited = await service.save(
+            {**draft, "name": "Edited"}, store.config_revision(), enable=True
+        )
+        assert edited["enabled"]
+
+        # A source whose latest read failed is still named as the thing to try again.
+        await collect(500, 10)
+        assert service.preview(draft, store.config_revision())["blockers"] == [
+            "source_preview_required"
+        ]
+        with pytest.raises(SubscriptionError, match="subscription_not_ready"):
+            await service.save({**draft, "name": "Again"}, store.config_revision(), enable=True)

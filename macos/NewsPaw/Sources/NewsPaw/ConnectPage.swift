@@ -937,7 +937,7 @@ private struct ModelRow: View {
     }
 }
 
-/// A key action is a plain button, except "Enter Again" for a rejected key, the row's one fix.
+/// A key action is a plain button, except "Enter Again" for a rejected key, the row's main fix.
 private struct KeyButtonStyle: PrimitiveButtonStyle {
     let prominent: Bool
 

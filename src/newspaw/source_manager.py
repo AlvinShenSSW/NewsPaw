@@ -160,21 +160,31 @@ class SourceManager:
         return row
 
     def _ready(self, source):
-        """Whether this source's recorded preview succeeded. The record is cleared when the
-        address, partition or kind changes; reads after the preview (a digest's collections)
-        do not change the answer (R17 F1)."""
+        """Whether this source's recorded preview succeeded and no read since has failed. The
+        record is cleared when the address, partition or kind changes. A later read that
+        succeeded (a digest's own collection) leaves the source ready (R17 F1)."""
         try:
             _, attempt = self._epoch(source["id"])
             if attempt is None:
                 return False
             preview = self.evidence.attempt(attempt, partition=source["partition"])
+            read = {"fresh", "stale", "empty", "no_eligible", "not_modified"}
             if (
                 preview["checked_at"] is None
                 or not preview["snapshot_id"]
-                or preview["status"]
-                not in {"fresh", "stale", "empty", "no_eligible", "not_modified"}
+                or preview["status"] not in read
                 or (source["kind"] == "web" and preview["status"] not in {"fresh", "stale"})
             ):
+                return False
+            latest = next(
+                (
+                    a
+                    for a in reversed(self.evidence.history(source["id"]))
+                    if a["checked_at"] is not None
+                ),
+                None,
+            )
+            if latest is not None and latest["id"] != attempt and latest["status"] not in read:
                 return False
             scope = json.loads(
                 self.store._db.execute(

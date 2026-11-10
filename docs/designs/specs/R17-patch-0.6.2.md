@@ -4,14 +4,14 @@
 
 ## 问题与证据
 
-1. **已开启的简报采集过一次后，任何修改都被拒绝。** 本机 `sub_av`（已开启）把样式改为「文字 + 链接」时 `subscriptions.save` 报 `subscription_not_ready`；`subscriptions.preview` 的唯一缺口是 `source_preview_required`，两个来源 `ready: false`。`source_readiness` 记录的试采集是 `fetch_86e5…`（05:00:06）和 `fetch_7c4b…`（05:32:01），而这两个来源最近一次读取是 05:32:15 / 05:32:19 的正式采集（`fetch_db4b…`、`fetch_1fc9…`，状态 `not_modified` / `fresh`）。`SourceManager._ready` 要求「历史里最近一次读取就是那次试采集」，所以一次成功的正式采集就让来源变回「未就绪」。#17 的约定是「启用需要当前来源 URL / 分区 / 类型的最近一次成功试采集」，并没有要求其后不得再有读取。
+1. **已开启的简报采集过一次后，任何修改都被拒绝。** 本机 `sub_av`（已开启）把样式改为「文字 + 链接」时 `subscriptions.save` 报 `subscription_not_ready`；`subscriptions.preview` 的唯一缺口是 `source_preview_required`，两个来源 `ready: false`。`source_readiness` 记录的试采集是 `fetch_86e5…`（05:00:06）和 `fetch_7c4b…`（05:32:01），而这两个来源最近一次读取是 05:32:15 / 05:32:19 的正式采集（`fetch_db4b…`、`fetch_1fc9…`，状态 `not_modified` / `fresh`）。`SourceManager._ready` 要求「历史里最近一次读取就是那次试采集」，所以一次成功的正式采集就让来源变回「未就绪」。#17（`17-source-management.md` 第 16 行）写的是「记录的试采集必须同时是最近一次完成的读取……且其后没有失败」；前半句在有了定时采集之后把每一次成功采集都当成了失效，本版只放宽这半句，「其后没有失败」保留。
 2. **被拒的 Key 没有「再测一次」。** 模型行在 `rejected` 状态只提供「重新填入」；重填同一个 Key 不换代次，后台按同一个自动检查 id 返回原来的失败记录。本机 MiMo 行因此一直显示 13:51 的 401，0.6.1 的 `token_plan_endpoint` 提示无从出现；改了服务商侧的设置（充值、开通权限）后也没有办法重测。
 
 ## 冻结的验收标准
 
 F. 来源就绪
-- F1 `SourceManager._ready(source)` 只看该来源当前 epoch 记录的那次试采集（`source_readiness.attempt_id`）：它存在、有快照、状态在原有允许集合内（`web` 仍只接受 `fresh` / `stale`），且其范围包含该来源的当前 id 与类型。之后的读取（成功或失败的正式采集、被取消的试采集）不改变结论。
-- F2 不变：没有试采集、试采集失败、URL / 分区 / 类型改过（epoch 递增清空记录）都仍是未就绪；新的试采集仍会覆盖记录，所以一次失败的新试采集会让来源未就绪。
+- F1 `SourceManager._ready(source)`：该来源当前 epoch 记录的那次试采集（`source_readiness.attempt_id`）存在、有快照、状态在原有允许集合内（`web` 仍只接受 `fresh` / `stale`），且其范围包含该来源的当前 id 与类型；并且该来源最近一次完成的读取要么就是这次试采集，要么是其后一次状态在允许集合（`fresh` / `stale` / `empty` / `no_eligible` / `not_modified`）内的读取。也就是说，其后成功的正式采集不再使它失效。
+- F2 不变：没有试采集、试采集失败、URL / 分区 / 类型改过（epoch 递增清空记录）都仍是未就绪；最近一次完成的读取是失败、中断或取消时仍是未就绪（与原来相同），再次成功读取或重新试采集后恢复；新的试采集仍会覆盖记录。
 - F3 结果：已开启且采集过的简报可以保存修改（`subscriptions.save` 带 `enable: true` 不再因 `source_preview_required` 被拒），已启用的来源在采集后 `preview_ready` 仍为真。
 
 G. 被拒的 Key 可以重测
@@ -37,11 +37,11 @@ H. 发版
 
 ## 做法与取舍
 
-- F：把判断对象从「历史里最近一次读取」换成「记录的那次试采集」本身。原来的相等比较想排除的两种情况（配置改过、试采集没成功）已经分别由 epoch 清空和试采集自身的状态覆盖。清理任务本来就保留被 `source_readiness` 引用的读取记录（`operations.py`）。
+- F：先按记录的那次试采集本身判断，再只要求「最近一次完成的读取没有失败」，不再要求它就是那次试采集。配置改过由 epoch 清空覆盖；清理任务本来就保留被 `source_readiness` 引用的读取记录（`operations.py`）。内部评审 R17-F-1 指出初稿把「其后失败也算就绪」写进了验收标准，与 #17 第 16 行相反；已按仓库证据改回。
 - G：`KeyStatus` 加一个只读判断（该状态是否提供重测），模型行据此显示按钮；重测沿用现有 `recheck`。
 
 ## 测试计划
 
-- Python：试采集并启用后，再发生一次成功的正式采集、一次失败的正式采集，来源仍就绪且已开启的订阅仍可保存；失败的新试采集使其未就绪；URL 改动后未就绪（既有测试）。
+- Python：试采集并启用后，一次成功的正式采集后来源仍就绪、已开启的订阅仍可保存；其后一次失败的采集使其未就绪，再次成功采集后恢复；失败的新试采集使其未就绪；URL 改动后未就绪（既有测试）。
 - Swift：`rejected` 提供重测，其余状态与原来一致。
 - 全量：`uv run pytest -q`、`uv run ruff check .`、`swift test`（`macos/NewsPaw`）。

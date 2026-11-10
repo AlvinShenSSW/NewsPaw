@@ -1839,3 +1839,40 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
     await plainData.setNewspaper(true, profile: "normal_primary", model: plainModel)
     #expect(plain.paper["generation_profile"] as? String == "normal_primary" && plain.paper["vision_profile"] as? String == "normal_primary")
 }
+
+// MARK: - R17 G: a rejected key can be checked again
+
+@Test func aRejectedKeyOffersCheckAgainBesideEnteringItAgain() {
+    for kind in ["authentication_failed", "permission_denied", "invalid_credential"] {
+        let rejected = KeyStatus.rejected(kind)
+        #expect(rejected.action == .reenterKey && rejected.offersRecheck)
+    }
+    // The other rows keep their one action.
+    for status in [KeyStatus.untested, .failed("model_unavailable"), .unavailable("rate_limited"), .budget] {
+        #expect(status.action == .recheck && status.offersRecheck)
+    }
+    for status in [KeyStatus.missing, .checking, .verified, .unknown("outcome_unknown"), .keychain("locked"), .uncheckable] {
+        #expect(!status.offersRecheck)
+    }
+}
+
+@Test @MainActor func checkingARejectedKeyAgainRunsANewCheckOfTheSameKey() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.checks["normal_primary"] = [["state": "failed", "status": "failed", "error_kind": "authentication_failed"]]
+    await data.saveKey("tp-synthetic-plan", profile: "normal_primary", model: model)
+    let profile = try #require(model.config?.modelProfiles.first { $0.id == "normal_primary" })
+    #expect(data.keyStatus(profile, model: model) == .rejected("authentication_failed"))
+    let before = server.calls("models.probe").count
+    let generation = server.generation("normal_primary")
+
+    // The provider's side changed (or the address did): the same key now passes.
+    server.checks["normal_primary"] = [["state": "verified", "status": "verified"]]
+    await data.recheck("normal_primary", model: model)
+    let probes = server.calls("models.probe")
+    #expect(probes.count == before + 1 && probes.last?["capability"] as? String == "text")
+    #expect((probes.last?["probe_id"] as? String)?.hasPrefix("auto.") == false)
+    #expect(server.generation("normal_primary") == generation)
+    #expect(data.keyStatus(profile, model: model) == .verified)
+}

@@ -20,7 +20,10 @@ final class WindowLifetime: NSObject, NSApplicationDelegate {
 @main @MainActor
 struct NewsPawApp: App {
     @NSApplicationDelegateAdaptor(WindowLifetime.self) private var lifetime
-    @State private var model = AppModel(socket: AppModel.defaultSocket())
+    @State private var model = AppModel(
+        socket: AppModel.defaultSocket(),
+        appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+    )
 
     private var developmentAppearance: ColorScheme? {
         switch Bundle.main.object(forInfoDictionaryKey: "NewsPawDevelopmentAppearance") as? String {

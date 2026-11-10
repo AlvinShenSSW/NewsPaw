@@ -160,6 +160,12 @@ private struct BackendSection: View {
                     Button(model.text(L10n.Settings.start)) { Task { await resident.start(model: model) } }
                         .buttonStyle(.borderedProminent)
                         .disabled(resident.busy || !(resident.state == .on || resident.state == .off))
+                } else if model.connection == .incompatible {
+                    // The running backend is another version: restarting replaces it with this app's.
+                    Button(model.text(L10n.Settings.restart)) { Task { await resident.restart(model: model) } }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!resident.canRestart || resident.busy || model.busy)
+                        .help(resident.canRestart ? "" : model.text(L10n.Settings.restartHelp))
                 }
             }
             Divider()

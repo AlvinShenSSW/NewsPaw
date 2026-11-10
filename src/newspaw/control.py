@@ -28,7 +28,7 @@ from .config_history import changes_since
 from .connectors.web_search import WebSearch
 from .credentials import CredentialError
 from .errors import code_of, detail
-from .media.image_provider import ImageProvider
+from .media.image_provider import ImageProvider, image_model
 from .media.input_service import MediaCommands
 from .media.newspaper import MacOCR
 from .media.paper_service import Newspapers
@@ -729,7 +729,14 @@ class ControlServer:
             if data["kind"] == "model_profiles":
                 # Also after an unchanged save: the profile may have changed since the key
                 # was last checked. Verified and in-flight checks are reused, never repaid.
-                self._verify_soon(data["id"], ["text"])
+                # An image-only model has no text endpoint: its key is checked with an image.
+                try:
+                    profile, _ = ProfileRegistry(self.credentials.store).profile(data["id"])
+                except ProviderError:
+                    # Removed by another change since the save: no key is left to check.
+                    return result
+                capability = "image" if image_model(profile["model"]) else "text"
+                self._verify_soon(data["id"], [capability])
             return result
         if op == "credentials.remove":
             return await manager.remove(data["kind"], data["id"], data["revision"])

@@ -330,7 +330,8 @@ final class BotPairing {
 // MARK: - Model keys, saved to checked
 
 /// Saves model keys and reads their checks back. The backend checks a saved key by itself
-/// (R04); this only reads `models.status` until the text check has an outcome for the new key.
+/// (R04); this only reads `models.status` until the text check has an outcome for the new key
+/// (an image-only model's image check is followed by its id instead).
 @MainActor @Observable
 final class KeyChecks {
     /// Each profile's text check, the one that decides whether the key works.
@@ -377,7 +378,14 @@ final class KeyChecks {
     }
 
     /// Saves a key; `before` runs first (e.g. choosing the model) and stops the save when it throws.
-    func save(_ key: String, profile: String, model: AppModel, before: (@MainActor () async throws -> Void)? = nil) async {
+    /// `capability` is the check the backend starts for this key: text, or an image for an
+    /// image-only model (`ModelNames.keyCapability`).
+    func save(_ key: String, profile: String, capability: String = "text", model: AppModel,
+              before: (@MainActor () async throws -> Void)? = nil) async {
+        guard capability == "text" else {
+            await saveFollowing(key, profile: profile, capability: capability, model: model, before: before)
+            return
+        }
         let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty, !working.contains(profile) else { return }
         working.insert(profile)
@@ -396,6 +404,41 @@ final class KeyChecks {
             failures[profile] = BackendError.wrapping(error)
         }
         await model.refresh()
+    }
+
+    /// Saves a key whose own check is not the text one. `models.status` shows the previous
+    /// finished check while the new one runs, so the backend's automatic check is followed by its
+    /// id (`auto.<profile>.<capability>.g<generation>`): no text check is waited for, and asking
+    /// by that id never starts a second check.
+    private func saveFollowing(_ key: String, profile: String, capability: String, model: AppModel,
+                               before: (@MainActor () async throws -> Void)?) async {
+        let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        let slot = Self.key(profile, capability)
+        guard !key.isEmpty, !working.contains(slot) else { return }
+        working.insert(slot)
+        failures[slot] = nil
+        states[profile]?[capability] = nil
+        do {
+            try await before?()
+            try await model.client.setCredential(kind: "model_profiles", id: profile, value: key)
+            await load(profile, model: model)
+            // A check still open for the earlier key will end stale: the new key's check replaces it.
+            if let earlier = model.pendingProbes[slot], earlier.generation != nil, earlier.generation != generations[profile] {
+                model.pendingProbes[slot] = nil
+            }
+            await trackAutomatic(profile, capability: capability, model: model)
+            working.remove(slot)
+            if let pending = model.pendingProbes[slot] { await follow(pending, model: model) }
+        } catch {
+            working.remove(slot)
+            failures[slot] = BackendError.wrapping(error)
+        }
+        await model.refresh()
+    }
+
+    /// The check that says whether a profile's key works, as last read.
+    func probe(_ profile: String, capability: String) -> ProbeState? {
+        capability == "text" ? probes[profile] : states[profile]?[capability]
     }
 
     /// Reads the key check until it has an outcome.
@@ -512,7 +555,7 @@ final class KeyChecks {
     /// last check's outcome is unknown, it is still running, or it gave no result in time. Both
     /// the first-run window and the Connect page ask the owner before such a recheck.
     func needsConfirmation(_ profile: String, capability: String = "text") -> Bool {
-        let state = capability == "text" ? probes[profile]?.state : states[profile]?[capability]?.state
+        let state = probe(profile, capability: capability)?.state
         return ["outcome_unknown", "pending"].contains(state ?? "") || failures[Self.key(profile, capability)]?.code == "probe_pending"
     }
 

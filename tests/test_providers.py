@@ -472,6 +472,40 @@ async def test_custom_base_path_has_one_operation_and_model_is_not_rewritten():
     await adapter.close()
 
 
+async def test_mimo_token_plan_key_is_not_sent_to_the_pay_as_you_go_address(registry):
+    store, records = registry
+    revision, config = store.load_config()
+    config["model_profiles"][1]["credential_ref"] = REF
+    store.save_config(config, expected_revision=revision)
+
+    class PlanKeys:
+        def read(self, ref):
+            return "tp-synthetic"
+
+    def forbidden(request):
+        pytest.fail("unexpected dispatch")
+
+    def factory(handler):
+        return lambda entry, key: ProviderAdapter(
+            entry, key, client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        )
+
+    service = ProbeService(store, PlanKeys(), adapter_factory=factory(forbidden))
+    result = await service.probe("plan-1", "normal_backup", "text", 100)
+    assert result["status"] == "failed" and result["error_kind"] == "token_plan_endpoint"
+    assert store._db.execute("SELECT count(*) FROM budget_attempts").fetchone() == (0,)
+
+    # The plan's own address takes the same key; a pay-as-you-go key stays on the default one.
+    plan = profile("mimo") | {"base_url": "https://token-plan-cn.xiaomimimo.com/v1"}
+    for entry, key in ((plan, "tp-synthetic"), (profile("mimo"), "sk-synthetic")):
+        adapter = ProviderAdapter(
+            entry, key, client=httpx.AsyncClient(transport=httpx.MockTransport(echo))
+        )
+        await adapter.close()
+    with pytest.raises(ProviderError, match="token_plan_endpoint"):
+        ProviderAdapter(profile("mimo"), "tp-synthetic")
+
+
 async def test_later_failed_probe_hides_previous_pass(registry):
     store, records = registry
     await probes(store, echo).probe("pass", "normal_primary", "text", 100)

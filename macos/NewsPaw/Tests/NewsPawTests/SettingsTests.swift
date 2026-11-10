@@ -90,6 +90,8 @@ final class SettingsBackend {
     var scheduleEnabled = true
     var startedAt: String? = "2026-11-10T07:02:00+00:00"
     var version: String? = "0.5.0"
+    /// The version in the app bundle on disk: what the next started process reports.
+    var installedVersion: String?
     private(set) var stopping = false
     private(set) var stopped = false
     /// `service.stop` answers this instead of stopping.
@@ -111,6 +113,7 @@ final class SettingsBackend {
         stopping = false
         stopped = false
         startedAt = "2026-11-10T09:30:00+00:00"
+        if let installedVersion { version = installedVersion }
     }
 
     var client: BackendClient {
@@ -1209,4 +1212,93 @@ private func stoppedJustNow(_ backend: SettingsBackend) async throws -> (AppMode
     let backendControl = control(resident)
     await backendControl.start(model: model)
     #expect(resident.calls == ["wait"] && backendControl.note == .startFailed)
+}
+
+// MARK: - A backend left running from before an upgrade
+
+@MainActor
+private func upgraded(_ backend: SettingsBackend, resident: FakeResident) throws -> (AppModel, () -> Void) {
+    let name = "NewsPawTests-" + UUID().uuidString
+    let defaults = try #require(UserDefaults(suiteName: name))
+    let model = AppModel(client: backend.client, defaults: defaults, resident: resident, appVersion: "0.6.0")
+    return (model, { defaults.removePersistentDomain(forName: name) })
+}
+
+@Test @MainActor func aBackendFromAnotherVersionIsNotUsed() async throws {
+    let backend = SettingsBackend()
+    backend.version = "0.5.0"
+    let (model, cleanup) = try upgraded(backend, resident: FakeResident(backend))
+    defer { cleanup() }
+    await model.refresh()
+    #expect(model.connection == .incompatible && model.config == nil)
+    // Nothing but the status was asked of it.
+    #expect(backend.ops == ["service.status"])
+
+    // One from before the version was reported at all is just as old.
+    backend.version = nil
+    await model.refresh()
+    #expect(model.connection == .incompatible)
+
+    backend.version = "0.6.0"
+    await model.refresh()
+    #expect(model.connection == .connected)
+}
+
+@Test @MainActor func openingNewsPawAfterAnUpgradeReplacesTheOldBackendOnce() async throws {
+    let backend = SettingsBackend()
+    backend.version = nil
+    backend.installedVersion = "0.6.0"
+    let resident = FakeResident(backend, state: .on)
+    let (model, cleanup) = try upgraded(backend, resident: resident)
+    defer { cleanup() }
+    let backendControl = control(resident)
+    await backendControl.startIfStopped(model: model)
+    #expect(resident.calls == ["wait", "start"])
+    #expect(backend.calls("service.stop").count == 1)
+    #expect(model.connection == .connected && model.service?.version == "0.6.0" && backendControl.note == nil)
+    await backendControl.startIfStopped(model: model)
+    #expect(resident.calls == ["wait", "start"])
+}
+
+@Test @MainActor func anOldBackendThatIsNotALoginItemIsLeftAloneUntilRestartIsPossible() async throws {
+    let backend = SettingsBackend()
+    backend.installedVersion = "0.6.0"
+    let resident = FakeResident(backend, state: .off)
+    let (model, cleanup) = try upgraded(backend, resident: resident)
+    defer { cleanup() }
+    let backendControl = control(resident)
+    await backendControl.startIfStopped(model: model)
+    #expect(resident.calls.isEmpty && backend.calls("service.stop").isEmpty)
+    #expect(model.connection == .incompatible && !backendControl.canRestart)
+
+    // Settings › Restart replaces it once the login item is on.
+    resident.state = .on
+    await backendControl.restart(model: model)
+    #expect(model.connection == .connected && model.service?.version == "0.6.0")
+}
+
+@Test @MainActor func aReplacementThatIsStillTheWrongVersionSaysItDidNotStart() async throws {
+    let backend = SettingsBackend()
+    let resident = FakeResident(backend, state: .on)
+    let (model, cleanup) = try upgraded(backend, resident: resident)
+    defer { cleanup() }
+    let backendControl = control(resident)
+    backendControl.settleAttempts = 2
+    await backendControl.startIfStopped(model: model)
+    #expect(model.connection == .incompatible && backendControl.note == .startFailed)
+    #expect(backend.calls("service.stop").count == 1)
+}
+
+/// R16-A-3: unregistering the login item stops the agent, so an old backend is asked to stop first too.
+@Test @MainActor func turningTheLoginItemOffStopsABackendFromAnotherVersionSafelyFirst() async throws {
+    let backend = SettingsBackend()
+    let resident = FakeResident(backend, state: .on)
+    let (model, cleanup) = try upgraded(backend, resident: resident)
+    defer { cleanup() }
+    await model.refresh()
+    #expect(model.connection == .incompatible)
+    let backendControl = control(resident)
+    await backendControl.setLoginItem(false, model: model)
+    #expect(backend.calls("service.stop").count == 1)
+    #expect(resident.calls == ["disable(true)"] && backendControl.note == nil)
 }

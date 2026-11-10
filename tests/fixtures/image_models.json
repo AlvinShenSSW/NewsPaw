@@ -1,0 +1,4 @@
+{
+  "image": ["gpt-image-2.5-flare", "gpt-image-1", "GPT-Image-2", "dall-e-3", "DALL-E-2"],
+  "other": ["gpt-6-luna", "gpt-6-luna-mini", "gpt-image", "dall-e", "my-gpt-image-1", "x/dall-e-3", "mimo-v2.6-flash", "deepseek-flash", "grok-4.3", ""]
+}

@@ -15,6 +15,15 @@ _MAX_RESPONSE = 7 * 1024 * 1024
 _MAX_RASTER = 5 * 1024 * 1024
 
 
+_IMAGE_MODEL_PREFIXES = ("gpt-image-", "dall-e-")
+
+
+def image_model(model_id):
+    """An image-only model: it generates images and has no text endpoint, so its key is
+    checked with an image request. The app's `ModelNames.generatesImages` is the same rule."""
+    return isinstance(model_id, str) and model_id.lower().startswith(_IMAGE_MODEL_PREFIXES)
+
+
 def supported_image_profile(profile):
     return (
         profile["partition"] == "normal"

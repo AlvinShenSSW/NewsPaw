@@ -17,7 +17,7 @@ from PIL import Image, ImageOps
 
 from ..app_config import _url
 from ..evidence import EvidenceError, EvidenceStore
-from ..news import canonical_url, plain_text
+from ..newsparse import canonical_url, plain_text
 from ..transport import SafeHTTPError, checked_url, source_client
 
 _INPUT_MAX = 5 * 1024 * 1024

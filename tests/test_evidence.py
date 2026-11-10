@@ -7,7 +7,7 @@ import pytest
 
 from newspaw.app_config import default_config
 from newspaw.evidence import EvidenceError, EvidenceStore, FeedCollector
-from newspaw.news import parse_evidence
+from newspaw.newsparse import parse_evidence
 from newspaw.store import Store
 
 NOW = datetime(2026, 11, 7, 12, tzinfo=UTC)

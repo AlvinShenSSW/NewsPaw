@@ -2,7 +2,7 @@
 
 from xml.parsers import expat
 
-from ..news import plain_text
+from ..newsparse import plain_text
 from ..source_manager import SourceError, normalize_url
 
 

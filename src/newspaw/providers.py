@@ -117,7 +117,7 @@ class SearchRequest(ModelRequest):
 
 
 def _search_result(data, spec, usage):
-    from .news import plain_text
+    from .newsparse import plain_text
 
     output = data.get("output")
     if not isinstance(output, list) or any(not isinstance(item, dict) for item in output):
@@ -544,6 +544,9 @@ class ProfileRegistry:
                     if row[0] == generation and row[1] == identity(entry)
                     else "stale",
                 }
+            # The profile's current generation: the app names the automatic check
+            # (`auto.<profile>.<capability>.g<generation>`) and ties pending checks to it.
+            result[capability]["generation"] = generation
         return result
 
     def get(self, probe_id):

@@ -188,3 +188,16 @@ def test_system_timezone_prefers_tz_then_localtime_link(monkeypatch, tz, link, e
 
     monkeypatch.setattr(app_config.os, "readlink", readlink)
     assert app_config.system_timezone() == expected
+
+
+def test_topic_and_time_limits_reject_empty_or_excessive_configuration():
+    from newspaw.app_config import parse_times, parse_topics
+
+    assert parse_topics("Apple; 日本 ;Apple") == ["Apple", "日本"]
+    assert parse_times("18:00, 09:00,18:00") == ["09:00", "18:00"]
+    for value in ("", "; ;", ";".join(str(i) for i in range(11)), "x" * 151):
+        with pytest.raises(ValueError):
+            parse_topics(value)
+    for value in ("", "9:00", "24:00", ",".join(f"{i:02}:00" for i in range(13))):
+        with pytest.raises(ValueError):
+            parse_times(value)

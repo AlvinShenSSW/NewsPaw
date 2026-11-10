@@ -17,7 +17,7 @@ from ..credentials import CredentialError
 from ..media.audio import MediaInputError
 from ..media.speech_provider import TranscriptionProvider, supported_stt_profile
 from ..media.x_video import download, extract
-from ..news import plain_text
+from ..newsparse import plain_text
 from ..pipeline import PipelineError
 from ..providers import ModelRequest, ProfileRegistry, ProviderAdapter, ProviderError
 from .client import XReadError

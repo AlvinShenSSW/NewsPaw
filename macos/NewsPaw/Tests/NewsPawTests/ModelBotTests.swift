@@ -24,15 +24,4 @@ import Testing
     #expect(status.generation == 9)
     #expect(status.label == .unpaired)
     #expect(!status.paired)
-    #expect(ConnectionCopy.verify.text(.ja) != ConnectionCopy.test.text(.ja))
-}
-
-@Test func modelVerificationRetryKeepsItsOriginalRequest() {
-    let request = ModelProbeRequest(revision: 7, capability: "vision", units: 25)
-    let original = request.fields(profileId: "normal_primary")
-    let retry = request.fields(profileId: "normal_primary")
-    #expect(retry["probe_id"] as? String == original["probe_id"] as? String)
-    #expect(retry["revision"] as? Int == 7)
-    #expect(retry["capability"] as? String == "vision")
-    #expect(retry["hold_units"] as? Int == 25)
 }

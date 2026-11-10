@@ -280,7 +280,7 @@ private final class Box<Value>: @unchecked Sendable {
     await model.refresh()
     await model.setPaused(true)
     #expect(model.retryLast != nil)
-    // A result the view cannot decode (the bots.status path in BotWorkspace).
+    // A result a legacy view cannot decode.
     let reply = try await model.request("bots.status", fields: ["bot_id": "b"])
     #expect(throws: BackendFailure.invalidReply) { let _: BotStatus = try model.decodeReply(reply) }
     #expect(model.lastFailure?.code == "invalid_reply" && model.retryLast == nil)
@@ -345,7 +345,6 @@ private final class Box<Value>: @unchecked Sendable {
     #expect(model.lastFailure?.code == "invalid_reply")
     #expect(try await replies.value.count == 13)
 }
-
 
 @Test @MainActor func configChangesDecodeFieldsAndItems() async throws {
     let reply = #"{"ok":true,"result":{"revision":7,"changes":[{"field":"ui_locale"},{"collection":"subscriptions","id":"sub_world","fields":["times"]},{"collection":"sources","id":"s1","added":true}]}}"#

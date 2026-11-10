@@ -182,7 +182,7 @@ async def test_disconnect_after_mutation_still_commits(control):
     assert store.config_revision() == 2
 
 
-def test_control_cli_does_not_load_legacy_settings(monkeypatch, tmp_path):
+def test_control_cli_starts_only_the_control_backend(monkeypatch, tmp_path):
     import newspaw.cli as cli
     import newspaw.control as module
 
@@ -191,13 +191,30 @@ def test_control_cli_does_not_load_legacy_settings(monkeypatch, tmp_path):
     async def serve(directory):
         calls.append(directory)
 
-    def forbidden(*args):
-        raise AssertionError("control setup must not load runtime secrets")
-
     monkeypatch.setattr(module, "serve_control", serve)
-    monkeypatch.setattr(cli, "load_settings", forbidden)
     assert cli.main(["control", "--data-dir", str(tmp_path)]) == 0
     assert calls == [tmp_path]
+
+
+@pytest.mark.parametrize("command", ["run", "service", "init", "doctor", "search", "collect"])
+def test_removed_env_commands_are_rejected(command, capsys):
+    import newspaw.cli as cli
+
+    with pytest.raises(SystemExit) as exited:
+        cli.main([command])
+    assert exited.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_cli_help_lists_only_the_control_command(capsys):
+    import newspaw.cli as cli
+
+    with pytest.raises(SystemExit):
+        cli.main(["--help"])
+    output = capsys.readouterr().out
+    assert "{control}" in output
+    for removed in ("run", "service", "init", "doctor", "--config"):
+        assert removed not in output.split()
 
 
 async def test_budget_policy_uses_separate_cas_without_changing_news_config(control):
@@ -411,9 +428,13 @@ async def test_explicit_service_stop_acknowledges_and_releases_private_endpoint(
                     else:
                         break
             assert status["ok"] and "service.stop" in status["result"].pop("operations")
+            status["result"].pop("started_at")
+            status["result"].pop("version")
             assert status == {"ok": True, "result": {"protocol_version": 1, "state": "running"}}
             stopped = await request(endpoint, {"op": "service.stop"})
             stopped["result"].pop("operations")
+            stopped["result"].pop("started_at")
+            stopped["result"].pop("version")
             assert stopped == {"ok": True, "result": {"protocol_version": 1, "state": "stopping"}}
             await asyncio.wait_for(running, 3)
             assert not endpoint.path.exists()
@@ -615,6 +636,28 @@ async def test_status_lists_operations_and_readiness_is_served(control):
     ]
 
 
+async def test_status_names_when_the_backend_started_and_its_version(control):
+    from datetime import datetime
+
+    from newspaw import __version__
+
+    server, _ = control
+    status = (await request(server, {"op": "service.status"}))["result"]
+    assert status["version"] == __version__
+    started = datetime.fromisoformat(status["started_at"])
+    assert started.tzinfo is not None
+    again = (await request(server, {"op": "service.status"}))["result"]
+    assert again["started_at"] == status["started_at"]
+
+
+async def test_cleanup_takes_a_retention_of_seven_thirty_or_ninety_days(control):
+    server, _ = control
+    reply = await request(server, {"op": "ops.cleanup", "retention_days": 30})
+    assert reply["ok"] and reply["result"]["apply"] is False
+    refused = await request(server, {"op": "ops.cleanup", "retention_days": 14})
+    assert refused == {"ok": False, "error": "invalid_cleanup"}
+
+
 @pytest.mark.parametrize(
     "op", ["\ud800", "x" * (8 * 1024 * 1024 - 100), "Bots.List", "bots..list", "a.b.c.d.e"]
 )
@@ -663,6 +706,10 @@ async def test_saving_a_model_key_checks_text_once_per_key(control, monkeypatch)
     probe_id, profile, capability, hold = calls[0]
     assert (profile, capability, hold) == ("normal_primary", "text", 10_000)
     assert probe_id.startswith("auto.normal_primary.text.g")
+    # models.status names the generation, so the app can follow this automatic check by id.
+    status = await request(server, {"op": "models.status", "profile_id": "normal_primary"})
+    generations = {entry["generation"] for entry in status["result"].values()}
+    assert generations == {int(probe_id.rsplit(".g", 1)[1])}
     bot = await request(
         server,
         {

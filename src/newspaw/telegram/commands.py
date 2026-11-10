@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 import httpx
 
-from ..config import parse_times
+from ..app_config import parse_times
 from ..credentials import CredentialError
 from ..media.audio import MAX_SPEECH, MediaInputError
 from ..media.newspaper import PaperError

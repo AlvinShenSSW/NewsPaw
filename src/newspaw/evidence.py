@@ -15,7 +15,7 @@ import httpx
 
 from .app_config import source_in_subscription
 from .migrations import check_version
-from .news import (
+from .newsparse import (
     MAX_FEED_BYTES,
     Article,
     NewsError,

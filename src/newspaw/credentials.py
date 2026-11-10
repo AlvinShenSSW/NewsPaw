@@ -15,6 +15,9 @@ from dotenv import dotenv_values
 
 from .app_config import _CREDENTIAL, validate_config
 
+TAIL_LENGTH = 4
+TAIL_MINIMUM = 2 * TAIL_LENGTH
+
 
 class CredentialError(ValueError):
     """Only fixed public diagnostic codes, never backend exception text."""
@@ -164,14 +167,15 @@ class CredentialManager:
             return {"pending": True, "cleanup_pending": len(self.store.pending_credentials())}
 
         async def operation():
-            states = {}
+            states, tails = {}, {}
             for ref in sorted(references(self.store.load_config()[1])):
                 try:
-                    states[ref] = (
-                        "available"
-                        if await asyncio.to_thread(self.backend.read, ref) is not None
-                        else "missing"
-                    )
+                    value = await asyncio.to_thread(self.backend.read, ref)
+                    states[ref] = "available" if value is not None else "missing"
+                    # The settings page names a key by its last four characters ("••••7Qx2");
+                    # a value too short to keep most of it hidden gets no tail at all.
+                    if isinstance(value, str) and len(value) >= TAIL_MINIMUM:
+                        tails[ref] = value[-TAIL_LENGTH:]
                 except CredentialError as exc:
                     states[ref] = str(exc)
                 except Exception:
@@ -179,6 +183,7 @@ class CredentialManager:
             return {
                 "pending": False,
                 "references": states,
+                "tails": tails,
                 "cleanup_pending": len(self.store.pending_credentials()),
             }
 

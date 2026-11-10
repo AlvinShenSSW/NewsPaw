@@ -17,10 +17,12 @@ import sys
 import time
 from contextlib import suppress
 from dataclasses import asdict
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from uuid import uuid4
 
+from . import __version__
 from .budget import BudgetError, BudgetLedger
 from .config_history import changes_since
 from .connectors.web_search import WebSearch
@@ -82,7 +84,7 @@ OPERATIONS = {
     "ops.preview_import": ({"portable"}, set()),
     "ops.apply_import": ({"portable", "digest", "revision"}, set()),
     "ops.verify_backup": ({"name"}, set()),
-    "ops.cleanup": (set(), {"apply", "limit"}),
+    "ops.cleanup": (set(), {"apply", "limit", "retention_days"}),
     "service.status": (set(), set()),
     "requests.status": ({"request"}, set()),
     "setup.readiness": (set(), set()),
@@ -289,6 +291,7 @@ class ControlServer:
         self._socket_identity = None
         self._stop_requested = asyncio.Event()
         self._background = set()
+        self._started_at = None
         self._requests = {}  # handle -> [op, task, finished_at, deadline]
         self._long_tasks = set()
 
@@ -321,6 +324,7 @@ class ControlServer:
         if self._server is not None:
             raise ValueError("already_running")
         self._stop_requested.clear()
+        self._started_at = datetime.now(UTC).isoformat()
         if self._lock_fd is None:
             self._lock_fd = acquire_control_lock(self.directory)
         try:
@@ -445,6 +449,8 @@ class ControlServer:
                 "protocol_version": 1,
                 "state": "stopping" if self._stop_requested.is_set() else "running",
                 "operations": sorted(OPERATIONS),
+                "started_at": self._started_at,
+                "version": __version__,
             }
         if self._stop_requested.is_set():
             raise CredentialError("service_stopping")
@@ -465,7 +471,9 @@ class ControlServer:
             return await asyncio.to_thread(self.operations.verify_backup, data["name"])
         if op == "ops.cleanup":
             return self.operations.cleanup(
-                apply=data.get("apply", False), limit=data.get("limit", 100)
+                apply=data.get("apply", False),
+                limit=data.get("limit", 100),
+                retention_days=data.get("retention_days", 7),
             )
         if op == "media.policy":
             return self.media.policy()
@@ -856,9 +864,30 @@ class ControlServer:
             self._handlers.discard(task)
 
 
+def service_log_directory(home_dir: Path) -> Path:
+    return home_dir / "Library" / "Logs" / "NewsPaw"
+
+
+def prepare_logs(log_dir: Path) -> None:
+    """Create private log files owned by this user, refusing links and special files."""
+    log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    log_dir.chmod(0o700)
+    for filename in ("stdout.log", "stderr.log"):
+        log_path = log_dir / filename
+        descriptor = os.open(
+            log_path, os.O_CREAT | os.O_APPEND | os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600
+        )
+        try:
+            info = os.fstat(descriptor)
+            if info.st_uid != os.geteuid() or not stat.S_ISREG(info.st_mode):
+                raise OSError("unsafe_service_log")
+            os.fchmod(descriptor, 0o600)
+        finally:
+            os.close(descriptor)
+
+
 async def serve_control(directory):
     from .credentials import CredentialManager, MacKeychain
-    from .service import _prepare_logs, service_log_directory
     from .store import Store
 
     directory = Path(directory).expanduser().absolute()
@@ -872,7 +901,7 @@ async def serve_control(directory):
             try:
                 if log_directory.is_symlink():
                     raise OSError("unsafe_log_directory")
-                _prepare_logs(log_directory)
+                prepare_logs(log_directory)
                 handler = RotatingFileHandler(
                     log_directory / "stderr.log",
                     maxBytes=1_048_576,

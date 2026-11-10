@@ -9,6 +9,58 @@ import pytest
 from newspaw.app_config import default_config
 from newspaw.store import Store
 
+# Tables the removed .env bot created in every database up to v0.5.0 (verbatim).
+V050_LEGACY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS deliveries (
+    chat_id INTEGER NOT NULL,
+    article_key TEXT NOT NULL,
+    sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (chat_id, article_key)
+);
+CREATE TABLE IF NOT EXISTS deliveries_v2 (
+    chat_id INTEGER NOT NULL,
+    scope TEXT NOT NULL,
+    article_key TEXT NOT NULL,
+    sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (chat_id, scope, article_key)
+);
+INSERT OR IGNORE INTO deliveries_v2 (chat_id, scope, article_key, sent_at)
+    SELECT chat_id, 'news', article_key, sent_at FROM deliveries;
+CREATE TABLE IF NOT EXISTS collections (
+    id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    report_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS briefs (
+    id TEXT PRIMARY KEY,
+    collection_id TEXT NOT NULL REFERENCES collections(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    articles_json TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('prepared', 'delivered', 'partial', 'failed')),
+    error_kind TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS briefs_collection_created
+    ON briefs(collection_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS collections_created
+    ON collections(created_at DESC);
+"""
+
+
+def add_v050_legacy_tables(db):
+    db.executescript(V050_LEGACY_SCHEMA)
+
+
+def legacy_setting(db, key):
+    row = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return row[0] if row else None
+
 
 def test_config_cas_and_restart(tmp_path):
     path = tmp_path / "state.db"
@@ -36,7 +88,7 @@ def test_old_database_backup_and_no_history_replay(tmp_path):
     )
     db.close()
     store = Store(path)
-    assert store.get("last_slot") == "2026-01-01T09:00"
+    assert legacy_setting(store._db, "last_slot") == "2026-01-01T09:00"
     assert all(not s["enabled"] for s in store.load_config()[1]["subscriptions"])
     assert store.migration_cutover()
     store.close()
@@ -159,12 +211,12 @@ def test_existing_connection_cannot_write_after_schema_upgrade(tmp_path):
     with sqlite3.connect(path) as newer:
         newer.execute("pragma user_version=999")
     with pytest.raises(ValueError, match="newer"):
-        store.set("topics", "must-not-write")
-    with pytest.raises(ValueError, match="newer"):
         store.save_config(default_config(), expected_revision=1)
+    with pytest.raises(ValueError, match="newer"):
+        store.reserve_credentials([])
     store.close()
     with sqlite3.connect(path) as db:
-        assert not db.execute("select value from settings where key='topics'").fetchall()
+        assert db.execute("select revision from app_configuration").fetchone() == (1,)
 
 
 def test_import_refuses_to_overwrite_user_configuration(tmp_path):
@@ -232,6 +284,7 @@ def version1_database(path, *, revision=1):
         for entry in config[kind]:
             del entry["style"]
     with sqlite3.connect(path) as db:
+        add_v050_legacy_tables(db)
         db.execute("PRAGMA user_version=1")
         db.execute(
             "UPDATE app_configuration SET revision=?, document=?", (revision, json.dumps(config))
@@ -250,7 +303,7 @@ def test_v1_upgrade_preserves_import_eligibility_and_preferences(tmp_path, revis
     assert new_revision == revision + 1
     assert config["schema_version"] == 4
     assert config["model_profiles"] == original["model_profiles"]
-    assert store.get("last_slot") == "historic"
+    assert legacy_setting(store._db, "last_slot") == "historic"
     env = tmp_path / "legacy.env"
     env.write_text("NEWS_LANGUAGE=English\n")
     if revision == 1:
@@ -687,3 +740,48 @@ def test_new_database_takes_system_timezone_and_single_user_limits(tmp_path, mon
         for table in ("x_alert_policy", "x_video_policy"):
             settings = json.loads(db.execute(f"SELECT settings FROM {table}").fetchone()[0])
             assert settings["timezone"] == "Europe/Paris"
+
+
+def _v050_database(path, *, version):
+    """A database as v0.5.0 left it: current tables plus the old bot's tables and rows."""
+    with closing(Store(path)):
+        pass
+    with closing(sqlite3.connect(path)) as db:
+        add_v050_legacy_tables(db)
+        db.executescript(
+            "INSERT INTO settings VALUES ('topics', 'AI;日本');"
+            "INSERT INTO settings VALUES ('times', '07:30');"
+            "INSERT INTO deliveries_v2(chat_id,scope,article_key) VALUES (123,'news','old');"
+            "INSERT INTO collections VALUES ('collection_1', '2026-01-01', '{}');"
+            "INSERT INTO briefs(id,collection_id,created_at,updated_at,articles_json,summary,kind,status)"
+            " VALUES ('brief_1','collection_1','2026-01-01','2026-01-01','[]','','manual','delivered');"
+        )
+        db.execute(f"PRAGMA user_version={version}")
+        db.commit()
+
+
+@pytest.mark.parametrize("version", [23, 24])
+def test_v050_database_with_legacy_tables_opens_and_keeps_them(tmp_path, version):
+    from newspaw.migrations import DATABASE_VERSION
+
+    path = tmp_path / "state.db"
+    _v050_database(path, version=version)
+    with closing(Store(path)) as store:
+        db = store._db
+        assert db.execute("PRAGMA user_version").fetchone()[0] == DATABASE_VERSION
+        # Nothing reads or prunes the old bot's history any more; it stays untouched.
+        assert db.execute("SELECT count(*) FROM deliveries_v2").fetchone() == (1,)
+        assert db.execute("SELECT count(*) FROM briefs").fetchone() == (1,)
+        # The one-time explicit import still reads the old bot's saved preferences.
+        store.import_legacy_config(values={})
+        _, config = store.load_config()
+    assert {s["category_id"] for s in config["subscriptions"]} == {"ai", "japan"}
+    assert {tuple(s["times"]) for s in config["subscriptions"]} == {("07:30",)}
+    assert len(list(tmp_path.glob("state.db.backup-*"))) == (version < DATABASE_VERSION)
+
+
+def test_explicit_import_on_a_new_database_has_no_legacy_preferences(tmp_path):
+    with closing(Store(tmp_path / "state.db")) as store:
+        store.import_legacy_config(values={"NEWS_TOPICS": "日本"})
+        _, config = store.load_config()
+    assert [s["category_id"] for s in config["subscriptions"]] == ["japan"]

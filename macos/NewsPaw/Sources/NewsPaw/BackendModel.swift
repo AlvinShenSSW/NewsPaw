@@ -6,7 +6,6 @@ enum BackendFailure: Error, Equatable {
     case incompatible
     case invalidReply
     case conflict
-    case freshInstanceRequired
     case rejected
 }
 
@@ -27,6 +26,9 @@ struct ServiceStatus: Decodable {
     let protocolVersion: Int
     let state: String
     let operations: [String]?
+    /// When the control service started listening and its version (R12; older backends omit them).
+    var startedAt: String? = nil
+    var version: String? = nil
 }
 
 struct ConfigSnapshot: Decodable {
@@ -45,8 +47,16 @@ struct AppConfig: Decodable {
     let modelProfiles: [Profile]
     let bots: [ConfiguredBot]?
     let groupStyles: [String: String]?
+    let xApi: XConnection?
 
-    struct ConfiguredBot: Decodable { let id: String; let adultAllowed: Bool }
+    struct ConfiguredBot: Decodable {
+        let id: String
+        let adultAllowed: Bool
+        let name: String?
+        let credentialRef: String?
+    }
+
+    struct XConnection: Decodable { let credentialRef: String? }
 
     func displaySubscription(for categoryId: String) -> Subscription? {
         let matching = subscriptions.filter { $0.categoryId == categoryId }
@@ -87,11 +97,18 @@ struct AppConfig: Decodable {
     struct Account: Decodable, Identifiable {
         let id, handle, priority: String
         let partition, subscriptionId: String?
+        let remoteId: String?
+        let times: [String]?
+        /// Sent alone: its own Bots (nil: its digest's). Always empty for an account in the digest.
+        let botIds: [String]?
+        let style: String?
+        let includeInAggregate: Bool?
     }
 
     struct Profile: Decodable, Identifiable {
         let id, partition, role, provider, model: String
         let baseUrl: String?
+        let credentialRef: String?
         let capabilities: [String]
     }
 }
@@ -101,6 +118,21 @@ struct BotStatus: Decodable, Identifiable {
     let verified, paired, paused: Bool
     let generation: Int?
     let status, username: String?
+
+    private enum Keys: String, CodingKey { case id, name, verified, paired, paused, generation, status, username }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: Keys.self)
+        id = try values.decode(String.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        verified = try values.decode(Bool.self, forKey: .verified)
+        paired = try values.decode(Bool.self, forKey: .paired)
+        paused = try values.decode(Bool.self, forKey: .paused)
+        generation = try values.decodeIfPresent(Int.self, forKey: .generation)
+        status = try values.decodeIfPresent(String.self, forKey: .status)
+        // A Bot Telegram never confirmed has the username "" (registry state), not none.
+        username = try values.decodeIfPresent(String.self, forKey: .username).flatMap { $0.isEmpty ? nil : $0 }
+    }
 
     var label: Phrase {
         if paused { return .paused }
@@ -130,7 +162,13 @@ enum ConnectionState: Equatable {
 @MainActor @Observable
 final class AppModel {
     private static let languageKey = "displayLanguage"
+    private static let retentionKey = "settings.retentionDays"
+    static let retentionChoices = [7, 30, 90]
     let client: BackendClient
+    /// The folder holding the database and the control socket (nil for an injected client).
+    let dataDirectory: URL?
+    /// The login item and starting / restarting the backend, shared by every window.
+    let resident: BackendControl
     private let defaults: UserDefaults
     private var hasLocalLanguage: Bool
     private var refreshing = false
@@ -142,23 +180,54 @@ final class AppModel {
     private(set) var configRevision = 0
     private(set) var bots: [BotStatus] = []
     private(set) var readiness: Readiness?
+    /// The last `service.status` while connected (start time and version for Settings).
+    private(set) var service: ServiceStatus?
+    /// How many days of fetch records and logs a cleanup keeps (Settings › Data).
+    private(set) var retentionDays: Int
+    /// Key checks started from the app that have no outcome yet, by `KeyChecks.key`; kept here so
+    /// they outlive the page that started them (see `PendingProbe`).
+    var pendingProbes: [String: PendingProbe] = [:]
     /// The last failure from any request, so every view can say what happened.
     private(set) var lastFailure: BackendError?
     /// Repeats the shell action that produced `lastFailure` (language or pause).
     @ObservationIgnored private(set) var retryLast: (@MainActor () async -> Void)?
-    var pendingModelProbes: [String: ModelProbeRequest] = [:]
     private(set) var uiLanguage: AppLanguage
     private(set) var busy = false
     private(set) var error: Phrase?
     var page: Page = .overview
+    /// A digest another page asked the digests page to open ("Edit in Digests").
+    var openDigest: String?
     var schedulingPaused: Bool { readiness.map { !$0.schedulingEnabled } ?? false }
 
-    init(socket: LocalSocket, defaults: UserDefaults = .standard) {
-        self.client = BackendClient(socket: socket)
+    func defaultsValue(_ key: String) -> Bool { defaults.bool(forKey: key) }
+    func setDefaultsValue(_ value: Bool, _ key: String) { defaults.set(value, forKey: key) }
+
+    convenience init(socket: LocalSocket, defaults: UserDefaults = .standard) {
+        self.init(
+            client: BackendClient(socket: socket), defaults: defaults,
+            dataDirectory: URL(fileURLWithPath: socket.path).deletingLastPathComponent()
+        )
+    }
+
+    init(
+        client: BackendClient, defaults: UserDefaults = .standard, dataDirectory: URL? = nil,
+        resident: (any ResidentService)? = nil
+    ) {
+        self.client = client
         self.defaults = defaults
+        self.dataDirectory = dataDirectory
+        self.resident = BackendControl(service: resident ?? ResidentAgent())
         let stored = defaults.string(forKey: Self.languageKey).flatMap(AppLanguage.init(rawValue:))
         self.uiLanguage = stored ?? .zhHans
         self.hasLocalLanguage = stored != nil
+        let days = defaults.integer(forKey: Self.retentionKey)
+        self.retentionDays = Self.retentionChoices.contains(days) ? days : 30
+    }
+
+    func setRetentionDays(_ days: Int) {
+        guard Self.retentionChoices.contains(days) else { return }
+        retentionDays = days
+        defaults.set(days, forKey: Self.retentionKey)
     }
 
     static func defaultSocket() -> LocalSocket {
@@ -212,6 +281,7 @@ final class AppModel {
             let currentBots = try await client.bots()
             guard started == generation else { return }
             readiness = ready
+            service = status
             config = current.document
             configRevision = current.revision
             bots = currentBots
@@ -233,6 +303,7 @@ final class AppModel {
         configRevision = 0
         bots = []
         readiness = nil
+        service = nil
     }
 
     func chooseDisplayLanguage(_ value: AppLanguage) async {
@@ -290,7 +361,6 @@ final class AppModel {
             replaceFailure(failure)
             // Keep the cases those views already distinguish.
             if failure.code == "unknown_operation" { throw BackendFailure.incompatible }
-            if failure.code == "restore_requires_fresh_instance" { throw BackendFailure.freshInstanceRequired }
             if failure.isConflict { throw BackendFailure.conflict }
             throw failure
         } catch {
@@ -320,7 +390,6 @@ final class AppModel {
         case BackendFailure.invalidReply, is DecodingError: replaceFailure(BackendError(code: "invalid_reply"))
         // `request` already recorded the backend failure these stand for.
         case BackendFailure.incompatible where lastFailure?.code == "unknown_operation": break
-        case BackendFailure.freshInstanceRequired where lastFailure?.code == "restore_requires_fresh_instance": break
         default: replaceFailure(nil)
         }
         return .saveFailed
@@ -329,6 +398,28 @@ final class AppModel {
     private func replaceFailure(_ failure: BackendError?) {
         lastFailure = failure
         retryLast = nil
+    }
+
+    /// Queues one extra edition of a digest now (R03 `subscriptions.send_now`).
+    @discardableResult
+    func sendNow(_ subscriptionId: String?) async -> Bool {
+        guard let subscriptionId, connection == .connected else { return false }
+        var sent = false
+        do {
+            _ = try await client.call(.sendNow, ["subscription_id": subscriptionId])
+            error = nil
+            sent = true
+        } catch {
+            switch error {
+            case let failure as BackendError: lastFailure = failure
+            case is SocketFailure: lastFailure = BackendError(code: "backend_unreachable")
+            default: lastFailure = BackendError(code: "invalid_reply")
+            }
+            retryLast = { [weak self] in _ = await self?.sendNow(subscriptionId) }
+            self.error = .saveFailed
+        }
+        await refresh()
+        return sent
     }
 
     /// Pauses or resumes every scheduled delivery (the menu-bar and Settings switch).
@@ -381,6 +472,8 @@ final class AppModel {
             }
             clear(.stopping)
         } catch {
+            // Named by its own code (R06-11); stopping is confirmed first, so there is no retry.
+            replaceFailure(BackendError.wrapping(error))
             self.error = .stopFailed
             if error is SocketFailure { clear(.offline) }
         }

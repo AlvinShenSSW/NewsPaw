@@ -172,7 +172,9 @@ def resolve_route(config, revision, subscription_id, *, account_id=None, style=N
         elif profile["partition"] != partition or profile["role"] != role:
             blockers.append(f"incompatible_{role}")
             payload[role] = None
-        elif profile["credential_ref"] is None:
+        elif profile["credential_ref"] is None and role == "primary":
+            # The backup is optional (interaction-spec §6): without a key it is simply not
+            # tried, and the runner skips it like any unverified profile.
             blockers.append(f"missing_{role}_credential")
     inherited = uses_category_sources(subscription)
     sources = [

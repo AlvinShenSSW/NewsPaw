@@ -19,47 +19,6 @@ from .app_config import (
 )
 
 DATABASE_VERSION = 25
-_LEGACY_SCHEMA = """
-CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS deliveries (
-    chat_id INTEGER NOT NULL,
-    article_key TEXT NOT NULL,
-    sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (chat_id, article_key)
-);
-CREATE TABLE IF NOT EXISTS deliveries_v2 (
-    chat_id INTEGER NOT NULL,
-    scope TEXT NOT NULL,
-    article_key TEXT NOT NULL,
-    sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (chat_id, scope, article_key)
-);
-INSERT OR IGNORE INTO deliveries_v2 (chat_id, scope, article_key, sent_at)
-    SELECT chat_id, 'news', article_key, sent_at FROM deliveries;
-CREATE TABLE IF NOT EXISTS collections (
-    id TEXT PRIMARY KEY,
-    created_at TEXT NOT NULL,
-    report_json TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS briefs (
-    id TEXT PRIMARY KEY,
-    collection_id TEXT NOT NULL REFERENCES collections(id),
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    articles_json TEXT NOT NULL,
-    summary TEXT NOT NULL,
-    kind TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('prepared', 'delivered', 'partial', 'failed')),
-    error_kind TEXT NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS briefs_collection_created
-    ON briefs(collection_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS collections_created
-    ON collections(created_at DESC);
-"""
 
 
 def check_version(db: sqlite3.Connection) -> int:
@@ -93,9 +52,6 @@ def _backup(path: Path) -> Path:
 
 
 def _initialize(db: sqlite3.Connection) -> None:
-    for statement in _LEGACY_SCHEMA.split(";"):
-        if statement.strip():
-            db.execute(statement)
     db.execute(
         "CREATE TABLE app_configuration (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, document TEXT NOT NULL)"
     )

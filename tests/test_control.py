@@ -1307,6 +1307,61 @@ async def test_policies_naming_a_profile_the_export_leaves_out_still_restore(two
     assert preview["ok"], preview
 
 
+async def test_alert_rules_for_an_account_no_longer_special_still_restore(two_controls):
+    (source, source_store), (target, _) = two_controls
+    revision, config = source_store.load_config()
+    config["accounts"] = [
+        dict(
+            id=name,
+            remote_id=None,
+            handle=name,
+            partition="normal",
+            priority="special",
+            subscription_id="sub_x",
+            bot_ids=None,
+            times=None,
+            style=None,
+        )
+        for name in ("demoted", "removed")
+    ]
+    source_store.save_config(config, expected_revision=revision)
+    alert_revision, settings = source.operations.policies["x_alerts"][0]()
+    rules = [
+        dict(subscription_id="sub_x", account_id=None, phrase="launch"),
+        dict(subscription_id="sub_x", account_id="demoted", phrase="launch"),
+        dict(subscription_id="sub_x", account_id="removed", phrase="launch"),
+    ]
+    source.alerts.configure(
+        {**settings, "enabled": True, "daily_limit": 1, "rules": rules}, alert_revision
+    )
+    # The account changes after its rules were saved; the alert policy keeps them.
+    revision, config = source_store.load_config()
+    config["accounts"] = [{**config["accounts"][0], "priority": "normal"}]
+    source_store.save_config(config, expected_revision=revision)
+
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    assert exported["policies"]["x_alerts"]["rules"] == rules[:1]
+    assert exported["policies"]["x_alerts"]["enabled"] is True
+    preview = await request(target, {"op": "ops.preview_import", "portable": exported})
+    assert preview["ok"], preview
+
+    # With no rule left in scope, the exported policy is turned off rather than refused.
+    revision, config = source_store.load_config()
+    config["accounts"] = []
+    source_store.save_config(config, expected_revision=revision)
+    alert_revision, settings = source.operations.policies["x_alerts"][0]()
+    with source_store._write():
+        source_store._db.execute(
+            "UPDATE x_alert_policy SET settings=? WHERE id=1",
+            (json.dumps({**settings, "rules": rules[2:]}),),
+        )
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    assert exported["policies"]["x_alerts"]["rules"] == []
+    assert exported["policies"]["x_alerts"]["enabled"] is False
+    preview = await request(target, {"op": "ops.preview_import", "portable": exported})
+    assert preview["ok"], preview
+
+
 def test_an_exported_newspaper_missing_a_model_is_turned_off():
     from newspaw.operations import _portable_policy_refs
 

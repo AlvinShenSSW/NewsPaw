@@ -96,6 +96,14 @@ def _valid(settings):
         seen.add(key)
 
 
+def in_alert_scope(route, account_id):
+    """A rule watches an X subscription, and names only a special account of it."""
+    shape = route.effective
+    return shape.get("category_id") in {"x", "x_adult"} and (
+        account_id is None or shape.get("account", {}).get("priority") == "special"
+    )
+
+
 def initialize(db, timezone="Asia/Tokyo"):
     db.execute(
         """CREATE TABLE IF NOT EXISTS x_alert_policy (
@@ -162,11 +170,7 @@ class Alerts:
                 route = self.store.preview_route(
                     rule["subscription_id"], account_id=rule["account_id"]
                 )
-                shape = route.effective
-                if shape.get("category_id") not in {"x", "x_adult"} or (
-                    rule["account_id"] is not None
-                    and shape.get("account", {}).get("priority") != "special"
-                ):
+                if not in_alert_scope(route, rule["account_id"]):
                     raise AlertError("invalid_alert_scope")
             if settings != prior:
                 self.db.execute(

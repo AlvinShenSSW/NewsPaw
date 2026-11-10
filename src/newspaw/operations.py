@@ -26,9 +26,11 @@ from .media.source_images import AssetStore, ImageError
 from .migrations import DATABASE_VERSION
 from .newsparse import public_url
 from .providers import ProfileRegistry
+from .routing import resolve_route
 from .scheduler import _LEASE_STATES, _TERMINAL
 from .scheduler import _policy as schedule_default
 from .x.alerts import _DEFAULT as X_ALERT_DEFAULT
+from .x.alerts import in_alert_scope
 from .x.video import _DEFAULT as X_VIDEO_DEFAULT
 
 _FORMAT = 1
@@ -174,9 +176,11 @@ def _safe_counts(values, allowed):
     return dict(Counter(value if value in allowed else "other" for value in values))
 
 
-def _portable_policy_refs(policies, available):
+def _portable_policy_refs(policies, available, config=None, revision=1):
     """Policies may name model profiles the export leaves out (custom providers); those
-    references are cleared, and a policy left without the model it needs is turned off."""
+    references are cleared, and a policy left without the model it needs is turned off.
+    Alert rules whose subscription or account is no longer a special X scope in `config`
+    (removed or demoted since the rule was saved) are dropped the same way."""
     policies = deepcopy(policies)
     paper = policies.get("newspaper")
     if paper:
@@ -200,6 +204,20 @@ def _portable_policy_refs(policies, available):
             ]
         if video["enabled"] and not (video["vision_profiles"] and video["stt_profiles"]):
             video["enabled"] = False
+    alerts = policies.get("x_alerts")
+    if alerts:
+        alerts["rules"] = [
+            rule
+            for rule in alerts["rules"]
+            if in_alert_scope(
+                resolve_route(
+                    config, revision, rule["subscription_id"], account_id=rule["account_id"]
+                ),
+                rule["account_id"],
+            )
+        ]
+        if not alerts["rules"]:
+            alerts["enabled"] = False
     return policies
 
 
@@ -301,13 +319,14 @@ class Operations:
         return {name: read()[1] for name, (read, _) in self.policies.items()}
 
     def export_settings(self):
-        config, omitted = _scrub_settings(self.store.load_config()[1])
+        revision, document = self.store.load_config()
+        config, omitted = _scrub_settings(document)
         available = {profile["id"] for profile in config["model_profiles"]}
         portable = dict(
             format=_FORMAT,
             settings=config,
             omitted=omitted,
-            policies=_portable_policy_refs(self._current_policies(), available),
+            policies=_portable_policy_refs(self._current_policies(), available, config, revision),
         )
         if len(_json(portable).encode()) > _MAX_PORTABLE:
             raise OperationsError("settings_not_portable")

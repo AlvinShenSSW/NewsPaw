@@ -3,19 +3,31 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
+import feedparser
 import httpx
 
 from ..av_rules import AV_PUBLISHER, industry_fact
 from ..evidence import EvidenceError, _content_status, _selection, _time
-from ..newsparse import MAX_FEED_BYTES, Article, plain_text
+from ..newsparse import (
+    MAX_FEED_BYTES,
+    MAX_ITEMS,
+    Article,
+    NewsError,
+    check_news_xml,
+    plain_text,
+)
+from ..newsparse import _published as _feed_published
 from ..transport import source_client
 
 AV_ORIGIN = "https://fiu758.com/"
+# The publisher's own feed: read for publication instants only (R16 E), never for content.
+AV_FEED = AV_ORIGIN + "?feed=rss2"
 _ARTICLE = re.compile(r"post-([1-9][0-9]{0,17})")
 _QUERY = re.compile(r"p=([1-9][0-9]{0,17})")
 _VOID = {
@@ -91,22 +103,28 @@ def _post_id(value):
 
 
 def _published(values):
-    if not values:
-        return None
-    result = set()
+    """The page's publication instant (or None) and its timezone-less wall-clock times."""
+    instants, clocks = set(), set()
     for value in values:
         if not value or len(value) > 64:
             raise EvidenceError("invalid_publication_date")
         try:
             published = datetime.fromisoformat(value.replace("Z", "+00:00"))
             if published.tzinfo is None or published.utcoffset() is None:
-                raise ValueError()
-            result.add((published.astimezone(UTC), value))
+                clocks.add(published)
+            else:
+                instants.add((published.astimezone(UTC), value))
         except (ValueError, OverflowError):
             raise EvidenceError("invalid_publication_date") from None
-    if len({entry[0] for entry in result}) != 1:
+    if len({entry[0] for entry in instants}) > 1:
         raise EvidenceError("conflicting_publication_date")
-    return min(result)
+    return (min(instants) if instants else None), clocks
+
+
+def _same_moment(clock, instant):
+    """Whether a timezone-less time is that instant as some timezone's clock shows it."""
+    offset = clock.replace(tzinfo=UTC) - instant
+    return abs(offset) <= timedelta(hours=14) and not offset % timedelta(minutes=15)
 
 
 class _Page(HTMLParser):
@@ -213,7 +231,31 @@ class AVCollector:
             raise EvidenceError("unsupported_source")
         return await self.fetch_scope(scopes[0], 24, now, before_request=before_request)
 
-    async def _get(self, scope, url, before_request, *, identity=None):
+    async def _feed_dates(self, scope, before_request):
+        """Publication instants by post ID from the publisher's feed; nothing else is kept."""
+        response = await self._fetch(scope, AV_FEED, before_request)
+        media_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if media_type not in {"application/rss+xml", "application/xml", "text/xml"}:
+            raise EvidenceError("invalid_feed")
+        try:
+            check_news_xml(response.content)
+        except NewsError as exc:
+            raise EvidenceError(exc.kind) from None
+        parsed = feedparser.parse(io.BytesIO(response.content))
+        if not parsed.get("version"):
+            raise EvidenceError("invalid_feed")
+        dates, disputed = {}, set()
+        for entry in parsed.entries[:MAX_ITEMS]:
+            post_id = _post_id(entry.get("link"))
+            published, raw, date_error = _feed_published(entry)
+            if post_id is None:
+                continue
+            if date_error or dates.get(post_id, (published,))[0] != published:
+                disputed.add(post_id)
+            dates[post_id] = (published, raw)
+        return {post_id: date for post_id, date in dates.items() if post_id not in disputed}
+
+    async def _fetch(self, scope, url, before_request):
         if before_request is not None and before_request() is False:
             raise _Held
         if not self.evidence.current(scope):
@@ -228,11 +270,14 @@ class AVCollector:
             raise EvidenceError("access_restricted")
         if response.status_code != 200:
             raise EvidenceError("http_error")
+        if len(response.content) > MAX_FEED_BYTES:
+            raise EvidenceError("invalid_html" if url != AV_FEED else "invalid_feed")
+        return response
+
+    async def _get(self, scope, url, before_request, *, identity=None):
+        response = await self._fetch(scope, url, before_request)
         media_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-        if len(response.content) > MAX_FEED_BYTES or media_type not in {
-            "text/html",
-            "application/xhtml+xml",
-        }:
+        if media_type not in {"text/html", "application/xhtml+xml"}:
             raise EvidenceError("invalid_html")
         parser = _Page(landing=identity is None)
         parser.feed(response.text)
@@ -257,7 +302,7 @@ class AVCollector:
         if identity is None:
             return None
         articles, stale_articles, gaps = [], [], set()
-        error = detail_error = None
+        error = detail_error = feed_dates = None
         checked_detail = False
         try:
             async with asyncio.timeout(45):
@@ -292,12 +337,29 @@ class AVCollector:
                         continue
                     checked_detail = True
                     try:
-                        published = _published([*candidate["dates"], *detail.dates])
+                        published, clocks = _published([*candidate["dates"], *detail.dates])
                     except EvidenceError as exc:
                         gaps.add(str(exc))
                         continue
-                    if published is None:
+                    if published is None and not clocks:
                         gaps.add("missing_publication_date")
+                        continue
+                    if published is None:
+                        # The page gives a time without a zone: the feed states the instant.
+                        if feed_dates is None:
+                            try:
+                                feed_dates = await self._feed_dates(scope, before_request)
+                            except (EvidenceError, httpx.HTTPError) as exc:
+                                if str(exc) == "configuration_changed":
+                                    raise
+                                gaps.add("date_feed_unavailable")
+                                feed_dates = {}
+                        published = feed_dates.get(post_id)
+                        if published is None:
+                            gaps.add("invalid_publication_date")
+                            continue
+                    if not all(_same_moment(clock, published[0]) for clock in clocks):
+                        gaps.add("conflicting_publication_date")
                         continue
                     now = _time(fixed)
                     article = Article(

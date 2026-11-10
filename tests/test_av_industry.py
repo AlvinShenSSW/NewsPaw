@@ -369,6 +369,8 @@ async def test_av_collection_distinguishes_empty_stale_and_detail_failure(
                 headers=headers,
                 text=f'<article id="post-123"><h2 class="post-title"><a href="{url}">FANZA の発売情報</a></h2>{date}</article>',
             )
+        if str(request.url) == AV_ORIGIN + "?feed=rss2":
+            return httpx.Response(404)
         assert str(request.url) == url
         if scenario == "unavailable":
             return httpx.Response(503)
@@ -430,3 +432,132 @@ async def test_av_collection_distinguishes_empty_stale_and_detail_failure(
             assert manager.list()[0]["source"]["enabled"]
         else:
             assert not preview["entries"] and not preview["preview_ready"]
+
+
+@pytest.mark.parametrize(
+    ("scenario", "accepted", "gaps", "requests"),
+    [
+        ("bound", 2, [], ["landing", "p=123", "feed", "p=124"]),
+        ("aware_page", 2, [], ["landing", "p=123", "p=124"]),
+        ("absent", 1, ["invalid_publication_date"], ["landing", "p=123", "feed", "p=124"]),
+        ("other_clock", 1, ["conflicting_publication_date"], ["landing", "p=123", "feed", "p=124"]),
+        ("naive_feed", 1, ["invalid_publication_date"], ["landing", "p=123", "feed", "p=124"]),
+        ("repeated", 1, ["invalid_publication_date"], ["landing", "p=123", "feed", "p=124"]),
+        (
+            "feed_down",
+            0,
+            ["date_feed_unavailable", "invalid_publication_date"],
+            ["landing", "p=123", "feed", "p=124"],
+        ),
+        (
+            "not_a_feed",
+            0,
+            ["date_feed_unavailable", "invalid_publication_date"],
+            ["landing", "p=123", "feed", "p=124"],
+        ),
+        ("held", None, [], ["landing", "p=123"]),
+    ],
+)
+async def test_a_timezone_less_page_date_is_bound_by_the_publishers_feed(
+    tmp_path, scenario, accepted, gaps, requests
+):
+    from contextlib import closing
+    from datetime import timedelta
+    from email.utils import format_datetime
+
+    from newspaw.connectors.av import AV_ORIGIN, AVCollector
+    from newspaw.evidence import EvidenceStore
+    from newspaw.store import Store
+
+    feed_url = AV_ORIGIN + "?feed=rss2"
+    # The site prints local wall-clock times without a zone; its feed carries the instant.
+    posted = {"123": NOW - timedelta(hours=1), "124": NOW - timedelta(hours=2)}
+    seen = []
+
+    def wall(moment):
+        local = (moment + timedelta(hours=9)).replace(tzinfo=None).isoformat(sep=" ")
+        return moment.isoformat() if scenario == "aware_page" else local
+
+    def item(post, moment, *, zone=True):
+        date = format_datetime(moment) if zone else moment.replace(tzinfo=None).isoformat()
+        return (
+            f"<item><title>feed title {post}</title><link>{AV_ORIGIN}?p={post}</link>"
+            f"<pubDate>{date}</pubDate><description>feed body must stay out</description></item>"
+        )
+
+    def respond(request):
+        url = str(request.url)
+        if url == AV_ORIGIN:
+            seen.append("landing")
+            articles = "".join(
+                f'''<article id="post-{post}"><h2 class="post-title">
+                <a href="{AV_ORIGIN}?p={post}">FANZA の発売情報 {post}</a></h2>
+                <div class="post-meta"><time class="published updated"
+                datetime="{wall(moment)}"></time></div></article>'''
+                for post, moment in posted.items()
+            )
+            return httpx.Response(200, headers={"Content-Type": "text/html"}, text=articles)
+        if url == feed_url:
+            seen.append("feed")
+            if scenario == "feed_down":
+                return httpx.Response(503)
+            if scenario == "not_a_feed":
+                return httpx.Response(
+                    200, headers={"Content-Type": "text/html"}, text="<html></html>"
+                )
+            items = item("123", posted["123"])
+            if scenario == "bound":
+                items += item("124", posted["124"])
+            elif scenario == "other_clock":
+                items += item("124", posted["124"] + timedelta(minutes=7))
+            elif scenario == "naive_feed":
+                items += item("124", posted["124"], zone=False)
+            elif scenario == "repeated":
+                items += item("124", posted["124"]) + item(
+                    "124", posted["124"] + timedelta(hours=1)
+                )
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "application/rss+xml; charset=UTF-8"},
+                text=f'<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>{items}</channel></rss>',
+            )
+        post = url.removeprefix(AV_ORIGIN + "?p=")
+        seen.append("p=" + post)
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/html"},
+            text=f'''<link rel="canonical" href="{url}"><article id="post-{post}">
+            <div class="post-meta"><time class="published updated"
+            datetime="{wall(posted[post])}"></time></div></article>''',
+        )
+
+    with closing(Store(tmp_path / "state.db")) as store:
+        config, sub = configured("adult")
+        config["sources"][0].update(url=AV_ORIGIN, kind="web", name="AV研究所")
+        store.save_config(config, expected_revision=1)
+        evidence = EvidenceStore(store)
+        collector = AVCollector(
+            evidence, client=httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        )
+        try:
+            result = await collector.collect(
+                [sub["id"]],
+                now=NOW,
+                before_request=lambda: False if scenario == "held" and len(seen) == 2 else None,
+            )
+        finally:
+            await collector.close()
+        assert seen == requests
+        if scenario == "held":
+            assert result is None
+            return
+        assert result["accepted_count"] == accepted
+        assert result["coverage_gaps"] == gaps and result["error_kind"] is None
+        assert result["status"] == ("fresh" if accepted else "no_eligible")
+        if accepted:
+            rows = evidence.articles(result["id"], partition="adult", source_id="feed1", now=NOW)
+            assert [row.published_at for row in rows][0] == posted["123"]
+            if scenario == "bound":
+                assert rows[0].published_raw == format_datetime(posted["123"])
+        stored = "\n".join(store._db.iterdump())
+        assert "feed body must stay out" not in stored and "feed title" not in stored

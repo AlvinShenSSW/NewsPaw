@@ -52,7 +52,8 @@ private final class ConnectBackend {
     private(set) var requests: [[String: Any]] = []
     private var refs = 0
 
-    init(bots: [[String: Any]] = [], botIds: [String] = [], adultBotIds: [String] = []) {
+    /// - Parameter imageProfile: also has `normal_image`, a profile whose model only generates images.
+    init(bots: [[String: Any]] = [], botIds: [String] = [], adultBotIds: [String] = [], imageProfile: Bool = false) {
         document = [
             "ui_locale": "en", "news_output_locale": "en", "owner_id": 7, "x_api": ["credential_ref": NSNull()],
             "categories": [["id": "world", "name": "World", "partition": "normal"], ["id": "av", "name": "AV", "partition": "adult"]],
@@ -66,7 +67,7 @@ private final class ConnectBackend {
                 Self.profile("normal_backup", "normal", "backup", "mimo", "https://api.xiaomimimo.com/v1", "mimo-v2.6-flash"),
                 Self.profile("adult_primary", "adult", "primary", "deepseek", "https://api.deepseek.com", "deepseek-flash"),
                 Self.profile("adult_backup", "adult", "backup", "grok", "https://api.x.ai/v1", "grok-4.3"),
-            ],
+            ] + (imageProfile ? [Self.profile("normal_image", "normal", "primary", "openai", "https://api.openai.com/v1", "gpt-image-2.5-flare")] : []),
         ]
         for bot in bots {
             let id = bot["id"] as! String
@@ -88,6 +89,11 @@ private final class ConnectBackend {
     var bots: [[String: Any]] { document["bots"] as? [[String: Any]] ?? [] }
     func subscription(_ id: String) -> [String: Any]? { (document["subscriptions"] as? [[String: Any]])?.first { $0["id"] as? String == id } }
     func profileEntry(_ id: String) -> [String: Any]? { (document["model_profiles"] as? [[String: Any]])?.first { $0["id"] as? String == id } }
+    /// `image_provider.image_model`: the profile's model only generates images.
+    private func imageOnly(_ profile: String) -> Bool {
+        let model = (profileEntry(profile)?["model"] as? String ?? "").lowercased()
+        return model.hasPrefix("gpt-image-") || model.hasPrefix("dall-e-")
+    }
 
     /// `models.probe` outlasts the socket deadline: the app sees a timeout while the backend
     /// keeps running the check. Asking again with the same probe id returns that check's own
@@ -284,6 +290,9 @@ private final class ConnectBackend {
                     return entry
                 }
                 staleChecks(request["id"] as! String)
+                // An image-only model's key is checked with an image (`credentials.set`); a text
+                // model's automatic text check is what `checks` scripts.
+                if imageOnly(request["id"] as! String) { startAutomatic(request["id"] as! String, "image") }
             default:
                 document["x_api"] = ["credential_ref": ref]
             }
@@ -385,7 +394,8 @@ private final class ConnectBackend {
             onStatusRead?()
             let profile = request["profile_id"] as! String
             let keyed = profileEntry(profile)?["credential_ref"] is String
-            var text: [String: Any] = keyed ? ["state": "verified", "status": "verified"] : ["state": "untested"]
+            // No text check is ever started for an image-only model.
+            var text: [String: Any] = keyed && !imageOnly(profile) ? ["state": "verified", "status": "verified"] : ["state": "untested"]
             if var queue = checks[profile], let first = queue.first {
                 text = first
                 if queue.count > 1 { queue.removeFirst(); checks[profile] = queue }
@@ -1653,4 +1663,179 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
     await returned.recheck("normal_primary", model: model)
     let ids = Set(server.calls("models.probe").compactMap { $0["probe_id"] as? String })
     #expect(ids.count == 2 && ids.contains(started))
+}
+
+// MARK: - Image-only models (R16 C)
+
+@Test func imageOnlyModelsAreToldByTheirIdLikeTheBackend() throws {
+    // The backend's `image_model` is tested against the same samples (tests/test_control.py).
+    let samples = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("tests/fixtures/image_models.json")
+    let lists = try JSONDecoder().decode([String: [String]].self, from: Data(contentsOf: samples))
+    let image = try #require(lists["image"]), other = try #require(lists["other"])
+    #expect(!image.isEmpty && !other.isEmpty)
+    #expect(image.filter { !ModelNames.generatesImages($0) } == [])
+    #expect(other.filter(ModelNames.generatesImages) == [])
+    #expect(ModelNames.keyCapability("gpt-image-2.5-flare") == "image" && ModelNames.keyCapability("gpt-6-luna") == "text")
+}
+
+@Test @MainActor func anImageOnlyModelsSavedKeyIsFollowedByItsAutomaticImageCheck() async throws {
+    let server = ConnectBackend(imageProfile: true)
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    await data.saveKey("sk-synthetic-image", profile: "normal_image", model: model)
+
+    // Only the backend's own image check is read, by its id: no text check, no second image check.
+    let probes = server.calls("models.probe")
+    let id = "auto.normal_image.image.g\(server.generation("normal_image"))"
+    #expect(!probes.isEmpty && probes.allSatisfy { $0["probe_id"] as? String == id && $0["capability"] as? String == "image" })
+    let profile = try #require(model.config?.modelProfiles.first { $0.id == "normal_image" })
+    #expect(data.keys.states["normal_image"]?["text"]?.state == "untested")
+    #expect(data.keyStatus(profile, model: model) == .verified)
+    #expect(model.pendingProbes.isEmpty && data.keys.failures.isEmpty && data.keys.working.isEmpty)
+
+    // A text model beside it is still read through its text check.
+    await data.saveKey("sk-synthetic-text", profile: "normal_primary", model: model)
+    let text = try #require(model.config?.modelProfiles.first { $0.id == "normal_primary" })
+    #expect(data.keyStatus(text, model: model) == .verified)
+    #expect(server.calls("models.probe").allSatisfy { $0["profile_id"] as? String == "normal_image" })
+}
+
+@Test @MainActor func anImageOnlyModelsRowShowsItsImageCheckAndChecksThatAgain() async throws {
+    let server = ConnectBackend(imageProfile: true)
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    server.capabilityResult = ["state": "failed", "status": "failed", "error_kind": "model_unavailable"]
+    server.automaticReads = 0
+    await data.saveKey("sk-synthetic-image", profile: "normal_image", model: model)
+    let profile = try #require(model.config?.modelProfiles.first { $0.id == "normal_image" })
+    let capability = ModelNames.keyCapability(profile.model)
+    let failed = data.keyStatus(profile, model: model)
+    #expect(failed == .failed("model_unavailable") && failed.action == .recheck)
+
+    // "Check again" is a new image check.
+    server.capabilityResult = ["state": "verified", "status": "verified"]
+    await data.recheck("normal_image", model: model, capability: capability)
+    let probe = try #require(server.calls("models.probe").last)
+    #expect(probe["capability"] as? String == "image" && !(probe["probe_id"] as? String ?? "auto.").hasPrefix("auto."))
+    #expect(data.keyStatus(profile, model: model) == .verified)
+
+    // An image check without a known outcome is confirmed before it is paid for again.
+    server.capabilityStates["normal_image"]?["image"] = ["state": "outcome_unknown", "status": "outcome_unknown", "error_kind": "outcome_unknown"]
+    await data.load(model: model)
+    #expect(data.keyStatus(profile, model: model).action == .confirmRecheck && data.needsConfirmation("normal_image", capability: capability))
+    let calls = server.calls("models.probe").count
+    await data.recheck("normal_image", model: model, capability: capability)
+    #expect(server.calls("models.probe").count == calls)
+    await data.recheck("normal_image", model: model, capability: capability, confirmed: true)
+    #expect(server.calls("models.probe").count == calls + 1)
+    #expect(server.calls("models.probe").allSatisfy { $0["capability"] as? String == "image" })
+}
+
+@Test @MainActor func anImageOnlyModelsCheckWithoutAResultIsNotedOnItsImageCheck() async throws {
+    let server = ConnectBackend(imageProfile: true)
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    // The newspaper is made by this model, so its image check is also the extra's check.
+    await data.setNewspaper(true, profile: "normal_image", model: model)
+    let earlier = server.calls("models.probe").count
+    // One read per wait: the check is asked about once, then the wait is over.
+    data.keys.probeLimit = .milliseconds(100)
+    data.keys.pollInterval = .milliseconds(150)
+    server.automaticReads = .max
+
+    await data.saveKey("sk-synthetic-image", profile: "normal_image", model: model)
+
+    let profile = try #require(model.config?.modelProfiles.first { $0.id == "normal_image" })
+    let key = KeyChecks.key("normal_image", ModelNames.keyCapability(profile.model))
+    #expect(key == "normal_image.image" && data.keys.failures[key]?.code == "probe_pending" && data.keys.failures["normal_image"] == nil)
+    let waited = try #require(model.timedOutProbes[key]?.id)
+    #expect(waited == "auto.normal_image.image.g\(server.generation("normal_image"))")
+    // The key's own check is not waited for a second time as the newspaper's check.
+    let asked = server.calls("models.probe").dropFirst(earlier)
+    #expect(asked.count == 1 && asked.first?["probe_id"] as? String == waited)
+
+    // Asking again follows that same check; nothing new is started.
+    data.keys.probeLimit = .seconds(5)
+    data.keys.pollInterval = .milliseconds(5)
+    server.automatic[waited]?.readsLeft = 0
+    await data.recheck("normal_image", model: model, capability: "image", confirmed: true)
+    #expect(server.calls("models.probe").dropFirst(earlier).allSatisfy { $0["probe_id"] as? String == waited })
+    #expect(data.keyStatus(profile, model: model) == .verified && data.keys.failures[key] == nil && model.timedOutProbes.isEmpty)
+}
+
+@Test @MainActor func changingAnImageOnlyModelsAddressOrModelChecksItsImageAgain() async throws {
+    let server = ConnectBackend(imageProfile: true)
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk-synthetic-image", profile: "normal_image", model: model)
+    let before = server.calls("models.probe").count
+
+    await data.saveEndpoint("normal_image", baseURL: "https://api.openai.com/v1", modelId: "gpt-image-3", model: model)
+
+    let after = server.calls("models.probe")
+    let again = try #require(after.last)
+    #expect(after.count == before + 1 && again["capability"] as? String == "image")
+    #expect(!(again["probe_id"] as? String ?? "auto.").hasPrefix("auto."))
+
+    // The capability follows the model the profile has after the change.
+    await data.saveKey("sk-synthetic-text", profile: "normal_primary", model: model)
+    await data.saveEndpoint("normal_primary", baseURL: "https://api.openai.com/v1", modelId: "dall-e-3", model: model)
+    let last = try #require(server.calls("models.probe").last)
+    #expect(last["profile_id"] as? String == "normal_primary" && last["capability"] as? String == "image")
+    #expect(server.calls("models.probe").allSatisfy { $0["capability"] as? String == "image" })
+}
+
+@Test @MainActor func aNewspaperMadeByAnImageOnlyModelIsCheckedByANormalPrimaryModel() async throws {
+    // The only normal primary model that reads pages; the adult one is never borrowed.
+    let server = ConnectBackend(imageProfile: true)
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.setNewspaper(true, profile: "normal_image", model: model)
+    #expect(server.paper["generation_profile"] as? String == "normal_image" && server.paper["vision_profile"] as? String == "normal_primary")
+    #expect(data.extraChecks(newspaper: true) == [CapabilityCheck(profile: "normal_image", capability: "image"),
+                                                  CapabilityCheck(profile: "normal_primary", capability: "vision")])
+
+    // A checking model that is itself image-only is replaced; one that reads pages is kept.
+    server.paper["vision_profile"] = "normal_image"
+    await data.setNewspaper(true, profile: "normal_image", model: model)
+    #expect(server.paper["vision_profile"] as? String == "normal_primary")
+    server.paper["vision_profile"] = "normal_backup"
+    await data.setNewspaper(true, profile: "normal_image", model: model)
+    #expect(server.paper["vision_profile"] as? String == "normal_backup")
+}
+
+@Test @MainActor func theNewspapersCheckingModelPrefersOneWithAKeyThenTheFirstById() async throws {
+    let server = ConnectBackend(imageProfile: true)
+    server.document["model_profiles"] = (server.document["model_profiles"] as! [[String: Any]])
+        + [ConnectBackend.profile("normal_alpha", "normal", "primary", "openai", "https://api.openai.com/v1", "gpt-6-luna")]
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.setNewspaper(true, profile: "normal_image", model: model)
+    #expect(server.paper["vision_profile"] as? String == "normal_alpha")
+
+    server.paper["vision_profile"] = NSNull()
+    await data.saveKey("sk-synthetic-text", profile: "normal_primary", model: model)
+    await data.setNewspaper(true, profile: "normal_image", model: model)
+    #expect(server.paper["vision_profile"] as? String == "normal_primary")
+}
+
+@Test @MainActor func withoutANormalPrimaryTextModelTheNewspaperKeepsTheChosenModelAndATextChoiceIsUnchanged() async throws {
+    let server = ConnectBackend(imageProfile: true)
+    server.document["model_profiles"] = (server.document["model_profiles"] as! [[String: Any]]).filter { $0["id"] as? String != "normal_primary" }
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    // normal_backup is not a primary model and adult_primary is in the other group.
+    await data.setNewspaper(true, profile: "normal_image", model: model)
+    #expect(server.paper["vision_profile"] as? String == "normal_image")
+
+    // Choosing a model that is not image-only still makes it the checking model when none is set.
+    let plain = ConnectBackend(imageProfile: true)
+    let (plainModel, plainData, plainCleanup) = try await connected(plain)
+    defer { plainCleanup() }
+    await plainData.setNewspaper(true, profile: "normal_primary", model: plainModel)
+    #expect(plain.paper["generation_profile"] as? String == "normal_primary" && plain.paper["vision_profile"] as? String == "normal_primary")
 }

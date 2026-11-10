@@ -725,6 +725,87 @@ async def test_saving_a_model_key_checks_text_once_per_key(control, monkeypatch)
     assert len(calls) == 1
 
 
+def test_image_only_models_are_told_by_their_id():
+    from newspaw.media.image_provider import image_model
+
+    # The app's `ModelNames.generatesImages` is tested against the same samples.
+    samples = json.loads(
+        (Path(__file__).parent / "fixtures" / "image_models.json").read_text(encoding="utf-8")
+    )
+    assert samples["image"] and samples["other"]
+    assert [m for m in samples["image"] if not image_model(m)] == []
+    assert [m for m in samples["other"] if image_model(m)] == []
+
+
+async def test_saving_an_image_only_models_key_checks_image_instead_of_text(control, monkeypatch):
+    server, store = control
+    calls = []
+
+    async def probe(probe_id, profile_id, capability, hold, *, revision=None):
+        calls.append((probe_id, profile_id, capability, hold))
+        return {"status": "verified"}
+
+    monkeypatch.setattr(server.probes, "probe", probe)
+    revision, config = store.load_config()
+    primary = next(p for p in config["model_profiles"] if p["id"] == "normal_primary")
+    config["model_profiles"].append(
+        {**primary, "id": "normal_image", "model": "GPT-Image-2.5-flare"}
+    )
+    store.save_config(config, expected_revision=revision)
+    key = {"op": "credentials.set", "kind": "model_profiles", "value": "sk-fixture-value"}
+
+    saved = await request(
+        server, {**key, "id": "normal_image", "revision": store.config_revision()}
+    )
+    assert saved["ok"]
+    await _drain(server)
+    status = await request(server, {"op": "models.status", "profile_id": "normal_image"})
+    generation = next(iter(status["result"].values()))["generation"]
+    assert calls == [(f"auto.normal_image.image.g{generation}", "normal_image", "image", 10_000)]
+
+    # Another profile on the same address keeps its text check.
+    saved = await request(
+        server, {**key, "id": "normal_primary", "revision": store.config_revision()}
+    )
+    assert saved["ok"]
+    await _drain(server)
+    assert [(profile, capability) for _, profile, capability, _ in calls] == [
+        ("normal_image", "image"),
+        ("normal_primary", "text"),
+    ]
+
+
+async def test_a_key_saved_for_a_profile_removed_meanwhile_is_still_reported_saved(
+    control, monkeypatch
+):
+    from newspaw.providers import ProfileRegistry, ProviderError
+
+    server, store = control
+    calls = []
+
+    async def probe(*args, **kwargs):
+        calls.append(args)
+        return {"status": "verified"}
+
+    def gone(self, profile_id):
+        raise ProviderError("missing_profile")
+
+    monkeypatch.setattr(server.probes, "probe", probe)
+    monkeypatch.setattr(ProfileRegistry, "profile", gone)
+    saved = await request(
+        server,
+        {
+            "op": "credentials.set",
+            "kind": "model_profiles",
+            "id": "normal_primary",
+            "value": "sk-fixture-value",
+            "revision": store.config_revision(),
+        },
+    )
+    await _drain(server)
+    assert saved["ok"] and calls == []
+
+
 async def test_enabling_newspaper_and_media_fills_holds_and_checks_capabilities(
     control, monkeypatch
 ):

@@ -731,22 +731,36 @@ final class ConnectData {
 
     /// Saves a model key; the backend checks it by itself and the row reads the result back.
     func saveKey(_ key: String, profile: String, model: AppModel) async {
-        await keys.save(key, profile: profile, model: model)
+        await keys.save(key, profile: profile, capability: keyCapability(profile, model: model), model: model)
         await load(model: model)
         await recheckExtras(profile, model: model)
     }
 
     /// A new key or model makes the enabled extras' checks of that model stale, and the backend
-    /// re-checks only text: check them again here (new probe ids, same confirmation rule).
+    /// re-checks only the key's own check (text; an image for an image-only model): check the
+    /// others again here (new probe ids, same confirmation rule).
     func recheckExtras(_ profile: String, model: AppModel) async {
         var checks: [CapabilityCheck] = []
         if extras.newspaperOn { checks += extraChecks(newspaper: true) }
         if extras.transcriptionProfile != nil { checks += extraChecks(newspaper: false) }
-        var seen = Set<String>()
+        var seen: Set = [keyCapability(profile, model: model)]
         for check in checks where check.profile == profile && seen.insert(check.capability).inserted {
             guard ["stale", "untested"].contains(keys.states[profile]?[check.capability]?.state ?? "untested") else { continue }
             await keys.recheck(profile, model: model, capability: check.capability)
         }
+    }
+
+    /// What a model's row shows, from the profile's own check: text, or an image for an image-only model.
+    func keyStatus(_ profile: AppConfig.Profile, model: AppModel, now: Date = Date()) -> KeyStatus {
+        let capability = ModelNames.keyCapability(profile.model)
+        return KeyStatus.of(credential: credentialState(profile.credentialRef), probe: keys.probe(profile.id, capability: capability),
+                            health: currentHealth(profile.id),
+                            working: keys.isChecking(profile.id, capability: capability, model: model), now: now)
+    }
+
+    /// The check that says whether this profile's key works, for the model it has now.
+    private func keyCapability(_ profile: String, model: AppModel) -> String {
+        ModelNames.keyCapability(model.config?.modelProfiles.first { $0.id == profile }?.model ?? "")
     }
 
     /// Checks the saved key again (also "check and retry" after an unknown result, once confirmed).
@@ -787,7 +801,7 @@ final class ConnectData {
             await model.refresh()
             // A changed model or address makes the earlier check stale; a saved key is checked again.
             if model.config?.modelProfiles.first(where: { $0.id == profile })?.credentialRef != nil {
-                await keys.recheck(profile, model: model)
+                await keys.recheck(profile, model: model, capability: keyCapability(profile, model: model))
             }
             await load(model: model)
             await recheckExtras(profile, model: model)
@@ -800,8 +814,10 @@ final class ConnectData {
     // MARK: Extras
 
     /// Turns the AI newspaper on with a model (it generates the page and checks it), or off.
+    /// An image-only model cannot read the page it made: a normal primary model checks it.
     func setNewspaper(_ on: Bool, profile: String?, model: AppModel) async {
         let client = model.client
+        let profiles = model.config?.modelProfiles ?? []
         await saveExtra("newspaper", model: model, editor: EditorState(
             load: { try BackendClient.record(await client.call(.newspaperPolicy), field: "settings") },
             store: { _ = try await client.call(.newspaperConfigure, ["settings": $0, "revision": $1]) }
@@ -810,11 +826,26 @@ final class ConnectData {
             settings["enabled"] = on
             if let profile {
                 settings["generation_profile"] = profile
-                if settings["vision_profile"] == nil || settings["vision_profile"] is NSNull { settings["vision_profile"] = profile }
+                settings["vision_profile"] = Self.newspaperVision(
+                    current: settings["vision_profile"] as? String, chosen: profile, profiles: profiles)
                 if settings["backup_profile"] as? String == profile { settings["backup_profile"] = NSNull() }
             }
             return settings
         }
+    }
+
+    /// The model that checks the newspaper's pages once `chosen` generates them. One already set
+    /// stays unless it is image-only itself; an image-only choice gets a model of the normal
+    /// group's primary role (one with a key first, then the first by id), or itself when there is none.
+    nonisolated static func newspaperVision(current: String?, chosen: String, profiles: [AppConfig.Profile]) -> String {
+        func imageOnly(_ id: String) -> Bool {
+            profiles.first { $0.id == id }.map { ModelNames.generatesImages($0.model) } ?? false
+        }
+        guard imageOnly(chosen) else { return current ?? chosen }
+        if let current, !imageOnly(current) { return current }
+        let readers = profiles.filter { $0.partition == "normal" && $0.role == "primary" && !ModelNames.generatesImages($0.model) }
+            .sorted { $0.id < $1.id }
+        return (readers.first { $0.credentialRef != nil } ?? readers.first)?.id ?? chosen
     }
 
     /// Chooses the model that transcribes voice messages, or none (off).

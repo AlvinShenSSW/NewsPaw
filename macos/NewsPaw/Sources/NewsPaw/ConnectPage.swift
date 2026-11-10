@@ -118,8 +118,8 @@ enum BotMenu {
     static func canResume(_ bot: BotStatus) -> Bool { bot.paired && bot.paused }
 }
 
-/// What a model row shows (interaction-spec §6.2 table), from the key, its text check and
-/// the profile's cooldown.
+/// What a model row shows (interaction-spec §6.2 table), from the key, its own check (text; an
+/// image for an image-only model) and the profile's cooldown.
 enum KeyStatus: Equatable {
     case missing, checking, untested, verified
     case rejected(String)
@@ -241,6 +241,17 @@ enum ModelNames {
         default: id
         }
     }
+
+    /// An image-only model: it has no text endpoint (the backend's `image_provider.image_model`
+    /// is the same rule).
+    static func generatesImages(_ id: String) -> Bool {
+        let id = id.lowercased()
+        return id.hasPrefix("gpt-image-") || id.hasPrefix("dall-e-")
+    }
+
+    /// The check that says whether a model's key works: an image for an image-only model
+    /// (`credentials.set` starts that one), else text.
+    static func keyCapability(_ id: String) -> String { generatesImages(id) ? "image" : "text" }
 
     /// Image generation and transcription call OpenAI's own API (`supported_image_profile`,
     /// `supported_stt_profile`); other addresses cannot do them.
@@ -831,10 +842,9 @@ private struct ModelRow: View {
 
     private var backup: Bool { profile.role == "backup" }
     private var provider: String { ModelNames.provider(profile.provider, model.uiLanguage) }
-    private var status: KeyStatus {
-        KeyStatus.of(credential: data.credentialState(profile.credentialRef), probe: data.keys.probes[profile.id],
-                     health: data.currentHealth(profile.id), working: data.keys.isChecking(profile.id, model: model))
-    }
+    /// The check this row shows and repeats.
+    private var capability: String { ModelNames.keyCapability(profile.model) }
+    private var status: KeyStatus { data.keyStatus(profile, model: model) }
 
     var body: some View {
         let status = status
@@ -853,7 +863,7 @@ private struct ModelRow: View {
                 StatusDot(color: status.color, text: status.title(model.uiLanguage), busy: status == .checking)
                 actions(status)
             }
-            if let failure = data.keys.failures[profile.id] {
+            if let failure = data.keys.failures[KeyChecks.key(profile.id, capability)] {
                 FailureNote(model: model, failure: failure) {
                     // No result yet: the check may have been charged, so another one is confirmed first.
                     if failure.code == "probe_pending" { confirmRetry = true } else { editing = true }
@@ -862,7 +872,9 @@ private struct ModelRow: View {
         }
         .padding(.vertical, 8)
         .confirmationDialog(model.text(L10n.Connect.retryTitle), isPresented: $confirmRetry) {
-            Button(model.text(L10n.Onboarding.checkAgain)) { Task { await data.recheck(profile.id, model: model, confirmed: true) } }
+            Button(model.text(L10n.Onboarding.checkAgain)) {
+                Task { await data.recheck(profile.id, model: model, capability: capability, confirmed: true) }
+            }
             Button(model.text(L10n.Shell.cancel), role: .cancel) {}
         } message: {
             Text(model.text(L10n.Connect.retryBody))
@@ -872,7 +884,7 @@ private struct ModelRow: View {
     @ViewBuilder private func actions(_ status: KeyStatus) -> some View {
         switch status.action {
         case .recheck:
-            Button(model.text(L10n.Onboarding.checkAgain)) { Task { await data.recheck(profile.id, model: model) } }
+            Button(model.text(L10n.Onboarding.checkAgain)) { Task { await data.recheck(profile.id, model: model, capability: capability) } }
         case .confirmRecheck:
             Button(model.text(L10n.Connect.checkAndRetry)) { confirmRetry = true }
         case .enterKey, .reenterKey, .none:
@@ -912,7 +924,7 @@ private struct ModelRow: View {
                                         ("image", L10n.Connect.capImage), ("stt", L10n.Connect.capSpeech)]
         let passed = names.filter { data.keys.states[profile.id]?[$0.0]?.passed == true }.map { $0.1(language) + " ✓" }
         if status == .verified, !passed.isEmpty { parts.append(passed.joined(separator: " ")) }
-        if status == .verified, let at = data.keys.probes[profile.id]?.checkedAt.flatMap(OverviewData.date) {
+        if status == .verified, let at = data.keys.probe(profile.id, capability: capability)?.checkedAt.flatMap(OverviewData.date) {
             parts.append(L10n.Connect.verifiedAt(language, ["when": Stamp.relative(at, language)]))
         }
         if parts.isEmpty, backup { return model.text(L10n.Connect.backupOptional) }

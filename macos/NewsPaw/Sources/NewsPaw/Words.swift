@@ -895,6 +895,7 @@ enum FailureCopy {
         "collection_failed": Entry(message: Words("所有来源都没取到内容。", "None of the sources could be read.", "どの情報源からも取得できませんでした。"), action: nil),
         "schedule_changed": Entry(message: Words("发送时间改了，这期按新时间处理。", "The time changed, so this edition follows the new time.", "時刻が変わったため、この回は新しい時刻で扱います。"), action: nil),
         "digest_not_enabled": Entry(message: Words("这份简报还没开启，开启后才能试发。", "Turn this digest on before sending one now.", "今すぐ送るには先にダイジェストをオンにしてください。"), action: nil),
+        "trial_needs_normal_digest": Entry(message: Words("试发只发普通简报。请至少选一份普通简报，或点「完成，等定时推送」。", "A trial is sent only for an ordinary digest. Choose one, or use Finish and Wait for the Schedule.", "試しに送れるのは一般のダイジェストだけです。1 つ以上選ぶか、「完了して定時配信を待つ」を押してください。"), action: nil),
         "scheduling_paused": Entry(message: Words("全部推送已暂停，恢复后才能发送。", "All deliveries are paused; resume them first.", "すべての配信が一時停止中です。先に再開してください。"), action: nil),
         "invalid_amount": Entry(message: Words("请填整数美元，或留空表示不限。", "Enter a whole number of dollars, or leave it empty for no limit.", "ドルの整数を入力するか、空欄にして上限なしにしてください。"), action: nil),
         "invalid_count": Entry(message: Words("请填整数条数，或留空表示不限。", "Enter a whole number of reads, or leave it empty for no limit.", "件数を整数で入力するか、空欄にして上限なしにしてください。"), action: nil),

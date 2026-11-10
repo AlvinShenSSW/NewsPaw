@@ -179,6 +179,15 @@ final class OnboardingData {
             digestFailures["trial"] = BackendError(code: "backend_unreachable")
             return false
         }
+        // A trial is only ever an ordinary digest: with none chosen, say so instead of finishing
+        // without one (nothing is turned on; "Finish and Wait" turns the choice on).
+        if sendTrial, let config = model.config {
+            let ordinary = Set(config.categories.filter { $0.partition == "normal" }.map(\.id))
+            if !config.subscriptions.contains(where: { chosen.contains($0.id) && ordinary.contains($0.categoryId) }) {
+                digestFailures["trial"] = BackendError(code: "trial_needs_normal_digest", domain: "subscriptions")
+                return false
+            }
+        }
         var allOn = true
         for id in order where chosen.contains(id) {
             digestFailures[id] = nil

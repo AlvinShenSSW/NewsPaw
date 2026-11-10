@@ -489,3 +489,32 @@ private func connected(_ server: SetupBackend) async throws -> (AppModel, Onboar
     await data.newCode(model: model)
     #expect(data.failures["bot"] == nil && data.pair != nil)
 }
+
+// MARK: - #107 follow-ups
+
+@Test @MainActor func finishingWithATrialButOnlyAdultDigestsSaysWhyInsteadOfClosing() async throws {
+    // R07-12: a trial is sent only for an ordinary digest.
+    let server = SetupBackend()
+    var categories = server.document["categories"] as! [[String: Any]]
+    categories.append(["id": "av", "name": "AV", "partition": "adult"])
+    server.document["categories"] = categories
+    var subscriptions = server.document["subscriptions"] as! [[String: Any]]
+    subscriptions.append(["id": "sub_av", "name": "AV", "category_id": "av", "timezone": "Asia/Tokyo", "enabled": false, "times": ["21:00"], "bot_ids": [], "source_ids": []])
+    server.document["subscriptions"] = subscriptions
+    server.document["bots"] = [["id": "bot_x", "name": "T", "credential_ref": NSNull(), "telegram_id": NSNull(), "chat_id": NSNull(), "verified": true, "paired": true, "adult_allowed": true]]
+    server.verified = true
+    server.paired = true
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk", profile: "normal_primary", choice: nil, model: model)
+    data.chosen = ["sub_av"]
+
+    #expect(!(await data.finish(sendTrial: true, model: model)))
+
+    let failure = try #require(data.failures["trial"])
+    #expect(FailureCopy.table[failure.code] != nil)
+    #expect(server.calls("subscriptions.send_now").isEmpty && !data.sentTrial)
+    // Finishing without a trial still turns it on.
+    #expect(await data.finish(sendTrial: false, model: model))
+    #expect(server.subscription("sub_av")?["enabled"] as? Bool == true && data.failures["trial"] == nil)
+}

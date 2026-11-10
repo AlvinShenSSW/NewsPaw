@@ -518,3 +518,36 @@ private func connected(_ server: SetupBackend) async throws -> (AppModel, Onboar
     #expect(await data.finish(sendTrial: false, model: model))
     #expect(server.subscription("sub_av")?["enabled"] as? Bool == true && data.failures["trial"] == nil)
 }
+
+// MARK: - Internal review (R15)
+
+@Test @MainActor func aTimedOutCheckIsFollowedByItsOwnIdWhenTheWindowIsOpenedAgain() async throws {
+    let server = SetupBackend()
+    server.probeResult = ["status": "failed", "state": "failed", "error_kind": "rate_limited"]
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk", profile: "normal_primary", choice: nil, model: model)
+    #expect(data.probes["normal_primary"]?.state == "failed" && !data.keys.needsConfirmation("normal_primary"))
+    // "Check Again": the answer is lost and the check stays unfinished past probeLimit.
+    server.probeConnectionDrops = true
+    server.probePendingCalls = 1_000_000
+    data.probeLimit = .milliseconds(60)
+    await data.recheck("normal_primary", model: model)
+    #expect(data.failures["normal_primary"]?.code == "probe_pending")
+    let firstIds = Set(server.calls("models.probe").compactMap { $0["probe_id"] as? String })
+    #expect(firstIds.count == 1)
+
+    // The owner closes the first-run window ("Finish Later") and opens it again.
+    let reopened = OnboardingData()
+    reopened.pollInterval = .milliseconds(5)
+    reopened.probeLimit = .milliseconds(60)
+    await reopened.start(model: model)
+    #expect(reopened.failures["normal_primary"]?.code == "probe_pending")
+    #expect(reopened.keys.needsConfirmation("normal_primary"))
+
+    // Even an unconfirmed retry asks the same probe id again, never starts a second paid check.
+    await reopened.recheck("normal_primary", model: model)
+    let ids = Set(server.calls("models.probe").compactMap { $0["probe_id"] as? String })
+    #expect(ids == firstIds)
+}
+

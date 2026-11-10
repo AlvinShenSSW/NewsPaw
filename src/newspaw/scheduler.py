@@ -270,7 +270,8 @@ class Scheduler:
         parts = []
         if view["job_id"] and (
             view["status"] in {"partial", "skipped", "outcome_unknown"}
-            or view["reason"] in {"delivery_outcome_unknown", "targets_unavailable"}
+            # A job paused after a send keeps its parts; a skip made while paused still counts.
+            or view["reason"] in {"delivery_outcome_unknown", "targets_unavailable", "job_paused"}
         ):
             try:
                 parts = [part for target in self.outbox._rows(view["job_id"]) for part in target["parts"]]

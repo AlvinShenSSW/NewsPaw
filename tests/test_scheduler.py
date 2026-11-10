@@ -496,8 +496,46 @@ async def test_paused_pipeline_job_is_not_marked_late_before_status_sync(system)
     (paused,) = scheduler.plan(clock[0])
     assert paused["status"] != "late"
     await scheduler.step(paused)
-    assert scheduler.status()["occurrences"][0]["reason"] == "job_paused"
+    occurrence = scheduler.status()["occurrences"][0]
+    assert occurrence["reason"] == "job_paused" and occurrence["state"] == "paused"
     assert not calls
+
+
+async def test_skipping_an_unknown_part_of_a_paused_job_reads_abandoned(system):
+    pipeline, targets, _, _, _ = system
+
+    async def respond(request):
+        if len(calls) == 1:
+            raise httpx.ReadTimeout("fixture response lost")
+        return httpx.Response(
+            200,
+            json={"ok": True, "result": {"message_id": 7, "chat": {"id": 123, "type": "private"}}},
+        )
+
+    outbox, calls = sender(pipeline, targets, respond)
+    scheduler, clock, target = scheduled(pipeline, outbox, NOW)
+    row = await prepare_scheduled(scheduler, clock)
+    clock[0] = target
+    await scheduler.step(scheduler.plan(clock[0])[0])
+    (unknown,) = [
+        bot
+        for bot, item in outbox.status(row["job_id"])["targets"].items()
+        if item["status"] == "outcome_unknown"
+    ]
+    assert scheduler.status()["occurrences"][0]["reason"] == "delivery_outcome_unknown"
+
+    pipeline.pause(row["job_id"])
+    await scheduler.step(scheduler.plan(clock[0])[0])
+    occurrence = scheduler.status()["occurrences"][0]
+    assert (occurrence["status"], occurrence["reason"]) == ("waiting", "job_paused")
+    # Still unknown: never abandoned before the owner chooses.
+    assert occurrence["state"] == "paused"
+
+    outbox.resolve(row["job_id"], unknown, 0, "skip", now=clock[0])
+    occurrence = scheduler.status()["occurrences"][0]
+    assert (occurrence["status"], occurrence["reason"]) == ("waiting", "job_paused")
+    assert occurrence["state"] == "abandoned"
+    assert len(calls) == 2
 
 
 def test_default_policy_activates_on_first_plan_not_at_database_creation(planner):

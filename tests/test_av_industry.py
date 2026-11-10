@@ -354,6 +354,23 @@ def test_a_disagreement_note_may_name_someone_in_the_original_script():
     undeclared = dict(conflict, note="两家来源对エスワン的说法不一。")
     with pytest.raises(EditorialError, match="wrong_output_language"):
         validator.validate(_av_brief(conflicts=[undeclared]))
+    # A name declared for one item is not excused in a note whose evidence never mentions it.
+    evidence.append(
+        dict(evidence[1], id="e3", title="別の話題", excerpt="活動を継続すると発表しました。")
+    )
+    evidence[1].update(title="活動継続", excerpt="活動を継続すると発表しました。本人談。")
+    elsewhere = dict(
+        conflict,
+        evidence_ids=["e2", "e3"],
+        support=[
+            dict(evidence_id="e2", quote="活動を継続すると発表しました。本人談。"),
+            dict(evidence_id="e3", quote="活動を継続すると発表しました。"),
+        ],
+    )
+    with pytest.raises(EditorialError, match="wrong_output_language"):
+        BriefValidator(evidence, "zh-Hans", 5, av_industry=True).validate(
+            _av_brief(conflicts=[elsewhere])
+        )
 
 
 def test_a_japanese_overview_must_be_written_in_japanese():
@@ -369,6 +386,10 @@ def test_a_japanese_overview_must_be_written_in_japanese():
     assert validator.validate(brief)
     with pytest.raises(EditorialError, match="wrong_output_language"):
         validator.validate(dict(brief, overview="本期最值得关注的是一位演员暂停部分活动。"))
+    # A kept name written in kana does not make Chinese item text Japanese.
+    chinese = dict(item, title="浅野こころ", body="浅野こころ宣布暂停部分活动。")
+    with pytest.raises(EditorialError, match="wrong_output_language"):
+        validator.validate(dict(brief, items=[chinese]))
 
 
 def test_other_briefs_keep_the_strict_language_check_and_have_no_overview():

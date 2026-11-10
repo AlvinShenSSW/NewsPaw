@@ -225,12 +225,16 @@ class BriefValidator:
             text,
         )
 
-    def _language(self, text, *, title=False, require_kana=True, kept=()):
-        text = unicodedata.normalize("NFKC", text)
+    @staticmethod
+    def _without(text, kept):
         # Names the model declared as kept in the source script are not prose to translate.
+        text = unicodedata.normalize("NFKC", text)
         for name in sorted(kept, key=len, reverse=True):
             text = text.replace(unicodedata.normalize("NFKC", name), "")
-        remaining = unicodedata.normalize("NFKC", self._remaining(text))
+        return text
+
+    def _language(self, text, *, title=False, require_kana=True, kept=()):
+        remaining = unicodedata.normalize("NFKC", self._remaining(self._without(text, kept)))
         if any(
             unicodedata.category(c).startswith("L")
             and not (_HAN.fullmatch(c) or _KANA.fullmatch(c) or _LATIN.fullmatch(c))
@@ -367,7 +371,7 @@ class BriefValidator:
             self._prose(item["title"], support, title=True, require_kana=False, kept=kept)
             self._prose(item["body"], support, require_kana=False, kept=kept)
             if self.locale == "ja" and not _KANA.search(
-                self._remaining(item["title"] + item["body"])
+                self._remaining(self._without(item["title"] + item["body"], kept))
             ):
                 raise EditorialError("wrong_output_language")
         if self.av_industry:
@@ -380,7 +384,13 @@ class BriefValidator:
         for conflict in data["conflicts"]:
             _fields(conflict, "evidence_ids note support")
             support = self._support(conflict["evidence_ids"], conflict["support"], minimum=2)
-            self._prose(conflict["note"], support, kept=names)
+            evidence = "\n".join(
+                self.pool[i]["title"] + "\n" + self.pool[i]["excerpt"]
+                for i in conflict["evidence_ids"]
+            )
+            self._prose(
+                conflict["note"], support, kept={name for name in names if name in evidence}
+            )
         return data
 
     def __call__(self, data):

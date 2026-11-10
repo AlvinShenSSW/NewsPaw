@@ -42,8 +42,8 @@ cat > "$plist" <<'PLIST'
     <key>CFBundleIdentifier</key><string>org.newspaw.settings.dev</string>
     <key>CFBundleExecutable</key><string>NewsPaw</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.6.2</string>
-    <key>CFBundleVersion</key><string>8</string>
+    <key>CFBundleShortVersionString</key><string>0.6.3</string>
+    <key>CFBundleVersion</key><string>9</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
 </dict>

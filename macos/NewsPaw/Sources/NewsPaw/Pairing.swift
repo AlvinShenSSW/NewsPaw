@@ -450,9 +450,10 @@ final class KeyChecks {
                     return
                 }
                 if state.settled {
+                    await load(pending.profile, model: model)
+                    // Replaced (also while status was being read): the newer check reports.
                     guard model.pendingProbes[pending.key]?.token == pending.token else { return }
                     clearTimeout(pending.key)
-                    await load(pending.profile, model: model)
                     record(state, profile: pending.profile, capability: pending.capability)
                     release(pending, model: model)
                     await model.refresh()
@@ -558,9 +559,12 @@ final class KeyChecks {
         do {
             let result: ProbeState = try BackendRPC.decode(await model.client.call(.modelsProbe, pending.request))
             working.remove(key)
-            release(pending, model: model)
             await load(profile, model: model)
-            record(result, profile: profile, capability: capability)
+            // Replaced while status was being read (a newer check started): that one reports.
+            if model.pendingProbes[key]?.token == pending.token {
+                release(pending, model: model)
+                record(result, profile: profile, capability: capability)
+            }
         } catch is SocketFailure {
             // The connection gave up but the backend keeps checking. Asking again with the same
             // probe id returns this check's own record (no second charge), not an earlier one.

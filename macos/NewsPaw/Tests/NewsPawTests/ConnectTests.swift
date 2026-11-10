@@ -126,6 +126,8 @@ private final class ConnectBackend {
     var dropNextTestStatus = false
     /// `config.save` answers only after this long (another writer holds the store).
     var configSaveDelay: Duration?
+    /// Runs as `models.status` is read (e.g. another window starts a newer check meanwhile).
+    var onStatusRead: (() -> Void)?
 
     var client: BackendClient {
         BackendClient { [unowned self] body, _ in
@@ -373,6 +375,7 @@ private final class ConnectBackend {
             revision += 1
             return ok(["revision": revision])
         case "models.status":
+            onStatusRead?()
             let profile = request["profile_id"] as! String
             let keyed = profileEntry(profile)?["credential_ref"] is String
             var text: [String: Any] = keyed ? ["state": "verified", "status": "verified"] : ["state": "untested"]
@@ -1450,4 +1453,49 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
     let status = KeyStatus.of(credential: "available", probe: data.keys.probes["normal_primary"],
                               health: data.currentHealth("normal_primary"), working: false)
     #expect(status == .verified)
+}
+
+// MARK: - #107 follow-ups
+
+@Test @MainActor func aFollowedCheckReplacedWhileReadingStatusDoesNotRecordItsResult() async throws {
+    // R10-22, following by probe id: a newer check takes over while the finished one reads status.
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk-synthetic-7Qx2", profile: "normal_primary", model: model)
+    server.checks["normal_primary"] = [["state": "failed", "status": "failed", "error_kind": "rate_limited"]]
+    await data.load(model: model)
+    server.probeOutlastsSocket = ["state": "verified", "status": "verified"]
+    let newer = PendingProbe(id: "probe_newer", profile: "normal_primary", capability: "text")
+    server.onStatusRead = { [unowned server] in
+        // The superseded check has settled (third read of its id) and reads status: replaced now.
+        guard server.calls("models.probe").count >= 3, model.pendingProbes["normal_primary"]?.id != "probe_newer" else { return }
+        model.pendingProbes["normal_primary"] = newer
+        server.checks["normal_primary"] = [["state": "pending", "status": "pending"]]
+    }
+
+    await data.keys.recheck("normal_primary", model: model)
+
+    #expect(model.pendingProbes["normal_primary"] == newer)
+    #expect(data.keys.probes["normal_primary"]?.state == "pending")
+}
+
+@Test @MainActor func aCheckReplacedWhileReadingStatusDoesNotRecordItsResult() async throws {
+    // R10-22, a direct answer: a newer check takes over while this one reads status.
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk-synthetic-7Qx2", profile: "normal_primary", model: model)
+    server.checks["normal_primary"] = [["state": "failed", "status": "failed", "error_kind": "rate_limited"]]
+    let newer = PendingProbe(id: "probe_newer", profile: "normal_primary", capability: "text")
+    server.onStatusRead = { [unowned server] in
+        guard !server.calls("models.probe").isEmpty, model.pendingProbes["normal_primary"]?.id != "probe_newer" else { return }
+        model.pendingProbes["normal_primary"] = newer
+        server.checks["normal_primary"] = [["state": "pending", "status": "pending"]]
+    }
+
+    await data.keys.recheck("normal_primary", model: model)
+
+    #expect(model.pendingProbes["normal_primary"] == newer)
+    #expect(data.keys.probes["normal_primary"]?.state == "pending")
 }

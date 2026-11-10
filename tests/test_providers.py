@@ -180,7 +180,9 @@ async def test_explicit_probe_is_idempotent_and_capability_specific(registry):
     result = await service.probe("probe1", "normal_primary", "text", 100, revision=revision)
     assert result["status"] == "verified"
     assert store.config_revision() > revision
-    assert (await service.probe("probe1", "normal_primary", "text", 100, revision=revision)) == result
+    assert (
+        await service.probe("probe1", "normal_primary", "text", 100, revision=revision)
+    ) == result
     with pytest.raises(ProviderError, match="probe_id_conflict"):
         await service.probe("probe1", "normal_primary", "vision", 100, revision=revision)
     with pytest.raises(ProviderError, match="config_conflict"):
@@ -575,9 +577,11 @@ async def test_interrupted_reverification_removes_derived_capability_atomically(
     records.begin("pending", "normal_primary", "text", 100)
     revision = store.config_revision()
     store._db.set_authorizer(
-        lambda action, table, *args: sqlite3.SQLITE_DENY
-        if action == sqlite3.SQLITE_UPDATE and table == "app_configuration"
-        else sqlite3.SQLITE_OK
+        lambda action, table, *args: (
+            sqlite3.SQLITE_DENY
+            if action == sqlite3.SQLITE_UPDATE and table == "app_configuration"
+            else sqlite3.SQLITE_OK
+        )
     )
     try:
         with pytest.raises(sqlite3.DatabaseError):

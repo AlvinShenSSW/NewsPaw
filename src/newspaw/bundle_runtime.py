@@ -26,11 +26,7 @@ def check_upgrade(directory):
             info = path.lstat()
         except FileNotFoundError:
             return {"state": "fresh", "target_version": DATABASE_VERSION}
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_uid != os.getuid()
-            or info.st_mode & 0o077
-        ):
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
             raise ValueError("invalid_upgrade_database")
         deadline = time.monotonic() + 12
 

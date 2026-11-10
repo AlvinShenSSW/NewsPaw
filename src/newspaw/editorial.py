@@ -376,11 +376,11 @@ class BriefValidator:
                 if overview != "":
                     raise EditorialError("invalid_brief")
             else:
-                self._prose(overview, "\n".join(cited), require_kana=False, kept=names, maximum=600)
+                self._prose(overview, "\n".join(cited), kept=names, maximum=600)
         for conflict in data["conflicts"]:
             _fields(conflict, "evidence_ids note support")
             support = self._support(conflict["evidence_ids"], conflict["support"], minimum=2)
-            self._prose(conflict["note"], support)
+            self._prose(conflict["note"], support, kept=names)
         return data
 
     def __call__(self, data):

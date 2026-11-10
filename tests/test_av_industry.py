@@ -331,6 +331,46 @@ def test_a_kept_name_must_come_from_the_cited_evidence():
         BriefValidator(_av_evidence(), "zh-Hans", 5, av_industry=True).validate(brief)
 
 
+def test_a_disagreement_note_may_name_someone_in_the_original_script():
+    from newspaw.editorial import BriefValidator, EditorialError
+
+    evidence = _av_evidence()
+    evidence[1].update(
+        title="浅野こころ 活動継続", excerpt="浅野こころ は活動を継続すると発表しました。"
+    )
+    conflict = dict(
+        evidence_ids=["e1", "e2"],
+        note="两家来源对浅野こころ是否暂停活动说法不一。",
+        support=[
+            dict(
+                evidence_id="e1",
+                quote="浅野こころ が腰椎骨折のため活動を一部休止すると発表しました。",
+            ),
+            dict(evidence_id="e2", quote="浅野こころ は活動を継続すると発表しました。"),
+        ],
+    )
+    validator = BriefValidator(evidence, "zh-Hans", 5, av_industry=True)
+    assert validator.validate(_av_brief(conflicts=[conflict]))
+    undeclared = dict(conflict, note="两家来源对エスワン的说法不一。")
+    with pytest.raises(EditorialError, match="wrong_output_language"):
+        validator.validate(_av_brief(conflicts=[undeclared]))
+
+
+def test_a_japanese_overview_must_be_written_in_japanese():
+    from newspaw.editorial import BriefValidator, EditorialError
+
+    item = dict(
+        _av_brief()["items"][0],
+        title="浅野こころ が活動を一部休止",
+        body="浅野こころ が活動を一部休止すると発表したと報じられました。",
+    )
+    validator = BriefValidator(_av_evidence(), "ja", 5, av_industry=True)
+    brief = _av_brief(locale="ja", items=[item], overview="本日は活動休止の発表が注目されます。")
+    assert validator.validate(brief)
+    with pytest.raises(EditorialError, match="wrong_output_language"):
+        validator.validate(dict(brief, overview="本期最值得关注的是一位演员暂停部分活动。"))
+
+
 def test_other_briefs_keep_the_strict_language_check_and_have_no_overview():
     from newspaw.editorial import BriefValidator, EditorialError
 

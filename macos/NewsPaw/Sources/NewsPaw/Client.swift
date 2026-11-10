@@ -47,6 +47,8 @@ enum Operation: String, CaseIterable, Sendable {
     case newspaperConfigure = "newspaper.configure"
     case mediaPolicy = "media.policy"
     case mediaConfigure = "media.configure"
+    case speechStatus = "speech.status"
+    case speechCheck = "speech.check"
     case xAccountsList = "x.accounts.list"
     case xAccountsAdd = "x.accounts.add"
     case xAccountsVerify = "x.accounts.verify"
@@ -84,7 +86,7 @@ enum Operation: String, CaseIterable, Sendable {
         case "models.probe", "bots.test_send", "x.accounts.verify", "x.lists.refresh", "ops.verify_backup": 35_000
         // Long operations answer within ~1 s (a result or a handle); room for a busy backend.
         case "sources.discover", "sources.preview", "bots.verify", "x.accounts.add", "x.video.inspect",
-             "requests.status": 5_000
+             "speech.check", "requests.status": 5_000
         default: nil
         }
     }
@@ -94,7 +96,7 @@ enum Operation: String, CaseIterable, Sendable {
     static func longDeadlineSeconds(for name: String) -> Int? {
         switch name {
         case "sources.discover", "x.accounts.add": 60
-        case "sources.preview", "bots.verify": 90
+        case "sources.preview", "bots.verify", "speech.check": 90
         case "x.video.inspect": 170
         default: nil
         }

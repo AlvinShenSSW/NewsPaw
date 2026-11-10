@@ -232,6 +232,32 @@ enum KeyStatus: Equatable {
     }
 }
 
+extension KeyStatus {
+    /// What went wrong with the ElevenLabs key, voice or test, and what to do (R18); nil while
+    /// there is nothing to fix.
+    func speechNote(_ language: AppLanguage) -> String? {
+        switch self {
+        case let .rejected(code), let .unavailable(code), let .unknown(code), let .failed(code):
+            FailureCopy.message(for: BackendError(code: code, domain: "speech"), language)
+        case let .keychain(code): FailureCopy.message(for: BackendError(code: code, domain: "credentials"), language)
+        case .budget: FailureCopy.message(for: BackendError(code: "budget_blocked", domain: "speech"), language)
+        // A speech test is never "cannot be checked" or cooling down; those belong to models.
+        case .missing, .checking, .untested, .verified, .cooldown, .uncheckable: nil
+        }
+    }
+}
+
+extension BudgetSummary {
+    /// How a part of this month's spending is named.
+    static func operationWords(_ operation: String) -> Words {
+        let names: [String: Words] = [
+            "text": L10n.Connect.opText, "image": L10n.Connect.opImage, "vision": L10n.Connect.opVision,
+            "stt": L10n.Connect.opSpeech, "search": L10n.Connect.opSearch, "tts": L10n.Connect.opVoice,
+        ]
+        return names[operation] ?? L10n.Connect.opOther
+    }
+}
+
 /// How a model and its provider are named on screen.
 enum ModelNames {
     static func model(_ id: String) -> String {
@@ -1019,6 +1045,8 @@ private struct ExtrasGroup: View {
                     Divider()
                     ExtraRow(model: model, data: data, kind: .transcription)
                     Divider()
+                    SpeechRow(model: model, data: data)
+                    Divider()
                     EndpointEditor(model: model, data: data)
                 }
             } label: {
@@ -1175,6 +1203,119 @@ private struct ExtraRow: View {
             case .transcription: await data.setTranscription(on ? profile : nil, model: model)
             }
         }
+    }
+}
+
+/// Spoken digests through ElevenLabs (R18): the switch, the key, the voice and a test of both.
+private struct SpeechRow: View {
+    let model: AppModel
+    let data: ConnectData
+    @State private var editing = false
+    @State private var confirming = false
+    @State private var voice = LimitField()
+    @FocusState private var voiceFocused: Bool
+
+    private var reference: String? { model.config?.speechApi?.credentialRef }
+    private var storedVoice: String? { model.config?.speechApi?.voiceId }
+
+    var body: some View {
+        let status = data.speechStatus(model: model)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.text(L10n.Connect.listen))
+                    Text(model.text(L10n.Connect.listenNote)).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                StatusDot(color: status.color, text: status.title(model.uiLanguage), busy: status == .checking)
+                if data.isBusy("listen") { ProgressView().controlSize(.small) }
+                Toggle(model.text(L10n.Connect.listen), isOn: Binding(
+                    get: { data.extras.listenOn },
+                    set: { on in Task { await data.setListen(on, model: model) } }
+                ))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .disabled(data.isBusy("listen") || (!data.canListen(model: model) && !data.extras.listenOn))
+                .help(data.canListen(model: model) ? "" : model.text(L10n.Connect.listenNeedsKey))
+            }
+            HStack(spacing: 8) {
+                Text(detail(status)).font(.caption).foregroundStyle(status.color == .red ? Color.red : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Text("Voice ID").font(.callout)
+                TextField("Voice ID", text: Binding(get: { voice.text }, set: { voice.type($0) }))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 200)
+                    .focused($voiceFocused)
+                    .onSubmit(saveVoice)
+                    .disabled(storedVoice == nil)
+                    .accessibilityLabel("Voice ID")
+                if data.isBusy("speech.voice") { ProgressView().controlSize(.small) }
+                if reference != nil {
+                    Button(model.text(L10n.Connect.speechTest)) {
+                        if data.speechNeedsConfirmation { confirming = true } else { Task { await data.testSpeech(model: model) } }
+                    }
+                    .disabled(data.isBusy("speech.test"))
+                }
+                Button(model.text(reference == nil ? L10n.Connect.enterKey : L10n.Connect.replaceKey)) { editing = true }
+                    .disabled(data.isBusy("speech.key"))
+                    .popover(isPresented: $editing, arrowEdge: .bottom) {
+                        KeyPopover(model: model, title: model.text(L10n.Connect.speechKey), note: model.text(L10n.Connect.speechKeyNote)) { key in
+                            editing = false
+                            Task { await data.saveSpeechKey(key, model: model) }
+                        }
+                    }
+            }
+            if let failure = data.failures["listen"] { FailureNote(model: model, failure: failure) }
+            if let failure = data.failures["speech.key"] {
+                FailureNote(model: model, failure: failure) { editing = true }
+            }
+            if let failure = data.failures["speech.voice"] {
+                // A voice that was not saved: the field goes back to the stored one.
+                FailureNote(model: model, failure: failure) {
+                    if let storedVoice { voice.reset(storedVoice) }
+                    data.dismiss("speech.voice")
+                }
+            }
+            if let failure = data.failures["speech.test"] { FailureNote(model: model, failure: failure) }
+        }
+        .padding(.vertical, 8)
+        .confirmationDialog(model.text(L10n.Connect.retryTitle), isPresented: $confirming) {
+            Button(model.text(L10n.Connect.speechTest)) { Task { await data.testSpeech(model: model, confirmed: true) } }
+            Button(model.text(L10n.Shell.cancel), role: .cancel) {}
+        } message: {
+            Text(model.text(L10n.Connect.speechRetryBody))
+        }
+        .onAppear(perform: fill)
+        .onChange(of: storedVoice) { fill() }
+        // Leaving the field saves it, like pressing Return.
+        .onChange(of: voiceFocused) { _, focused in if !focused { saveVoice() } }
+    }
+
+    private func fill() {
+        if let storedVoice { voice.load(storedVoice) }
+    }
+
+    private func saveVoice() {
+        guard let stored = storedVoice, let typed = voice.pendingSave(stored: stored) else { return }
+        Task {
+            guard await data.saveVoice(typed, model: model) else { return }
+            // Saved without the spaces around it: the field shows what is stored.
+            if voice.text == typed { voice.reset(typed.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        }
+    }
+
+    /// "Key ••••9Zq1 · checked today 08:12", what went wrong, or what is still needed.
+    private func detail(_ status: KeyStatus) -> String {
+        let language = model.uiLanguage
+        if let note = status.speechNote(language) { return note }
+        if status == .missing { return model.text(L10n.Connect.listenNeedsKey) }
+        var parts = [data.tail(reference).map { "Key ••••" + $0 } ?? "Key"]
+        if status == .verified, let at = data.speech?.check?.checkedAt.flatMap(OverviewData.date) {
+            parts.append(L10n.Connect.verifiedAt(language, ["when": Stamp.relative(at, language)]))
+        }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -1358,17 +1499,9 @@ private struct SpendingSection: View {
     private func usedLine(_ budget: BudgetSummary) -> String {
         let language = model.uiLanguage
         var line = L10n.Connect.usedLine(language, ["amount": dollars(budget.used)])
-        let parts = budget.parts.map { operationName($0.operation) + " " + dollars($0.amount) }
+        let parts = budget.parts.map { model.text(BudgetSummary.operationWords($0.operation)) + " " + dollars($0.amount) }
         if !parts.isEmpty { line += " · " + parts.joined(separator: " · ") }
         return line
-    }
-
-    private func operationName(_ operation: String) -> String {
-        let names: [String: Words] = [
-            "text": L10n.Connect.opText, "image": L10n.Connect.opImage, "vision": L10n.Connect.opVision,
-            "stt": L10n.Connect.opSpeech, "search": L10n.Connect.opSearch,
-        ]
-        return model.text(names[operation] ?? L10n.Connect.opOther)
     }
 
     private var dailyRow: some View {

@@ -215,6 +215,7 @@ class Store:
                     profile["credential_ref"] = old_profiles[profile["id"]]["credential_ref"]
             document["bots"] = current["bots"]
             document["x_api"] = current["x_api"]
+            document["speech_api"] = current["speech_api"]
             self._save_config_tx(document, revision)
             self._db.execute("INSERT INTO migration_info VALUES ('legacy_imported', ?)", (_now(),))
 

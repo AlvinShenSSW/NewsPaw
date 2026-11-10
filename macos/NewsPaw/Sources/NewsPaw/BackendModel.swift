@@ -48,6 +48,7 @@ struct AppConfig: Decodable {
     let bots: [ConfiguredBot]?
     let groupStyles: [String: String]?
     let xApi: XConnection?
+    let speechApi: SpeechConnection?
 
     struct ConfiguredBot: Decodable {
         let id: String
@@ -57,6 +58,8 @@ struct AppConfig: Decodable {
     }
 
     struct XConnection: Decodable { let credentialRef: String? }
+    /// The ElevenLabs key reference and the voice that reads digests aloud (R18).
+    struct SpeechConnection: Decodable { let credentialRef: String?; let voiceId: String? }
 
     func displaySubscription(for categoryId: String) -> Subscription? {
         let matching = subscriptions.filter { $0.categoryId == categoryId }

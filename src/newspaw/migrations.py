@@ -18,7 +18,7 @@ from .app_config import (
     upgrade_v1,
 )
 
-DATABASE_VERSION = 25
+DATABASE_VERSION = 26
 
 
 def check_version(db: sqlite3.Connection) -> int:
@@ -214,6 +214,9 @@ def migrate(db: sqlite3.Connection, path: Path) -> None:
         from .media.paper_service import initialize as initialize_newspapers
 
         initialize_newspapers(db)
+        from .media.elevenlabs import initialize as initialize_speech
+
+        initialize_speech(db)
         from .x.accounts import initialize as initialize_x
 
         initialize_x(db)

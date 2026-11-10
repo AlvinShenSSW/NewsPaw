@@ -450,12 +450,19 @@ enum L10n {
         static let retryBody = Words("上一次可能已经扣费，再测一次可能再扣一次（最多 $0.01）。", "The last check may have been charged; checking again may charge once more (up to $0.01).", "前回の確認は課金された可能性があり、もう一度確認するとさらに課金されることがあります（最大 $0.01）。")
         static let keyFor = Words("{model} 的 Key", "Key for {model}", "{model} のキー")
         static let keySaveNote = Words("保存后会自动发一条很短的测试消息，看 Key 能不能用。", "Saving sends one very short test request to see whether the key works.", "保存すると、キーが使えるか短いテストを 1 回送ります。")
-        static let extrasTitle = Words("附加能力：AI 报纸生图 · 语音转写 · 自定义 API 地址", "Extras: AI newspaper images · voice transcription · custom API address", "追加機能：AI 新聞画像 · 音声の文字起こし · カスタム API アドレス")
+        static let extrasTitle = Words("附加能力：AI 报纸生图 · 语音转写 · 语音简报 · 自定义 API 地址", "Extras: AI newspaper images · voice transcription · spoken digests · custom API address", "追加機能：AI 新聞画像 · 音声の文字起こし · 音声ダイジェスト · カスタム API アドレス")
         static let extrasNote = Words("开启某项附加输出时，NewsPaw 会在那时验证对应能力，不需要提前逐项测试。", "When you turn an extra on, NewsPaw checks that capability then; nothing needs checking in advance.", "追加機能をオンにしたときに NewsPaw がその機能を確認します。事前の確認は不要です。")
         static let newspaper = Words("AI 报纸生图", "AI newspaper images", "AI 新聞画像")
         static let newspaperNote = Words("把一期简报排成报纸图片；生图费用另计。", "Lays out an edition as a newspaper image; image generation costs extra.", "ダイジェストを新聞風の画像にします。画像生成の費用は別にかかります。")
         static let transcription = Words("语音转写", "Voice transcription", "音声の文字起こし")
         static let transcriptionNote = Words("在 Telegram 里发给机器人的语音会先转成文字。", "Voice messages you send the bot in Telegram are turned into text first.", "Telegram でボットに送った音声メッセージを先に文字にします。")
+        static let listen = Words("语音简报（ElevenLabs）", "Spoken digests (ElevenLabs)", "音声ダイジェスト（ElevenLabs）")
+        static let listenNote = Words("在 Telegram 里回复一份简报发送 /listen，就能收到语音。简报文字会发送给 ElevenLabs。", "Reply to a digest in Telegram with /listen to hear it read aloud. The digest's text is sent to ElevenLabs.", "Telegram でダイジェストに /listen と返信すると音声が届きます。ダイジェストの本文は ElevenLabs に送信されます。")
+        static let listenNeedsKey = Words("填入 ElevenLabs 的 Key 后才能开启。", "Enter an ElevenLabs key before turning this on.", "オンにするには先に ElevenLabs のキーを入力してください。")
+        static let speechKey = Words("ElevenLabs 的 Key", "ElevenLabs key", "ElevenLabs のキー")
+        static let speechKeyNote = Words("Key 只存在这台 Mac 的钥匙串里。保存后不会自动测试；点「测试」会朗读一句很短的话，用到一点 ElevenLabs 额度。", "The key is kept only in this Mac's keychain. Saving tests nothing; Test reads one very short sentence and uses a little ElevenLabs credit.", "キーはこの Mac のキーチェーンにだけ保存されます。保存しただけではテストしません。「テスト」を押すと短い一文を読み上げ、ElevenLabs のクレジットを少し使います。")
+        static let speechTest = Words("测试", "Test", "テスト")
+        static let speechRetryBody = Words("上一次测试可能已经用掉 ElevenLabs 的额度，再测一次可能再用一次。", "The last test may have used ElevenLabs credit; testing again may use it once more.", "前回のテストで ElevenLabs のクレジットを使った可能性があり、もう一度テストするとさらに使うことがあります。")
         static let useModel = Words("使用", "Use", "使用モデル")
         static let off = Words("已关闭", "Off", "オフ")
         static let checkingCapability = Words("等待检查", "Waiting for check", "確認待ち")
@@ -488,6 +495,7 @@ enum L10n {
         static let opVision = Words("看图", "Images read", "画像認識")
         static let opSpeech = Words("转写", "Transcription", "文字起こし")
         static let opSearch = Words("搜索", "Search", "検索")
+        static let opVoice = Words("语音", "Voice", "音声")
         static let opOther = Words("其他", "Other", "その他")
         static let xTitle = Words("X 数据连接", "X data connection", "X データ接続")
         static let xReadsFine = Words("读取账号正常", "Reading accounts works", "アカウントを読み取れています")
@@ -515,6 +523,7 @@ enum L10n {
             dailyNote, perDay, otherLimits, imageLimit, providerLimit, normalReadsLimit, adultReadsLimit,
             accountLimit, readToday, limitReached, clear, pricingNote, unpricedCount, opText, opImage, opVision,
             opSpeech, opSearch, opOther, xTitle, xReadsFine, xNeedsKey, xUnused, xRejected, xForbidden, xKeyNote,
+            listen, listenNote, listenNeedsKey, speechKey, speechKeyNote, speechTest, speechRetryBody, opVoice,
         ]
     }
 
@@ -938,6 +947,21 @@ enum FailureCopy {
         "missing_delivery": Entry(message: Words("这一期还没有投递记录。", "This edition has no delivery record yet.", "この回の配信記録はまだありません。"), action: nil),
         "file_write_failed": Entry(message: Words("没能写入这个文件。换个位置再试。", "The file could not be written. Choose another place and try again.", "ファイルを書き込めませんでした。別の場所を選んで再試行してください。"), action: nil),
         "internal_error": Entry(message: Words("NewsPaw 内部出了问题，已记录在日志里。", "NewsPaw hit an internal problem and logged it.", "NewsPaw 内部で問題が起き、ログに記録しました。"), action: nil),
+        // Spoken digests through ElevenLabs (R18). Codes shared with model copy carry the "speech." domain prefix.
+        "speech.authentication_failed": Entry(message: Words("ElevenLabs 拒绝了这个 Key（401）。到 ElevenLabs 后台确认后重新填入。", "ElevenLabs rejected this key (401). Check it in your ElevenLabs account, then enter it again.", "ElevenLabs がこのキーを拒否しました（401）。ElevenLabs のアカウントで確認してから入力し直してください。"), action: nil),
+        "speech.permission_denied": Entry(message: Words("这个 Key 没有文字转语音的权限（403）。到 ElevenLabs 后台检查权限后重新填入。", "This key may not turn text into speech (403). Check its permissions in your ElevenLabs account, then enter it again.", "このキーには音声合成の権限がありません（403）。ElevenLabs のアカウントで権限を確認してから入力し直してください。"), action: nil),
+        "speech.invalid_voice_request": Entry(message: Words("ElevenLabs 不接受这个声音（404 / 422）。换成你账号里的 Voice ID 再测试。", "ElevenLabs did not accept this voice (404 / 422). Enter a Voice ID from your account, then test again.", "ElevenLabs がこの音声を受け付けませんでした（404 / 422）。アカウントにある Voice ID を入力して、もう一度テストしてください。"), action: nil),
+        "speech.invalid_speech_audio": Entry(message: Words("ElevenLabs 返回的不是可以播放的音频。稍后再测试。", "ElevenLabs did not return audio that can be played. Test again later.", "ElevenLabs から再生できる音声が返りませんでした。あとでもう一度テストしてください。"), action: nil),
+        "speech.rate_limited": Entry(message: Words("ElevenLabs 说额度不够或请求太频繁（429）。稍后再测试，或到 ElevenLabs 后台查看额度。", "ElevenLabs says the account is out of credit or sending too many requests (429). Test again later, or check the credit in your ElevenLabs account.", "ElevenLabs からクレジット不足かリクエスト過多と返されました（429）。あとでテストするか、ElevenLabs のアカウントで残量を確認してください。"), action: nil),
+        "speech.connection_failed": Entry(message: Words("连不上 ElevenLabs，这次没有发出请求。检查网络后再测试。", "Could not reach ElevenLabs, so nothing was sent. Check the network, then test again.", "ElevenLabs に接続できず、何も送信されませんでした。ネットワークを確認してからテストしてください。"), action: nil),
+        "speech.provider_failed": Entry(message: Words("ElevenLabs 出错了。稍后再测试。", "ElevenLabs had an error. Test again later.", "ElevenLabs でエラーが起きました。あとでもう一度テストしてください。"), action: nil),
+        "speech.outcome_unknown": Entry(message: Words("ElevenLabs 没有及时回应，这次可能已经用掉额度。确认后再测试。", "ElevenLabs did not answer in time; this test may have used credit. Confirm before testing again.", "ElevenLabs が時間内に応答しませんでした。クレジットを使った可能性があります。確認してからテストしてください。"), action: nil),
+        "speech.interrupted": Entry(message: Words("对 ElevenLabs 的测试被中断了，可能已经用掉额度。确认后再测试。", "The ElevenLabs test was interrupted and may have used credit. Confirm before testing again.", "ElevenLabs のテストが中断され、クレジットを使った可能性があります。確認してからテストしてください。"), action: nil),
+        "speech.cancelled": Entry(message: Words("对 ElevenLabs 的测试被中断了，可能已经用掉额度。确认后再测试。", "The ElevenLabs test was interrupted and may have used credit. Confirm before testing again.", "ElevenLabs のテストが中断され、クレジットを使った可能性があります。確認してからテストしてください。"), action: nil),
+        "speech.credential_missing": Entry(message: Words("还没有填 ElevenLabs 的 Key。", "No ElevenLabs key has been entered yet.", "ElevenLabs のキーがまだ入力されていません。"), action: nil),
+        "speech.invalid_speech_check": Entry(message: Words("这次测试的请求无效，没有发给 ElevenLabs。再测试一次。", "This test request was not valid and was not sent to ElevenLabs. Test again.", "このテストの要求は無効で、ElevenLabs には送信されませんでした。もう一度テストしてください。"), action: nil),
+        "speech.invalid_speech_text": Entry(message: Words("没有可以朗读的文字，没有发给 ElevenLabs。", "There was no text to read aloud, so nothing was sent to ElevenLabs.", "読み上げる文章がなく、ElevenLabs には送信されませんでした。"), action: nil),
+        "invalid_voice_id": Entry(message: Words("Voice ID 只能是 1–64 位英文字母或数字，没有保存。", "A Voice ID is 1–64 letters or digits; nothing was saved.", "Voice ID は英数字 1〜64 文字です。保存されませんでした。"), action: Words("恢复原来的", "Restore", "元に戻す")),
         // X accounts (R11). Codes shared with model or Telegram copy carry the "x." domain prefix.
         "x.authentication_failed": Entry(message: Words("X 拒绝了 X API Key（401）。到「接入」重新填入。", "X rejected the X API key (401). Enter it again in Connect.", "X が X API キーを拒否しました（401）。「接続」で入力し直してください。"), action: L10n.XAccounts.goConnect),
         "x.permission_denied": Entry(message: Words("这个 X Key 没有读取权限（403）。到 X 开发者后台检查后，在「接入」重新填入。", "This X key may not read (403). Check it in the X developer portal, then enter it again in Connect.", "この X キーには読み取り権限がありません（403）。X の開発者ポータルで確認し、「接続」で入力し直してください。"), action: L10n.XAccounts.goConnect),

@@ -68,6 +68,7 @@ LONG_OPERATIONS = {
     "bots.verify": 90,
     "x.accounts.add": 60,
     "x.video.inspect": 170,
+    "speech.check": 90,
 }
 REQUEST_WAIT = 1.0
 # On shutdown, long operations get this long (seconds) to finish before they are cancelled; a Bot
@@ -93,6 +94,8 @@ OPERATIONS = {
     "subscriptions.send_now": ({"subscription_id"}, set()),
     "media.policy": (set(), set()),
     "media.configure": ({"settings", "revision"}, set()),
+    "speech.status": (set(), set()),
+    "speech.check": ({"request_id"}, set()),
     "newspaper.policy": (set(), set()),
     "newspaper.configure": ({"settings", "revision"}, set()),
     "schedule.configure": ({"settings", "revision"}, set()),
@@ -483,6 +486,10 @@ class ControlServer:
                 if result["settings"][capability + "_profile"] is not None:
                     self._verify_soon(result["settings"][capability + "_profile"], [capability])
             return result
+        if op == "speech.status":
+            return self.media.elevenlabs.status()
+        if op == "speech.check":
+            return await self.media.elevenlabs.check(data["request_id"])
         if op == "newspaper.policy":
             return self.newspapers.policy()
         if op == "newspaper.configure":

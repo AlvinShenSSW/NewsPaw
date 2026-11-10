@@ -24,7 +24,8 @@ from .credentials import CredentialError
 from .transport import SafeHTTPError, checked_url, provider_client
 
 PROVIDERS = {"openai", "mimo", "deepseek", "grok"}
-CAPABILITIES = ("text", "vision", "image", "stt")  # Speech output uses macOS `say`.
+# Speech output is not a profile capability: macOS `say`, or ElevenLabs (media/elevenlabs.py).
+CAPABILITIES = ("text", "vision", "image", "stt")
 IDENTITY_FIELDS = ("id", "partition", "role", "provider", "base_url", "model", "credential_ref")
 _ID = re.compile(r"[A-Za-z0-9_.:-]{1,140}")
 

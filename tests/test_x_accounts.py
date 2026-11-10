@@ -195,7 +195,7 @@ def test_config_v2_upgrade_preserves_existing_route_fingerprint(tmp_path):
             store._db.execute("PRAGMA user_version=12")
     with closing(Store(path)) as upgraded:
         revision, actual = upgraded.load_config()
-        assert actual["schema_version"] == 4 and actual["x_api"]["credential_ref"] is None
+        assert actual["schema_version"] == 5 and actual["x_api"]["credential_ref"] is None
         assert upgraded.preview_route("sub_world").fingerprint == before.fingerprint
         actual["news_output_locale"] = "ja"
         upgraded.save_config(actual, expected_revision=revision)

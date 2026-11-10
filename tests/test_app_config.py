@@ -110,11 +110,12 @@ def test_signed_feed_credentials_are_never_imported(tmp_path, query):
 
 def downgrade_to_v3(config):
     """A genuine schema-3 document for upgrade tests: category-level overrides and styles,
-    partition group styles, and no subscription-level model overrides."""
+    partition group styles, no subscription-level model overrides and no speech slot."""
     from copy import deepcopy
 
     old = deepcopy(config)
     old["schema_version"] = 3
+    del old["speech_api"]
     old["group_styles"] = {"normal": "text", "adult": "text"}
     for category in old["categories"]:
         first = next(s for s in old["subscriptions"] if s["category_id"] == category["id"])
@@ -159,7 +160,7 @@ def test_v3_upgrade_moves_category_model_overrides_to_its_subscriptions():
     world = next(c for c in old["categories"] if c["id"] == "world")
     world["backup_profile_id"] = "normal_backup"
     upgraded = upgrade_config(old)
-    assert upgraded["schema_version"] == 4
+    assert upgraded["schema_version"] == 5
     world_subs = [s for s in upgraded["subscriptions"] if s["category_id"] == "world"]
     assert world_subs and all(s["backup_profile_id"] == "normal_backup" for s in world_subs)
     others = [s for s in upgraded["subscriptions"] if s["category_id"] != "world"]

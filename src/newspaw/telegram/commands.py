@@ -52,6 +52,7 @@ _UI = {
         "media": "Please send your question as text.",
         "listen": "Reply to a confirmed briefing with /listen.",
         "voice_unavailable": "Local audio is unavailable for this language. Here is the briefing text.",
+        "speech_unavailable": "Voice is temporarily unavailable. Here is the briefing text.",
         "schedule": "Schedule ({zone}): {times}",
         "inherited": "This change would also retime a special account. Use Mac settings.",
         "bad_times": "Enter times as HH:MM,HH:MM.",
@@ -71,6 +72,7 @@ _UI = {
         "media": "请用文字发送问题。",
         "listen": "请回复一条已送达的简报发送 /listen。",
         "voice_unavailable": "当前语言的本机语音不可用。以下是简报正文。",
+        "speech_unavailable": "语音暂时不可用。以下是简报正文。",
         "schedule": "推送时间（{zone}）：{times}",
         "inherited": "修改会同时改变特别关注账号的时间，请在 Mac 设置中调整。",
         "bad_times": "请输入 HH:MM,HH:MM 格式的时间。",
@@ -90,6 +92,7 @@ _UI = {
         "media": "質問をテキストで送ってください。",
         "listen": "配信済みニュースに /listen で返信してください。",
         "voice_unavailable": "この言語の端末音声は利用できません。ニュースをテキストでお送りします。",
+        "speech_unavailable": "音声は一時的に利用できません。ニュースをテキストでお送りします。",
         "schedule": "配信時刻（{zone}）：{times}",
         "inherited": "特別フォロー中のアカウントにも影響します。Mac の設定で変更してください。",
         "bad_times": "時刻を HH:MM,HH:MM の形式で入力してください。",
@@ -764,10 +767,16 @@ class Commands:
                     spoken = " ".join(
                         f"{item['title']}. {item['body']}" for item in result["items"][:8]
                     )
+                    # ElevenLabs reads it once its key is saved; a failure there is said as such.
+                    notice = (
+                        "speech_unavailable"
+                        if self.media is not None and self.media.uses_elevenlabs()
+                        else "voice_unavailable"
+                    )
                     try:
                         if not live():
                             raise MediaInputError("voice_unavailable")
-                        audio = await self.media.speech.synthesize(spoken, result["locale"])
+                        audio = await self.media.speak(key, spoken, result["locale"])
                         if (
                             not live()
                             or not isinstance(audio, bytes)
@@ -777,7 +786,7 @@ class Commands:
                         produced = True
                     except (MediaInputError, OSError):
                         audio = None
-                        text = _UI[context["locale"]]["voice_unavailable"] + "\n\n" + text
+                        text = _UI[context["locale"]][notice] + "\n\n" + text
             else:
                 try:
                     if client is None or not live():

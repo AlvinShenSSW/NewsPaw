@@ -48,6 +48,16 @@ struct ExtraSettings: Equatable {
     var newspaperProfile: String?
     var newspaperVision: String?
     var transcriptionProfile: String?
+    /// Spoken digests on request (`listen_enabled`, R18).
+    var listenOn = false
+}
+
+/// `speech.status`: whether an ElevenLabs key is saved, the voice, and the newest test of them
+/// (`stale` once the key or the voice changed since).
+struct SpeechStatus: Decodable, Equatable {
+    let hasKey: Bool
+    let voiceId: String
+    let check: ProbeState?
 }
 
 /// One capability check of one model.
@@ -242,6 +252,7 @@ final class ConnectData {
     private(set) var tails: [String: String] = [:]
     private(set) var health: [String: ModelHealth] = [:]
     private(set) var extras = ExtraSettings()
+    private(set) var speech: SpeechStatus?
 
     // Spending and X
     private(set) var budget: BudgetSummary?
@@ -297,6 +308,9 @@ final class ConnectData {
         if let paper = try? await client.call(.newspaperPolicy), let media = try? await client.call(.mediaPolicy) {
             extras = Self.extras(paper: paper, media: media)
         }
+        if let data = try? await client.call(.speechStatus), let status: SpeechStatus = try? BackendRPC.decode(data) {
+            speech = status
+        }
         if let accounts = try? await client.call(.xAccountsList) {
             xCheck = Self.xCheck(accounts, reference: model.config?.xApi?.credentialRef)
         } else if xCheck?.reference != model.config?.xApi?.credentialRef {
@@ -311,7 +325,7 @@ final class ConnectData {
             let settings: Settings
         }
         struct Media: Decodable {
-            struct Settings: Decodable { let sttProfile: String? }
+            struct Settings: Decodable { let sttProfile: String?; let listenEnabled: Bool? }
             let settings: Settings
         }
         var extras = ExtraSettings()
@@ -320,7 +334,10 @@ final class ConnectData {
             extras.newspaperProfile = paper.settings.generationProfile
             extras.newspaperVision = paper.settings.visionProfile
         }
-        if let media: Media = try? BackendRPC.decode(media) { extras.transcriptionProfile = media.settings.sttProfile }
+        if let media: Media = try? BackendRPC.decode(media) {
+            extras.transcriptionProfile = media.settings.sttProfile
+            extras.listenOn = media.settings.listenEnabled ?? false
+        }
         return extras
     }
 
@@ -880,6 +897,112 @@ final class ConnectData {
             await keys.resume(model: model)
         } else {
             failures[key] = editor.failure
+        }
+        await load(model: model)
+    }
+
+    // MARK: Spoken digests (R18)
+
+    /// Whether spoken digests can be turned on: only with an ElevenLabs key.
+    func canListen(model: AppModel) -> Bool { model.config?.speechApi?.credentialRef != nil }
+
+    /// Turns `/listen` on or off (`listen_enabled`). Turning it on needs the ElevenLabs key.
+    func setListen(_ on: Bool, model: AppModel) async {
+        guard !on || canListen(model: model) else { return }
+        let client = model.client
+        await saveExtra("listen", model: model, editor: EditorState(
+            load: { try BackendClient.record(await client.call(.mediaPolicy), field: "settings") },
+            store: { _ = try await client.call(.mediaConfigure, ["settings": $0, "revision": $1]) }
+        )) { settings in
+            var settings = settings
+            settings["listen_enabled"] = on
+            return settings
+        }
+    }
+
+    /// Saves the ElevenLabs key. Nothing is tested (or paid for) until the owner asks.
+    func saveSpeechKey(_ key: String, model: AppModel) async {
+        let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty, !working.contains("speech.key") else { return }
+        working.insert("speech.key")
+        defer { working.remove("speech.key") }
+        failures["speech.key"] = nil
+        do {
+            try await model.client.setCredential(kind: "speech_api", id: "elevenlabs", value: key)
+            savedAt["speech.key"] = Date()
+        } catch {
+            failures["speech.key"] = BackendError.wrapping(error)
+        }
+        await model.refresh()
+        await load(model: model)
+    }
+
+    /// A voice is 1–64 ASCII letters or digits (`app_config.VOICE_ID`).
+    nonisolated static func validVoice(_ voice: String) -> Bool {
+        (1...64).contains(voice.unicodeScalars.count) && voice.unicodeScalars.allSatisfy {
+            ("a"..."z").contains($0) || ("A"..."Z").contains($0) || ("0"..."9").contains($0)
+        }
+    }
+
+    /// Saves the voice that reads digests. One that is not a valid Voice ID is not saved.
+    @discardableResult
+    func saveVoice(_ text: String, model: AppModel) async -> Bool {
+        let voice = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = "speech.voice"
+        guard Self.validVoice(voice) else {
+            failures[key] = BackendError(code: "invalid_voice_id", domain: "speech")
+            return false
+        }
+        guard !working.contains(key) else { return false }
+        failures[key] = nil
+        guard voice != model.config?.speechApi?.voiceId else { return true }
+        working.insert(key)
+        defer { working.remove(key) }
+        let editor = EditorState(client: model.client)
+        let saved = await editor.apply { document in
+            var document = document
+            var speech = document["speech_api"] as? [String: Any] ?? [:]
+            speech["voice_id"] = voice
+            document["speech_api"] = speech
+            return document
+        }
+        if saved {
+            savedAt[key] = editor.savedAt
+        } else {
+            failures[key] = editor.failure
+        }
+        await model.refresh()
+        await load(model: model)
+        return saved
+    }
+
+    /// What the spoken-digest row shows, by the rule of a model's row: the key, then the newest
+    /// test of this key and voice.
+    func speechStatus(model: AppModel) -> KeyStatus {
+        KeyStatus.of(credential: credentialState(model.config?.speechApi?.credentialRef), probe: speech?.check,
+                     health: nil, working: working.contains("speech.test"))
+    }
+
+    /// Whether testing again could use ElevenLabs credit twice: the last test's outcome is
+    /// unknown or it is still running (the rule of a model's check).
+    var speechNeedsConfirmation: Bool { ["outcome_unknown", "pending"].contains(speech?.check?.state ?? "") }
+
+    /// Synthesizes one short fixed sentence with the saved key and voice (`speech.check`); the
+    /// row reads the result back from `speech.status`.
+    func testSpeech(model: AppModel, confirmed: Bool = false) async {
+        let key = "speech.test"
+        guard canListen(model: model), !working.contains(key) else { return }
+        // Marked busy before anything is awaited: a second press must not start a second test.
+        working.insert(key)
+        defer { working.remove(key) }
+        // A test started elsewhere may still be running: read the newest record first.
+        await load(model: model)
+        guard confirmed || !speechNeedsConfirmation else { return }
+        failures[key] = nil
+        do {
+            _ = try await model.client.call(.speechCheck, ["request_id": BackendClient.requestId("speech")])
+        } catch {
+            failures[key] = BackendError.wrapping(error)
         }
         await load(model: model)
     }

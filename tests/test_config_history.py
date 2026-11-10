@@ -94,5 +94,5 @@ def test_upgrading_from_v24_keeps_a_paused_schedule_and_starts_history(tmp_path)
             store._db.execute("SELECT settings FROM schedule_policy").fetchone()[0]
         )
         assert settings["enabled"] is False
-        assert store._db.execute("PRAGMA user_version").fetchone()[0] == 25
+        assert store._db.execute("PRAGMA user_version").fetchone()[0] == 26
         assert changes_since(store, revision) == {"revision": revision, "changes": []}

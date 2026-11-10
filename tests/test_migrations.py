@@ -301,7 +301,7 @@ def test_v1_upgrade_preserves_import_eligibility_and_preferences(tmp_path, revis
     store = Store(path)
     new_revision, config = store.load_config()
     assert new_revision == revision + 1
-    assert config["schema_version"] == 4
+    assert config["schema_version"] == 5
     assert config["model_profiles"] == original["model_profiles"]
     assert legacy_setting(store._db, "last_slot") == "historic"
     env = tmp_path / "legacy.env"

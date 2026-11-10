@@ -319,7 +319,7 @@ class BudgetLedger:
         if operation is not None and (
             meter != "model"
             or not isinstance(operation, str)
-            or operation not in {"text", "search", "vision", "image", "stt"}
+            or operation not in {"text", "search", "vision", "image", "stt", "tts"}
         ):
             raise BudgetError("invalid_operation")
         if not isinstance(quote, dict) or type(quote.get("known")) is not bool:

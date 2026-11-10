@@ -352,9 +352,10 @@ private func connected(_ server: DigestBackend) async throws -> (AppModel, () ->
     let data = DigestsData()
     await data.load(model.client)
 
-    #expect(!(await data.trial("held", model: model)))
+    // Trying a source in order to turn it on: a try that did not really read leaves it off.
+    #expect(!(await data.trial("held", enable: true, model: model)))
     #expect(data.failures["held"]?.code == "collection_held" && data.notes["held"] == nil)
-    #expect(!(await data.trial("quiet", model: model)))
+    #expect(!(await data.trial("quiet", enable: true, model: model)))
     #expect(data.failures["quiet"]?.code == "preview_incomplete")
     #expect(server.calls("sources.save").isEmpty)
 }

@@ -1086,8 +1086,9 @@ private struct ExtraRow: View {
                     Button(model.text(L10n.Onboarding.checkAgain)) { recheck(check) }
                 }
             }
-            if let failure = extraChecks.lazy.compactMap({ data.keys.failures[KeyChecks.key($0.profile, $0.capability)] }).first {
-                FailureNote(model: model, failure: failure)
+            if let (check, failure) = data.extraFailure(newspaper: kind == .newspaper) {
+                // E.g. the first check gave no result in time: retry that same check (asking first).
+                FailureNote(model: model, failure: failure) { recheck(check) }
             }
         }
         .padding(.vertical, 8)

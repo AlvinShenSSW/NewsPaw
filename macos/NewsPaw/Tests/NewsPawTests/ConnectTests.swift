@@ -1526,3 +1526,29 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
         #expect(data.keys.failures["normal_primary"] == nil && data.keys.probes["normal_primary"]?.errorKind == "rate_limited", "\(code)")
     }
 }
+
+@Test @MainActor func anExtrasFirstCheckWithoutAResultOffersARetryOfThatSameCheck() async throws {
+    // R10-24: the automatic image check gives no result in time.
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk-synthetic-paper", profile: "normal_primary", model: model)
+    server.automaticReads = 1_000
+    data.keys.probeLimit = .milliseconds(40)
+
+    await data.setNewspaper(true, profile: "normal_primary", model: model)
+
+    let image = CapabilityCheck(profile: "normal_primary", capability: "image")
+    let note = try #require(data.extraFailure(newspaper: true))
+    #expect(note.check == image && note.failure.code == "probe_pending")
+    #expect(FailureCopy.entry(for: note.failure).action != nil)
+
+    // The retry asks first (the check may have been charged), then follows the same check.
+    #expect(data.needsConfirmation(image.profile, capability: image.capability))
+    let generation = server.generation("normal_primary")
+    server.automatic["auto.normal_primary.image.g\(generation)"]?.readsLeft = 0
+    await data.recheck(image.profile, model: model, capability: image.capability, confirmed: true)
+    let ids = Set(server.calls("models.probe").filter { $0["capability"] as? String == "image" }.compactMap { $0["probe_id"] as? String })
+    #expect(ids == ["auto.normal_primary.image.g\(generation)"])
+    #expect(data.keys.states["normal_primary"]?["image"]?.passed == true)
+}

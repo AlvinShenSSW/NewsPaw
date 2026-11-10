@@ -1577,3 +1577,19 @@ private func connected(_ server: XBackend) async throws -> (AppModel, XAccountsD
     #expect(server.stored(dave)?["partition"] as? String == "normal" && server.stored(dave)?["subscription_id"] as? String == "sub_x")
     #expect(data.accounts(in: "normal").map(\.id) == [dave])
 }
+
+@Test @MainActor func sendingAloneToNoBotThatCanReceiveItSavesNothing() async throws {
+    // R11-23: every Bot chosen in the popover stopped being usable while it was open.
+    let server = XBackend(accounts: [XBackend.account("a1", "sama", remote: "1")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    await data.sendAlone("a1", time: "21:30", bots: [], style: nil, model: model)
+
+    #expect(server.calls("x.accounts.route").isEmpty)
+    #expect(server.stored("a1")?["priority"] as? String == "normal")
+    #expect(data.failures["route.a1"]?.code == "no_ready_bot")
+    // The popover counts only Bots that can still receive it: none left means Save is off.
+    #expect(XAccountsData.aloneBots(["b1", "b2"], usable: ["b2"]) == ["b2"])
+    #expect(XAccountsData.aloneBots(["b1"], usable: []).isEmpty)
+}

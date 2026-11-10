@@ -378,3 +378,48 @@ async def test_xml_failure_is_not_website_discovery(setup, content):
     )
     with pytest.raises(SourceError, match="invalid_feed"):
         await manager.discover(URL)
+
+
+async def test_reading_a_previewed_source_again_does_not_make_it_unready(setup):
+    from datetime import timedelta
+
+    from newspaw.evidence import FeedCollector
+
+    manager, store = setup
+    s = source()
+    await manager.save(s, store.config_revision())
+    await manager.preview("s", now=NOW)
+    enabled = {**s, "enabled": True}
+    await manager.save(enabled, store.config_revision())
+    previewed = manager._epoch("s")[1]
+
+    async def collect(status, minutes):
+        client = httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda r: httpx.Response(status, content=rss()))
+        )
+        collector = FeedCollector(manager.evidence, client=client)
+        try:
+            await collector.collect(["sub_world"], now=NOW + timedelta(minutes=minutes))
+        finally:
+            await collector.close()
+        return manager.evidence.history("s")[-1]
+
+    # A digest's own collection reads the source after the preview: it stays ready (R17 F1),
+    # so a turned-on digest can still be edited and the source saved again.
+    later = await collect(200, 5)
+    assert later["id"] != previewed and later["status"] in {"fresh", "not_modified"}
+    assert manager._ready(enabled) and manager.list()[0]["preview_ready"]
+    await manager.save({**enabled, "name": "Renamed"}, store.config_revision())
+    # A read that failed since still takes it back (#17: no later failure) ...
+    failed = await collect(500, 10)
+    assert failed["status"] == "failed" and not manager._ready(enabled)
+    # ... until the source is read successfully again; the recorded preview is the same one.
+    await collect(200, 15)
+    assert manager._ready(enabled) and manager._epoch("s")[1] == previewed
+
+    # A new preview replaces the record, so one that fails takes the source back (F2).
+    manager.client_factory = lambda: httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(500))
+    )
+    assert not (await manager.preview("s", now=NOW + timedelta(minutes=20)))["preview_ready"]
+    assert not manager._ready(enabled)

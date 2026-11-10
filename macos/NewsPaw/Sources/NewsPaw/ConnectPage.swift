@@ -222,6 +222,14 @@ enum KeyStatus: Equatable {
         case .checking, .verified, .cooldown, .uncheckable: .none
         }
     }
+
+    /// Whether the row offers "Check Again" with the saved key. A rejected key does too (R17 G1):
+    /// entering the same key again starts no new check, and the address or the provider's side
+    /// may have changed since.
+    var offersRecheck: Bool {
+        if case .rejected = self { return true }
+        return action == .recheck
+    }
 }
 
 /// How a model and its provider are named on screen.
@@ -882,13 +890,10 @@ private struct ModelRow: View {
     }
 
     @ViewBuilder private func actions(_ status: KeyStatus) -> some View {
-        switch status.action {
-        case .recheck:
+        if status.offersRecheck {
             Button(model.text(L10n.Onboarding.checkAgain)) { Task { await data.recheck(profile.id, model: model, capability: capability) } }
-        case .confirmRecheck:
+        } else if status.action == .confirmRecheck {
             Button(model.text(L10n.Connect.checkAndRetry)) { confirmRetry = true }
-        case .enterKey, .reenterKey, .none:
-            EmptyView()
         }
         keyButton(status)
     }
@@ -932,7 +937,7 @@ private struct ModelRow: View {
     }
 }
 
-/// A key action is a plain button, except "Enter Again" for a rejected key, the row's one fix.
+/// A key action is a plain button, except "Enter Again" for a rejected key, the row's main fix.
 private struct KeyButtonStyle: PrimitiveButtonStyle {
     let prominent: Bool
 

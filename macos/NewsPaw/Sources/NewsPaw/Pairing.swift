@@ -575,10 +575,15 @@ final class KeyChecks {
         } catch {
             working.remove(key)
             let failure = BackendError.wrapping(error)
-            // Refused before it began: nothing is running. Otherwise the record may still exist.
-            if !["internal_error", "probe_storage_failed", "invalid_reply"].contains(failure.code) {
-                release(pending, model: model)
+            if ["internal_error", "probe_storage_failed", "invalid_reply"].contains(failure.code) {
+                // It failed while answering: the backend may still have this check (and its charge).
+                // Its own probe id is asked again until it has an outcome, never a second check.
+                try? await Task.sleep(for: pollInterval)
+                await follow(pending, model: model)
+                return
             }
+            // Refused before it began: nothing is running.
+            release(pending, model: model)
             failures[key] = failure
         }
         await model.refresh()

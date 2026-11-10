@@ -128,6 +128,9 @@ private final class ConnectBackend {
     var configSaveDelay: Duration?
     /// Runs as `models.status` is read (e.g. another window starts a newer check meanwhile).
     var onStatusRead: (() -> Void)?
+    /// The next text `models.probe` records its check, then fails while answering with this code;
+    /// asking again with the same probe id returns that check's record.
+    var probeAnswerFails: String?
 
     var client: BackendClient {
         BackendClient { [unowned self] body, _ in
@@ -415,6 +418,10 @@ private final class ConnectBackend {
             }
             let result = checks[profile]?.last ?? ["state": "verified", "status": "verified"]
             checks[profile] = [result]
+            if let failure = probeAnswerFails {
+                probeAnswerFails = nil
+                return refuse(failure, "models")
+            }
             return ok(result.filter { $0.key != "state" })
         case "models.health": return ok(["profiles": health])
         case "budget.get":
@@ -1498,4 +1505,24 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
 
     #expect(model.pendingProbes["normal_primary"] == newer)
     #expect(data.keys.probes["normal_primary"]?.state == "pending")
+}
+
+@Test @MainActor func aCheckWhoseAnswerFailedIsFollowedByItsIdUntilItHasAResult() async throws {
+    // R10-23: the backend kept the check but failed while answering.
+    for code in ["internal_error", "probe_storage_failed", "invalid_reply"] {
+        let server = ConnectBackend()
+        let (model, data, cleanup) = try await connected(server)
+        defer { cleanup() }
+        await data.saveKey("sk-synthetic-7Qx2", profile: "normal_primary", model: model)
+        server.checks["normal_primary"] = [["state": "failed", "status": "failed", "error_kind": "rate_limited"]]
+        await data.load(model: model)
+        server.probeAnswerFails = code
+
+        await data.recheck("normal_primary", model: model)
+
+        let ids = server.calls("models.probe").compactMap { $0["probe_id"] as? String }
+        #expect(ids.count == 2 && Set(ids).count == 1, "\(code)")
+        #expect(!data.keys.isChecking("normal_primary", model: model) && model.pendingProbes.isEmpty, "\(code)")
+        #expect(data.keys.failures["normal_primary"] == nil && data.keys.probes["normal_primary"]?.errorKind == "rate_limited", "\(code)")
+    }
 }

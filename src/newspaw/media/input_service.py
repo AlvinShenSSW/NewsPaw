@@ -102,7 +102,8 @@ class MediaCommands:
         ).fetchone()
         return dict(revision=revision, settings=json.loads(settings))
 
-    def configure(self, settings, revision):
+    def configure(self, settings, revision, *, restoring=False):
+        """``restoring``: a settings import onto a fresh instance, whose profiles have no keys."""
         if (
             not isinstance(settings, dict)
             or set(settings) != set(_POLICY)
@@ -133,7 +134,7 @@ class MediaCommands:
                 except ProviderError:
                     raise MediaInputError("invalid_media_settings") from None
                 if profile["partition"] != "normal" or (
-                    capability == "stt" and not supported_stt_profile(profile)
+                    capability == "stt" and not supported_stt_profile(profile, keyed=not restoring)
                 ):
                     raise MediaInputError("invalid_media_settings")
             if settings != current["settings"]:

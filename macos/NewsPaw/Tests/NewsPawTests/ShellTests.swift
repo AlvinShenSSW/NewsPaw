@@ -34,7 +34,48 @@ private func client(replying reply: String, sent: (@Sendable (Data, Int?) -> Voi
     _ = try await probe.send("models.probe", [:])
     _ = try await probe.call(.configGet)
     _ = try await probe.send("x.video.inspect", [:])
-    #expect(seen.value == [35_000, nil, 155_000])
+    // Long operations answer within ~1 s (R05) and get a short, fixed socket deadline.
+    #expect(seen.value == [35_000, nil, 5_000])
+}
+
+@Test @MainActor func aPendingLongOperationIsFollowedToItsResult() async throws {
+    let sent = Box<[[String: Any]]>([])
+    let replies = Box<[String]>([
+        #"{"ok":true,"result":{"pending":true,"request":"req_1"}}"#,
+        #"{"ok":true,"result":{"pending":true,"request":"req_1"}}"#,
+        #"{"ok":true,"result":{"attempt":{"status":"fresh"}}}"#,
+    ])
+    var backend = BackendClient { body, _ in
+        sent.value.append(try JSONSerialization.jsonObject(with: body) as! [String: Any])
+        return Data(replies.value.removeFirst().utf8)
+    }
+    backend.pollInterval = .milliseconds(1)
+    let result = try JSONSerialization.jsonObject(with: await backend.send("sources.preview", ["source_id": "s"])) as? [String: Any]
+    #expect((result?["attempt"] as? [String: Any])?["status"] as? String == "fresh")
+    #expect(sent.value.map { $0["op"] as? String } == ["sources.preview", "requests.status", "requests.status"])
+    #expect(sent.value.last?["request"] as? String == "req_1")
+}
+
+@Test @MainActor func aPendingLongOperationThatFailsThrowsItsOwnError() async throws {
+    let replies = Box<[String]>([
+        #"{"ok":true,"result":{"pending":true,"request":"req_2"}}"#,
+        #"{"ok":false,"error":"timeout","error_detail":{"code":"timeout","domain":"bots","retryable":true}}"#,
+    ])
+    var backend = BackendClient { _, _ in Data(replies.value.removeFirst().utf8) }
+    backend.pollInterval = .milliseconds(1)
+    await #expect(throws: BackendError(code: "timeout", domain: "bots", retryable: true)) {
+        _ = try await backend.send("bots.verify", ["bot_id": "b"])
+    }
+}
+
+@Test @MainActor func aResultThatLooksPendingIsNotFollowedForOrdinaryOperations() async throws {
+    let calls = Box<Int>(0)
+    let backend = BackendClient { _, _ in
+        calls.value += 1
+        return Data(#"{"ok":true,"result":{"pending":true,"request":"x"}}"#.utf8)
+    }
+    _ = try await backend.call(.configGet)
+    #expect(calls.value == 1)
 }
 
 @Test @MainActor func statusAndReadinessDecodeFromTheBackendShape() async throws {
@@ -305,3 +346,9 @@ private final class Box<Value>: @unchecked Sendable {
     #expect(try await replies.value.count == 13)
 }
 
+@Test @MainActor func configChangesDecodeFieldsAndItems() async throws {
+    let reply = #"{"ok":true,"result":{"revision":7,"changes":[{"field":"ui_locale"},{"collection":"subscriptions","id":"sub_world","fields":["times"]},{"collection":"sources","id":"s1","added":true}]}}"#
+    let changes = try await client(replying: reply).changes(since: 5)
+    #expect(changes.revision == 7 && changes.changes.count == 3)
+    #expect(changes.changes[1].fields == ["times"] && changes.changes[2].added == true)
+}

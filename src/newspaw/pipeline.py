@@ -22,6 +22,7 @@ from .media.newspaper import PaperError
 from .model_runner import ModelRunner, RunnerError
 from .providers import ProviderError
 from .routing import RouteBlocked, RouteSnapshot, RouteStale
+from .vocabulary import job_state
 from .x.digests import x_scopes
 from .x.timelines import TimelineError
 
@@ -244,6 +245,7 @@ class Pipeline:
             style=route["style"],
             stage=stage,
             status=status,
+            state=job_state(status),
             paused=bool(row["paused"]),
             cancelled=bool(row["cancelled"]),
             lease_until=row["lease_until"],

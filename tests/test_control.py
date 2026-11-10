@@ -922,3 +922,487 @@ async def test_a_keychain_failure_rejects_the_save_without_rotating(control, mon
     server.credentials.backend.failure = None
     assert reply == {"ok": False, "error": "keychain_denied"}
     assert store.load_config() == before
+
+
+async def _slow(seconds, result=None, error=None):
+    await asyncio.sleep(seconds)
+    if error is not None:
+        raise error
+    return result
+
+
+async def _resolve(server, reply, *, polls=200):
+    while reply.get("ok") and isinstance(reply["result"], dict) and reply["result"].get("pending"):
+        polls -= 1
+        assert polls > 0
+        await asyncio.sleep(0.01)
+        reply = await raw_request(
+            server, {"op": "requests.status", "request": reply["result"]["request"]}
+        )
+    return reply
+
+
+async def test_a_fast_long_operation_replies_directly(control, monkeypatch):
+    from newspaw import control as module
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 1)
+    monkeypatch.setattr(server.sources, "preview", lambda source_id: _slow(0, {"done": source_id}))
+    reply = await raw_request(server, {"op": "sources.preview", "source_id": "s1"})
+    assert reply == {"ok": True, "result": {"done": "s1"}}
+    assert server._requests == {}
+
+
+async def test_a_slow_long_operation_returns_a_handle_then_its_result(control, monkeypatch):
+    from newspaw import control as module
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.02)
+    monkeypatch.setattr(
+        server.sources, "preview", lambda source_id: _slow(0.15, {"done": source_id})
+    )
+    started = asyncio.get_running_loop().time()
+    first = await raw_request(server, {"op": "sources.preview", "source_id": "s1"})
+    # The connection is answered long before the operation finishes.
+    assert asyncio.get_running_loop().time() - started < 0.12
+    assert first["ok"] and first["result"]["pending"] is True
+    handle = first["result"]["request"]
+    assert await raw_request(server, {"op": "requests.status", "request": handle}) == first
+    assert await _resolve(server, first) == {"ok": True, "result": {"done": "s1"}}
+    # A result is handed out once.
+    gone = await raw_request(server, {"op": "requests.status", "request": handle})
+    assert gone["error"] == "unknown_request"
+
+
+async def test_a_deferred_failure_keeps_its_operations_domain(control, monkeypatch):
+    from newspaw import control as module
+    from newspaw.source_manager import SourceError
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.02)
+    monkeypatch.setattr(
+        server.sources, "discover", lambda url: _slow(0.1, error=SourceError("unsupported_source"))
+    )
+    first = await raw_request(server, {"op": "sources.discover", "url": "https://example.com"})
+    assert first["result"]["pending"] is True
+    final = await _resolve(server, first)
+    assert final == {
+        "ok": False,
+        "error": "unsupported_source",
+        "error_detail": {"code": "unsupported_source", "domain": "sources", "retryable": False},
+    }
+
+
+async def test_a_long_operation_past_its_deadline_answers_timeout_but_is_not_cut(
+    control, monkeypatch
+):
+    from newspaw import control as module
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.02)
+    monkeypatch.setitem(module.LONG_OPERATIONS, "bots.verify", 0.1)
+    finished = asyncio.Event()
+
+    async def verify(bot_id, generation=None):
+        # Cutting a Bot check midway would leave it unpaired; it must run to its end.
+        await asyncio.sleep(0.3)
+        finished.set()
+        return {}
+
+    monkeypatch.setattr(server.bots, "verify", verify)
+    first = await raw_request(server, {"op": "bots.verify", "bot_id": "b1"})
+    final = await _resolve(server, first)
+    assert final["error"] == "timeout"
+    assert final["error_detail"] == {"code": "timeout", "domain": "bots", "retryable": True}
+    assert not finished.is_set()
+    await asyncio.wait_for(finished.wait(), 2)
+
+
+async def test_handles_expire_are_bounded_and_unknown_ones_are_refused(control, monkeypatch):
+    from newspaw import control as module
+
+    server, _ = control
+    assert (await raw_request(server, {"op": "requests.status", "request": "req_nope"}))[
+        "error"
+    ] == "unknown_request"
+    assert (await raw_request(server, {"op": "requests.status", "request": ["x"]}))[
+        "error"
+    ] == "unknown_request"
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.01)
+    monkeypatch.setattr(module, "REQUEST_LIMIT", 3)
+    monkeypatch.setattr(server.sources, "preview", lambda source_id: _slow(0.05, source_id))
+    handles = []
+    for index in range(5):
+        reply = await raw_request(server, {"op": "sources.preview", "source_id": f"s{index}"})
+        handles.append(reply["result"]["request"])
+        await asyncio.sleep(0.08)  # each finishes before the next starts
+    # Only the newest finished results are kept.
+    assert len(server._requests) <= 3
+    assert handles[-1] in server._requests and handles[0] not in server._requests
+    monkeypatch.setattr(module, "REQUEST_KEEP", 0)
+    assert (await raw_request(server, {"op": "requests.status", "request": handles[-1]}))[
+        "error"
+    ] == "unknown_request"
+
+
+async def test_close_lets_a_long_operation_finish_then_cancels_one_that_overruns(
+    control, monkeypatch
+):
+    from newspaw import control as module
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.01)
+    monkeypatch.setattr(module, "LONG_CLOSE_WAIT", 0.2)
+    cancelled = asyncio.Event()
+
+    async def hang(url):
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    monkeypatch.setattr(server.sources, "discover", hang)
+    first = await raw_request(server, {"op": "sources.discover", "url": "https://example.com"})
+    assert first["result"]["pending"] is True
+    await server.close()
+    assert cancelled.is_set()
+
+
+async def test_close_waits_for_a_long_operation_that_finishes_in_time(control, monkeypatch):
+    from newspaw import control as module
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.01)
+    done = asyncio.Event()
+
+    async def verify(bot_id, generation=None):
+        await asyncio.sleep(0.1)
+        done.set()
+        return {}
+
+    monkeypatch.setattr(server.bots, "verify", verify)
+    first = await raw_request(server, {"op": "bots.verify", "bot_id": "b1"})
+    assert first["result"]["pending"] is True
+    await server.close()
+    assert done.is_set()
+
+
+@pytest.fixture
+async def two_controls():
+    with (
+        tempfile.TemporaryDirectory(prefix="np-") as a,
+        tempfile.TemporaryDirectory(prefix="np-") as b,
+    ):
+        servers = []
+        for folder in (a, b):
+            store = Store(Path(folder) / "state.db")
+            server = ControlServer(Path(folder), CredentialManager(store, FakeKeychain()))
+            await server.start()
+            servers.append((server, store))
+        yield servers
+        for server, store in servers:
+            await server.close()
+            store.close()
+
+
+def _bump(read, configure, change):
+    revision, settings = read()
+    configure(change(json.loads(json.dumps(settings))), revision)
+
+
+async def test_policies_travel_with_exported_settings(two_controls):
+    (source, _), (target, _) = two_controls
+    policies = source.operations.policies
+
+    def budget(document):
+        document["model"]["monthly_limit"] = 30_000_000
+        return document
+
+    def schedule(settings):
+        settings["holds"]["normal"] = 700_000
+        return settings
+
+    _bump(*policies["budget"], budget)
+    _bump(*policies["schedule"], schedule)
+    _bump(*policies["newspaper"], lambda settings: {**settings, "pages": 2})
+    _bump(*policies["x_video"], lambda settings: {**settings, "daily_limit": 5})
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    assert set(exported["policies"]) == {
+        "budget",
+        "schedule",
+        "newspaper",
+        "media",
+        "x_video",
+        "x_alerts",
+    }
+
+    preview = (await request(target, {"op": "ops.preview_import", "portable": exported}))["result"]
+    assert preview["changed_policies"] == ["budget", "newspaper", "schedule", "x_video"]
+    applied = await request(
+        target,
+        {
+            "op": "ops.apply_import",
+            "portable": exported,
+            "digest": preview["digest"],
+            "revision": preview["revision"],
+        },
+    )
+    assert applied["ok"], applied
+    after = target.operations._current_policies()
+    for name in ("budget", "newspaper", "media", "x_video", "x_alerts"):
+        assert after[name] == exported["policies"][name], name
+    # Scheduling stays off after a restore; everything else in its policy arrived.
+    assert after["schedule"] == {**exported["policies"]["schedule"], "enabled": False}
+
+
+async def test_a_policy_the_owner_refuses_is_reported_by_preview(two_controls):
+    (source, _), (target, target_store) = two_controls
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    exported["policies"]["x_video"]["daily_limit"] = 999  # beyond the owner's limit of 20
+    before = target_store.config_revision(), target.operations._current_policies()
+    refused = await request(target, {"op": "ops.preview_import", "portable": exported})
+    assert refused["ok"] is False and refused["error"] == "invalid_video_budget"
+    # The preview's trial writes were rolled back.
+    assert (target_store.config_revision(), target.operations._current_policies()) == before
+
+
+async def test_a_video_policy_naming_profiles_survives_a_restore(two_controls, monkeypatch):
+    (source, source_store), (target, _) = two_controls
+    read, configure = source.operations.policies["x_video"]
+    revision, config = source_store.load_config()
+    for profile in config["model_profiles"]:
+        if profile["id"] == "normal_primary":
+            profile["capabilities"] = ["text", "vision"]
+    with source_store._write():
+        source_store._db.execute(
+            "UPDATE app_configuration SET revision=revision+1,document=? WHERE id=1",
+            (json.dumps(config),),
+        )
+    video_revision, settings = read()
+    source.videos.configure({**settings, "vision_profiles": ["normal_primary"]}, video_revision)
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    assert exported["policies"]["x_video"]["vision_profiles"] == ["normal_primary"]
+    preview = (await request(target, {"op": "ops.preview_import", "portable": exported}))["result"]
+    applied = await request(
+        target,
+        {
+            "op": "ops.apply_import",
+            "portable": exported,
+            "digest": preview["digest"],
+            "revision": preview["revision"],
+        },
+    )
+    assert applied["ok"], applied
+    assert target.operations._current_policies()["x_video"]["vision_profiles"] == ["normal_primary"]
+
+
+async def test_an_export_from_before_policies_still_imports(two_controls):
+    (source, _), (target, _) = two_controls
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    unknown = {**exported, "policies": {"telemetry": {}}}
+    assert (await request(target, {"op": "ops.preview_import", "portable": unknown}))[
+        "error"
+    ] == "invalid_portable_settings"
+    exported.pop("policies")
+    before = target.operations._current_policies()
+    preview = (await request(target, {"op": "ops.preview_import", "portable": exported}))["result"]
+    assert preview["changed_policies"] == []
+    applied = await request(
+        target,
+        {
+            "op": "ops.apply_import",
+            "portable": exported,
+            "digest": preview["digest"],
+            "revision": preview["revision"],
+        },
+    )
+    assert applied["ok"] and target.operations._current_policies() == before
+
+
+async def test_config_changes_since_reports_a_background_bump(control):
+    server, store = control
+    revision, document = store.load_config()
+    document["news_output_locale"] = "en"
+    store.save_config(document, expected_revision=revision)
+    reply = await request(server, {"op": "config.changes_since", "revision": revision})
+    assert reply == {
+        "ok": True,
+        "result": {"revision": revision + 1, "changes": [{"field": "news_output_locale"}]},
+    }
+    gone = await raw_request(server, {"op": "config.changes_since", "revision": 99})
+    assert gone["error"] == "invalid_revision" and gone["error_detail"]["domain"] == "config"
+
+
+async def test_speech_policies_naming_a_profile_survive_a_restore(two_controls):
+    (source, source_store), (target, _) = two_controls
+    revision, config = source_store.load_config()
+    for profile in config["model_profiles"]:
+        if profile["id"] == "normal_primary":
+            profile["capabilities"] = ["text", "vision", "stt"]
+            profile["credential_ref"] = "keychain:00000000-0000-0000-0000-000000000009"
+    with source_store._write():
+        source_store._db.execute(
+            "UPDATE app_configuration SET revision=revision+1,document=? WHERE id=1",
+            (json.dumps(config),),
+        )
+    media_revision, media = source.operations.policies["media"][0]()
+    source.media.configure({**media, "stt_profile": "normal_primary"}, media_revision)
+    video_revision, video = source.operations.policies["x_video"][0]()
+    source.videos.configure({**video, "stt_profiles": ["normal_primary"]}, video_revision)
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    preview = await request(target, {"op": "ops.preview_import", "portable": exported})
+    assert preview["ok"], preview
+    applied = await request(
+        target,
+        {
+            "op": "ops.apply_import",
+            "portable": exported,
+            "digest": preview["result"]["digest"],
+            "revision": preview["result"]["revision"],
+        },
+    )
+    assert applied["ok"], applied
+    after = target.operations._current_policies()
+    assert after["media"]["stt_profile"] == "normal_primary"
+    assert after["x_video"]["stt_profiles"] == ["normal_primary"]
+
+
+async def test_finished_results_stay_capped_while_nobody_asks(control, monkeypatch):
+    from newspaw import control as module
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.01)
+    monkeypatch.setattr(module, "REQUEST_LIMIT", 3)
+    release = asyncio.Event()
+
+    async def preview(source_id):
+        await release.wait()
+        return source_id
+
+    monkeypatch.setattr(server.sources, "preview", preview)
+    for index in range(6):
+        reply = await raw_request(server, {"op": "sources.preview", "source_id": f"s{index}"})
+        assert reply["result"]["pending"] is True
+    release.set()
+    await asyncio.sleep(0.05)
+    assert len(server._requests) <= 3
+
+
+async def test_policies_naming_a_profile_the_export_leaves_out_still_restore(two_controls):
+    (source, source_store), (target, _) = two_controls
+    revision, config = source_store.load_config()
+    custom = next(p for p in config["model_profiles"] if p["id"] == "normal_backup")
+    config["model_profiles"].append(
+        {**custom, "id": "custom_vision", "provider": "self_hosted", "capabilities": ["vision"]}
+    )
+    source_store.save_config(config, expected_revision=revision)
+    media_revision, media = source.operations.policies["media"][0]()
+    source.media.configure({**media, "vision_profile": "custom_vision"}, media_revision)
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    assert "custom_vision" not in {p["id"] for p in exported["settings"]["model_profiles"]}
+    assert exported["policies"]["media"]["vision_profile"] is None
+    assert exported["policies"]["media"]["vision_hold"] is None
+    preview = await request(target, {"op": "ops.preview_import", "portable": exported})
+    assert preview["ok"], preview
+
+
+async def test_alert_rules_for_an_account_no_longer_special_still_restore(two_controls):
+    (source, source_store), (target, _) = two_controls
+    revision, config = source_store.load_config()
+    config["accounts"] = [
+        dict(
+            id=name,
+            remote_id=None,
+            handle=name,
+            partition="normal",
+            priority="special",
+            subscription_id="sub_x",
+            bot_ids=None,
+            times=None,
+            style=None,
+        )
+        for name in ("demoted", "removed")
+    ]
+    source_store.save_config(config, expected_revision=revision)
+    alert_revision, settings = source.operations.policies["x_alerts"][0]()
+    rules = [
+        dict(subscription_id="sub_x", account_id=None, phrase="launch"),
+        dict(subscription_id="sub_x", account_id="demoted", phrase="launch"),
+        dict(subscription_id="sub_x", account_id="removed", phrase="launch"),
+    ]
+    source.alerts.configure(
+        {**settings, "enabled": True, "daily_limit": 1, "rules": rules}, alert_revision
+    )
+    # The account changes after its rules were saved; the alert policy keeps them.
+    revision, config = source_store.load_config()
+    config["accounts"] = [{**config["accounts"][0], "priority": "normal"}]
+    source_store.save_config(config, expected_revision=revision)
+
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    assert exported["policies"]["x_alerts"]["rules"] == rules[:1]
+    assert exported["policies"]["x_alerts"]["enabled"] is True
+    preview = await request(target, {"op": "ops.preview_import", "portable": exported})
+    assert preview["ok"], preview
+
+    # With no rule left in scope, the exported policy is turned off rather than refused.
+    revision, config = source_store.load_config()
+    config["accounts"] = []
+    source_store.save_config(config, expected_revision=revision)
+    alert_revision, settings = source.operations.policies["x_alerts"][0]()
+    with source_store._write():
+        source_store._db.execute(
+            "UPDATE x_alert_policy SET settings=? WHERE id=1",
+            (json.dumps({**settings, "rules": rules[2:]}),),
+        )
+    exported = (await request(source, {"op": "ops.export_settings"}))["result"]
+    assert exported["policies"]["x_alerts"]["rules"] == []
+    assert exported["policies"]["x_alerts"]["enabled"] is False
+    preview = await request(target, {"op": "ops.preview_import", "portable": exported})
+    assert preview["ok"], preview
+
+
+def test_an_exported_newspaper_missing_a_model_is_turned_off():
+    from newspaw.operations import _portable_policy_refs
+
+    paper = {
+        "enabled": True,
+        "generation_profile": "normal_primary",
+        "backup_profile": None,
+        "vision_profile": "custom_vision",
+        "pages": 1,
+        "generation_hold": 1,
+        "vision_hold": 1,
+        "task_limit": None,
+    }
+    out = _portable_policy_refs({"newspaper": paper}, {"normal_primary"})["newspaper"]
+    assert out["vision_profile"] is None and out["enabled"] is False
+    kept = _portable_policy_refs(
+        {"newspaper": {**paper, "vision_profile": "normal_primary"}}, {"normal_primary"}
+    )["newspaper"]
+    assert kept["enabled"] is True
+
+
+async def test_a_finished_result_is_kept_while_others_are_still_running(control, monkeypatch):
+    from newspaw import control as module
+
+    server, _ = control
+    monkeypatch.setattr(module, "REQUEST_WAIT", 0.01)
+    monkeypatch.setattr(module, "REQUEST_LIMIT", 2)
+    gates = {f"s{index}": asyncio.Event() for index in range(4)}
+
+    async def preview(source_id):
+        await gates[source_id].wait()
+        return source_id
+
+    monkeypatch.setattr(server.sources, "preview", preview)
+    handles = {}
+    for source_id in gates:
+        reply = await raw_request(server, {"op": "sources.preview", "source_id": source_id})
+        handles[source_id] = reply["result"]["request"]
+    gates["s0"].set()
+    await asyncio.sleep(0.05)
+    done = await raw_request(server, {"op": "requests.status", "request": handles["s0"]})
+    assert done == {"ok": True, "result": "s0"}
+    for gate in gates.values():
+        gate.set()

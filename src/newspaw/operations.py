@@ -26,9 +26,11 @@ from .media.source_images import AssetStore, ImageError
 from .migrations import DATABASE_VERSION
 from .newsparse import public_url
 from .providers import ProfileRegistry
+from .routing import resolve_route
 from .scheduler import _LEASE_STATES, _TERMINAL
 from .scheduler import _policy as schedule_default
 from .x.alerts import _DEFAULT as X_ALERT_DEFAULT
+from .x.alerts import in_alert_scope
 from .x.video import _DEFAULT as X_VIDEO_DEFAULT
 
 _FORMAT = 1
@@ -70,6 +72,7 @@ _SETTINGS_DEFAULTS = {
 }
 _INITIAL_TABLES = {
     "app_configuration",
+    "app_configuration_history",
     "migration_info",
     "budget_policy",
     "schedule_policy",
@@ -173,6 +176,51 @@ def _safe_counts(values, allowed):
     return dict(Counter(value if value in allowed else "other" for value in values))
 
 
+def _portable_policy_refs(policies, available, config=None, revision=1):
+    """Policies may name model profiles the export leaves out (custom providers); those
+    references are cleared, and a policy left without the model it needs is turned off.
+    Alert rules whose subscription or account is no longer a special X scope in `config`
+    (removed or demoted since the rule was saved) are dropped the same way."""
+    policies = deepcopy(policies)
+    paper = policies.get("newspaper")
+    if paper:
+        for role in ("generation_profile", "backup_profile", "vision_profile"):
+            if paper.get(role) not in available:
+                paper[role] = None
+        # An enabled newspaper needs both its image and its vision model.
+        if paper["generation_profile"] is None or paper["vision_profile"] is None:
+            paper["enabled"] = False
+    media = policies.get("media")
+    if media:
+        for capability in ("vision", "stt"):
+            if media.get(capability + "_profile") not in available:
+                media[capability + "_profile"] = None
+                media[capability + "_hold"] = None
+    video = policies.get("x_video")
+    if video:
+        for capability in ("vision", "stt"):
+            video[capability + "_profiles"] = [
+                identity for identity in video[capability + "_profiles"] if identity in available
+            ]
+        if video["enabled"] and not (video["vision_profiles"] and video["stt_profiles"]):
+            video["enabled"] = False
+    alerts = policies.get("x_alerts")
+    if alerts:
+        alerts["rules"] = [
+            rule
+            for rule in alerts["rules"]
+            if in_alert_scope(
+                resolve_route(
+                    config, revision, rule["subscription_id"], account_id=rule["account_id"]
+                ),
+                rule["account_id"],
+            )
+        ]
+        if not alerts["rules"]:
+            alerts["enabled"] = False
+    return policies
+
+
 def _scrub_settings(document):
     config = deepcopy(document)
     omitted = Counter()
@@ -247,8 +295,10 @@ class Operations:
         clock=_now,
         purge_x=None,
         log_directory=None,
+        policies=None,
     ):
         self.store, self.db = store, store._db
+        self.policies = policies or {}
         self.directory = Path(directory)
         self.database_name = Path(self.db.execute("PRAGMA database_list").fetchone()[2]).name
         self.process_status, self.clock = process_status, clock
@@ -265,9 +315,19 @@ class Operations:
     def _columns(db, name):
         return {row[0] for row in db.execute("SELECT name FROM pragma_table_info(?)", (name,))}
 
+    def _current_policies(self):
+        return {name: read()[1] for name, (read, _) in self.policies.items()}
+
     def export_settings(self):
-        config, omitted = _scrub_settings(self.store.load_config()[1])
-        portable = dict(format=_FORMAT, settings=config, omitted=omitted)
+        revision, document = self.store.load_config()
+        config, omitted = _scrub_settings(document)
+        available = {profile["id"] for profile in config["model_profiles"]}
+        portable = dict(
+            format=_FORMAT,
+            settings=config,
+            omitted=omitted,
+            policies=_portable_policy_refs(self._current_policies(), available, config, revision),
+        )
         if len(_json(portable).encode()) > _MAX_PORTABLE:
             raise OperationsError("settings_not_portable")
         return portable
@@ -330,7 +390,14 @@ class Operations:
     def _portable(self, value):
         if (
             not isinstance(value, dict)
-            or set(value) != {"format", "settings", "omitted"}
+            or not {"format", "settings", "omitted"}
+            <= set(value)
+            <= {
+                "format",
+                "settings",
+                "omitted",
+                "policies",
+            }
             or type(value["format"]) is not int
             or value["format"] != _FORMAT
             or not isinstance(value["settings"], dict)
@@ -371,9 +438,24 @@ class Operations:
             raise OperationsError("invalid_portable_settings") from None
         return normalized, dict(Counter(omitted) + Counter(additional))
 
+    def _portable_policies(self, value):
+        """Policies in an export (absent in exports before E10 R05). Each owner validates its
+        own on apply; here only the shape is checked. Scheduling stays off after a restore."""
+        policies = value.get("policies", {}) if isinstance(value, dict) else {}
+        if not isinstance(policies, dict) or set(policies) - set(self.policies):
+            raise OperationsError("invalid_portable_settings")
+        if any(not isinstance(item, dict) for item in policies.values()):
+            raise OperationsError("invalid_portable_settings")
+        policies = deepcopy(policies)
+        if "schedule" in policies:
+            policies["schedule"]["enabled"] = False
+        return policies
+
     def _preview(self, value):
         revision = self._fresh()
         settings, omitted = self._portable(value)
+        policies = self._portable_policies(value)
+        current = self._current_policies()
         summary = {
             name: len(settings[name])
             for name in (
@@ -385,16 +467,42 @@ class Operations:
                 "model_profiles",
             )
         }
-        digest = hashlib.sha256(_json([revision, settings, omitted]).encode()).hexdigest()
+        self._try_policies(settings, revision, policies)
+        digest = hashlib.sha256(_json([revision, settings, omitted, policies]).encode()).hexdigest()
         return dict(
             revision=revision,
             digest=digest,
             settings=settings,
             omitted=omitted,
+            policies=policies,
+            # Which policies the import would change on this instance.
+            changed_policies=sorted(name for name in policies if policies[name] != current[name]),
             counts=summary,
             scheduling="disabled",
             requires_pairing=bool(settings["bots"]),
         )
+
+    def _apply_policies(self, policies):
+        for name, (read, configure) in self.policies.items():
+            if name in policies:
+                configure(policies[name], read()[0])
+
+    def _try_policies(self, settings, revision, policies):
+        """Runs the import's writes and rolls them back, so the preview reports any policy an
+        owner would refuse against the imported configuration."""
+
+        class _Undo(Exception):
+            pass
+
+        if not policies:
+            return
+        try:
+            with self.store._write():
+                self.store._save_config_tx(settings, revision)
+                self._apply_policies(policies)
+                raise _Undo
+        except _Undo:
+            pass
 
     def preview_import(self, value):
         return self._preview(value)
@@ -409,6 +517,9 @@ class Operations:
             if digest != preview["digest"] or revision != preview["revision"]:
                 raise OperationsError("preview_changed")
             updated = self.store._save_config_tx(preview["settings"], revision)
+            # Each owner validates and stores its policy against the configuration just saved;
+            # any refusal rolls the whole import back.
+            self._apply_policies(preview["policies"])
         return {
             "revision": updated,
             "scheduling": "disabled",

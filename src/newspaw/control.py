@@ -14,14 +14,17 @@ import socket
 import stat
 import struct
 import sys
+import time
 from contextlib import suppress
 from dataclasses import asdict
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from uuid import uuid4
 
 from . import __version__
 from .budget import BudgetError, BudgetLedger
+from .config_history import changes_since
 from .connectors.web_search import WebSearch
 from .credentials import CredentialError
 from .errors import code_of, detail
@@ -53,6 +56,25 @@ from .x.video import Videos
 MAX_FRAME = 8 * 1024 * 1024
 AUTO_PROBE_HOLD = 10_000  # $0.01 for one short capability check (E10 contract §2).
 _LOG = logging.getLogger(__name__)
+
+# E10 R05: operations that may wait on the network. Each runs as a background task; the connection
+# waits at most REQUEST_WAIT, then the reply is a pending handle that `requests.status` resolves.
+# Past its deadline (seconds) the handle answers `timeout`, but the operation is never cancelled
+# for it: each finishes within its own bounded network timeouts and records its own outcome (a
+# Bot check cut midway would lose the Bot's pairing). Deadlines sit above those inner bounds.
+LONG_OPERATIONS = {
+    "sources.discover": 60,
+    "sources.preview": 90,
+    "bots.verify": 90,
+    "x.accounts.add": 60,
+    "x.video.inspect": 170,
+}
+REQUEST_WAIT = 1.0
+# On shutdown, long operations get this long (seconds) to finish before they are cancelled; a Bot
+# check needs at most two 35 s Telegram calls plus a Keychain read.
+LONG_CLOSE_WAIT = 80
+REQUEST_KEEP = 600  # A finished result waits this long (seconds) to be read.
+REQUEST_LIMIT = 64
 # Only a bounded ASCII name may become an error domain; anything else stays "protocol".
 _OP_NAME = re.compile(r"[a-z][a-z0-9_]{0,31}(?:\.[a-z][a-z0-9_]{0,31}){0,3}")
 OPERATIONS = {
@@ -64,6 +86,7 @@ OPERATIONS = {
     "ops.verify_backup": ({"name"}, set()),
     "ops.cleanup": (set(), {"apply", "limit", "retention_days"}),
     "service.status": (set(), set()),
+    "requests.status": ({"request"}, set()),
     "setup.readiness": (set(), set()),
     "service.stop": (set(), set()),
     "schedule.status": (set(), {"limit"}),
@@ -165,6 +188,7 @@ OPERATIONS = {
     "budget.save": ({"document", "revision"}, set()),
     "config.get": (set(), set()),
     "config.save": ({"document", "revision"}, set()),
+    "config.changes_since": ({"revision"}, set()),
     "route.preview": ({"subscription_id"}, {"account_id", "style"}),
     "credentials.set": ({"kind", "id", "value", "revision"}, set()),
     "credentials.remove": ({"kind", "id", "revision"}, set()),
@@ -259,6 +283,7 @@ class ControlServer:
             ),
             purge_x=self.x_posts.purge_expired,
             log_directory=log_directory,
+            policies=self._policies(),
         )
         self._server = None
         self._lock_fd = None
@@ -267,6 +292,33 @@ class ControlServer:
         self._stop_requested = asyncio.Event()
         self._background = set()
         self._started_at = None
+        self._requests = {}  # handle -> [op, task, finished_at, deadline]
+        self._long_tasks = set()
+
+    def _policies(self):
+        """Policies that travel with exported settings (E10 R05), in import order: each is
+        `(read() -> (revision, settings), configure(settings, revision))` on its owner."""
+        ledger = BudgetLedger(self.credentials.store)
+
+        def read(owner):
+            return lambda: (lambda p: (p["revision"], p["settings"]))(owner.policy())
+
+        return {
+            "budget": (ledger.policy, ledger.configure),
+            "schedule": (read(self.scheduler), self.scheduler.configure),
+            "newspaper": (read(self.newspapers), self.newspapers.configure),
+            "media": (
+                read(self.media),
+                lambda settings, revision: self.media.configure(settings, revision, restoring=True),
+            ),
+            "x_video": (
+                read(self.videos),
+                lambda settings, revision: self.videos.configure(
+                    settings, revision, restoring=True
+                ),
+            ),
+            "x_alerts": (lambda: self.alerts._policy()[:2], self.alerts.configure),
+        }
 
     async def start(self):
         if self._server is not None:
@@ -320,6 +372,9 @@ class ControlServer:
         await self.scheduler.close()
         if self._handlers:
             await asyncio.gather(*self._handlers, return_exceptions=True)
+        # Long operations are allowed to finish (see LONG_OPERATIONS) before anything is cancelled.
+        if self._long_tasks:
+            await asyncio.wait(tuple(self._long_tasks), timeout=LONG_CLOSE_WAIT)
         # After the last handler: none can start another background check now.
         while self._background:
             for task in tuple(self._background):
@@ -385,6 +440,10 @@ class ControlServer:
             raise error
         if op == "service.stop":
             self._stop_requested.set()
+        if op == "requests.status":
+            return self._request_status(data["request"])
+        if op == "config.changes_since":
+            return changes_since(self.credentials.store, data["revision"])
         if op in {"service.status", "service.stop"}:
             return {
                 "protocol_version": 1,
@@ -682,6 +741,64 @@ class ControlServer:
             return await manager.import_preferences(data["path"], data["revision"])
         return await manager.import_secrets(data["path"], data["revision"])
 
+    async def _long(self, data):
+        """Runs a network-bound operation in the background (E10 R05).
+
+        The caller gets the reply if it is ready within REQUEST_WAIT, otherwise a handle to read
+        later with `requests.status`; the operation keeps its own deadline either way.
+        """
+        deadline = time.monotonic() + LONG_OPERATIONS[data["op"]]
+        task = asyncio.create_task(self._dispatch(data))
+        for tracked in (self._background, self._long_tasks):
+            tracked.add(task)
+            task.add_done_callback(tracked.discard)
+        done, _ = await asyncio.wait({task}, timeout=REQUEST_WAIT)
+        if done:
+            return task.result()
+        self._prune_requests()
+        handle = "req_" + uuid4().hex
+        self._requests[handle] = [data["op"], task, None, deadline]
+        task.add_done_callback(lambda finished: self._request_finished(handle, finished))
+        return {"pending": True, "request": handle}
+
+    def _request_finished(self, handle, task):
+        if handle in self._requests:
+            self._requests[handle][2] = time.monotonic()
+        if not task.cancelled():
+            task.exception()  # Kept for `requests.status`; never logged as unretrieved.
+        # Keep the cap even while nobody is asking (finished results only; nothing is cancelled).
+        self._prune_requests()
+
+    def _prune_requests(self):
+        now = time.monotonic()
+        finished = sorted(
+            (entry[2], handle) for handle, entry in self._requests.items() if entry[2] is not None
+        )
+        # Only finished results count toward the cap; running operations are never evicted and
+        # do not push a finished result out.
+        kept = len(finished)
+        for when, handle in finished:
+            if now - when > REQUEST_KEEP or kept > REQUEST_LIMIT:
+                del self._requests[handle]
+                kept -= 1
+
+    def _request_status(self, handle):
+        self._prune_requests()
+        entry = self._requests.get(handle) if isinstance(handle, str) else None
+        if entry is None:
+            raise CredentialError("unknown_request")
+        _, task, _, deadline = entry
+        if not task.done():
+            if time.monotonic() < deadline:
+                return {"pending": True, "request": handle}
+            # The caller stops waiting; the operation still finishes and records its outcome.
+            del self._requests[handle]
+            raise CredentialError("timeout")
+        del self._requests[handle]
+        if task.cancelled():
+            raise CredentialError("service_stopping")
+        return task.result()
+
     @staticmethod
     def _failure(code, domain, field=None):
         return {"ok": False, "error": code, "error_detail": detail(code, domain, field)}
@@ -712,7 +829,15 @@ class ControlServer:
                 ):
                     op = data["op"]
                     domain = op.split(".", 1)[0]
-                result = await self._dispatch(data)
+                    handle = data.get("request") if op == "requests.status" else None
+                    pending = self._requests.get(handle) if isinstance(handle, str) else None
+                    if pending is not None:
+                        # A deferred failure keeps the domain of the operation that produced it.
+                        domain = pending[0].split(".", 1)[0]
+                if op in LONG_OPERATIONS and not self._stop_requested.is_set():
+                    result = await self._long(data)
+                else:
+                    result = await self._dispatch(data)
                 response = {"ok": True, "result": result}
             except (CredentialError, BudgetError, ProviderError, TelegramError, SourceError) as exc:
                 response = self._failure(str(exc), domain, getattr(exc, "field", None))

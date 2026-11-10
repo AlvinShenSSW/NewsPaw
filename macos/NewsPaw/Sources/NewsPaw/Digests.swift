@@ -311,15 +311,16 @@ final class DigestsData {
             return
         }
         await load(model.client)
-        if await trial(id, model: model), !subscription.followsCategory {
+        if await trial(id, enable: true, model: model), !subscription.followsCategory {
             await include(id, in: subscription.id, true, model: model)
         }
     }
 
-    /// Tries a source (`sources.preview`). A source that is not on yet is turned on when the
-    /// try worked. Returns whether the source is now on.
+    /// Tries a source (`sources.preview`). With `enable` ("Try, Then Turn On"), a source that is
+    /// not on yet is turned on when the try worked; a plain "Try Now" only reads it and leaves its
+    /// on/off state as the owner set it. Returns whether the source is now on.
     @discardableResult
-    func trial(_ id: String, model: AppModel) async -> Bool {
+    func trial(_ id: String, enable: Bool = false, model: AppModel) async -> Bool {
         working.insert(id)
         defer { working.remove(id) }
         notes[id] = nil
@@ -336,7 +337,7 @@ final class DigestsData {
                     "count": String(result.entries.count), "time": OverviewData.clock(latest),
                 ]))
             }
-            if result.previewReady, failures[id] == nil, let stored = sources.first(where: { $0.id == id }), !stored.source.enabled {
+            if enable, result.previewReady, failures[id] == nil, let stored = sources.first(where: { $0.id == id }), !stored.source.enabled {
                 try await setSource(id, enabled: true, model: model)
             }
         } catch {
@@ -360,7 +361,7 @@ final class DigestsData {
     func toggle(_ item: SourceItem, in subscription: AppConfig.Subscription, _ on: Bool, model: AppModel) async {
         do {
             if on, !item.source.enabled {
-                guard await trial(item.id, model: model) else { return }
+                guard await trial(item.id, enable: true, model: model) else { return }
             } else if subscription.followsCategory {
                 try await setSource(item.id, enabled: on, model: model)
             }
@@ -519,11 +520,14 @@ final class DigestsData {
             // Chosen from the newest stored sources (not the page's earlier snapshot): a digest's
             // own list names only sources that are on, since a listed source that is off blocks it
             // (`source_disabled`); sources still off stay in the category, ready to be added.
+            // A digest with its own list divides only that list (sources the owner left out stay out);
+            // one following its category divides the category's sources.
             let category = subscription.categoryId
             let own = Set(subscriptions[index]["source_ids"] as? [String] ?? [])
+            let explicit = Self.draft(subscriptions[index])["source_mode"] as? String == "explicit"
             let candidates = (document["sources"] as? [[String: Any]] ?? []).filter { source in
                 guard source["enabled"] as? Bool == true, let sid = source["id"] as? String else { return false }
-                return (source["category_ids"] as? [String] ?? []).contains(category) || own.contains(sid)
+                return explicit ? own.contains(sid) : (source["category_ids"] as? [String] ?? []).contains(category) || own.contains(sid)
             }
             let entertainment = candidates.filter { $0["focus"] as? String == "entertainment" }.compactMap { $0["id"] as? String }
             let rest = candidates.filter { $0["focus"] as? String != "entertainment" }.compactMap { $0["id"] as? String }

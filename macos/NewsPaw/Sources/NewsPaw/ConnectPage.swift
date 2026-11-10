@@ -1086,8 +1086,10 @@ private struct ExtraRow: View {
                     Button(model.text(L10n.Onboarding.checkAgain)) { recheck(check) }
                 }
             }
-            if let failure = extraChecks.lazy.compactMap({ data.keys.failures[KeyChecks.key($0.profile, $0.capability)] }).first {
-                FailureNote(model: model, failure: failure)
+            if let (check, failure) = data.extraFailure(newspaper: kind == .newspaper) {
+                // E.g. the first check gave no result in time: retry that same check (asking first),
+                // unless the failed check above already offers that retry.
+                FailureNote(model: model, failure: failure, action: failedCheck == check ? nil : { recheck(check) })
             }
         }
         .padding(.vertical, 8)
@@ -1106,6 +1108,12 @@ private struct ExtraRow: View {
     }
 
     private var extraChecks: [CapabilityCheck] { data.extraChecks(newspaper: kind == .newspaper) }
+
+    /// The check shown as failed, whose row already has a retry.
+    private var failedCheck: CapabilityCheck? {
+        if case let .failed(check, _) = extraStatus { return check }
+        return nil
+    }
 
     private var extraStatus: ExtraStatus {
         ExtraStatus.of(on: on, checks: extraChecks, states: data.keys.states, working: data.keys.active(model: model))

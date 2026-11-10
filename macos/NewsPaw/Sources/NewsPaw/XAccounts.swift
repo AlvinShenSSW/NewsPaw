@@ -578,6 +578,7 @@ final class XAccountsData {
             outcome = existing.partition == partition || existing.partition == nil
                 ? .exists(existing.id) : .otherPartition(existing.handle, existing.partition ?? partition)
             highlighted = existing.id
+            await takeIn(existing, as: partition, model: model)
             return
         }
         var draft: String?
@@ -607,6 +608,7 @@ final class XAccountsData {
                 } else {
                     outcome = .exists(existing.id)
                     highlighted = existing.id
+                    await takeIn(existing, as: partition, model: model)
                 }
                 await reload(model)
                 return
@@ -617,6 +619,18 @@ final class XAccountsData {
             outcome = .failed(BackendError.wrapping(error), draft)
         }
         await reload(model)
+    }
+
+    /// Adding by name an account that is here but in no kind yet (a List member still waiting for
+    /// a choice, or one the owner chose to ignore) is that choice: the ignore mark goes and it
+    /// joins this kind and its digest, so it is never left hidden and uncollected.
+    private func takeIn(_ existing: XAccountItem, as partition: String, model: AppModel) async {
+        guard existing.partition == nil else { return }
+        if ignored.remove(existing.id) != nil { defaults.set(ignored.sorted(), forKey: Self.ignoredKey) }
+        let key = "member." + existing.id
+        if !(await classify([existing.id], as: partition, key: key, model: model)) {
+            outcome = .failed(failures[key] ?? BackendError(code: "invalid_reply"), nil)
+        }
     }
 
     /// The rest of adding a draft, in the account's queue (so a row change made meanwhile is
@@ -837,12 +851,23 @@ final class XAccountsData {
     /// "单独发": its own digest at `time`, to `bots` (nil: the digest's Bots) in `style`
     /// (nil: the digest's style).
     func sendAlone(_ id: String, time: String, bots: [String]?, style: String?, model: AppModel) async {
+        // An explicit empty list would send it alone to nobody (e.g. every chosen Bot stopped
+        // being able to receive it while the choice was open): nothing is saved.
+        if let bots, bots.isEmpty {
+            failures["route." + id] = BackendError(code: "no_ready_bot", domain: "x")
+            return
+        }
         await route(id, model: model) { _, digest in
             [
                 "subscription_id": digest, "priority": "special",
                 "overrides": ["times": [time], "bot_ids": bots.map { $0.sorted() } as Any? ?? NSNull(), "style": style as Any? ?? NSNull()],
             ]
         }
+    }
+
+    /// The Bots a send-alone choice can still send to: the chosen ones that can receive it now.
+    nonisolated static func aloneBots(_ chosen: Set<String>, usable: [String]) -> [String] {
+        chosen.filter(usable.contains).sorted()
     }
 
     /// Turns reading one kind of post on or off, applied to the account's newest stored types

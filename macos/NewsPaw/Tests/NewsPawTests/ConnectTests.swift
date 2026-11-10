@@ -126,6 +126,15 @@ private final class ConnectBackend {
     var dropNextTestStatus = false
     /// `config.save` answers only after this long (another writer holds the store).
     var configSaveDelay: Duration?
+    /// Runs as `models.status` is read (e.g. another window starts a newer check meanwhile).
+    var onStatusRead: (() -> Void)?
+    /// The next text `models.probe` records its check, then fails while answering with this code;
+    /// asking again with the same probe id returns that check's record.
+    var probeAnswerFails: String?
+    /// Probe ids whose check never finishes: asking by them answers `pending`.
+    var unfinishedProbes: Set<String> = []
+    /// The check behind a failed answer (`probeAnswerFails`) stays unfinished.
+    var failedAnswerLeavesCheckRunning = false
 
     var client: BackendClient {
         BackendClient { [unowned self] body, _ in
@@ -373,6 +382,7 @@ private final class ConnectBackend {
             revision += 1
             return ok(["revision": revision])
         case "models.status":
+            onStatusRead?()
             let profile = request["profile_id"] as! String
             let keyed = profileEntry(profile)?["credential_ref"] is String
             var text: [String: Any] = keyed ? ["state": "verified", "status": "verified"] : ["state": "untested"]
@@ -410,8 +420,14 @@ private final class ConnectBackend {
                 capabilityStates[profile, default: [:]][capability] = record
                 return ok(record.filter { $0.key != "state" })
             }
+            if let id = request["probe_id"] as? String, unfinishedProbes.contains(id) { return ok(["status": "pending"]) }
             let result = checks[profile]?.last ?? ["state": "verified", "status": "verified"]
             checks[profile] = [result]
+            if let failure = probeAnswerFails {
+                probeAnswerFails = nil
+                if failedAnswerLeavesCheckRunning, let id = request["probe_id"] as? String { unfinishedProbes.insert(id) }
+                return refuse(failure, "models")
+            }
             return ok(result.filter { $0.key != "state" })
         case "models.health": return ok(["profiles": health])
         case "budget.get":
@@ -1450,4 +1466,191 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
     let status = KeyStatus.of(credential: "available", probe: data.keys.probes["normal_primary"],
                               health: data.currentHealth("normal_primary"), working: false)
     #expect(status == .verified)
+}
+
+// MARK: - #107 follow-ups
+
+@Test @MainActor func aFollowedCheckReplacedWhileReadingStatusDoesNotRecordItsResult() async throws {
+    // R10-22, following by probe id: a newer check takes over while the finished one reads status.
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk-synthetic-7Qx2", profile: "normal_primary", model: model)
+    server.checks["normal_primary"] = [["state": "failed", "status": "failed", "error_kind": "rate_limited"]]
+    await data.load(model: model)
+    server.probeOutlastsSocket = ["state": "verified", "status": "verified"]
+    let newer = PendingProbe(id: "probe_newer", profile: "normal_primary", capability: "text")
+    server.onStatusRead = { [unowned server] in
+        // The superseded check has settled (third read of its id) and reads status: replaced now.
+        guard server.calls("models.probe").count >= 3, model.pendingProbes["normal_primary"]?.id != "probe_newer" else { return }
+        model.pendingProbes["normal_primary"] = newer
+        server.checks["normal_primary"] = [["state": "pending", "status": "pending"]]
+    }
+
+    await data.keys.recheck("normal_primary", model: model)
+
+    #expect(model.pendingProbes["normal_primary"] == newer)
+    #expect(data.keys.probes["normal_primary"]?.state == "pending")
+}
+
+@Test @MainActor func aCheckReplacedWhileReadingStatusDoesNotRecordItsResult() async throws {
+    // R10-22, a direct answer: a newer check takes over while this one reads status.
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk-synthetic-7Qx2", profile: "normal_primary", model: model)
+    server.checks["normal_primary"] = [["state": "failed", "status": "failed", "error_kind": "rate_limited"]]
+    let newer = PendingProbe(id: "probe_newer", profile: "normal_primary", capability: "text")
+    server.onStatusRead = { [unowned server] in
+        guard !server.calls("models.probe").isEmpty, model.pendingProbes["normal_primary"]?.id != "probe_newer" else { return }
+        model.pendingProbes["normal_primary"] = newer
+        server.checks["normal_primary"] = [["state": "pending", "status": "pending"]]
+    }
+
+    await data.keys.recheck("normal_primary", model: model)
+
+    #expect(model.pendingProbes["normal_primary"] == newer)
+    #expect(data.keys.probes["normal_primary"]?.state == "pending")
+}
+
+@Test @MainActor func aCheckWhoseAnswerFailedIsFollowedByItsIdUntilItHasAResult() async throws {
+    // R10-23: the backend kept the check but failed while answering.
+    for code in ["internal_error", "probe_storage_failed", "invalid_reply"] {
+        let server = ConnectBackend()
+        let (model, data, cleanup) = try await connected(server)
+        defer { cleanup() }
+        await data.saveKey("sk-synthetic-7Qx2", profile: "normal_primary", model: model)
+        server.checks["normal_primary"] = [["state": "failed", "status": "failed", "error_kind": "rate_limited"]]
+        await data.load(model: model)
+        server.probeAnswerFails = code
+
+        await data.recheck("normal_primary", model: model)
+
+        let ids = server.calls("models.probe").compactMap { $0["probe_id"] as? String }
+        #expect(ids.count == 2 && Set(ids).count == 1, "\(code)")
+        #expect(!data.keys.isChecking("normal_primary", model: model) && model.pendingProbes.isEmpty, "\(code)")
+        #expect(data.keys.failures["normal_primary"] == nil && data.keys.probes["normal_primary"]?.errorKind == "rate_limited", "\(code)")
+    }
+}
+
+@Test @MainActor func anExtrasFirstCheckWithoutAResultOffersARetryOfThatSameCheck() async throws {
+    // R10-24: the automatic image check gives no result in time.
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveKey("sk-synthetic-paper", profile: "normal_primary", model: model)
+    server.automaticReads = 1_000
+    data.keys.probeLimit = .milliseconds(40)
+
+    await data.setNewspaper(true, profile: "normal_primary", model: model)
+
+    let image = CapabilityCheck(profile: "normal_primary", capability: "image")
+    let note = try #require(data.extraFailure(newspaper: true))
+    #expect(note.check == image && note.failure.code == "probe_pending")
+    #expect(FailureCopy.entry(for: note.failure).action != nil)
+
+    // The retry asks first (the check may have been charged), then follows the same check.
+    #expect(data.needsConfirmation(image.profile, capability: image.capability))
+    let generation = server.generation("normal_primary")
+    server.automatic["auto.normal_primary.image.g\(generation)"]?.readsLeft = 0
+    await data.recheck(image.profile, model: model, capability: image.capability, confirmed: true)
+    let ids = Set(server.calls("models.probe").filter { $0["capability"] as? String == "image" }.compactMap { $0["probe_id"] as? String })
+    #expect(ids == ["auto.normal_primary.image.g\(generation)"])
+    #expect(data.keys.states["normal_primary"]?["image"]?.passed == true)
+}
+
+// MARK: - Internal review (R15): a check without a result outlives the page that waited for it
+
+@Test @MainActor func aTimedOutCheckIsFollowedByItsOwnIdOnAReturningPage() async throws {
+    let server = ConnectBackend()
+    let (model, first, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await first.saveKey("sk-synthetic-7Qx2", profile: "normal_primary", model: model)
+    server.checks["normal_primary"] = [["state": "failed", "status": "failed", "error_kind": "rate_limited"]]
+    await first.load(model: model)
+    // The recheck's answer is lost and its record stays unfinished past probeLimit.
+    server.probeOutlastsSocket = ["state": "verified", "status": "verified"]
+    server.probePendingReads = 1_000_000
+    first.keys.probeLimit = .milliseconds(60)
+    await first.recheck("normal_primary", model: model)
+    let started = try #require(server.calls("models.probe").first?["probe_id"] as? String)
+    #expect(first.keys.failures["normal_primary"]?.code == "probe_pending" && first.needsConfirmation("normal_primary"))
+
+    // The owner goes to another page and comes back: a new ConnectData.
+    let returned = ConnectData()
+    returned.keys.pollInterval = .milliseconds(5)
+    returned.keys.probeLimit = .milliseconds(60)
+    await returned.load(model: model)
+    await returned.keys.resume(model: model)
+    // Still "no result yet" with a retry, not "checking", and a new check would be confirmed first.
+    #expect(returned.keys.failures["normal_primary"]?.code == "probe_pending")
+    #expect(returned.needsConfirmation("normal_primary") && !returned.keys.isChecking("normal_primary", model: model))
+
+    // The retry asks the same probe id again: no second paid check.
+    server.probePendingReads = 0
+    await returned.recheck("normal_primary", model: model)
+    let ids = Set(server.calls("models.probe").compactMap { $0["probe_id"] as? String })
+    #expect(ids == [started])
+    #expect(returned.keys.failures["normal_primary"] == nil && returned.keys.probes["normal_primary"]?.passed == true)
+    #expect(model.pendingProbes.isEmpty && model.timedOutProbes.isEmpty)
+}
+
+@Test @MainActor func aCheckWhoseAnswerFailedAndGaveNoResultInTimeIsFollowedByItsIdOnAReturningPage() async throws {
+    for code in ["internal_error", "probe_storage_failed", "invalid_reply"] {
+        let server = ConnectBackend()
+        let (model, first, cleanup) = try await connected(server)
+        defer { cleanup() }
+        await first.saveKey("sk-synthetic-7Qx2", profile: "normal_primary", model: model)
+        server.checks["normal_primary"] = [["state": "failed", "status": "failed", "error_kind": "rate_limited"]]
+        await first.load(model: model)
+        // The check began (maybe charged), then answering failed; its record stays unfinished.
+        server.probeAnswerFails = code
+        server.failedAnswerLeavesCheckRunning = true
+        first.keys.probeLimit = .milliseconds(60)
+        await first.recheck("normal_primary", model: model)
+        let started = try #require(server.calls("models.probe").first?["probe_id"] as? String)
+        #expect(first.keys.failures["normal_primary"]?.code == "probe_pending", "\(code)")
+
+        let returned = ConnectData()
+        returned.keys.pollInterval = .milliseconds(5)
+        returned.keys.probeLimit = .milliseconds(60)
+        await returned.load(model: model)
+        await returned.keys.resume(model: model)
+        #expect(returned.keys.failures["normal_primary"]?.code == "probe_pending", "\(code)")
+        #expect(returned.needsConfirmation("normal_primary") && !returned.keys.isChecking("normal_primary", model: model), "\(code)")
+
+        server.unfinishedProbes = []
+        await returned.recheck("normal_primary", model: model)
+        let ids = Set(server.calls("models.probe").compactMap { $0["probe_id"] as? String })
+        #expect(ids == [started], "\(code)")
+        #expect(returned.keys.failures["normal_primary"] == nil && model.timedOutProbes.isEmpty, "\(code)")
+    }
+}
+
+@Test @MainActor func aTimedOutCheckOfAnEarlierKeyDoesNotHoldBackTheNewKeysCheck() async throws {
+    let server = ConnectBackend()
+    let (model, first, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await first.saveKey("sk-synthetic-7Qx2", profile: "normal_primary", model: model)
+    server.probeOutlastsSocket = ["state": "verified", "status": "verified"]
+    server.probePendingReads = 1_000_000
+    first.keys.probeLimit = .milliseconds(60)
+    await first.recheck("normal_primary", model: model)
+    let started = try #require(server.calls("models.probe").first?["probe_id"] as? String)
+    #expect(model.timedOutProbes["normal_primary"]?.id == started)
+
+    // On another visit the owner saves a new key: the earlier check says nothing about it.
+    let returned = ConnectData()
+    returned.keys.pollInterval = .milliseconds(5)
+    returned.keys.probeLimit = .milliseconds(60)
+    await returned.load(model: model)
+    await returned.saveKey("sk-synthetic-new", profile: "normal_primary", model: model)
+    #expect(model.timedOutProbes.isEmpty && returned.keys.failures["normal_primary"] == nil)
+    #expect(!returned.needsConfirmation("normal_primary"))
+
+    // Checking the new key starts its own check without asking.
+    server.probePendingReads = 0
+    await returned.recheck("normal_primary", model: model)
+    let ids = Set(server.calls("models.probe").compactMap { $0["probe_id"] as? String })
+    #expect(ids.count == 2 && ids.contains(started))
 }

@@ -637,10 +637,12 @@ private struct XAlonePopover: View {
             HStack {
                 Spacer()
                 Button(model.text(L10n.Shell.cancel), role: .cancel, action: close).keyboardShortcut(.cancelAction)
+                // Only Bots that can still receive it count (one may have stopped meanwhile).
+                let none = XAccountsData.aloneBots(bots, usable: usable).isEmpty
                 Button(model.text(L10n.Connect.save)) { save() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(bots.isEmpty)
-                    .help(bots.isEmpty ? model.text(L10n.XAccounts.chooseBot) : "")
+                    .disabled(none)
+                    .help(none ? model.text(L10n.XAccounts.chooseBot) : "")
             }
         }
         .padding(16)
@@ -663,7 +665,8 @@ private struct XAlonePopover: View {
     private func save() {
         // The digest's own Bots and style stay inherited, so a later change there follows here too.
         // Only Bots that can still receive it (one may have stopped allowing adult content meanwhile).
-        let chosen = bots.filter(usable.contains).sorted()
+        let chosen = XAccountsData.aloneBots(bots, usable: usable)
+        guard !chosen.isEmpty else { return }
         let ownBots: [String]? = Set(chosen) == Set(inherited) ? nil : chosen
         let ownStyle: String? = style == (digest?.style ?? "text") ? nil : style
         let value = DigestTimes.format(time)

@@ -352,9 +352,10 @@ private func connected(_ server: DigestBackend) async throws -> (AppModel, () ->
     let data = DigestsData()
     await data.load(model.client)
 
-    #expect(!(await data.trial("held", model: model)))
+    // Trying a source in order to turn it on: a try that did not really read leaves it off.
+    #expect(!(await data.trial("held", enable: true, model: model)))
     #expect(data.failures["held"]?.code == "collection_held" && data.notes["held"] == nil)
-    #expect(!(await data.trial("quiet", model: model)))
+    #expect(!(await data.trial("quiet", enable: true, model: model)))
     #expect(data.failures["quiet"]?.code == "preview_incomplete")
     #expect(server.calls("sources.save").isEmpty)
 }
@@ -573,4 +574,48 @@ private func connected(_ server: DigestBackend) async throws -> (AppModel, () ->
     #expect(await data.loadImpact("nhk", model: model))
     await data.removeSource("nhk", model: model)
     #expect(server.source("nhk") == nil)
+}
+
+// MARK: - #107 follow-ups
+
+@Test @MainActor func tryingASourceTheOwnerTurnedOffLeavesItOff() async throws {
+    // R09-17: verified once, then unchecked; "Try Now" reads it without turning it back on.
+    let server = DigestBackend(subscriptions: [subscription("sub_japan", enabled: true, bots: ["bot1"])],
+                               sources: [source("nhk", focus: "domestic", enabled: false)])
+    server.ready = ["nhk"]
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    await data.load(model.client)
+
+    #expect(!(await data.trial("nhk", model: model)))
+
+    #expect(server.calls("sources.preview").count == 1 && data.failures["nhk"] == nil && data.notes["nhk"] != nil)
+    #expect(server.source("nhk")?["enabled"] as? Bool == false && server.calls("sources.save").isEmpty)
+
+    // "Try, Then Turn On" (the checkbox) still turns it on after a good read.
+    let digest = try #require(model.config?.subscriptions.first)
+    let nhk = try #require(data.sources.first { $0.id == "nhk" })
+    await data.toggle(nhk, in: digest, true, model: model)
+    #expect(server.source("nhk")?["enabled"] as? Bool == true)
+}
+
+@Test @MainActor func splittingADigestWithItsOwnListUsesOnlyThatList() async throws {
+    // R09-18: the owner left "asahi" and "oricon" out of this digest's own list.
+    let server = DigestBackend(
+        subscriptions: [subscription("sub_japan", enabled: true, bots: ["bot1"], extra: ["source_mode": "explicit", "source_ids": ["nhk", "natalie"]])],
+        sources: [source("nhk", focus: "domestic"), source("asahi", focus: "domestic"),
+                  source("natalie", focus: "entertainment"), source("oricon", focus: "entertainment")]
+    )
+    server.ready = ["nhk", "asahi", "natalie", "oricon"]
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    await data.load(model.client)
+    let digest = try #require(model.config?.subscriptions.first)
+
+    let copyId = try #require(await data.split(digest, model: model))
+
+    #expect(server.subscription("sub_japan")?["source_ids"] as? [String] == ["nhk"])
+    #expect(server.subscription(copyId)?["source_ids"] as? [String] == ["natalie"])
 }

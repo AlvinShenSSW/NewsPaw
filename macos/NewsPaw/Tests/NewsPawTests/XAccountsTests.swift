@@ -1553,3 +1553,43 @@ private func connected(_ server: XBackend) async throws -> (AppModel, XAccountsD
     #expect(XAccountsData.ruleScope("a1", among: ["a1", "a2"]) == "a1")
     #expect(XAccountsData.ruleScope("a9", among: ["a1"]) == nil)
 }
+
+// MARK: - #107 follow-ups
+
+@Test @MainActor func reAddingAnIgnoredListMemberTakesItIntoTheChosenKind() async throws {
+    // R11-22: dave was ignored as a new List member, then added by name on the ordinary side.
+    let server = XBackend()
+    server.lists["555"] = ["id": "555", "partition": "normal", "default_adult": false, "name": "AI people", "state": "ready",
+                           "members": [], "checked_at": "2026-11-09T00:00:00+00:00"]
+    server.listMembers["555"] = [("dave", "104")]
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.refreshList("555", model: model)
+    let dave = try #require(server.stored(handle: "dave")?["id"] as? String)
+    // A List read creates its new members as list-only identities (`direct` 0).
+    server.listOnly.insert(dave)
+    await data.choose(dave, partition: nil, model: model)
+    #expect(data.ignored.contains(dave))
+
+    await data.add("dave", partition: "normal", model: model)
+
+    #expect(data.outcome == .exists(dave) && !data.ignored.contains(dave))
+    #expect(server.stored(dave)?["partition"] as? String == "normal" && server.stored(dave)?["subscription_id"] as? String == "sub_x")
+    #expect(data.accounts(in: "normal").map(\.id) == [dave])
+}
+
+@Test @MainActor func sendingAloneToNoBotThatCanReceiveItSavesNothing() async throws {
+    // R11-23: every Bot chosen in the popover stopped being usable while it was open.
+    let server = XBackend(accounts: [XBackend.account("a1", "sama", remote: "1")])
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    await data.sendAlone("a1", time: "21:30", bots: [], style: nil, model: model)
+
+    #expect(server.calls("x.accounts.route").isEmpty)
+    #expect(server.stored("a1")?["priority"] as? String == "normal")
+    #expect(data.failures["route.a1"]?.code == "no_ready_bot")
+    // The popover counts only Bots that can still receive it: none left means Save is off.
+    #expect(XAccountsData.aloneBots(["b1", "b2"], usable: ["b2"]) == ["b2"])
+    #expect(XAccountsData.aloneBots(["b1"], usable: []).isEmpty)
+}

@@ -187,6 +187,10 @@ final class AppModel {
     /// Key checks started from the app that have no outcome yet, by `KeyChecks.key`; kept here so
     /// they outlive the page that started them (see `PendingProbe`).
     var pendingProbes: [String: PendingProbe] = [:]
+    /// Key checks that gave no result in time, by `KeyChecks.key`: no longer followed (no
+    /// "checking" row), but kept for the app's lifetime so any page that opens later shows the
+    /// "no result yet" note and asks that same probe id again instead of paying for another check.
+    var timedOutProbes: [String: PendingProbe] = [:]
     /// The last failure from any request, so every view can say what happened.
     private(set) var lastFailure: BackendError?
     /// Repeats the shell action that produced `lastFailure` (language or pause).

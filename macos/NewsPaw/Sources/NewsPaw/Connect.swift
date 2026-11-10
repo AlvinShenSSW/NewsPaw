@@ -447,6 +447,14 @@ final class ConnectData {
         return extras.transcriptionProfile.map { [CapabilityCheck(profile: $0, capability: "stt")] } ?? []
     }
 
+    /// The first of an extra's checks with a failure of its own (e.g. no result in time), with
+    /// that check, so the note can offer to check it again.
+    func extraFailure(newspaper: Bool) -> (check: CapabilityCheck, failure: BackendError)? {
+        extraChecks(newspaper: newspaper).lazy.compactMap { check in
+            self.keys.failures[KeyChecks.key(check.profile, check.capability)].map { (check, $0) }
+        }.first
+    }
+
     /// What the header's test button does now.
     enum TestAction: Equatable { case send, check }
     /// While the last message's outcome is open, the header checks it instead of sending another.

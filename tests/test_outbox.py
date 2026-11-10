@@ -171,6 +171,24 @@ async def test_unknown_send_needs_explicit_ack_and_does_not_block_peer(system):
     ]
 
 
+async def test_pausing_a_job_keeps_the_outcome_of_a_target_already_delivered(system):
+    pipeline, targets, job, _, _ = system
+
+    async def respond(request):
+        if len(calls) == 1:
+            raise httpx.ReadTimeout("fixture response lost")
+        return ready_response()
+
+    outbox, calls = sender(pipeline, targets, respond)
+    outbox.enqueue(job, now=NOW)
+    await outbox.advance(job, "bot1", now=NOW)
+    await outbox.advance(job, "bot2", now=NOW)
+    pipeline.pause(job)
+    status = outbox.status(job)["targets"]
+    assert status["bot2"]["status"] == "delivered" and status["bot2"]["state"] == "delivered"
+    assert status["bot1"]["state"] == "delivery_unknown"
+
+
 async def test_competing_connections_cannot_send_same_part(system):
     pipeline, targets, job, _, path = system
     started, release = asyncio.Event(), asyncio.Event()

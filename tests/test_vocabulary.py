@@ -88,6 +88,11 @@ def test_a_paused_jobs_targets_read_as_paused():
     assert target_state("blocked", reason="job_paused") == "paused"
     assert target_state("blocked", reason="token_revoked") == "failed"
     assert target_state("outcome_unknown", reason="job_paused") == "delivery_unknown"
+    # Only what is still to send waits on the pause; a settled target keeps its outcome.
+    pending, failed = {"state": "pending"}, {"state": "failed"}
+    assert target_state("partial", [{"state": "delivered"}, pending], "job_paused") == "paused"
+    assert target_state("delivered", [{"state": "delivered"}], "job_paused") == "delivered"
+    assert target_state("blocked", [failed], "job_paused") == "failed"
     assert occurrence_state("blocked", "targets_unavailable", parts=[SKIP]) == "abandoned"
 
 

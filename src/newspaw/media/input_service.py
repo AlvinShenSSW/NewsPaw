@@ -197,11 +197,12 @@ class MediaCommands:
     def uses_elevenlabs(self):
         return self.elevenlabs.configured()
 
-    async def speak(self, update_key, text, locale):
+    async def speak(self, update_key, text, locale, guard=None):
         """`/listen` audio: ElevenLabs once its key is saved (a failure there never falls
-        back to this Mac's voice), else the local voice for `locale`."""
+        back to this Mac's voice), else the local voice for `locale`. `guard` says whether the
+        request is still allowed; ElevenLabs asks it again just before the text leaves."""
         if self.uses_elevenlabs():
-            return await self.elevenlabs.speak(update_key, text)
+            return await self.elevenlabs.speak(update_key, text, guard)
         return await self.speech.synthesize(text, locale)
 
     def allowed(self, plan):

@@ -29,7 +29,8 @@ S1 配置与 Key
 - `credentials.set / remove` 接受 `kind: "speech_api"`、`id: "elevenlabs"`，行为与 `x_api` / `x` 相同（Key 进钥匙串，文档里只有引用）。`voice_id` 通过 `config.save` 修改。
 
 S2 合成
-- 新增 ElevenLabs 语音提供方：请求上面的接口，`model_id` 固定 `eleven_multilingual_v2`，`output_format=mp3_44100_64`；通过现有的受限 HTTP 客户端（固定源 `https://api.elevenlabs.io`，不跟随重定向，响应上限 `MAX_SPEECH`）；结果必须是非空且不超过 `MAX_SPEECH` 的 MP3，否则算失败。发送的文本沿用 `LocalSpeech` 的清洗与 1200 字符上限。
+- 新增 ElevenLabs 语音提供方：请求上面的接口，`model_id` 固定 `eleven_multilingual_v2`，`output_format=mp3_22050_32`；通过现有的受限 HTTP 客户端（固定源 `https://api.elevenlabs.io`，不跟随重定向，响应上限 `MAX_SPEECH`）；结果必须是非空且不超过 `MAX_SPEECH` 的 MP3，否则算失败。发送的文本沿用 `LocalSpeech` 的清洗，上限 900 字符。（内部评审 R18-B1 的更正：初稿的 `mp3_44100_64` + 1200 字符在中文 / 日文下约 220–270 秒、1.7–2 MiB，超过 1 MiB 的响应上限，几乎每份完整的中文简报都会失败。32 kbps 时 1 MiB 约 262 秒；按中文约 4.5 字 / 秒，900 字约 200 秒。语速是估计值，未用真实调用验证。）
+- `/listen` 是否仍被允许（开关、授权、过期）在占用预算的同一事务里再确认一次，然后才发出文本（R18-R1：读取钥匙串期间状态可能已变）。
 - `/listen`：`speech_api.credential_ref` 已设置时用 ElevenLabs（声音取当前 `voice_id`）；未设置时保持现有 `LocalSpeech` 行为不变。使用 ElevenLabs 时任何失败（Key 被拒、额度、限流、超时、返回不是合格 MP3、预算不足）都**只发文字**并附一句「语音暂时不可用」的说明（三种语言），不回退到 macOS 朗读。
 - 仍然只对普通简报、只在所有者回复该简报发 `/listen` 时触发；不新增自动语音，不改授权与范围检查。成人分区的内容不会发给 ElevenLabs。
 
@@ -68,6 +69,7 @@ S6 发版
 - 示例声音 `JBFqnCBsd6RMkjVDRZzb` 对所有者的账号可用；不可用时测试会报「声音或请求无效」，换成账号里的 Voice ID 即可。
 - 错误状态码的含义（401 Key 无效、429 限流等）按通用约定映射，文档只明确列了 422；未用真实 Key 调用过。
 - 每次合成的实际费用由 ElevenLabs 订阅额度决定，账本只记占用与次数，不换算美元。
+- 朗读语速（中文约 4.5 字 / 秒）与 32 kbps 的实际码率决定 900 字是否总能放进 1 MiB；放不下时按失败处理（只发文字）。首次真实使用时需要确认。
 
 ## 做法
 

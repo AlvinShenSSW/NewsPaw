@@ -21,7 +21,10 @@ from .audio import MAX_SPEECH, MediaInputError, speech_text
 _ORIGIN = "https://api.elevenlabs.io"
 _ENDPOINT = _ORIGIN + "/v1/text-to-speech/"
 _MODEL = "eleven_multilingual_v2"
-_FORMAT = "mp3_44100_64"
+# 4,000 bytes a second: a reply of at most MAX_SPEECH (1 MiB) holds about 262 s of speech.
+_FORMAT = "mp3_22050_32"
+# Chinese is read at roughly 4.5 characters a second, so this many fit that reply (R18-B1).
+_MAX_TEXT = 900
 _CHECK_TEXT = "NewsPaw audio test."
 
 
@@ -59,7 +62,7 @@ class ElevenLabsSpeech:
 
     async def synthesize(self, text):
         try:
-            text = speech_text(text)
+            text = speech_text(text)[:_MAX_TEXT]
         except MediaInputError:
             raise ProviderError("invalid_speech_text") from None
         try:
@@ -116,9 +119,10 @@ class ElevenLabs:
     def configured(self):
         return self._settings()["credential_ref"] is not None
 
-    async def _synthesize(self, attempt_id, settings, text):
+    async def _synthesize(self, attempt_id, settings, text, guard=None):
         """One synthesis under a ledger hold taken before the request; the hold stays an
-        unpriced amount unless the request is known not to have left."""
+        unpriced amount unless the request is known not to have left. `guard` is asked once
+        more in the transaction that takes the hold: reading the key may have taken a while."""
         key = await asyncio.to_thread(self.backend.read, settings["credential_ref"])
         if key is None:
             raise ProviderError("credential_missing")
@@ -127,6 +131,8 @@ class ElevenLabs:
         adapter = self.factory(key, settings["voice_id"])
         try:
             with self.store._write():
+                if guard is not None and not guard():
+                    raise ProviderError("speech_scope_changed")
                 self.budget._reserve(
                     attempt_id,
                     attempt_id,
@@ -158,11 +164,11 @@ class ElevenLabs:
             with suppress(httpx.HTTPError, OSError):
                 await adapter.close()
 
-    async def speak(self, update_key, text):
+    async def speak(self, update_key, text, guard=None):
         """`/listen` audio for one Telegram update; any failure is `speech_unavailable`."""
         attempt_id = "speech." + hashlib.sha256(_json(update_key).encode()).hexdigest()
         try:
-            return await self._synthesize(attempt_id, self._settings(), text)
+            return await self._synthesize(attempt_id, self._settings(), text, guard)
         except (BudgetError, ProviderError, CredentialError, OSError):
             raise MediaInputError("speech_unavailable") from None
 

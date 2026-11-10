@@ -194,20 +194,21 @@ async def test_synthesis_posts_the_cleaned_text_to_the_voice_endpoint():
 
     provider = _provider(reply)
     try:
-        text = "Headline. [[slnc 500]] Body" + "x" * 2000
+        text = "Headline. [[slnc 500]] Body" + "汉" * 2000
         assert await provider.synthesize(text) == MP3
     finally:
         await provider.close()
     (request,) = requests
     assert request.method == "POST"
     assert str(request.url) == (
-        f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE}?output_format=mp3_44100_64"
+        f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE}?output_format=mp3_22050_32"
     )
     assert request.headers["xi-api-key"] == KEY and "authorization" not in request.headers
     body = json.loads(request.content)
     assert set(body) == {"text", "model_id"} and body["model_id"] == "eleven_multilingual_v2"
-    # The same cleaning and 1200-character cap as the local voice.
-    assert body["text"].startswith("Headline.  Body") and len(body["text"]) == 1200
+    # The local voice's cleaning. The cap is 900 characters (R18-B1): at 4,000 bytes a second
+    # a reply of at most 1 MiB holds 262 s, and Chinese is read at roughly 4.5 characters a second.
+    assert body["text"].startswith("Headline.  Body") and len(body["text"]) == 900
 
 
 def test_the_real_client_is_bound_to_the_elevenlabs_origin_and_the_speech_size():
@@ -683,3 +684,33 @@ async def test_a_cancelled_check_is_unknown_only_if_its_request_may_have_left(co
     assert check["error_kind"] == "cancelled"
     assert check["state"] == ("outcome_unknown" if sent else "cancelled")
     assert [a["state"] for a in _attempts(store)] == (["outcome_unknown"] if sent else [])
+
+
+async def test_listening_turned_off_while_the_key_is_read_sends_nothing(control):
+    """R18-R1: the scope is checked again inside the transaction that takes the hold, so text
+    never leaves this Mac for a `/listen` that stopped being allowed during the Keychain read."""
+    server, store = control
+    voice = _Voice()
+    await _keyed(server, store, voice)
+    media = server.media
+    policy = media.policy()
+    media.configure({**policy["settings"], "listen_enabled": True}, policy["revision"])
+    plan = media.plan(listen=True)
+    real, loop = media.elevenlabs.backend, asyncio.get_running_loop()
+
+    async def turn_off():
+        current = media.policy()
+        media.configure({**current["settings"], "listen_enabled": False}, current["revision"])
+
+    class Keys:
+        def read(self, ref):
+            asyncio.run_coroutine_threadsafe(turn_off(), loop).result(2)
+            return real.read(ref)
+
+    media.elevenlabs.backend = Keys()
+    assert media.allowed(plan)
+    from newspaw.media.audio import MediaInputError
+
+    with pytest.raises(MediaInputError, match="speech_unavailable"):
+        await media.speak(("bot1", 1, 9), "Briefing text.", "en", lambda: media.allowed(plan))
+    assert not media.allowed(plan) and voice.texts == [] and _attempts(store) == []

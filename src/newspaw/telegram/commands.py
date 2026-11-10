@@ -776,7 +776,7 @@ class Commands:
                     try:
                         if not live():
                             raise MediaInputError("voice_unavailable")
-                        audio = await self.media.speak(key, spoken, result["locale"])
+                        audio = await self.media.speak(key, spoken, result["locale"], live)
                         if (
                             not live()
                             or not isinstance(audio, bytes)

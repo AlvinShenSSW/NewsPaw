@@ -1288,3 +1288,17 @@ private func upgraded(_ backend: SettingsBackend, resident: FakeResident) throws
     #expect(model.connection == .incompatible && backendControl.note == .startFailed)
     #expect(backend.calls("service.stop").count == 1)
 }
+
+/// R16-A-3: unregistering the login item stops the agent, so an old backend is asked to stop first too.
+@Test @MainActor func turningTheLoginItemOffStopsABackendFromAnotherVersionSafelyFirst() async throws {
+    let backend = SettingsBackend()
+    let resident = FakeResident(backend, state: .on)
+    let (model, cleanup) = try upgraded(backend, resident: resident)
+    defer { cleanup() }
+    await model.refresh()
+    #expect(model.connection == .incompatible)
+    let backendControl = control(resident)
+    await backendControl.setLoginItem(false, model: model)
+    #expect(backend.calls("service.stop").count == 1)
+    #expect(resident.calls == ["disable(true)"] && backendControl.note == nil)
+}

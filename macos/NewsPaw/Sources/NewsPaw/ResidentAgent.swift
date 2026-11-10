@@ -258,8 +258,10 @@ final class BackendControl {
             if model.connection != .connected { failure = .startFailed }
             return
         }
-        let running = model.connection == .connected || model.connection == .stopping
-        if model.connection == .connected {
+        // A backend from another version is running too, and it still answers `service.stop`.
+        let answering = model.connection == .connected || model.connection == .incompatible
+        let running = answering || model.connection == .stopping
+        if answering {
             await model.stopBackend()
             // A refused stop is shown by the shell with its own code.
             guard model.connection == .stopping else { return }

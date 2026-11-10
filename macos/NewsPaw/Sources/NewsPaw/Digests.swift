@@ -520,11 +520,14 @@ final class DigestsData {
             // Chosen from the newest stored sources (not the page's earlier snapshot): a digest's
             // own list names only sources that are on, since a listed source that is off blocks it
             // (`source_disabled`); sources still off stay in the category, ready to be added.
+            // A digest with its own list divides only that list (sources the owner left out stay out);
+            // one following its category divides the category's sources.
             let category = subscription.categoryId
             let own = Set(subscriptions[index]["source_ids"] as? [String] ?? [])
+            let explicit = Self.draft(subscriptions[index])["source_mode"] as? String == "explicit"
             let candidates = (document["sources"] as? [[String: Any]] ?? []).filter { source in
                 guard source["enabled"] as? Bool == true, let sid = source["id"] as? String else { return false }
-                return (source["category_ids"] as? [String] ?? []).contains(category) || own.contains(sid)
+                return explicit ? own.contains(sid) : (source["category_ids"] as? [String] ?? []).contains(category) || own.contains(sid)
             }
             let entertainment = candidates.filter { $0["focus"] as? String == "entertainment" }.compactMap { $0["id"] as? String }
             let rest = candidates.filter { $0["focus"] as? String != "entertainment" }.compactMap { $0["id"] as? String }

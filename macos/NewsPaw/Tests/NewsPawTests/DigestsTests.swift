@@ -598,3 +598,23 @@ private func connected(_ server: DigestBackend) async throws -> (AppModel, () ->
     await data.toggle(nhk, in: digest, true, model: model)
     #expect(server.source("nhk")?["enabled"] as? Bool == true)
 }
+
+@Test @MainActor func splittingADigestWithItsOwnListUsesOnlyThatList() async throws {
+    // R09-18: the owner left "asahi" and "oricon" out of this digest's own list.
+    let server = DigestBackend(
+        subscriptions: [subscription("sub_japan", enabled: true, bots: ["bot1"], extra: ["source_mode": "explicit", "source_ids": ["nhk", "natalie"]])],
+        sources: [source("nhk", focus: "domestic"), source("asahi", focus: "domestic"),
+                  source("natalie", focus: "entertainment"), source("oricon", focus: "entertainment")]
+    )
+    server.ready = ["nhk", "asahi", "natalie", "oricon"]
+    let (model, cleanup) = try await connected(server)
+    defer { cleanup() }
+    let data = DigestsData()
+    await data.load(model.client)
+    let digest = try #require(model.config?.subscriptions.first)
+
+    let copyId = try #require(await data.split(digest, model: model))
+
+    #expect(server.subscription("sub_japan")?["source_ids"] as? [String] == ["nhk"])
+    #expect(server.subscription(copyId)?["source_ids"] as? [String] == ["natalie"])
+}

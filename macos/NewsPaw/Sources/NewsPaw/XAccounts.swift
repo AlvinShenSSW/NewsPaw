@@ -578,6 +578,7 @@ final class XAccountsData {
             outcome = existing.partition == partition || existing.partition == nil
                 ? .exists(existing.id) : .otherPartition(existing.handle, existing.partition ?? partition)
             highlighted = existing.id
+            await takeIn(existing, as: partition, model: model)
             return
         }
         var draft: String?
@@ -607,6 +608,7 @@ final class XAccountsData {
                 } else {
                     outcome = .exists(existing.id)
                     highlighted = existing.id
+                    await takeIn(existing, as: partition, model: model)
                 }
                 await reload(model)
                 return
@@ -617,6 +619,18 @@ final class XAccountsData {
             outcome = .failed(BackendError.wrapping(error), draft)
         }
         await reload(model)
+    }
+
+    /// Adding by name an account that is here but in no kind yet (a List member still waiting for
+    /// a choice, or one the owner chose to ignore) is that choice: the ignore mark goes and it
+    /// joins this kind and its digest, so it is never left hidden and uncollected.
+    private func takeIn(_ existing: XAccountItem, as partition: String, model: AppModel) async {
+        guard existing.partition == nil else { return }
+        if ignored.remove(existing.id) != nil { defaults.set(ignored.sorted(), forKey: Self.ignoredKey) }
+        let key = "member." + existing.id
+        if !(await classify([existing.id], as: partition, key: key, model: model)) {
+            outcome = .failed(failures[key] ?? BackendError(code: "invalid_reply"), nil)
+        }
     }
 
     /// The rest of adding a draft, in the account's queue (so a row change made meanwhile is

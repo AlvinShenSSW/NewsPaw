@@ -85,7 +85,7 @@ async def test_av_parser_uses_exact_adult_source_no_media_and_respects_hold(tmp_
         ("en", "all_failed"),
     ],
 )
-async def test_av_brief_dispatch_uses_only_adult_provider_and_controlled_copy(
+async def test_av_brief_dispatch_uses_only_adult_provider_and_model_summary(
     tmp_path, locale, scenario
 ):
     import json
@@ -101,6 +101,17 @@ async def test_av_brief_dispatch_uses_only_adult_provider_and_controlled_copy(
 
     detail = AV_ORIGIN + "?p=123"
     excerpt = "FANZA の発売が発表されました。"
+    summaries = {
+        "zh-Hans": ("FANZA 公布新的发售消息", "据来源报道，FANZA 公布了一项发售消息。"),
+        "en": ("FANZA announces a release", "FANZA announced a release, the source reports."),
+        "ja": ("FANZA が発売を発表", "FANZA の発売が発表されたと報じられました。"),
+    }
+    overviews = {
+        "zh-Hans": "本期最值得关注的是 FANZA 的发售消息。",
+        "en": "The notable item today is a release announced by FANZA.",
+        "ja": "本日は FANZA の発売発表が注目されます。",
+    }
+    headings = {"zh-Hans": "今日概览", "en": "Today at a glance", "ja": "本日の概要"}
 
     def website(request):
         if str(request.url) == AV_ORIGIN:
@@ -139,10 +150,12 @@ async def test_av_brief_dispatch_uses_only_adult_provider_and_controlled_copy(
         inputs = json.loads(body["input"][0]["content"][0]["text"])
         evidence = inputs["evidence"][0]
         assert evidence["excerpt"] == excerpt and inputs["locale"] == locale
-        title, copy = evidence["allowed_copy"]
+        assert "allowed_copy" not in evidence
+        title, copy = summaries[locale]
         identity = evidence["id"]
         result = dict(
             locale=locale,
+            overview=overviews[locale],
             conflicts=[],
             items=[
                 dict(
@@ -153,7 +166,7 @@ async def test_av_brief_dispatch_uses_only_adult_provider_and_controlled_copy(
                     kind="report",
                     stage="unknown",
                     support=[dict(evidence_id=identity, quote=excerpt)],
-                    entities=[],
+                    entities=[dict(source="FANZA", translated="FANZA")],
                 )
             ],
         )
@@ -199,6 +212,8 @@ async def test_av_brief_dispatch_uses_only_adult_provider_and_controlled_copy(
         assert hosts == ["api.deepseek.com"] + (["api.x.ai"] if scenario == "backup" else [])
         _, text, media = pipeline.delivery_input(job)
         assert detail in text and excerpt not in text and media["style"] == "text"
+        assert text.startswith(headings[locale] + "\n" + overviews[locale] + "\n\n1. ")
+        assert summaries[locale][0] in text and summaries[locale][1] in text
         if locale == "en":
             assert "API and downloads" not in text
 
@@ -213,37 +228,188 @@ async def test_av_brief_dispatch_uses_only_adult_provider_and_controlled_copy(
             pipeline.delivery_scope(job)
 
 
-def test_av_validator_rejects_non_template_even_when_the_quote_is_grounded():
-    from newspaw.editorial import BriefValidator, EditorialError
-
-    evidence = [
+def _av_evidence():
+    return [
         dict(
             id="e1",
-            title="発売ニュース",
-            excerpt="発売が発表されました。",
-            source="AV研究所",
-            url="https://fiu758.com/?p=123",
-            metadata={"av_industry": {"topic": "release", "brand": None}},
+            title="浅野こころ 活動を一部休止",
+            excerpt="浅野こころ が腰椎骨折のため活動を一部休止すると発表しました。",
+            source="Feed",
+            url="https://example.com/a",
+        ),
+        dict(
+            id="e2",
+            title="エスワン キャンペーン第2弾 最大35%OFF",
+            excerpt="",
+            source="Feed",
+            url="https://example.com/b",
         ),
     ]
-    invalid = dict(
-        locale="en",
+
+
+def _av_brief(**changes):
+    brief = dict(
+        locale="zh-Hans",
+        overview="本期关注浅野こころ因伤暂停部分活动。",
         conflicts=[],
         items=[
             dict(
                 anchor="e1",
                 evidence_ids=["e1"],
-                title="News about a publisher",
-                body="This is a fluent but unrestricted model summary.",
+                title="浅野こころ暂停部分活动",
+                body="据来源报道，浅野こころ因腰椎骨折宣布暂停部分活动。",
                 kind="report",
                 stage="unknown",
-                support=[dict(evidence_id="e1", quote="発売が発表されました。")],
-                entities=[],
+                support=[
+                    dict(
+                        evidence_id="e1",
+                        quote="浅野こころ が腰椎骨折のため活動を一部休止すると発表しました。",
+                    )
+                ],
+                entities=[dict(source="浅野こころ", translated="浅野こころ")],
             )
         ],
     )
-    with pytest.raises(EditorialError, match="av_industry_template_required"):
-        BriefValidator(evidence, "en", 5, av_industry=True).validate(invalid)
+    brief.update(changes)
+    return brief
+
+
+def test_av_validator_accepts_a_grounded_summary_with_names_kept_in_the_original():
+    from newspaw.editorial import BriefValidator
+
+    validator = BriefValidator(_av_evidence(), "zh-Hans", 5, av_industry=True)
+    assert validator.validate(_av_brief())
+    assert "overview" in validator.schema()["required"]
+
+
+@pytest.mark.parametrize(
+    ("changes", "error"),
+    [
+        # A name left in kana is only excused when the model declared it as kept.
+        (dict(overview="本期关注エスワン的动态。"), "wrong_output_language"),
+        (dict(overview=""), "invalid_prose"),
+        (dict(overview="本期有 35 条值得关注的动态。"), "unsupported_number"),
+        (dict(overview="本期动态已获多家媒体证实。"), "unverified_corroboration"),
+        (dict(overview="概" * 601), "invalid_prose"),
+        (dict(items=[]), "invalid_brief"),
+    ],
+)
+def test_av_validator_checks_the_overview_like_the_items(changes, error):
+    from newspaw.editorial import BriefValidator, EditorialError
+
+    validator = BriefValidator(_av_evidence(), "zh-Hans", 5, av_industry=True)
+    with pytest.raises(EditorialError, match=error):
+        validator.validate(_av_brief(**changes))
+    assert validator.validate(_av_brief(items=[], overview=""))
+
+
+def test_av_validator_requires_the_overview_field():
+    from newspaw.editorial import BriefValidator, EditorialError
+
+    brief = _av_brief()
+    del brief["overview"]
+    with pytest.raises(EditorialError, match="invalid_fields"):
+        BriefValidator(_av_evidence(), "zh-Hans", 5, av_industry=True).validate(brief)
+
+
+def test_an_undeclared_original_name_still_fails_the_language_check_in_an_av_brief():
+    from newspaw.editorial import BriefValidator, EditorialError
+
+    brief = _av_brief()
+    brief["items"][0]["entities"] = []
+    with pytest.raises(EditorialError, match="wrong_output_language"):
+        BriefValidator(_av_evidence(), "zh-Hans", 5, av_industry=True).validate(brief)
+
+
+def test_a_kept_name_must_come_from_the_cited_evidence():
+    from newspaw.editorial import BriefValidator, EditorialError
+
+    brief = _av_brief()
+    brief["items"][0]["title"] = "エスワン暂停部分活动"
+    brief["items"][0]["entities"] = [dict(source="エスワン", translated="エスワン")]
+    with pytest.raises(EditorialError, match="unsupported_entity"):
+        BriefValidator(_av_evidence(), "zh-Hans", 5, av_industry=True).validate(brief)
+
+
+def test_other_briefs_keep_the_strict_language_check_and_have_no_overview():
+    from newspaw.editorial import BriefValidator, EditorialError
+
+    validator = BriefValidator(_av_evidence(), "zh-Hans", 5)
+    with pytest.raises(EditorialError, match="invalid_fields"):
+        validator.validate(_av_brief())
+    brief = _av_brief()
+    del brief["overview"]
+    with pytest.raises(EditorialError, match="wrong_output_language"):
+        validator.validate(brief)
+    assert "overview" not in validator.schema()["required"]
+
+
+async def test_an_av_digest_with_only_rss_sources_is_written_by_the_adult_model(tmp_path):
+    import json
+    from contextlib import closing
+
+    from test_model_runner import response
+    from test_pipeline import prepare, run_to_terminal
+
+    from newspaw.providers import ProfileRegistry
+    from newspaw.store import Store
+
+    feed = """<rss version="2.0"><channel><title>Feed</title><item>
+<title>浅野こころ 活動を一部休止</title><link>https://example.com/a</link>
+<pubDate>Sat, 07 Nov 2026 02:00:00 +0000</pubDate>
+<description>浅野こころ が腰椎骨折のため活動を一部休止すると発表しました。</description>
+</item></channel></rss>""".encode()
+
+    async def read(request):
+        return httpx.Response(200, content=feed)
+
+    def model(request):
+        assert request.url.host == "api.deepseek.com"
+        body = json.loads(request.content)
+        assert "overview" in body["text"]["format"]["schema"]["required"]
+        inputs = json.loads(body["input"][0]["content"][0]["text"])
+        identity = inputs["evidence"][0]["id"]
+        brief = _av_brief()
+        brief["items"][0].update(anchor=identity, evidence_ids=[identity])
+        brief["items"][0]["support"][0]["evidence_id"] = identity
+        return httpx.Response(200, json=response(json.dumps(brief, ensure_ascii=False)))
+
+    with closing(Store(tmp_path / "state.db")) as store:
+        config, sub = configured("adult")
+        store.save_config(config, expected_revision=1)
+        registry = ProfileRegistry(store)
+        holds = {"adult_primary": 100, "adult_backup": 100}
+        for profile in holds:
+            registry.begin("verify." + profile, profile, "text", 1)
+            registry.finish("verify." + profile, {"status": "verified"})
+        pipeline, reads, calls = prepare(store, feed=read, model=model)
+        job = pipeline.create(sub["id"], "daily", holds=holds, task_limit=500, now=NOW)["job_id"]
+        result = await run_to_terminal(pipeline, job)
+        assert result["stage"] == "awaiting_delivery", result
+        assert reads == ["https://example.com/rss"] and len(calls) == 1
+        _, text, media = pipeline.delivery_input(job)
+        assert text.startswith(
+            "今日概览\n本期关注浅野こころ因伤暂停部分活动。\n\n1. 浅野こころ暂停部分活动"
+        )
+        assert "https://example.com/a" in text and media["style"] == "text"
+        assert pipeline.delivery_scope(job)
+
+        edition = pipeline.editorial.get(result["edition_id"])["result"]
+        for marker, allowed in (("industry-v1", True), (None, False)):
+            edition["av_contract"] = marker
+            if marker is None:
+                del edition["av_contract"]
+            with store._write():
+                store._db.execute(
+                    "UPDATE editorial_editions SET result_json=? WHERE id=?",
+                    (json.dumps(edition, ensure_ascii=False), result["edition_id"]),
+                )
+            assert (
+                pipeline.editorial.delivery_allowed(
+                    result["edition_id"], store.preview_route(sub["id"])
+                )
+                is allowed
+            )
 
 
 def test_old_known_origin_article_is_excluded_from_non_av_adult_pool(tmp_path):

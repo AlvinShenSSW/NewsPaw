@@ -7,7 +7,8 @@ import Testing
 /// `credentials.set` stores a new reference and resets what depends on it (a Bot's check and
 /// pairing, a profile's checks), a refused token shows up in `bots.verify`'s status, every
 /// Bot change needs the current generation, and configuration, budget and media changes need
-/// the current revision.
+/// the current revision. The ElevenLabs key lives in `speech_api` beside its voice; a test of
+/// them (`speech.check`) is recorded once per request id and reads `stale` after either changes.
 @MainActor
 private final class ConnectBackend {
     struct Bot {
@@ -51,11 +52,19 @@ private final class ConnectBackend {
     var media: [String: Any] = ["vision_profile": NSNull(), "vision_hold": NSNull(), "stt_profile": NSNull(), "stt_hold": NSNull(), "listen_enabled": false]
     private(set) var requests: [[String: Any]] = []
     private var refs = 0
+    /// What the next `speech.check` records (`status`, `error_kind`).
+    var speechOutcome: (status: String, kind: String?) = ("verified", nil)
+    /// `speech.check` records its test as pending and the reply never comes (the socket gives up).
+    var speechCheckHangs = false
+    /// Tests in the order they were started: request id, the key reference and voice used, the record.
+    private(set) var speechChecks: [(id: String, ref: String, voice: String, record: [String: Any])] = []
+    var speechBlock: [String: Any] { document["speech_api"] as? [String: Any] ?? [:] }
 
     /// - Parameter imageProfile: also has `normal_image`, a profile whose model only generates images.
     init(bots: [[String: Any]] = [], botIds: [String] = [], adultBotIds: [String] = [], imageProfile: Bool = false) {
         document = [
             "ui_locale": "en", "news_output_locale": "en", "owner_id": 7, "x_api": ["credential_ref": NSNull()],
+            "speech_api": ["credential_ref": NSNull(), "voice_id": "JBFqnCBsd6RMkjVDRZzb"],
             "categories": [["id": "world", "name": "World", "partition": "normal"], ["id": "av", "name": "AV", "partition": "adult"]],
             "subscriptions": [
                 ["id": "sub_world", "name": "World", "category_id": "world", "timezone": "Asia/Tokyo", "enabled": true, "times": ["08:00"], "bot_ids": botIds, "source_ids": []],
@@ -185,6 +194,10 @@ private final class ConnectBackend {
                         return self.ok(result.filter { $0.key != "state" })
                     }
                 }
+                if request["op"] as? String == "speech.check", self.speechCheckHangs {
+                    _ = self.answer(request)
+                    return nil
+                }
                 return self.answer(request)
             }
             guard let reply else { throw SocketFailure.timeout }
@@ -247,6 +260,15 @@ private final class ConnectBackend {
         case "config.save":
             if stale { return refuse("config_conflict") }
             let before = (document["model_profiles"] as! [[String: Any]])
+            let speech = (request["document"] as! [String: Any])["speech_api"] as? [String: Any]
+            // `validate_config`: a voice is 1–64 ASCII letters or digits; `save_config`: the key's
+            // reference only changes through `credentials.set`.
+            guard (speech?["voice_id"] as? String ?? "").range(of: "^[A-Za-z0-9]{1,64}$", options: .regularExpression) != nil else {
+                return refuse("configuration_operation_failed")
+            }
+            guard speech?["credential_ref"] as? String == speechBlock["credential_ref"] as? String else {
+                return refuse("protected_configuration_field")
+            }
             document = request["document"] as! [String: Any]
             for profile in document["model_profiles"] as! [[String: Any]] {
                 let old = before.first { $0["id"] as? String == profile["id"] as? String }
@@ -293,8 +315,15 @@ private final class ConnectBackend {
                 // An image-only model's key is checked with an image (`credentials.set`); a text
                 // model's automatic text check is what `checks` scripts.
                 if imageOnly(request["id"] as! String) { startAutomatic(request["id"] as! String, "image") }
-            default:
+            case "x_api":
                 document["x_api"] = ["credential_ref": ref]
+            case "speech_api":
+                guard request["id"] as? String == "elevenlabs" else { return refuse("invalid_credential_entity", "credentials") }
+                var speech = speechBlock
+                speech["credential_ref"] = ref
+                document["speech_api"] = speech
+            default:
+                return refuse("invalid_credential_entity", "credentials")
             }
             revision += 1
             return ok(["revision": revision])
@@ -304,6 +333,7 @@ private final class ConnectBackend {
             var refs: [String] = bots.compactMap { $0["credential_ref"] as? String }
             refs += (document["model_profiles"] as! [[String: Any]]).compactMap { $0["credential_ref"] as? String }
             if let x = (document["x_api"] as? [String: Any])?["credential_ref"] as? String { refs.append(x) }
+            if let speech = speechBlock["credential_ref"] as? String { refs.append(speech) }
             for ref in refs {
                 let value = keychain[ref]
                 states[ref] = value == nil ? "missing" : "available"
@@ -471,6 +501,30 @@ private final class ConnectBackend {
             mediaRevision += 1
             if let profile = settings["stt_profile"] as? String { startAutomatic(profile, "stt") }
             return ok(["revision": mediaRevision, "settings": media])
+        case "speech.status":
+            let ref = speechBlock["credential_ref"] as? String
+            let voice = speechBlock["voice_id"] as? String ?? ""
+            var check: Any = NSNull()
+            if let last = speechChecks.last {
+                // A test made with another key or voice says nothing about this one (`ElevenLabs.status`).
+                var record = last.record
+                record["state"] = last.ref == ref && last.voice == voice ? record["status"] : "stale"
+                check = record
+            }
+            return ok(["has_key": ref != nil, "voice_id": voice, "check": check])
+        case "speech.check":
+            guard let identity = request["request_id"] as? String else { return refuse("invalid_request", "speech") }
+            // A request id names one test: asking again returns its record, never a second synthesis.
+            if let existing = speechChecks.first(where: { $0.id == identity }) { return ok(existing.record) }
+            guard let ref = speechBlock["credential_ref"] as? String else { return refuse("credential_missing", "speech") }
+            var record: [String: Any] = ["request_id": identity, "status": "pending", "error_kind": NSNull(), "checked_at": NSNull()]
+            if !speechCheckHangs {
+                record["status"] = speechOutcome.status
+                record["error_kind"] = speechOutcome.kind.map { $0 as Any } ?? NSNull()
+                record["checked_at"] = "2026-11-10T08:12:00+00:00"
+            }
+            speechChecks.append((identity, ref, speechBlock["voice_id"] as? String ?? "", record))
+            return ok(record)
         case "x.accounts.list":
             if xListFails { return refuse("internal_error", "x") }
             let ref = (document["x_api"] as? [String: Any])?["credential_ref"]
@@ -1875,4 +1929,240 @@ private func connected(_ server: ConnectBackend) async throws -> (AppModel, Conn
     #expect((probes.last?["probe_id"] as? String)?.hasPrefix("auto.") == false)
     #expect(server.generation("normal_primary") == generation)
     #expect(data.keyStatus(profile, model: model) == .verified)
+}
+
+// MARK: - Spoken digests through ElevenLabs (R18)
+
+@Test @MainActor func theElevenLabsKeyIsSavedNamedByItsTailAndNotTestedByItself() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    #expect(data.speechStatus(model: model) == .missing && data.speech?.hasKey == false)
+
+    await data.saveSpeechKey(" el-synthetic-key-9Zq1 ", model: model)
+
+    let call = try #require(server.calls("credentials.set").last)
+    #expect(call["kind"] as? String == "speech_api" && call["id"] as? String == "elevenlabs")
+    #expect(call["value"] as? String == "el-synthetic-key-9Zq1")
+    let ref = try #require(model.config?.speechApi?.credentialRef)
+    #expect(data.tail(ref) == "9Zq1" && data.credentialState(ref) == "available" && data.failures["speech.key"] == nil)
+    #expect(model.config?.speechApi?.voiceId == "JBFqnCBsd6RMkjVDRZzb" && data.speech?.hasKey == true)
+    // Saving a key pays for nothing: the row reads "not checked yet" until the owner tests it.
+    #expect(server.calls("speech.check").isEmpty && data.speechStatus(model: model) == .untested)
+}
+
+@Test @MainActor func theSpokenDigestSwitchNeedsAKeyAndWritesTheListenSetting() async throws {
+    let server = ConnectBackend()
+    server.media["stt_profile"] = "normal_primary"
+    server.media["stt_hold"] = 50_000
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+
+    // Without a key it cannot be turned on, and nothing is sent.
+    #expect(!data.canListen(model: model))
+    await data.setListen(true, model: model)
+    #expect(server.calls("media.configure").isEmpty && server.media["listen_enabled"] as? Bool == false && !data.extras.listenOn)
+
+    await data.saveSpeechKey("el-synthetic-key-9Zq1", model: model)
+    #expect(data.canListen(model: model))
+    await data.setListen(true, model: model)
+    #expect(server.media["listen_enabled"] as? Bool == true && data.extras.listenOn && data.failures["listen"] == nil)
+    // The rest of the stored media settings is kept.
+    #expect(server.media["stt_profile"] as? String == "normal_primary" && server.media["stt_hold"] as? Int == 50_000)
+
+    await data.setListen(false, model: model)
+    #expect(server.media["listen_enabled"] as? Bool == false && !data.extras.listenOn)
+    #expect(data.extras.transcriptionProfile == "normal_primary")
+}
+
+@Test @MainActor func aSwitchLeftOnWithoutAKeyCanStillBeTurnedOff() async throws {
+    let server = ConnectBackend()
+    server.media["listen_enabled"] = true
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    #expect(data.extras.listenOn && !data.canListen(model: model))
+
+    await data.setListen(false, model: model)
+
+    #expect(server.media["listen_enabled"] as? Bool == false && !data.extras.listenOn)
+}
+
+@Test @MainActor func aVoiceIdIsSavedOnlyWhenItIsLettersAndDigits() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveSpeechKey("el-synthetic-key-9Zq1", model: model)
+    let ref = try #require(model.config?.speechApi?.credentialRef)
+    let saves = server.calls("config.save").count
+
+    for bad in ["", "   ", "voice-1", "voicé", "abc def", String(repeating: "a", count: 65)] {
+        #expect(!(await data.saveVoice(bad, model: model)), "\(bad) was saved")
+        #expect(data.failures["speech.voice"]?.code == "invalid_voice_id")
+    }
+    #expect(server.calls("config.save").count == saves && server.speechBlock["voice_id"] as? String == "JBFqnCBsd6RMkjVDRZzb")
+    #expect(FailureCopy.table["invalid_voice_id"] != nil)
+
+    #expect(await data.saveVoice(" Voice2abc ", model: model))
+    #expect(server.speechBlock["voice_id"] as? String == "Voice2abc" && server.speechBlock["credential_ref"] as? String == ref)
+    #expect(model.config?.speechApi?.voiceId == "Voice2abc" && data.failures["speech.voice"] == nil && data.savedAt["speech.voice"] != nil)
+    #expect(await data.saveVoice(String(repeating: "Z9", count: 32), model: model))
+    // Saving the stored voice again changes nothing.
+    let after = server.calls("config.save").count
+    #expect(await data.saveVoice(String(repeating: "Z9", count: 32), model: model))
+    #expect(server.calls("config.save").count == after && server.calls("speech.check").isEmpty)
+}
+
+@Test @MainActor func aPassedTestNoLongerSpeaksForANewVoiceOrKey() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    // Nothing to test without a key.
+    await data.testSpeech(model: model)
+    #expect(server.calls("speech.check").isEmpty)
+    await data.saveSpeechKey("el-synthetic-key-9Zq1", model: model)
+
+    await data.testSpeech(model: model)
+
+    let call = try #require(server.calls("speech.check").last)
+    #expect((call["request_id"] as? String)?.hasPrefix("speech_") == true && call.count == 2)
+    #expect(data.speechStatus(model: model) == .verified && data.failures["speech.test"] == nil)
+    #expect(data.speech?.check?.checkedAt == "2026-11-10T08:12:00+00:00")
+
+    #expect(await data.saveVoice("Voice2abc", model: model))
+    #expect(data.speechStatus(model: model) == .untested && server.calls("speech.check").count == 1)
+    await data.testSpeech(model: model)
+    #expect(data.speechStatus(model: model) == .verified && server.calls("speech.check").count == 2)
+    await data.saveSpeechKey("el-synthetic-second-key", model: model)
+    #expect(data.speechStatus(model: model) == .untested && server.calls("speech.check").count == 2)
+}
+
+@Test @MainActor func aSpeechTestTellsRejectedInvalidLimitedUnreachableAndUnknownApart() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveSpeechKey("el-synthetic-key-9Zq1", model: model)
+    let outcomes: [(String, String, KeyStatus)] = [
+        ("failed", "authentication_failed", .rejected("authentication_failed")),
+        ("failed", "permission_denied", .rejected("permission_denied")),
+        ("failed", "invalid_voice_request", .failed("invalid_voice_request")),
+        ("failed", "invalid_speech_audio", .failed("invalid_speech_audio")),
+        ("failed", "rate_limited", .unavailable("rate_limited")),
+        ("failed", "connection_failed", .unavailable("connection_failed")),
+        ("failed", "provider_failed", .unavailable("provider_failed")),
+        ("budget_blocked", "model_limit", .budget),
+        ("outcome_unknown", "outcome_unknown", .unknown("outcome_unknown")),
+        ("outcome_unknown", "interrupted", .unknown("interrupted")),
+    ]
+    var notes: [String] = []
+    for (status, kind, expected) in outcomes {
+        server.speechOutcome = (status, kind)
+        await data.testSpeech(model: model, confirmed: true)
+        let shown = data.speechStatus(model: model)
+        #expect(shown == expected, "\(kind)")
+        for language in AppLanguage.allCases {
+            let note = try #require(shown.speechNote(language))
+            // Each reason has words of its own, never the generic "did not complete (code)".
+            #expect(note != FailureCopy.fallback(language, ["code": kind]) && !note.isEmpty, "\(kind): \(note)")
+        }
+        notes.append(shown.speechNote(.en) ?? "")
+    }
+    #expect(Set(notes).count >= 9)
+    #expect(notes[0].contains("401") && notes[1].contains("403") && notes[2].contains("Voice ID") && notes[4].contains("429"))
+    #expect(notes.dropLast(3).allSatisfy { $0.contains("ElevenLabs") })
+    #expect(KeyStatus.verified.speechNote(.en) == nil && KeyStatus.untested.speechNote(.en) == nil)
+    #expect(KeyStatus.keychain("keychain_locked").speechNote(.en) == FailureCopy.table["keychain_locked"]?.message.en)
+
+    server.speechOutcome = ("verified", nil)
+    await data.testSpeech(model: model, confirmed: true)
+    #expect(data.speechStatus(model: model) == .verified)
+}
+
+@Test @MainActor func anUnknownOrStillRunningSpeechTestIsConfirmedBeforeTestingAgain() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveSpeechKey("el-synthetic-key-9Zq1", model: model)
+    #expect(!data.speechNeedsConfirmation)
+
+    server.speechOutcome = ("outcome_unknown", "outcome_unknown")
+    await data.testSpeech(model: model)
+    #expect(data.speechNeedsConfirmation && data.speechStatus(model: model).action == .confirmRecheck)
+    await data.testSpeech(model: model)
+    #expect(server.calls("speech.check").count == 1)
+    server.speechOutcome = ("failed", "rate_limited")
+    await data.testSpeech(model: model, confirmed: true)
+    #expect(server.calls("speech.check").count == 2 && !data.speechNeedsConfirmation)
+    #expect(Set(server.calls("speech.check").compactMap { $0["request_id"] as? String }).count == 2)
+
+    // The reply never came: the backend is still testing, so another test is asked about first.
+    server.speechCheckHangs = true
+    await data.testSpeech(model: model)
+    #expect(server.calls("speech.check").count == 3 && data.failures["speech.test"]?.code == "backend_unreachable")
+    #expect(data.speechStatus(model: model) == .checking && data.speechNeedsConfirmation)
+    server.speechCheckHangs = false
+    await data.testSpeech(model: model)
+    #expect(server.calls("speech.check").count == 3)
+}
+
+@Test @MainActor func pressingTestTwiceAtOnceStartsOneSpeechTest() async throws {
+    let server = ConnectBackend()
+    let (model, data, cleanup) = try await connected(server)
+    defer { cleanup() }
+    await data.saveSpeechKey("el-synthetic-key-9Zq1", model: model)
+
+    async let first: Void = data.testSpeech(model: model)
+    async let second: Void = data.testSpeech(model: model)
+    _ = await (first, second)
+
+    #expect(server.calls("speech.check").count == 1 && data.speechStatus(model: model) == .verified)
+    #expect(!data.isBusy("speech.test"))
+}
+
+@Test func spokenDigestCopyIsInEveryLanguageAndNamesNoInternals() throws {
+    let added = [L10n.Connect.listen, L10n.Connect.listenNote, L10n.Connect.listenNeedsKey, L10n.Connect.speechKey,
+                 L10n.Connect.speechKeyNote, L10n.Connect.speechTest, L10n.Connect.speechRetryBody, L10n.Connect.opVoice]
+    // Listed in `all`, so the page-wide language and vocabulary test covers them.
+    for words in added { #expect(L10n.Connect.all.contains(words)) }
+    for language in AppLanguage.allCases {
+        #expect(L10n.Connect.listenNote(language).contains("/listen") && L10n.Connect.listenNote(language).contains("ElevenLabs"))
+        #expect(L10n.Connect.listen(language).contains("ElevenLabs"))
+    }
+    #expect(L10n.Connect.extrasTitle.zh.contains("语音简报") && L10n.Connect.extrasTitle.en.contains("spoken digests")
+        && L10n.Connect.extrasTitle.ja.contains("音声ダイジェスト"))
+    let codes = ["speech.authentication_failed", "speech.permission_denied", "speech.invalid_voice_request", "speech.invalid_speech_audio",
+                 "speech.rate_limited", "speech.connection_failed", "speech.provider_failed", "speech.outcome_unknown",
+                 "speech.interrupted", "speech.cancelled", "speech.credential_missing", "speech.invalid_speech_check",
+                 "speech.invalid_speech_text", "invalid_voice_id"]
+    let banned = ["hold", "probe", "revision", "credential", "profile", "tts", "微美元"]
+    for code in codes {
+        let entry = try #require(FailureCopy.table[code], "no copy for \(code)")
+        for language in AppLanguage.allCases {
+            let text = entry.message(language)
+            for word in banned { #expect(!text.lowercased().contains(word), "\(word) in \(text)") }
+        }
+    }
+    #expect(BudgetSummary.operationWords("tts") == L10n.Connect.opVoice && BudgetSummary.operationWords("stt") == L10n.Connect.opSpeech)
+    #expect(BudgetSummary.operationWords("something_else") == L10n.Connect.opOther)
+}
+
+@Test func aSpeechTestIsFollowedAsALongOperationWithTheBackendsDeadline() throws {
+    let control = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("src/newspaw/control.py")
+    let source = try String(contentsOf: control, encoding: .utf8)
+    let deadline = try #require(Operation.longDeadlineSeconds(for: Operation.speechCheck.rawValue))
+    #expect(source.contains("\"speech.check\": \(deadline),"))
+    #expect(Operation.timeoutMilliseconds(for: "speech.check") == 5_000 && Operation.longDeadlineSeconds(for: "speech.status") == nil)
+}
+
+@Test func aSpeechStatusReadsTheNewestTestOrNone() throws {
+    let none: SpeechStatus = try BackendRPC.decode(Data(#"{"has_key":false,"voice_id":"JBFqnCBsd6RMkjVDRZzb","check":null}"#.utf8))
+    #expect(!none.hasKey && none.voiceId == "JBFqnCBsd6RMkjVDRZzb" && none.check == nil)
+    let stale: SpeechStatus = try BackendRPC.decode(Data("""
+        {"has_key":true,"voice_id":"Voice2","check":{"request_id":"speech_1","status":"verified","state":"stale",
+         "error_kind":null,"checked_at":"2026-11-10T08:12:00+00:00"}}
+        """.utf8))
+    #expect(stale.check?.state == "stale" && stale.check?.checkedAt != nil)
+    #expect(KeyStatus.of(credential: "available", probe: stale.check, health: nil, working: false) == .untested)
 }

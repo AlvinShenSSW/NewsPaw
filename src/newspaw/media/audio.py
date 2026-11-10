@@ -139,6 +139,17 @@ def matching_voice(inventory, locale):
     return preferred if preferred in matching else next(iter(matching), None)
 
 
+def speech_text(text):
+    """What a voice reads: pause markup removed, at most 1200 characters."""
+    if not isinstance(text, str):
+        raise MediaInputError("invalid_speech_text")
+    clean = re.sub(r"\[\[.*?\]\]", "", text, flags=re.DOTALL)
+    clean = clean.replace("[[", "").replace("]]", "").replace("\0", "").strip()[:1200]
+    if not clean:
+        raise MediaInputError("invalid_speech_text")
+    return clean
+
+
 class LocalSpeech:
     async def _voice(self, locale):
         if sys.platform != "darwin":
@@ -150,12 +161,7 @@ class LocalSpeech:
         return voice
 
     async def _synthesize(self, text, locale, target):
-        if not isinstance(text, str):
-            raise MediaInputError("invalid_speech_text")
-        clean = re.sub(r"\[\[.*?\]\]", "", text, flags=re.DOTALL)
-        clean = clean.replace("[[", "").replace("]]", "").replace("\0", "").strip()[:1200]
-        if not clean:
-            raise MediaInputError("invalid_speech_text")
+        clean = speech_text(text)
         voice = await self._voice(locale)
         script = target.with_suffix(".txt")
         script.write_text(clean, encoding="utf-8")

@@ -60,6 +60,7 @@ _BACKUP_TABLES = {
     21: "telegram_media_policy telegram_media_effects",
     22: "bot_test_sends",
     23: "x_alert_policy x_alerts x_alert_posts x_alert_checked x_video_policy x_video_receipts",
+    26: "speech_checks",
 }
 # Tables of the removed .env bot. Databases from v0.5.0 or earlier keep them (the explicit
 # legacy preference import still reads `settings`); new databases never create them.
@@ -226,6 +227,7 @@ def _scrub_settings(document):
     omitted = Counter()
     config["owner_id"] = None
     config["x_api"] = {"credential_ref": None}
+    config["speech_api"]["credential_ref"] = None
     defaults = {profile["provider"]: profile for profile in default_config()["model_profiles"]}
     sources = []
     for source in config["sources"]:
@@ -421,6 +423,7 @@ class Operations:
             if (
                 settings["owner_id"] is not None
                 or settings["x_api"]["credential_ref"] is not None
+                or settings["speech_api"]["credential_ref"] is not None
                 or any(row["credential_ref"] is not None for row in settings["model_profiles"])
                 or any(
                     row["credential_ref"] is not None

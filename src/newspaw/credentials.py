@@ -40,9 +40,10 @@ def references(document):
         for entry in document[kind]
         if entry["credential_ref"] is not None
     }
-    x_ref = document["x_api"]["credential_ref"]
-    if x_ref is not None:
-        refs.add(x_ref)
+    for slot in ("x_api", "speech_api"):
+        ref = document[slot]["credential_ref"]
+        if ref is not None:
+            refs.add(ref)
     return refs
 
 
@@ -218,8 +219,8 @@ class CredentialManager:
 
     @staticmethod
     def _entry(document, kind, identity):
-        if kind == "x_api" and identity == "x":
-            return document["x_api"]
+        if (kind, identity) in {("x_api", "x"), ("speech_api", "elevenlabs")}:
+            return document[kind]
         if kind not in {"model_profiles", "bots"}:
             raise CredentialError("invalid_credential_entity")
         entry = next((e for e in document[kind] if e["id"] == identity), None)
@@ -273,7 +274,11 @@ class CredentialManager:
         async def operation():
             validate_config(document)
             current = self._current(revision)
-            if document["x_api"] != current["x_api"]:
+            if (
+                document["x_api"] != current["x_api"]
+                or document["speech_api"]["credential_ref"]
+                != current["speech_api"]["credential_ref"]
+            ):
                 raise CredentialError("protected_configuration_field")
             for kind in ("model_profiles", "bots"):
                 old = {e["id"]: e for e in current[kind]}

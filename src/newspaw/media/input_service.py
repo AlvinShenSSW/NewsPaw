@@ -20,6 +20,7 @@ from .audio import (
     MediaInputError,
     normalize_wav,
 )
+from .elevenlabs import ElevenLabs, ElevenLabsSpeech
 from .source_images import ImageError, normalize_photo
 from .speech_provider import TranscriptionProvider, supported_stt_profile
 
@@ -88,12 +89,14 @@ class MediaCommands:
         vision_factory=ProviderAdapter,
         stt_factory=TranscriptionProvider,
         speech=None,
+        tts_factory=ElevenLabsSpeech,
         normalize=normalize_wav,
     ):
         self.store, self.db, self.backend = store, store._db, backend
         self.registry, self.budget = ProfileRegistry(store), BudgetLedger(store)
         self.vision_factory, self.stt_factory = vision_factory, stt_factory
         self.speech = LocalSpeech() if speech is None else speech
+        self.elevenlabs = ElevenLabs(store, backend, hold=DEFAULT_HOLD, factory=tts_factory)
         self.normalize = normalize
 
     def policy(self):
@@ -190,6 +193,17 @@ class MediaCommands:
             file_id=media["file_id"],
             limit=limit,
         )
+
+    def uses_elevenlabs(self):
+        return self.elevenlabs.configured()
+
+    async def speak(self, update_key, text, locale, guard=None):
+        """`/listen` audio: ElevenLabs once its key is saved (a failure there never falls
+        back to this Mac's voice), else the local voice for `locale`. `guard` says whether the
+        request is still allowed; ElevenLabs asks it again just before the text leaves."""
+        if self.uses_elevenlabs():
+            return await self.elevenlabs.speak(update_key, text, guard)
+        return await self.speech.synthesize(text, locale)
 
     def allowed(self, plan):
         policy = self.policy()
@@ -340,3 +354,4 @@ class MediaCommands:
                     "UPDATE telegram_media_effects SET state='outcome_unknown' WHERE id=?",
                     (identity,),
                 )
+        self.elevenlabs.recover_interrupted()

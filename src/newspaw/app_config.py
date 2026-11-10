@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import dotenv_values
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 DEFAULT_TIMEZONE = "Asia/Tokyo"
 STYLES = {"text", "source_image", "newspaper"}
 LOCALES = {"zh-Hans", "en", "ja"}
@@ -30,6 +30,9 @@ _OPTIONAL = {
 }
 _ID = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,79}")
 _CREDENTIAL = re.compile(r"keychain:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
+# ElevenLabs voice: the preset from its API reference until the owner enters another (R18).
+DEFAULT_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"
+VOICE_ID = re.compile(r"[A-Za-z0-9]{1,64}")
 _FIELDS = {
     "categories": {"id", "name", "partition"},
     "sources": {"id", "name", "url", "kind", "partition", "category_ids", "enabled"},
@@ -86,6 +89,7 @@ _TOP_FIELDS = {
     "timezone",
     "owner_id",
     "x_api",
+    "speech_api",
     *_FIELDS,
 }
 
@@ -196,6 +200,7 @@ def default_config(timezone: str = DEFAULT_TIMEZONE) -> dict:
         "timezone": timezone,
         "owner_id": None,
         "x_api": {"credential_ref": None},
+        "speech_api": {"credential_ref": None, "voice_id": DEFAULT_VOICE_ID},
         "categories": [
             dict(id=key, name=name, partition="adult" if key in {"av", "x_adult"} else "normal")
             for key, name, _ in categories
@@ -387,7 +392,21 @@ def upgrade_v3(config: dict) -> dict:
     result["categories"] = [
         dict(id=c["id"], name=c["name"], partition=c["partition"]) for c in result["categories"]
     ]
-    result["schema_version"] = SCHEMA_VERSION
+    result["schema_version"] = 4
+    return upgrade_v4(result)
+
+
+def upgrade_v4(config: dict) -> dict:
+    """Add the ElevenLabs speech slot: no key, the preset voice (R18)."""
+    result = deepcopy(config)
+    if type(result.get("schema_version")) is not int or result["schema_version"] != 4:
+        raise ValueError("Expected version4 configuration")
+    if "speech_api" in result:
+        raise ValueError("Unexpected speech configuration in version4")
+    result.update(
+        schema_version=SCHEMA_VERSION,
+        speech_api={"credential_ref": None, "voice_id": DEFAULT_VOICE_ID},
+    )
     validate_config(result)
     return result
 
@@ -395,7 +414,7 @@ def upgrade_v3(config: dict) -> dict:
 def upgrade_config(config: dict) -> dict:
     """Upgrade any supported stored document to the current schema; never mutates the input."""
     version = config.get("schema_version") if isinstance(config, dict) else None
-    upgrades = {1: upgrade_v1, 2: upgrade_v2, 3: upgrade_v3}
+    upgrades = {1: upgrade_v1, 2: upgrade_v2, 3: upgrade_v3, 4: upgrade_v4}
     if version == SCHEMA_VERSION:
         return deepcopy(config)
     if version not in upgrades:
@@ -437,9 +456,15 @@ def _validate_config(config: dict) -> None:
     x_api = config["x_api"]
     if not isinstance(x_api, dict) or set(x_api) != {"credential_ref"}:
         raise ValueError("Invalid X credential slot")
-    ref = x_api["credential_ref"]
-    if ref is not None and (not isinstance(ref, str) or not _CREDENTIAL.fullmatch(ref)):
-        raise ValueError("Expected Keychain reference, never a raw credential")
+    speech_api = config["speech_api"]
+    if not isinstance(speech_api, dict) or set(speech_api) != {"credential_ref", "voice_id"}:
+        raise ValueError("Invalid speech credential slot")
+    for ref in (x_api["credential_ref"], speech_api["credential_ref"]):
+        if ref is not None and (not isinstance(ref, str) or not _CREDENTIAL.fullmatch(ref)):
+            raise ValueError("Expected Keychain reference, never a raw credential")
+    voice = speech_api["voice_id"]
+    if not isinstance(voice, str) or not VOICE_ID.fullmatch(voice):
+        raise ValueError("Invalid speech voice")
     for key in ("ui_locale", "news_output_locale"):
         if config[key] not in LOCALES:
             raise ValueError("Unsupported locale")

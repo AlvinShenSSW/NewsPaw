@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "newspaw"
-version = "0.6.2"
+version = "0.6.3"
 description = "A personal news agent for Telegram, running on your Mac."
 readme = "README.md"
 requires-python = ">=3.12.4"

@@ -89,7 +89,7 @@ Requirements are numbered N01–N13. Later issues freeze their scope against the
 
 - Adding a source: paste an address → the kind is detected (when a page declares several feeds, the owner picks) → choose a category (required; the category decides the partition) → preview the latest few items (for a web page, its title) → save. When no feed is found there are two ways out: save it as a web page, or try another address.
 - Web-page sources have a name, an address and a category. They open in the embedded browser with back, forward, reload, translate, open in Safari, share, and "save this page as a new source". Translate replaces the page's text in place with one tap (N06). The browser also offers a reader mode: it extracts the main text of the current page and, when that succeeds, opens the same reading and translation screen that articles use (N05, N06). Such a page is a temporary article: it is not stored, cannot be starred, and its translation lasts only while it is open. To keep a page the owner saves it as a source or shares its link.
-- OPML import: folders in the file become categories in the current partition. Addresses that already exist in that partition are skipped and listed. An OPML file is untrusted input (N10).
+- OPML import: folders in the file become categories in the current partition. Feeds outside any folder go to one category the owner picks in the preview, an existing one or a new one. Addresses that already exist in that partition are skipped and listed. An OPML file is untrusted input (N10).
 - Suggested sources: a short built-in list of public feeds for the normal partition, taken from the entries already verified in `docs/source-strategy.md`, offered only while adding. It contains no adult sources and nothing from the owner's private lists.
 - Per-source options: paused; translate titles automatically (follows the global setting by default); how the body is obtained (automatic / always fetch the page / feed content only). A web-page source has one option of its own: translate when opened (off by default).
 - Source status is visible: working, the last failure and its reason (could not connect, address gone, not a recognisable feed, too large), paused, time of the last success, time of the newest item. Repeated failures never delete or pause a source automatically.
@@ -102,7 +102,7 @@ Requirements are numbered N01–N13. Later issues freeze their scope against the
 - Collection rules: a cap on simultaneous requests; a 20-second timeout per request; a 10 MB response limit; at most 5 redirects, http / https only; conditional requests (ETag / Last-Modified); one failing source does not affect the others.
 - What counts as new: the identifier the feed provides; without one, the link; without that, a hash of title and date. Within a category, two items with the same link keep only the first.
 - Time: the published time from the feed. When it is missing, unparseable or later than the moment of collection, the time the item was first seen is used and never changes afterwards.
-- Retention: articles are kept 30 days by default (7 / 30 / 90 days / forever), counted from the time an article was first seen, not from its published time. Starred articles are never cleaned up. A cleaned-up item keeps its identifier, so it does not come back as new while it is still in the feed.
+- Retention: articles are kept 30 days by default (7 / 30 / 90 days / forever), counted from the time an article was first seen, not from its published time. Starred articles are never cleaned up. A cleaned-up item keeps its identifier, so it does not come back as new while it is still in the feed. The identifier's last-seen time is refreshed by every collection in which the feed still lists the item, and the identifier is deleted once the feed has not listed it for 30 days.
 - Storage: one SQLite database file per partition, with the same structure, inside the app container. The image cache is also separate per partition, each with a size limit (500 MB by default; least recently used images go first). Databases are part of the device backup. The configuration file is the only way to carry subscriptions to another device.
 - Unread counts are shown only inside the app. The app sets no icon badge: a badge would reveal adult-partition activity on the Home Screen, and the two partitions' counts must not be added together.
 
@@ -140,13 +140,13 @@ Requirements are numbered N01–N13. Later issues freeze their scope against the
 - Order and amount: text in and near the visible area is translated first; the rest follows as the owner scrolls, so the cost follows what is actually read. Text the page adds later (more results, an opened tab) is translated while translation is on. A request carries at most 40 entries or 4,000 characters.
 - Not translated: text already in the reading language (Traditional Chinese is converted on the device, as for articles), text with no letters (numbers, dates, prices), text inside images or video, and frames the system web view does not let the app's script enter.
 - The unit is a run of text between the page's elements. Runs that belong to one block are sent next to each other in one request, so the model sees the sentence around them. The app changes text only: it never adds, removes or re-creates the page's elements, and writes each translation as plain text.
-- Translated runs are cached on the device by original text and reading language, in the partition's database, so a page opened every day only costs its new text. Entries unused for the retention period are cleaned up.
+- A translated run is cached on the device by original text and reading language, in the partition's database, when it is the whole text of its block — a title, a label, a list entry — so a page opened every day only costs its new text. A run that is only part of a longer block is not cached: its meaning depends on its neighbours, and it is translated with them each time. Entries unused for the retention period are cleaned up.
 - The browser shows the state: translating with progress; translated; some text could not be translated, with the reason and "Retry" (and "Retry with the backup model" when the model refused); nothing to translate; no model set up.
 
 ### N07 Daily overview
 
 - At most one automatically generated overview per category, per local day and per reading language. Each category's overviews are set to automatic, manual or off.
-- Input: the titles and excerpts of the category's new articles since its previous overview in the current reading language — the newest 40 at most, numbered in the request. Output: a summary of at most 600 characters and up to 5 highlights, each naming one of those numbers.
+- Input: the titles and excerpts of the category's new articles since its previous overview in the current reading language, or, when there is none in that language, the articles first seen in the last 24 hours — the newest 40 at most, numbered in the request. Output: a summary of at most 600 characters and up to 5 highlights, each naming one of those numbers.
 - Acceptance: the summary is non-empty and within the limit; each highlight names a number that was in that request. A highlight that names anything else is dropped. A bad summary is retried once, then recorded as failed.
 - Trigger: for a category set to automatic, after the first refresh of the day that brings it new articles; for automatic and manual categories alike, when the owner taps "Write overview" / "Rewrite". With no new articles nothing is generated and the screen says there is nothing new today.
 - Shown at the top of the category's article list and, on Today, as one card per category of the current partition. Under it: "Written by ⟨model⟩ from the titles and excerpts of N articles · time". Tapping a highlight opens its article.
@@ -178,10 +178,10 @@ Requirements are numbered N01–N13. Later issues freeze their scope against the
 
 - Export produces a JSON configuration file (section 5), handed to the system share sheet to save in Files or AirDrop to another device. Contents: the global settings and each included partition's settings (section 4 says which settings are which), categories, sources, and the non-secret part of the model slots. The owner chooses whether to include the adult partition; that choice is available only while it is unlocked.
 - Not exported: keys, articles, read and starred states, translations, overviews, usage records, and the device settings of section 4.
-- Import previews first — how many categories and sources, and which are new, already present or in conflict — then offers "Merge" or "Replace everything". Merge matches sources by address and categories by name within a partition. Replace applies only to the partitions the file contains: a file without the adult partition leaves every adult category, source and article untouched, and replacing the adult partition is possible only while it is unlocked. Replace lists what it will delete — the sources that are not in the file, with their articles — and asks a second time.
-- When the file contains the adult partition and it is off or locked on this device, the app asks to turn it on and authenticate. If the owner declines, only the normal partition is imported and the app says what was skipped.
+- Import previews first — how many categories and sources, and which are new, already present or in conflict — then offers "Merge" or "Replace everything". Merge works inside each partition. A category in the file matches an existing category of the same name; when several share the name, the first in the owner's order is used; an unmatched category is created. A source is matched by address. A source already on the device is left exactly as it is — name, category and options unchanged — and is listed as already here, or as a conflict when the file files it differently or gives it different options. Merge fills empty model slots and leaves existing slots alone. Merge deletes nothing. Replace applies only to the partitions the file contains: a file without the adult partition leaves every adult category, source and article untouched, and replacing the adult partition is possible only while it is unlocked. Within an included partition, Replace deletes the categories and sources that are not in the file, with their articles, translations and overviews. Sources that are in both keep their articles, reading state and translations and take the file's name, category and options. The file's settings replace the device's. A model slot takes the file's address and model; its stored key is kept only when the address is unchanged and is removed otherwise, so a key is never left attached to a new address. Usage records are kept. Before anything changes, Replace lists every one of these effects — what is deleted, with counts, and which keys are removed — and asks a second time.
+- When the file contains the adult partition and it is off or locked on this device, the app asks to turn it on and authenticate before it builds the preview. Until that succeeds the adult library is not read and nothing in the file is compared with it. If the owner declines, the preview and the import cover the normal partition only, and the app says the adult part of the file was skipped.
 - After an import, model slots show "Key needed". Importing never calls a model.
-- Versions: the file carries `schema_version`. A higher version than the app supports is refused with a prompt to update the app; a lower one is upgraded before the preview. An imported file is untrusted data: its structure and field lengths are validated, source addresses must be http or https, and model service addresses must satisfy N08. A file that breaks a rule is refused as a whole, with the reason, and changes nothing.
+- Versions: the file carries `schema_version`. A higher version than the app supports is refused with a prompt to update the app; a lower one is upgraded before the preview. An imported file is untrusted data: its structure and field lengths are validated, source addresses must be http or https, and model service addresses must satisfy N08. A file is at most 5 MB with at most 500 categories and 5,000 sources, and these limits are checked before any preview is built. A file that breaks a rule is refused as a whole, with the reason, and changes nothing.
 - OPML can be imported, and exported per partition. An OPML file is untrusted in the same way: at most 5 MB and 2,000 feeds, external entities are never resolved, folders nested inside folders are flattened into their top folder, and addresses must be http or https.
 
 ### N11 Usage and limits
@@ -195,7 +195,7 @@ Requirements are numbered N01–N13. Later issues freeze their scope against the
 
 - Feeds, web pages, READMEs, model cards, OPML files and configuration files are untrusted data. The model has no tools: it cannot change subscriptions or settings or make requests, and its output is only ever shown as text.
 - Prompts tell the model that the content to translate is material, and that instructions inside it are not to be followed. Both partitions use the same neutral translation and overview prompts; the only difference is which slot the text is sent to.
-- The reading screen runs no script from articles. Main-text extraction is static: the app loads the HTML it fetched into a hidden web view with page JavaScript disabled, subresource loading off and a non-persistent data store, and runs only the bundled Readability script there. Pages that build their text with scripts therefore fail extraction and fall back to the excerpt.
+- The reading screen runs no script from articles. Main-text extraction is static: the app loads the HTML it fetched into a hidden web view with page JavaScript disabled, subresource loading off and a non-persistent data store, refuses every navigation after that initial load (a redirect written into the page's markup included), and runs only the bundled Readability script there. Pages that build their text with scripts therefore fail extraction and fall back to the excerpt.
 - The embedded browser is an ordinary system web view. Pages get no interface to the app. The script that reads and replaces text for in-place translation (N06) runs in its own script world, which page scripts cannot call; it is active only while translation is on; and what it reads is untrusted text like any article. The separation covers the app's script and its channel to the app, not the page's content: page scripts can see the translated text once it is in the page. Files are not downloaded automatically, and the app asks before handing off to another app.
 - http is allowed for feeds and web pages, because some sources have no https. Model service addresses must be https (N08 states the one exception, in debug builds).
 - Collection requests carry no credentials. Redirects to private-network addresses are not specially blocked. The owner enters the addresses and requests carry no credentials, but the risk is real and accepted: a response from such an address is handled like any other — parsed as a feed, as a page for feed discovery or main-text extraction, or as an API reply — and titles and excerpts taken from it can go to the partition's model through automatic translation. This is a deliberate change from the old system.
@@ -211,7 +211,7 @@ Requirements are numbered N01–N13. Later issues freeze their scope against the
 
 ## 4 Data model
 
-Each partition has its own database file (`normal.sqlite`, `adult.sqlite`) with an identical structure; every table below exists once in each file. Settings come in three kinds. Global settings — reading language, refresh interval, retention, the two automatic-translation switches — are stored in the system preferences store and exported. Partition settings — the daily automatic limit, list thumbnails — are stored in that partition's database (`setting`) and exported with the partition. Device settings — text size, line spacing, typeface, default display mode, whether the adult partition is on and when it locks — are stored in the system preferences store and never exported.
+Each partition has its own database file (`normal.sqlite`, `adult.sqlite`) with an identical structure; every table below exists once in each file. Settings come in three kinds. Global settings — reading language, refresh interval, background refresh on or off, retention, the two automatic-translation switches, original titles shown in lists — are stored in the system preferences store and exported. Partition settings — the daily automatic limit, list thumbnails — are stored in that partition's database (`setting`) and exported with the partition. Device settings — text size, line spacing, typeface, default display mode, the image-cache size limit, whether the adult partition is on and when it locks — are stored in the system preferences store and never exported. The cache size shown in Settings and its Clear action apply to the current partition's image cache only.
 
 Primary keys are UUID strings. Times are UTC. Configuration entities carry `updated_at`, unused for now, which leaves room for sync later.
 
@@ -229,7 +229,7 @@ Primary keys are UUID strings. Times are UTC. Configuration entities carry `upda
 | `model_slot` | role (`primary` / `backup`), preset, base_url, model, key_ref, updated_at |
 | `setting` | key, value (partition settings) |
 
-No table has a partition column; the file a row lives in decides its partition. Separate files are a convention, not a guarantee the database enforces: the protection is that ordinary code is handed one library with one connection (section 6). Only two operations touch both libraries, and both require the adult partition to be unlocked: moving a category between partitions, and importing or replacing a configuration that includes the adult partition. Address uniqueness is checked inside one library only.
+No table has a partition column; the file a row lives in decides its partition. Separate files are a convention, not a guarantee the database enforces: the protection is that ordinary code is handed one library with one connection (section 6). Three operations touch both libraries, and each requires the adult partition to be unlocked before the adult library is read or written: moving a category between partitions, exporting a configuration that includes the adult partition, and importing or replacing one that includes it. Address uniqueness is checked inside one library only.
 
 ## 5 Configuration file
 
@@ -246,7 +246,9 @@ Extension `.newspaw`; UTF-8 JSON.
     "refresh_minutes": 30,
     "auto_translate_titles": true,
     "translate_body_on_open": true,
-    "retention_days": 30
+    "retention_days": 30,
+    "background_refresh": true,
+    "show_original_titles": false
   },
   "categories": [
     { "id": "…", "name": "Japan", "partition": "normal", "sort_order": 1, "icon": "globe", "overview": "auto" }
@@ -360,7 +362,7 @@ Handling of the repository (settled on 2026-11-11; section 11, items 1 and 2):
 - Hugging Face's public API can list an account's models by creation time: not verified. The old connector sorted by last modification.
 - All four of the owner's current model services accept the OpenAI-compatible chat interface and can be asked for JSON output: not verified. The old system called them through the Responses interface, which is no evidence for the chat interface. Each preset is checked against its real service (RD13) before it is called supported.
 - None of the four libraries has been built for this project; open-source.md records that nothing was cloned or built. RD01 builds all four for iOS 26 and runs one representative call of each.
-- Static extraction (N12) relies on the system web view still running the app's own script when page JavaScript is disabled and subresource loading is off. That is taken from Apple's documentation and has not been tried.
+- Static extraction (N12) relies on the system web view still running the app's own script when page JavaScript is disabled and subresource loading is off, and on the app being able to refuse every later navigation. That is taken from Apple's documentation and has not been tried.
 - How often main-text extraction succeeds on the sites the owner actually follows, adult-partition sites in particular, is unknown. On failure the app falls back to the excerpt and the original page.
 - Whether a model refuses adult-partition content depends on the service the owner chooses. The app only reports the refusal.
 - The real frequency of background refresh is decided by the system and may be far lower than the chosen interval.
@@ -404,4 +406,19 @@ Reviewer: Kimi K3.1 Pro (`kimi-code/k3.1-pro`), an independent model, in design 
 | DR-18 | P2 | "No single query can read both" overstated what separate files give | Reworded: one library, one connection; two named operations touch both (section 4) |
 | DR-19 | P2 | Section 10 did not list the unbuilt libraries | Added; RD01 builds all four and runs a representative call of each |
 
-**Round 2:** recorded below once it has run.
+**Round 2 (2026-11-11): SOUND WITH CONCERNS.** DR-01 to DR-17 and DR-19 closed. DR-18 was reopened as P2 and nine new P2 findings were raised; no P1. All were accepted and corrected in this revision.
+
+| ID | Severity | Finding | Correction |
+| --- | --- | --- | --- |
+| DR-18 | P2 | Export with the adult partition also reads both libraries but was not in the list | Three operations listed, each gated on unlock (section 4) |
+| DR-20 | P2 | The import preview could compare against the locked adult library before authentication | Authentication comes before the preview; declined means no comparison at all (N10, ux S11) |
+| DR-21 | P2 | Merge conflicts and what Replace deletes per entity were undefined | Deterministic matching; per-entity keep / delete rules; a key is removed when its slot's address changes (N10) |
+| DR-22 | P2 | Three exposed settings were in no category | Classified; cache size and Clear apply to the current partition (section 4) |
+| DR-23 | P2 | Configuration files had no size or count limits | 5 MB, 500 categories, 5,000 sources, checked before the preview (N10) |
+| DR-24 | P2 | Static extraction did not forbid navigation | Every navigation after the initial load is refused (N12) |
+| DR-25 | P2 | OPML feeds outside a folder had no category | The owner picks one category for them in the preview (N03) |
+| DR-26 | P2 | Identifiers of cleaned-up items had no lifecycle | Refreshed while the feed lists the item; deleted after 30 days absent (N04) |
+| DR-27 | P2 | The first overview in a language had no starting point | Articles first seen in the last 24 hours (N07) |
+| DR-28 | P2 | The page-translation cache ignored context | Only whole-block runs are cached (N06) |
+
+**Round 3:** recorded below once it has run.

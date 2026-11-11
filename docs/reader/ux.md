@@ -173,7 +173,7 @@ A grouped list:
 ### S11 Export and import
 
 - Export: one switch, "Include the adult partition", enabled only while it is unlocked; then the system share sheet. A note states that keys are never included.
-- Import: pick a file → preview sheet. The sheet shows counts, then three groups — New, Already here, Conflicts — and a choice between Merge and Replace everything. Replace shows what will be deleted and asks again. After importing: a summary, and when slots need keys, a link to Models & translation.
+- Import: pick a file → device authentication when the file includes the adult partition and it is locked (declining continues with the normal partition only) → preview sheet. The sheet shows counts, then three groups — New, Already here, Conflicts — and a choice between Merge and Replace everything. Replace shows what will be deleted and asks again. After importing: a summary, and when slots need keys, a link to Models & translation.
 
 ### S12 First run
 

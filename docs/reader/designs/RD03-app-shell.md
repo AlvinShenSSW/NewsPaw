@@ -1,7 +1,7 @@
 # RD03 — App shell: navigation on iPhone and iPad, Library with categories
 
 Issue: [#124](https://github.com/AlvinShenSSW/NewsPaw/issues/124) · Epic E11 #114 · Requirements N01, N02, N05; ux section 2, S2 (categories), S13 (category), sections 5 and 6.
-Design version 3, 2026-11-11 (after debate rounds 1 and 2; see the last section). Author: Claude (driver of this AFK run). Implementer: Claude Opus 5.5. External gate: Kimi K3.1 Pro.
+Design version 4, 2026-11-11 (after three debate rounds; see the last section). Author: Claude (driver of this AFK run). Implementer: Claude Opus 5.5. External gate: Kimi K3.1 Pro.
 
 ## Spec review
 
@@ -30,10 +30,10 @@ Settled here because the issue and ux.md leave it open:
 6. Name rules are enforced in place with a message, using the package's own rule: an empty or over-long name cannot be saved. Duplicate names are allowed.
 7. When a change cannot be saved for any other reason, the interface says so, the list is reloaded from storage so that it shows what is really there, and an open editor stays open with its text.
 8. Today, All Unread, Starred and a selected category are real destinations with a truthful empty state. Settings shows About with the app version.
-9. Colour, type and spacing tokens of ux section 5 are defined once. A test computes the contrast of every text and accent token on every background it is used on, and of the on-accent token on the accent, in light and dark, and requires at least 4.5:1. No control is filled with the accent unless its label uses the on-accent token.
+9. Colour, type and spacing tokens of ux section 5 are defined once. A test computes the contrast of every text and accent token on every background it is used on, and of the on-accent token on the accent, in light and dark, and requires at least 4.5:1. No control is filled with the accent unless its label uses the on-accent token; the list's Edit / Done control is the app's own unfilled text button for that reason (the system's Done button is a white glyph on the accent, 2.5:1 in dark).
 10. Every icon-only control has an accessibility label; the identified interactive controls measure at least 44 × 44 pt; a selected icon in the icon grid is marked by more than colour; at the largest accessibility text size category rows grow and nothing is clipped.
 11. Every string the app can show is in the catalog with a Simplified Chinese translation, and the catalog has no unused key. A script checks this against the build's extracted strings, locally and in CI.
-12. Evidence: UI tests that assert criteria 1–8 (criterion 7 through a debug-only switch that makes the next save fail) and the measurable parts of 10 on the iPhone and on both iPads in both orientations, plus one run or screenshot below 700 pt on iPad; screenshots on the three NewsPaw simulators in portrait and landscape, one in dark appearance, one at the largest accessibility text size, one in Simplified Chinese; and a short accessibility record in the pull request.
+12. Evidence: UI tests that assert criteria 1–8 (criterion 7 through a debug-only switch that makes the next save fail) and the measurable parts of 10 on the iPhone and on both iPads in both orientations, plus one run or screenshot below 700 pt on iPad; screenshots on the three NewsPaw simulators in portrait and landscape, one in dark appearance, one at the largest accessibility text size, one in Simplified Chinese; and a short accessibility record in the pull request, which lists as not verified by automation, for the owner's device check: VoiceOver staying inside the open slide-over, the VoiceOver escape gesture closing it, and a hardware Escape key closing it.
 
 ## Frozen issue contract
 
@@ -62,12 +62,12 @@ Settled here because the issue and ux.md leave it open:
 | Assumption | Risk if wrong | Verified by |
 | --- | --- | --- |
 | Sibling navigation stacks placed side by side, with no split view around them, are independent panes: each has its own bar, title and toolbar, and a push stays in its pane | The container must be built differently | Measured in debate round 2 on iPad mini and iPad Pro 11 simulators; then the UI tests' frame and bar assertions |
-| A sidebar the app slides over the content itself (below 1100 pt) can be made to behave like a modal layer for touch, keyboard and VoiceOver | The sidebar below 1100 pt needs another presentation | Debate round 3 probes it; then UI tests |
+| A full-screen cover with a clear background, holding the dimmed layer and the sidebar panel, behaves as a modal layer and can replace the system's presentation animation with a slide from the leading edge | The sidebar below 1100 pt needs another presentation | Measured in debate round 3 for touch, keyboard, rotation, edit mode and frames; VoiceOver containment, the escape gesture and the Escape key cannot be driven from UI tests and are left to the owner's device check |
 | A tab container given a compact horizontal size class shows the bottom tab bar on iPad below 700 pt | A 33 pt band shows the system's top bar instead | Measured in round 1 (U5); UI test or screenshot below 700 pt |
 | One window can be enforced with a generated Info.plist | A partial Info.plist is needed | The built Info.plist |
 | `python3` exists on the CI image and the build leaves its extracted strings where the script can find them | The strings check runs locally only | The pull request's CI run |
 
-Measured in debate round 1 on iOS 27.0 simulators (a local pass proves this machine only): a UI-test target can be added by hand to the project and run with `xcodebuild`; XCUITest can rotate iPad and iPhone; `simctl ui` sets dark appearance and the largest text size on a booted simulator; a dynamic colour built from palette values renders the right value in each appearance; `#if DEBUG` code in the package is present in Xcode debug builds and absent from release; a `@MainActor @Observable` model awaiting the library compiles in Swift 6 mode; a three-column split view cannot tile two columns at 744 pt. Measured in round 2: two navigation stacks inside a split view's detail share one bar and one navigation context, and no split-view style overlays the sidebar below 1100 pt while tiling it from 1100 pt — which is why this design uses no split view at all; three sibling stacks do give independent panes; setting `INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO` removes the scene manifest, leaves the app single-window and still resizable; a sheet presented from the root keeps its text across the 700 pt switch; an alert presented from the root closes a sheet presented from the root.
+Measured in debate round 1 on iOS 27.0 simulators (a local pass proves this machine only): a UI-test target can be added by hand to the project and run with `xcodebuild`; XCUITest can rotate iPad and iPhone; `simctl ui` sets dark appearance and the largest text size on a booted simulator; a dynamic colour built from palette values renders the right value in each appearance; `#if DEBUG` code in the package is present in Xcode debug builds and absent from release; a `@MainActor @Observable` model awaiting the library compiles in Swift 6 mode; a three-column split view cannot tile two columns at 744 pt. Measured in round 2: two navigation stacks inside a split view's detail share one bar and one navigation context, and no split-view style overlays the sidebar below 1100 pt while tiling it from 1100 pt — which is why this design uses no split view at all; three sibling stacks do give independent panes; setting `INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO` removes the scene manifest, leaves the app single-window and still resizable; a sheet presented from the root keeps its text across the 700 pt switch; an alert presented from the root closes a sheet presented from the root. Measured in round 3: a hand-built overlay is not modal for the keyboard (typing reaches the pane behind), while the same panel inside a clear full-screen cover is; a tap outside the panel closes it without triggering what is underneath; rotating to 1100 pt or more while it is open ends in the pane form; a sheet asked for from inside a cover stays pending until the cover closes; tapping a row in edit mode still selects it.
 
 ## Approach
 
@@ -89,7 +89,8 @@ The state is the tab and the Library path; the sidebar selection is derived from
 **Containers.** The root measures width and idiom and shows the tab container (iPhone always; iPad below 700 pt) or the pane container (iPad from 700 pt). The rule is one pure function in the package (`WindowLayout`: idiom and width in; structure, whether the sidebar is a pane, and the list pane's width out) with a unit test; the root recomputes it when the width changes and at no other time.
 - **Tab container.** Today, Library, Starred, Settings, each a navigation stack; given a compact horizontal size class so the bottom tab bar is used on iPad too.
 - **Pane container.** Sibling navigation stacks side by side, separated by hairlines, with no split view. From 1100 pt: a sidebar pane 280 pt wide, then the destination. Below 1100 pt: the destination only, and a sidebar button at the leading edge of the leading pane's bar. A list destination is a list pane (300 pt wide when list and reading together have less than 800 pt, otherwise 340 pt) and a reading pane taking the rest; Today and Settings are one pane. In this issue the list pane shows the destination's empty state and the reading pane shows "No article selected".
-- **Sidebar.** The same content in both forms: Today, All Unread, Starred; the categories, with edit mode for reorder and delete; New category and Settings at the bottom. As a pane it is always shown. As a slide-over it comes in from the leading edge over a dimmed layer, 320 pt wide, built from the same standard list in its own navigation stack; it is a modal layer — touches outside close it, VoiceOver stays inside it, the escape gesture and the Escape key close it, and with Reduce Motion it appears without sliding. It closes when a destination is chosen and when the width changes structure. The app draws the dimmed layer and nothing else; the sidebar's background is the system's.
+- **Sidebar.** The same content in both forms: Today, All Unread, Starred; the categories, with edit mode for reorder and delete; New category and Settings at the bottom. As a pane it is always shown. As a slide-over it is presented in a full-screen cover with a clear background, so that the system makes it modal (the keyboard is dismissed and typing cannot reach what is behind): inside the cover, a dimmed layer and a 320 pt panel at the leading edge holding the same standard list in its own navigation stack. The cover's own animation is switched off and the panel slides in from the leading edge instead, or simply appears with Reduce Motion. A tap on the dimmed layer closes it; choosing a destination closes it; a width change that makes the sidebar a pane closes it. New category and Category settings chosen in the slide-over close it first and then open their sheet from the root, because a sheet asked for from inside a cover would wait until the cover closed. Delete confirmations started in the slide-over attach to its content. The app draws the dimmed layer and nothing else; the panel's background is the system's.
+- **In both forms:** while the category list is in edit mode a tap on a row does not navigate — only the reorder handle and the delete control act. The sidebar button is on the root of the leading pane only; after a push in that pane the back button takes its place and the user goes back first.
 
 **Library on iPhone.** The Library tab root is the category list: the All Unread row, then the categories; an Edit control for reorder and delete; a New category control; a context menu with Category settings. The same category-list component is used in the sidebar.
 
@@ -110,7 +111,7 @@ The state is the tab and the Library path; the sidebar selection is derived from
 | Path | Change | Reason |
 | --- | --- | --- |
 | `ios/NewsPaw/NewsPawApp.swift` | change | root wiring |
-| `ios/NewsPaw/AppState/**` (app model, category model, navigation model, layout rule, debug launch options) | add | criteria 2–7 |
+| `ios/NewsPaw/AppState/**` (app model, category model, navigation model, debug launch options) | add | criteria 2–7 |
 | `ios/NewsPaw/Navigation/**` (root, tab container, pane container, sidebar pane and slide-over, list and reading panes) | add | criteria 1–3, 8 |
 | `ios/NewsPaw/LibraryScreen/**` (category list, row, new-category sheet, category settings sheet, icon grid, delete flow) | add | criteria 4–7 |
 | `ios/NewsPaw/Destinations/**` (Today, All Unread, Starred, category, Settings, About, startup failure) | add | criterion 8 |
@@ -150,7 +151,7 @@ The state is the tab and the Library path; the sidebar selection is derived from
 | --- | --- |
 | Empty or over-long name | Save disabled / message under the field; nothing is sent to storage |
 | Any other error from a category operation (including a category or move target that no longer exists) | Alert "The change could not be saved."; the list reloads from storage; open sheets stay open with their text |
-| The shown category is deleted | Selection moves to All Unread (split) or the Library root (tabs) |
+| The shown category is deleted | Selection moves to All Unread (panes) or the Library root (tabs) |
 | No category exists | "No categories yet" with the working New category control |
 | The library failed to open | RD02's failure screen, unchanged |
 
@@ -158,7 +159,7 @@ The state is the tab and the Library path; the sidebar selection is derived from
 
 | Risk | Likelihood | Impact | Mitigation |
 | --- | --- | --- | --- |
-| The app-presented sidebar slide-over is less polished or less accessible than the system's | Medium | Medium | Standard list and navigation stack inside it; modal behaviour specified and tested; probed in debate round 3 |
+| The slide-over is less polished or less accessible than the system's sidebar | Medium | Medium | Hosted in a system full-screen cover so modality is the system's; standard list and navigation stack inside; three accessibility behaviours listed for the owner's device check |
 | Later screens need something the pane container cannot do | Low | High | Each pane is an ordinary navigation stack, measured to keep its own bar, toolbar, bottom bar and pushes |
 | UI tests are flaky on the simulator | Medium | Medium | Wait on existence, no fixed sleeps, width preconditions; run three times before hand-back |
 | Hand-editing the project for a second target breaks the build | Low | Medium | Done once in the debate's probe; `xcodebuild -list`, clean build, CI |
@@ -172,7 +173,7 @@ As Non-goals; also drag and drop between categories and state restoration across
 
 - Package: palette contrast for every pairing in light and dark; category summaries with and without sources; the name rule (empty, white space only, 100 and 101 characters); the debug seeding function exists only in debug.
 - Window layout (package): 699 / 700 / 799 / 800 / 1099 / 1100 pt on iPad, including the list pane's width on each side of its switch; iPhone at any width.
-- UI tests (local): structure by frames on iPhone 18 Pro Max, iPad mini and iPad Pro 11 simulators, portrait and landscape, including Today at full width; rotation re-establishes the layout; one navigation bar per pane; the slide-over sidebar opens, selects a destination and closes, closes on an outside tap, and is not affected by the keyboard; a forced save failure shows the alert, reloads the list and leaves the sheet open with its text; category walk-through with relaunch; empty library; both deletion dialogs; deleting the shown category; name validation; a draft surviving the 700 pt switch if the window can be resized from the test, otherwise a recorded manual check; control sizes and labels.
+- UI tests (local): structure by frames on iPhone 18 Pro Max, iPad mini and iPad Pro 11 simulators, portrait and landscape, including Today at full width; rotation re-establishes the layout; one navigation bar per pane; the slide-over sidebar opens, selects a destination and closes, closes on an outside tap without triggering the control underneath, dismisses the keyboard when it opens, ends in the pane form after rotating to landscape while open, and does not navigate on a row tap in edit mode; a forced save failure shows the alert, reloads the list and leaves the sheet open with its text; category walk-through with relaunch; empty library; both deletion dialogs; deleting the shown category; name validation; a draft surviving the 700 pt switch if the window can be resized from the test, otherwise a recorded manual check; control sizes and labels.
 - Strings script: passes on the final build; fails when a key is removed from the catalog (shown once).
 - Screenshots and the accessibility record as criterion 12.
 - The `AGENTS.md` commands pass.
@@ -217,3 +218,16 @@ Branch `feat/rd03-app-shell` from `main` after RD02 has merged; the design is co
 | U23 | minor | The strings script's inputs were not pinned down | Derived-data path, app target only, de-duplicated, literal keys |
 | U24 | minor | Seeding seam details | Idempotent; nothing without a category; release absence is a review check |
 | U25 | minor | Two rows of the round-1 table used version-1 criterion numbers | Marked |
+
+**Round 3 (2026-11-11).** The critic built the slide-over as version 3 specified and three native alternatives, on iPad mini and iPad Pro 11 simulators. U1, U8 and U17–U25 resolved; the pane container held. Six new findings, no P1.
+
+| ID | Severity | Finding | Resolution in version 4 |
+| --- | --- | --- | --- |
+| U26 | P2 | A hand-built overlay is not modal for the keyboard | The panel is hosted in a clear full-screen cover (measured: identical frames, keyboard dismissed) |
+| U27 | P2 | VoiceOver containment, the escape gesture and the Escape key cannot be verified by UI tests | Modality comes from the system cover; the three are listed for the owner's device check |
+| U28 | P2 | A row tap in edit mode navigated and closed the slide-over | Row taps do not navigate in edit mode |
+| U29 | minor | The sidebar button vanished after a push | Stated: on the pane's root only |
+| U30 | minor | The system's Done button is white on the accent, 2.5:1 in dark | The app's own unfilled Edit / Done control |
+| U31 | minor | Three leftovers from earlier versions | Reworded |
+
+Version 4 changes only what round 3 measured, so no further round was run.

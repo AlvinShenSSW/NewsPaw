@@ -14,7 +14,7 @@ struct PaneContainer: View {
             if layout.sidebarIsPane {
                 NavigationStack {
                     SidebarView(form: .pane)
-                        .paneRoot(titled: false)
+                        .paneRoot(inlineTitle: false)
                 }
                 .frame(width: WindowLayout.sidebarPaneWidth)
                 .paneIdentifier(AccessibilityID.sidebarPane)
@@ -48,16 +48,16 @@ struct PaneContainer: View {
             NavigationStack {
                 TodayView()
                     .toolbar { sidebarButton }
-                    .paneRoot(titled: true)
+                    .paneRoot(inlineTitle: layout.sidebarIsPane)
             }
             .paneIdentifier(AccessibilityID.fullPane)
         case .settings:
             NavigationStack(path: $navigation.settingsPath) {
                 SettingsView()
                     .toolbar { sidebarButton }
-                    .paneRoot(titled: true)
+                    .paneRoot(inlineTitle: layout.sidebarIsPane)
                     .navigationDestination(for: SettingsRoute.self) { _ in
-                        AboutView().paneRoot(titled: true)
+                        AboutView().paneRoot(inlineTitle: layout.sidebarIsPane)
                     }
             }
             .paneIdentifier(AccessibilityID.fullPane)
@@ -65,7 +65,7 @@ struct PaneContainer: View {
             NavigationStack {
                 ArticleListView(kind: ArticleListKind(selection))
                     .toolbar { sidebarButton }
-                    .paneRoot(titled: true)
+                    .paneRoot(inlineTitle: layout.sidebarIsPane)
             }
             .id(selection)
             .frame(width: layout.listPaneWidth)
@@ -73,7 +73,7 @@ struct PaneContainer: View {
             PaneSeparator()
             NavigationStack {
                 ReadingPlaceholderView()
-                    .paneRoot(titled: false)
+                    .paneRoot(inlineTitle: false)
             }
             .paneIdentifier(AccessibilityID.readingPane)
         }
@@ -124,11 +124,15 @@ extension View {
     /// leading edge is laid out at the window's margin clipped to the pane,
     /// so the title touches the separator (RD03 F4; safe-area padding and a
     /// child hosting controller do not change it). An inline large title
-    /// takes the bar's own inset, so every titled pane uses it, wherever the
-    /// pane sits.
+    /// takes the bar's own inset, so `inlineTitle` is set for the titled
+    /// panes beside the sidebar pane (1100 pt and wider). Below 1100 pt every
+    /// titled pane starts at the window's leading edge, where the ordinary
+    /// large title is inset correctly; there the inline form must not be
+    /// used, because it puts the title at the leading edge and moves the
+    /// leading bar item, the sidebar button, to the trailing end (RD03 N1).
     @ViewBuilder
-    func paneRoot(titled: Bool) -> some View {
-        if titled {
+    func paneRoot(inlineTitle: Bool) -> some View {
+        if inlineTitle {
             ignoresSafeArea(.keyboard)
                 .toolbarTitleDisplayMode(.inlineLarge)
         } else {

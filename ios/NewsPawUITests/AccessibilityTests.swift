@@ -130,12 +130,12 @@ final class AccessibilityTests: NewsPawUITestCase {
         assertTapTarget(element(AccessibilityID.aboutRow), "About row")
     }
 
-    /// A text field's tap target: a tap at each edge of a 44 pt square
-    /// centred on the field, along an axis where the field is drawn smaller,
-    /// gives it keyboard focus (the field itself is drawn 22 pt tall in its
-    /// row).
+    /// A text field's tap target: its frame is at least 44 pt tall, and a
+    /// tap just inside the top and just inside the bottom of that frame each
+    /// gives it keyboard focus. The text itself is drawn 22 pt tall in the
+    /// middle, so these taps land on the area around it.
     private func assertFieldTapTarget(_ field: XCUIElement, _ name: String, file: StaticString = #filePath, line: UInt = #line) {
-        waitFor(field, file: file, line: line)
+        let frame = waitFor(field, file: file, line: line).frame
         func focused() -> Bool { (field.value(forKey: "hasKeyboardFocus") as? Bool) == true }
         func unfocus() {
             if focused() {
@@ -145,7 +145,14 @@ final class AccessibilityTests: NewsPawUITestCase {
             XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 5), .completed, "\(name) kept focus", file: file, line: line)
         }
         unfocus()
-        assertBarButtonTapTarget(field, name, activated: focused, reset: unfocus, file: file, line: line)
+        assertTapTarget(field, name, file: file, line: line)
+        for y in [frame.minY + 3, frame.maxY - 3] {
+            app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.midX, dy: y)).tap()
+            let gained = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in focused() }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [gained], timeout: 5), .completed,
+                           "\(name): a tap at y = \(y) (frame \(frame)) did not give it focus", file: file, line: line)
+            unfocus()
+        }
     }
 
     /// The Edit control in its Done state: a tap at each edge of a 44 pt

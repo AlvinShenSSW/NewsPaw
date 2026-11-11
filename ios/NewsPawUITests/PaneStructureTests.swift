@@ -84,7 +84,7 @@ final class PaneStructureTests: NewsPawUITestCase {
             XCTAssertFalse(button(AccessibilityID.showSidebarButton).exists)
         } else {
             XCTAssertFalse(element(AccessibilityID.sidebarPane).exists)
-            XCTAssertTrue(button(AccessibilityID.showSidebarButton).exists)
+            assertAtLeadingEdge(button(AccessibilityID.showSidebarButton), of: full, "the sidebar button on Today")
         }
         XCTAssertEqual(full.minX, leading, accuracy: 1.5)
         XCTAssertEqual(full.maxX, window.maxX, accuracy: 1)
@@ -101,6 +101,9 @@ final class PaneStructureTests: NewsPawUITestCase {
         let listAndReading = width - (sidebarIsPane ? 280 : 0)
         XCTAssertEqual(list.width, listAndReading < 800 ? 300 : 340, accuracy: 1)
         XCTAssertEqual(list.minX, leading, accuracy: 1.5)
+        if !sidebarIsPane {
+            assertAtLeadingEdge(button(AccessibilityID.showSidebarButton), of: list, "the sidebar button on All Unread")
+        }
         XCTAssertLessThanOrEqual(list.maxX, reading.minX + 0.5, "the list pane must not overlap the reading pane")
         XCTAssertEqual(reading.maxX, window.maxX, accuracy: 1)
         XCTAssertTrue(element(AccessibilityID.allUnreadEmpty).exists)
@@ -126,12 +129,22 @@ final class PaneStructureTests: NewsPawUITestCase {
         } else {
             XCTAssertFalse(button(AccessibilityID.showSidebarButton).exists, "the back button takes the sidebar button's place")
         }
+        assertAtLeadingEdge(app.navigationBars["About"].buttons.element(boundBy: 0), of: settingsPane, "the back button after a push")
         app.navigationBars["About"].buttons.element(boundBy: 0).tap()
         waitForAbsence(element(AccessibilityID.versionValue))
         if !sidebarIsPane {
             waitFor(button(AccessibilityID.showSidebarButton))
         }
         screenshot("settings-\(Int(width))")
+    }
+
+    /// A bar button sits at the leading edge of its pane's bar: its leading
+    /// edge at most 20 pt inside the pane (measured: 14 pt for the sidebar
+    /// button, 10 pt for a back button).
+    private func assertAtLeadingEdge(_ control: XCUIElement, of pane: CGRect, _ name: String, file: StaticString = #filePath, line: UInt = #line) {
+        let frame = waitFor(control, file: file, line: line).frame
+        XCTAssertGreaterThanOrEqual(frame.minX, pane.minX - 1, "\(name) \(frame) lies outside its pane \(pane)", file: file, line: line)
+        XCTAssertLessThanOrEqual(frame.minX, pane.minX + 20, "\(name) \(frame) is not at the leading edge of its pane \(pane)", file: file, line: line)
     }
 
     /// Each pane with a title holds exactly one navigation bar at its own

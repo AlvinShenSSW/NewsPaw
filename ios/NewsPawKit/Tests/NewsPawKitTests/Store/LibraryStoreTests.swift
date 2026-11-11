@@ -60,6 +60,30 @@ struct LibraryStoreTests {
         #expect(try await store.createAdultLibrary() === adult)
     }
 
+    @Test("creating the adult library succeeds while an open of the missing file is in flight")
+    func createWhileOpenOfMissingAdultIsInFlight() async throws {
+        for round in 0..<200 {
+            let directory = try makeTemporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let store = LibraryStore(directory: directory)
+
+            let opening = Task { try await store.openAdultLibrary() }
+            let creating = Task { try await store.createAdultLibrary() }
+            let created = try await creating.value
+
+            // The open either found no file or arrived after the create.
+            switch await opening.result {
+            case .success(let opened):
+                #expect(opened === created, "round \(round)")
+            case .failure(let error):
+                #expect(error as? LibraryError == .missing, "round \(round): \(error)")
+            }
+            #expect(created.partition == .adult)
+            #expect(store.adultLibraryExists, "round \(round)")
+            #expect(try await store.openAdultLibrary() === created, "round \(round)")
+        }
+    }
+
     @Test("opening the same partition again returns the same library")
     func reopenReturnsSameInstance() async throws {
         let directory = try makeTemporaryDirectory()

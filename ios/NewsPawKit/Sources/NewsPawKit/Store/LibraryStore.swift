@@ -2,9 +2,9 @@ import Foundation
 import GRDB
 import SQLite3
 
-/// Owns the directory that holds the libraries and gives out at most one
-/// `Library` per partition, so that no database file is ever opened by two
-/// connection pools at once.
+/// Owns the directory that holds the libraries and gives out, for this store,
+/// at most one `Library`, and so one connection pool, per partition. The
+/// guarantee is per store instance: the app creates one store.
 ///
 /// The normal library always exists and is created on first use. The adult
 /// library's file is created only by an explicit call (spec N02, N09).
@@ -67,8 +67,13 @@ public actor LibraryStore {
         if let existing = libraries[partition] {
             return try await existing.value
         }
-        let directory = directory
         let url = fileURL(for: partition)
+        // Checked here rather than in the open itself, so that an open of a
+        // missing file never holds the entry a simultaneous create would join.
+        if !create, !FileManager.default.fileExists(atPath: url.path) {
+            throw LibraryError.missing
+        }
+        let directory = directory
         let now = now
         let opening = Task.detached {
             try Self.makeLibrary(
@@ -110,8 +115,6 @@ public actor LibraryStore {
         do {
             if create {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            } else if !FileManager.default.fileExists(atPath: url.path) {
-                throw LibraryError.missing
             }
             var configuration = Configuration()
             configuration.label = "NewsPaw.\(partition.rawValue)"

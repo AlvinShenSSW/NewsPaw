@@ -56,7 +56,6 @@ struct ShellView: View {
             CategorySheetView(sheet: sheet)
                 .categoryDialogs(host: .sheet)
                 .environment(categories)
-                .environment(navigation)
                 .tint(Theme.accent)
         }
         .categoryDialogs(host: .root)

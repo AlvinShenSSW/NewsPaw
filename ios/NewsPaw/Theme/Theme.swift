@@ -55,11 +55,3 @@ enum Theme {
     /// The smallest tap target (ux section 6).
     static let minimumTapTarget = 44.0
 }
-
-extension View {
-    /// Makes a control at least 44 × 44 pt (ux section 6); bar buttons are
-    /// smaller by default.
-    func minimumTapTarget() -> some View {
-        frame(minWidth: Theme.minimumTapTarget, minHeight: Theme.minimumTapTarget)
-    }
-}

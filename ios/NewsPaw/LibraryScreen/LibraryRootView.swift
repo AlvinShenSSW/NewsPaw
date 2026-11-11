@@ -31,15 +31,11 @@ struct LibraryRootView: View {
                 EditDoneButton(editMode: $editMode)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
+                Menu("Add", systemImage: "plus") {
                     Button("New Category", systemImage: "folder.badge.plus") {
                         categories.beginNewCategory()
                     }
                     .accessibilityIdentifier(AccessibilityID.newCategoryButton)
-                } label: {
-                    Label("Add", systemImage: "plus")
-                        .labelStyle(.iconOnly)
-                        .minimumTapTarget()
                 }
                 .accessibilityIdentifier(AccessibilityID.addMenu)
             }

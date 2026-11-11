@@ -80,9 +80,9 @@ struct EditDoneButton: View {
             }
         } label: {
             if editMode.isEditing {
-                Text("Done").minimumTapTarget()
+                Text("Done")
             } else {
-                Text("Edit").minimumTapTarget()
+                Text("Edit")
             }
         }
         .accessibilityIdentifier(AccessibilityID.editButton)

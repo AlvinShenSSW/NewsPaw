@@ -78,12 +78,8 @@ struct PaneContainer: View {
     private var sidebarButton: some ToolbarContent {
         if !layout.sidebarIsPane {
             ToolbarItem(placement: .topBarLeading) {
-                Button {
+                Button("Show Sidebar", systemImage: "sidebar.leading") {
                     navigation.openSlideOver()
-                } label: {
-                    Label("Show Sidebar", systemImage: "sidebar.leading")
-                        .labelStyle(.iconOnly)
-                        .minimumTapTarget()
                 }
                 .accessibilityIdentifier(AccessibilityID.showSidebarButton)
             }

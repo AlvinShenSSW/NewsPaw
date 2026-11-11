@@ -172,7 +172,9 @@ final class CategoryFlowTests: NewsPawUITestCase {
 
         openCategorySettings("World")
         button(AccessibilityID.deleteCategoryButton).tap()
-        waitFor(app.buttons["Delete Category"]).tap()
+        // The dialog's button, not the sheet's own Delete Category button.
+        let confirm = app.buttons.matching(NSPredicate(format: "label == 'Delete Category' AND identifier != %@", AccessibilityID.deleteCategoryButton)).firstMatch
+        waitFor(confirm).tap()
         waitForAbsence(app.textFields[AccessibilityID.nameField])
         waitFor(app.navigationBars["All Unread"])
         XCTAssertTrue(element(AccessibilityID.allUnreadEmpty).exists)

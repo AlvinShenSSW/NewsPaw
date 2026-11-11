@@ -44,6 +44,7 @@ struct CategoryRows: View {
             ForEach(categories.listedSummaries) { summary in
                 row(summary)
                     .accessibilityIdentifier(AccessibilityID.categoryRow(summary.category.name))
+                    .moveDisabled(categories.isDeleting)
                     .contextMenu {
                         Button("Category Settings", systemImage: "gearshape") {
                             presentSheet { categories.beginSettings(summary.id) }

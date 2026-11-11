@@ -52,6 +52,10 @@ final class CategoryModel {
     private var queuedOperations = 0
     /// Categories whose deletion has been chosen and not yet finished.
     private var deletionsStarted: Set<UUID> = []
+    /// Raised each time an editor opens. Two editors of the same kind compare
+    /// equal as sheets, so a save closes its sheet only if no other editor has
+    /// been opened since it started.
+    private var editorSession = 0
 
     #if DEBUG
     /// Set by the UI tests: the next save fails before reaching storage.
@@ -63,6 +67,13 @@ final class CategoryModel {
     init(library: Library, navigation: NavigationModel) {
         self.library = library
         self.navigation = navigation
+    }
+
+    /// Whether a confirmed deletion is still running. Rows cannot be moved
+    /// meanwhile: the order would still hold the category being deleted and
+    /// storage would refuse it.
+    var isDeleting: Bool {
+        !deletionsStarted.isEmpty
     }
 
     var activeDialogHost: CategoryDialogHost {
@@ -105,6 +116,7 @@ final class CategoryModel {
     func beginNewCategory() {
         draftName = ""
         draftIcon = .folder
+        editorSession += 1
         sheet = .newCategory
     }
 
@@ -112,6 +124,7 @@ final class CategoryModel {
         guard let summary = summary(id) else { return }
         draftName = summary.category.name
         draftIcon = summary.category.icon
+        editorSession += 1
         sheet = .settings(id)
     }
 
@@ -120,9 +133,11 @@ final class CategoryModel {
     }
 
     /// Saves the open sheet. It closes on success and stays open with its
-    /// text on failure.
+    /// text on failure. If the editor was cancelled and another opened while
+    /// the save ran, the other editor stays open.
     func saveSheet() async {
         guard let current = sheet, draftNameProblem == nil else { return }
+        let session = editorSession
         let name = draftName
         let icon = draftIcon
         let saved: Bool
@@ -145,7 +160,7 @@ final class CategoryModel {
                 }
             }
         }
-        if saved, sheet == current {
+        if saved, sheet == current, editorSession == session {
             sheet = nil
         }
     }

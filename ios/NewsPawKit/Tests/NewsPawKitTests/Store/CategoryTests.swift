@@ -293,3 +293,76 @@ struct CategoryTests {
         #expect(try await rowCounts(library) == countsBefore)
     }
 }
+
+@Suite("Category summaries, name rule and UI-test seeding")
+struct CategorySummaryTests {
+    @Test("summaries list the categories in order with their source counts")
+    func summaries() async throws {
+        let fixture = try await CategoryTests.TestLibrary.make()
+        defer { fixture.close() }
+        let library = fixture.library
+        #expect(try await library.categorySummaries().isEmpty)
+        let empty = try await library.createCategory(name: "Empty", icon: .folder)
+        let full = try await library.createCategory(name: "Full", icon: .globe)
+        try await Sample.fill(library, category: full.id, prefix: "full", at: fixture.clock.now())
+        try await library.reorderCategories([full.id, empty.id])
+
+        let summaries = try await library.categorySummaries()
+
+        #expect(summaries.map(\.category.id) == [full.id, empty.id])
+        #expect(summaries.map(\.sourceCount) == [2, 0])
+        #expect(summaries.map(\.category) == (try await library.categories()))
+        #expect(summaries[0].id == full.id)
+    }
+
+    @Test("the name rule refuses empty and over-long names and accepts 1 to 100 characters", arguments: [
+        ("", CategoryNameProblem?.some(.empty)),
+        ("   \n\t", .some(.empty)),
+        ("a", nil),
+        ("  World  ", nil),
+        (String(repeating: "a", count: 100), nil),
+        (" " + String(repeating: "é", count: 100) + " ", nil),
+        (String(repeating: "a", count: 101), .some(.tooLong)),
+    ])
+    func nameRule(name: String, problem: CategoryNameProblem?) {
+        #expect(Library.categoryNameProblem(name) == problem)
+    }
+
+    @Test("the storage operations apply the same name rule")
+    func nameRuleMatchesStorage() async throws {
+        let fixture = try await CategoryTests.TestLibrary.make()
+        defer { fixture.close() }
+        for name in ["", " ", "ok", String(repeating: "a", count: 100), String(repeating: "a", count: 101)] {
+            let problem = Library.categoryNameProblem(name)
+            do {
+                _ = try await fixture.library.createCategory(name: name, icon: .folder)
+                #expect(problem == nil)
+            } catch let error as LibraryError {
+                #expect(error == (problem == .empty ? .emptyName : .nameTooLong))
+            }
+        }
+    }
+
+    #if DEBUG
+    @Test("debug seeding fills only an empty first category and does nothing without a category")
+    func seeding() async throws {
+        let fixture = try await CategoryTests.TestLibrary.make()
+        defer { fixture.close() }
+        let library = fixture.library
+
+        try await library.insertSyntheticSourcesForUITests(count: 3)
+        #expect(try await library.sources().isEmpty)
+
+        let first = try await library.createCategory(name: "First", icon: .folder)
+        let second = try await library.createCategory(name: "Second", icon: .folder)
+        try await library.insertSyntheticSourcesForUITests(count: 3)
+        try await library.insertSyntheticSourcesForUITests(count: 3)
+
+        let summaries = try await library.categorySummaries()
+        #expect(summaries.map(\.sourceCount) == [3, 0])
+        #expect(try await library.sources().allSatisfy { $0.categoryID == first.id })
+        #expect(summaries.map(\.id) == [first.id, second.id])
+        try await expectIdentifiersAreLowercaseText(library)
+    }
+    #endif
+}

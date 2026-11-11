@@ -11,16 +11,62 @@ public enum CategorySourcesDisposition: Sendable, Hashable {
     case move(to: UUID)
 }
 
+/// A category with the number of sources it holds.
+public struct CategorySummary: Sendable, Hashable, Identifiable {
+    public let category: Category
+    public let sourceCount: Int
+
+    public var id: UUID { category.id }
+}
+
+/// Why a category name is refused.
+public enum CategoryNameProblem: Sendable, Hashable {
+    /// Nothing is left once surrounding white space is removed.
+    case empty
+    /// Longer than `Library.maximumCategoryNameLength` once trimmed.
+    case tooLong
+}
+
 /// Category management (spec N02). Every operation checks and writes inside
 /// one write transaction and sets `updated_at` from the store's clock.
 extension Library {
     /// The longest category name accepted, in characters.
     public static let maximumCategoryNameLength = 100
 
+    /// The rule every category name must meet: trimmed of surrounding white
+    /// space, 1 to `maximumCategoryNameLength` characters. Returns `nil`
+    /// when `name` is accepted.
+    public static func categoryNameProblem(_ name: String) -> CategoryNameProblem? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return .empty
+        }
+        if trimmed.count > maximumCategoryNameLength {
+            return .tooLong
+        }
+        return nil
+    }
+
     /// The library's categories in the owner's order.
     public func categories() async throws -> [Category] {
         try await read { db in
             try Category.order(Column("sort_order"), Column("id")).fetchAll(db)
+        }
+    }
+
+    /// The library's categories in the owner's order, each with the number
+    /// of its sources, read in one transaction.
+    public func categorySummaries() async throws -> [CategorySummary] {
+        try await read { db in
+            let categories = try Category.order(Column("sort_order"), Column("id")).fetchAll(db)
+            let rows = try Row.fetchAll(db, sql: "SELECT category_id, COUNT(*) AS n FROM source GROUP BY category_id")
+            var counts: [String: Int] = [:]
+            for row in rows {
+                counts[row["category_id"]] = row["n"]
+            }
+            return categories.map { category in
+                CategorySummary(category: category, sourceCount: counts[category.id.databaseKey] ?? 0)
+            }
         }
     }
 
@@ -139,13 +185,44 @@ extension Library {
     }
 
     private static func validatedName(_ name: String) throws -> String {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            throw LibraryError.emptyName
+        switch categoryNameProblem(name) {
+        case .empty: throw LibraryError.emptyName
+        case .tooLong: throw LibraryError.nameTooLong
+        case nil: return name.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        if trimmed.count > maximumCategoryNameLength {
-            throw LibraryError.nameTooLong
-        }
-        return trimmed
     }
 }
+
+#if DEBUG
+// MARK: - UI-test seeding (debug builds only)
+
+extension Library {
+    /// Inserts `count` synthetic sources into the first category, so that UI
+    /// tests can reach the deletion choices before any interface can add a
+    /// source. Does nothing when there is no category or when the first
+    /// category already has sources, so running it again is harmless.
+    /// Compiled into debug builds only; release builds do not contain it.
+    public func insertSyntheticSourcesForUITests(count: Int) async throws {
+        guard count > 0 else { return }
+        let now = now()
+        try await write { db in
+            guard let first = try Category.order(Column("sort_order"), Column("id")).fetchOne(db) else {
+                return
+            }
+            let existing = try Int.fetchOne(
+                db, sql: "SELECT COUNT(*) FROM source WHERE category_id = ?", arguments: [first.id.databaseKey]
+            ) ?? 0
+            guard existing == 0 else { return }
+            for index in 1...count {
+                let id = UUID()
+                try Source(
+                    id: id, categoryID: first.id, kind: .feed,
+                    url: "https://example.invalid/ui-test/\(id.databaseKey)", name: "Sample source \(index)",
+                    siteURL: nil, paused: false, autoTranslate: .inherit, bodyMode: .auto, translatePage: false,
+                    etag: nil, lastModified: nil, lastSuccessAt: nil, lastError: nil, updatedAt: now
+                ).insert(db)
+            }
+        }
+    }
+}
+#endif

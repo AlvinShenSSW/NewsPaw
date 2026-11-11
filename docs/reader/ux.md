@@ -3,7 +3,7 @@
 Status: baseline, 2026-11-11 (adjusted to the owner's devices on iOS / iPadOS 27, with in-place page translation in S5). Companion to [spec.md](spec.md); requirement numbers (N01–N13) refer to it.
 Mock-ups: <https://claude.ai/artifact/GkfmtsiAT1Vz1VWDsTPqU5> (private to the owner). The mock-ups show the Simplified Chinese localisation, which is what the owner will see; this document names things in English, the development language.
 
-This replaces the Mac settings-app design (`docs/mockup/`, `docs/planning/ux-redesign/`). The NewsPaw logo is kept; nothing else of that interface carries over.
+This replaces the Mac settings-app design (`docs/archive/mockup/`, `docs/archive/planning/ux-redesign/`). The NewsPaw logo is kept; nothing else of that interface carries over.
 
 ## 1 Principles
 

@@ -1,7 +1,7 @@
 # NewsPaw Reader — Product Specification (iPhone / iPad)
 
-Status: **baseline, 2026-11-11.** The owner approved it as the basis for the new backlog ([backlog.md](backlog.md)). No code has been written. Kimi K3.1 Pro design review: see section 12.
-This file replaces `docs/planning/requirements.md` (the Mac + Telegram baseline, to be archived). Screens and interaction are in [ux.md](ux.md); open-source research and library choices are in [open-source.md](open-source.md).
+Status: **baseline, 2026-11-11.** The owner approved it as the basis for the new backlog ([backlog.md](backlog.md)). RD01 created the iOS project in `ios/`; no reader feature has been built yet. Kimi K3.1 Pro design review: see section 12.
+This file replaces `docs/archive/planning/requirements.md` (the Mac + Telegram baseline, now archived). Screens and interaction are in [ux.md](ux.md); open-source research and library choices are in [open-source.md](open-source.md).
 
 ## 0 Source
 
@@ -90,7 +90,7 @@ Requirements are numbered N01–N13. Later issues freeze their scope against the
 - Adding a source: paste an address → the kind is detected (when a page declares several feeds, the owner picks) → choose a category (required; the category decides the partition) → preview the latest few items (for a web page, its title) → save. When no feed is found there are two ways out: save it as a web page, or try another address.
 - Web-page sources have a name, an address and a category. They open in the embedded browser with back, forward, reload, translate, open in Safari, share, and "save this page as a new source". Translate replaces the page's text in place with one tap (N06). The browser also offers a reader mode: it extracts the main text of the current page and, when that succeeds, opens the same reading and translation screen that articles use (N05, N06). Such a page is a temporary article: it is not stored, cannot be starred, and its translation lasts only while it is open. To keep a page the owner saves it as a source or shares its link.
 - OPML import: folders in the file become categories in the current partition. Feeds outside any folder go to one category the owner picks in the preview, an existing one or a new one. Addresses that already exist in that partition are skipped and listed. An OPML file is untrusted input (N10).
-- Suggested sources: a short built-in list of public feeds for the normal partition, taken from the entries already verified in `docs/source-strategy.md`, offered only while adding. It contains no adult sources and nothing from the owner's private lists.
+- Suggested sources: a short built-in list of public feeds for the normal partition, taken from the entries already verified in `docs/archive/source-strategy.md`, offered only while adding. It contains no adult sources and nothing from the owner's private lists.
 - Per-source options: paused; translate titles automatically (follows the global setting by default); how the body is obtained (automatic / always fetch the page / feed content only). A web-page source has one option of its own: translate when opened (off by default).
 - Source status is visible: working, the last failure and its reason (could not connect, address gone, not a recognisable feed, too large), paused, time of the last success, time of the newest item. Repeated failures never delete or pause a source automatically.
 - GitHub and Hugging Face content (READMEs, model cards, release notes) is text to read. Nothing in it is executed or followed.
@@ -348,8 +348,8 @@ Recorded so the direction is not lost. None of this is designed or scheduled.
 
 Handling of the repository (settled on 2026-11-11; section 11, items 1 and 2):
 
-- Done: PR #113 is merged (`2f9c868`) and that state is tagged `mac-v0.6.4-final`. Still to do, in the issue that creates the iOS project: remove `src/`, `tests/`, `macos/`, `packaging/`, `pyproject.toml` and related files from `main`. History and the tag keep them retrievable. Doing this in the milestone that creates the iOS project avoids two unrelated codebases living side by side.
-- Move the old specifications (`docs/designs/specs/`, the Mac / Telegram documents in `docs/planning/`, `docs/mockup/`) to `docs/archive/`.
+- Done: PR #113 is merged (`2f9c868`) and that state is tagged `mac-v0.6.4-final`. Done in RD01, the issue that created the iOS project: `src/`, `tests/`, `macos/`, `packaging/`, `pyproject.toml` and `uv.lock` were removed from `main`. History and the tag keep them retrievable. Doing this in the milestone that creates the iOS project avoids two unrelated codebases living side by side.
+- Done in RD01: the old specifications and the other documents of the old system were moved, unchanged, to `docs/archive/` (among them `docs/archive/designs/specs/`, `docs/archive/planning/` and `docs/archive/mockup/`; see `docs/archive/README.md`).
 - `AGENTS.md` lines to rewrite: product scope points at this directory; "keep the five-page design", "single-user system: one Mac, several Telegram bots" and the Python baseline commands are replaced by their equivalents for the new product; the project-language rule (English artefacts, Chinese only when talking with the owner) is added. The review process (Codex leads, Kimi K3.1 Pro as the external gate), the AFK rules, and keeping keys and private data on the device stay as they are. `AGENTS.md` has not been changed in this draft; it changes together with the approval of this specification.
 - Close the E01–E10 epics and their child issues on GitHub as superseded. A new backlog, in English, is cut from N01–N13 and the milestones after approval.
 

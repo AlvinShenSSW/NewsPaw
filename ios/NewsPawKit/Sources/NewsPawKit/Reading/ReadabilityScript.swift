@@ -2,7 +2,7 @@ import Foundation
 
 /// Mozilla's Readability script, bundled with this package (see `Resources/README.md`).
 public enum ReadabilityScript {
-    public enum LoadError: Error, Equatable {
+    public enum LoadError: Error {
         case missingResource
     }
 

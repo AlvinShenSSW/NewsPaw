@@ -274,7 +274,9 @@ class Scheduler:
             or view["reason"] in {"delivery_outcome_unknown", "targets_unavailable", "job_paused"}
         ):
             try:
-                parts = [part for target in self.outbox._rows(view["job_id"]) for part in target["parts"]]
+                parts = [
+                    part for target in self.outbox._rows(view["job_id"]) for part in target["parts"]
+                ]
             except OutboxError as exc:
                 if str(exc) != "missing_delivery":
                     raise
@@ -441,7 +443,8 @@ class Scheduler:
             if policy["activated_at"] is None:
                 policy["activated_at"] = now.isoformat()
                 self.db.execute(
-                    "UPDATE schedule_policy SET activated_at=? WHERE id=1", (policy["activated_at"],)
+                    "UPDATE schedule_policy SET activated_at=? WHERE id=1",
+                    (policy["activated_at"],),
                 )
             first_scan = (
                 self.db.execute("SELECT last_scan FROM schedule_policy WHERE id=1").fetchone()[0]
@@ -501,9 +504,7 @@ class Scheduler:
             if not settings["enabled"]:
                 raise ScheduleError("scheduling_paused")
             scope = _key("scope", subscription_id, None)
-            rows = self._rows(
-                "SELECT shape FROM schedule_scopes WHERE id=? AND active=1", (scope,)
-            )
+            rows = self._rows("SELECT shape FROM schedule_scopes WHERE id=? AND active=1", (scope,))
             if not rows:
                 raise ScheduleError("digest_not_enabled")
             zone = json.loads(rows[0]["shape"])["zone"]
@@ -789,7 +790,9 @@ class Scheduler:
                 self._rebuild(row, job, now, "schedule_budget_changed")
             else:
                 if job["status"] in {"blocked", "waiting"}:
-                    status = "late" if job["status"] == "waiting" and now >= target else job["status"]
+                    status = (
+                        "late" if job["status"] == "waiting" and now >= target else job["status"]
+                    )
                     self._state(row, status, job["model"]["error_kind"], now)
                 else:
                     self._state(row, "late" if now >= target else "preparing", None, now)

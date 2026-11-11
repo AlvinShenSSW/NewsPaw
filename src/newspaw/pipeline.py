@@ -311,13 +311,10 @@ class Pipeline:
         if alert := payload.get("alert"):
             parent = self.delivery_scope(alert["parent"])
             result = self.editorial.get(self._edition_id(alert["parent"]))["result"]
-            if (
-                not result
-                or not any(
-                    item["event_key"] == alert["item"]
-                    and hashlib.sha256(_json(item).encode()).hexdigest() == alert["item_hash"]
-                    for item in result["items"]
-                )
+            if not result or not any(
+                item["event_key"] == alert["item"]
+                and hashlib.sha256(_json(item).encode()).hexdigest() == alert["item_hash"]
+                for item in result["items"]
             ):
                 raise PipelineError("edition_changed")
             return parent

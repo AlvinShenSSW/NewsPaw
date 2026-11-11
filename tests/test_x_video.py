@@ -147,7 +147,9 @@ async def test_video_uses_exact_x_item_with_verified_same_capability_backup(time
         await videos.inspect("vid.one", job, "190")
     videos.configure(settings, videos.policy()["revision"])
     ledger = BudgetLedger(videos.store)
-    prior_x = next(row["known_settled"] for row in ledger.report()["periods"] if row["meter"] == "x")
+    prior_x = next(
+        row["known_settled"] for row in ledger.report()["periods"] if row["meter"] == "x"
+    )
     result = await videos.inspect("vid.one", job, "190")
     assert result["state"] == "complete"
     assert len(result["frames"]) == 2 and result["transcript"] == "Fixture audio"

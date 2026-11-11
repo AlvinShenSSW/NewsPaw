@@ -535,71 +535,85 @@ def test_v6_runner_upgrade_failure_rolls_back_and_retries(tmp_path, monkeypatch)
         db.execute("PRAGMA user_version=6")
         db.commit()
     initialize = model_runner.initialize
+
     def fail(db):
         initialize(db)
         raise RuntimeError("injected runner migration failure")
-    monkeypatch.setattr(model_runner,"initialize",fail)
+
+    monkeypatch.setattr(model_runner, "initialize", fail)
     with pytest.raises(RuntimeError):
         Store(path)
     with closing(sqlite3.connect(path)) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 6
         assert not db.execute("SELECT 1 FROM sqlite_master WHERE name='model_tasks'").fetchall()
-    monkeypatch.setattr(model_runner,"initialize",initialize)
+    monkeypatch.setattr(model_runner, "initialize", initialize)
     reopened = Store(path)
     assert reopened.load_config() == original
     reopened.close()
 
 
-def test_v7_editorial_upgrade_failure_rolls_back_and_retries(tmp_path,monkeypatch):
+def test_v7_editorial_upgrade_failure_rolls_back_and_retries(tmp_path, monkeypatch):
     import newspaw.editorial as editorial
-    path=tmp_path/"state.db"
-    store=Store(path)
-    original=store.load_config()
+
+    path = tmp_path / "state.db"
+    store = Store(path)
+    original = store.load_config()
     store.close()
     with closing(sqlite3.connect(path)) as db:
         db.execute("DROP TABLE editorial_editions")
         db.execute("PRAGMA user_version=7")
         db.commit()
-    initialize=editorial.initialize
+    initialize = editorial.initialize
+
     def fail(db):
         initialize(db)
         raise RuntimeError("injected editorial migration failure")
-    monkeypatch.setattr(editorial,"initialize",fail)
+
+    monkeypatch.setattr(editorial, "initialize", fail)
     with pytest.raises(RuntimeError):
         Store(path)
     with closing(sqlite3.connect(path)) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0]==7
-        assert not db.execute("SELECT 1 FROM sqlite_master WHERE name='editorial_editions'").fetchall()
-    monkeypatch.setattr(editorial,"initialize",initialize)
-    reopened=Store(path)
-    assert reopened.load_config()==original
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='editorial_editions'"
+        ).fetchall()
+    monkeypatch.setattr(editorial, "initialize", initialize)
+    reopened = Store(path)
+    assert reopened.load_config() == original
     reopened.close()
 
 
 def test_v8_connector_identity_upgrade_rollback_and_retry(tmp_path, monkeypatch):
     import newspaw.migrations as migrations
-    path = tmp_path / 'state.db'
+
+    path = tmp_path / "state.db"
     store = Store(path)
     original = store.load_config()
     store.close()
     with closing(sqlite3.connect(path)) as db:
-        db.execute('DROP TABLE connector_identity')
-        db.execute('PRAGMA user_version=8')
+        db.execute("DROP TABLE connector_identity")
+        db.execute("PRAGMA user_version=8")
         db.commit()
     backup = migrations._backup
+
     def fail(path):
         backup(path)
-        raise RuntimeError('injected upgrade failure')
-    monkeypatch.setattr(migrations,'_backup',fail)
+        raise RuntimeError("injected upgrade failure")
+
+    monkeypatch.setattr(migrations, "_backup", fail)
     with pytest.raises(RuntimeError):
         Store(path)
     with closing(sqlite3.connect(path)) as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0] == 8
-        assert not db.execute("SELECT 1 FROM sqlite_master WHERE name='connector_identity'").fetchall()
-    monkeypatch.setattr(migrations,'_backup',backup)
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='connector_identity'"
+        ).fetchall()
+    monkeypatch.setattr(migrations, "_backup", backup)
     reopened = Store(path)
     assert reopened.load_config() == original
-    assert reopened._db.execute("SELECT 1 FROM sqlite_master WHERE name='connector_identity'").fetchone()
+    assert reopened._db.execute(
+        "SELECT 1 FROM sqlite_master WHERE name='connector_identity'"
+    ).fetchone()
     reopened.close()
 
 
@@ -681,6 +695,7 @@ def test_v10_source_readiness_migration_rollback_and_old_history(tmp_path, monke
         "SELECT epoch,attempt_id FROM source_readiness WHERE id=?", ("s",)
     ).fetchone() == (1, None)
     reopened.close()
+
 
 def _old_schedule(path, *, enabled_subscription):
     store = Store(path)

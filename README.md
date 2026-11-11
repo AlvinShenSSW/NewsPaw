@@ -45,12 +45,11 @@ Continuous integration runs both commands on GitHub Actions (`macos-26`, Xcode 2
 
 | Library | Version | Licence | Use |
 | --- | --- | --- | --- |
-| [FeedKit](https://github.com/nmdias/FeedKit) | 10.10.2 | MIT | Feed parsing |
 | [GRDB.swift](https://github.com/groue/GRDB.swift) | 7.12.0 | MIT | SQLite |
 | [SwiftSoup](https://github.com/scinfu/SwiftSoup) | 2.14.3 | MIT | HTML parsing |
 | [Readability](https://github.com/mozilla/readability) | 0.6.0 (vendored) | Apache 2.0 | Main-text extraction |
 
-The app contains no analytics, crash reporting or other third-party SDK.
+Feeds are parsed by the package's own code on the system's XML parser and JSON decoder. The app contains no analytics, crash reporting or other third-party SDK.
 
 ## Privacy
 

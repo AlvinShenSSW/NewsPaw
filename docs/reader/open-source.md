@@ -15,7 +15,7 @@ Method: on 2026-11-10/11 each repository's GitHub metadata, README, licence file
 - GPL / AGPL projects (Folo, Twine) are ruled out. Whether those licences are compatible with App Store distribution is disputed, and the owner wants to keep an App Store edition possible.
 - Our interface and data model — one partition at a time, visible translation state, daily overviews — differ enough from a traditional reader that writing the interface ourselves is the shorter path.
 
-The cost: the reader polish NetNewsWire has built up over years (list performance, typography, tolerance for malformed feeds) has to be earned step by step. Leaving feed parsing to a mature library removes the hardest part of that.
+The cost: the reader polish NetNewsWire has built up over years (list performance, typography, tolerance for malformed feeds) has to be earned step by step. Feed parsing was first left to a mature library (FeedKit) to remove the hardest part of that; RD04 measured that FeedKit fails a whole feed over one bad value and takes time growing with the square of the document's size, so the package now parses feeds itself on the system's streaming XML parser, and tolerance for malformed feeds is earned through its tests.
 
 ## Candidate apps
 
@@ -45,7 +45,7 @@ Also looked at and rejected: `joeseesun/qmreader-ios` (depends on its own server
 
 | Purpose | Library | Licence | Latest release | Note |
 | --- | --- | --- | --- | --- |
-| Feed parsing | [FeedKit](https://github.com/nmdias/FeedKit) | MIT | 10.10.2, 2026-10-29 | RSS / Atom / JSON Feed |
+| Feed parsing | Our own, on the system's streaming XML parser and JSON decoder | — | — | RSS 2.0 / RSS 1.0 / Atom / JSON Feed. FeedKit (MIT) was chosen first and removed in RD04 for the reasons above |
 | Storage | [GRDB.swift](https://github.com/groue/GRDB.swift) | MIT | 7.12.0, 2026-11-01 | SQLite; explicit migrations; full-text search; one database file per partition is straightforward |
 | HTML parsing | [SwiftSoup](https://github.com/scinfu/SwiftSoup) | MIT | 2.14.3, 2026-10-16 | Feed discovery; turning body HTML into paragraph blocks |
 | Main-text extraction | [mozilla/readability](https://github.com/mozilla/readability) | Apache-2.0 | 0.6.0, 2025-03-03 | The script runs in a web view that is never shown |

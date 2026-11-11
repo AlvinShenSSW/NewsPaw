@@ -1,6 +1,17 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "It was created by a newer version of the app. Update NewsPaw to open it." : {
+      "comment" : "Library failure screen: the reason shown when the library was written by a newer version of the app.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它由更新版本的 App 创建。请更新 NewsPaw 后再打开。"
+          }
+        }
+      }
+    },
     "NewsPaw" : {
       "comment" : "The app's name, shown as the placeholder screen's title. The name is not translated.",
       "localizations" : {
@@ -8,6 +19,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "NewsPaw"
+          }
+        }
+      }
+    },
+    "NewsPaw could not open its library." : {
+      "comment" : "Library failure screen: the title shown when the app cannot open its library database. A reason follows below it.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NewsPaw 无法打开资料库。"
+          }
+        }
+      }
+    },
+    "Something went wrong while opening it." : {
+      "comment" : "Library failure screen: the reason shown for any other failure. The technical detail, in English, appears below it.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开资料库时出现问题。"
+          }
+        }
+      }
+    },
+    "The library file is damaged or is not a NewsPaw library." : {
+      "comment" : "Library failure screen: the reason shown when the library file is corrupt or is not a database.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "资料库文件已损坏，或不是 NewsPaw 资料库。"
           }
         }
       }

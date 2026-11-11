@@ -8,7 +8,6 @@ let package = Package(
         .library(name: "NewsPawKit", targets: ["NewsPawKit"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/nmdias/FeedKit.git", from: "10.10.2"),
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.12.0"),
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.14.3"),
     ],
@@ -16,7 +15,6 @@ let package = Package(
         .target(
             name: "NewsPawKit",
             dependencies: [
-                .product(name: "FeedKit", package: "FeedKit"),
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "SwiftSoup", package: "SwiftSoup"),
             ],
@@ -32,7 +30,6 @@ let package = Package(
             name: "NewsPawKitTests",
             dependencies: [
                 "NewsPawKit",
-                .product(name: "FeedKit", package: "FeedKit"),
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "SwiftSoup", package: "SwiftSoup"),
             ],

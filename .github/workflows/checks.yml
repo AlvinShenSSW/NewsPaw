@@ -14,29 +14,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  python:
-    name: Python (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+  ios:
+    name: iOS (package tests, simulator build)
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.12'
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          enable-cache: false
-      - run: uv sync --locked
-      - run: uv run --no-sync ruff check .
-      - run: uv run --no-sync pytest -q
-      - run: uv build
-      - if: runner.os == 'macOS'
-        run: swift build --package-path macos/NewsPaw
-      - if: runner.os == 'macOS'
-        run: swift test --package-path macos/NewsPaw
+      - run: xcodebuild -version && swift --version
+      - run: swift test --package-path ios/NewsPawKit
+      - run: xcodebuild build -project ios/NewsPaw.xcodeproj -scheme NewsPaw -destination 'generic/platform=iOS Simulator' -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO

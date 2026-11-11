@@ -1,0 +1,28 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NewsPaw" : {
+      "comment" : "The app's name, shown as the placeholder screen's title. The name is not translated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NewsPaw"
+          }
+        }
+      }
+    },
+    "The reader is being built." : {
+      "comment" : "Placeholder screen: the only line shown until the reader's first screens exist.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "阅读器正在开发中。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

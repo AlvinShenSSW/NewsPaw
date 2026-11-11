@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic RSS 1.0 (RDF) feed for the FeedKit check. Nothing here refers to a real source. -->
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns="http://purl.org/rss/1.0/"
+         xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel rdf:about="https://example.invalid/feed.rdf">
+    <title>Synthetic RDF feed</title>
+    <link>https://example.invalid/</link>
+    <description>A fixture feed with two items.</description>
+    <items>
+      <rdf:Seq>
+        <rdf:li rdf:resource="https://example.invalid/articles/first"/>
+        <rdf:li rdf:resource="https://example.invalid/articles/second"/>
+      </rdf:Seq>
+    </items>
+  </channel>
+  <item rdf:about="https://example.invalid/articles/first">
+    <title>First synthetic item</title>
+    <link>https://example.invalid/articles/first</link>
+    <description>The first item's excerpt.</description>
+    <dc:date>2026-11-01T10:00:00Z</dc:date>
+  </item>
+  <item rdf:about="https://example.invalid/articles/second">
+    <title>Second synthetic item</title>
+    <link>https://example.invalid/articles/second</link>
+    <description>The second item's excerpt.</description>
+    <dc:date>2026-11-02T10:00:00Z</dc:date>
+  </item>
+</rdf:RDF>

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Synthetic article</title>
+<!-- Both subresources use the test-only scheme, so a scheme handler in the test sees every request for them. -->
+<link rel="stylesheet" href="newspaw-test://fixture/style.css">
+</head>
+<body>
+<nav><a href="#top">Home</a> <a href="#about">About</a></nav>
+<article>
+<h1>Synthetic article</h1>
+<p id="first">ORIGINAL-MARKER The quick brown fox jumps over the lazy dog, and then it does so again, because this fixture needs enough words for the extraction heuristic to treat this paragraph as the main content of the page rather than as boilerplate.</p>
+<p>The second paragraph continues the synthetic story with more sentences. It mentions nothing real. It exists so that the extracted text is clearly longer than five hundred characters, the default threshold the extraction script applies before it accepts a candidate.</p>
+<p>The third paragraph closes the synthetic story. Commas, full stops, and a few more clauses are here, so that the scoring based on punctuation and length has something to count, and the article container wins comfortably.</p>
+<img src="newspaw-test://fixture/image.png" alt="A synthetic image">
+</article>
+<footer>Footer text</footer>
+<script>
+document.getElementById('first').textContent = 'REWRITTEN-BY-PAGE-SCRIPT ' + 'filler text, '.repeat(40);
+document.title = 'PAGE SCRIPT RAN';
+</script>
+</body>
+</html>

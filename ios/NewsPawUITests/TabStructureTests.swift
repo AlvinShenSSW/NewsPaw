@@ -39,7 +39,9 @@ final class TabStructureTests: NewsPawUITestCase {
         openNewCategory()
         let field = app.textFields[AccessibilityID.nameField]
         field.tap()
-        field.typeText("Draft")
+        // Return dismisses the keyboard, which covers the window's resize
+        // corner; the text stays in the field.
+        field.typeText("Draft\n")
 
         var attempts = 0
         while window.width >= 700, attempts < 10 {
@@ -56,11 +58,12 @@ final class TabStructureTests: NewsPawUITestCase {
         screenshot("ipad-below-700-\(Int(window.width))")
         assertTabDestinations()
 
-        // Back across 700 pt with the editor open again.
-        app.tabBars.buttons["Starred"].tap()
+        // Back across 700 pt with the editor open again. New Category is in
+        // the Library tab, so the destination is now the Library root, which
+        // the panes show as All Unread.
         openNewCategory()
         field.tap()
-        field.typeText("Again")
+        field.typeText("Again\n")
         attempts = 0
         while window.width < 700, attempts < 10 {
             resizeWindow(by: 120)
@@ -72,7 +75,8 @@ final class TabStructureTests: NewsPawUITestCase {
         waitForAbsence(field)
         XCTAssertFalse(app.tabBars.firstMatch.exists)
         waitFor(element(AccessibilityID.listPane))
-        XCTAssertTrue(element(AccessibilityID.starredEmpty).exists, "the destination is kept")
+        XCTAssertTrue(element(AccessibilityID.allUnreadEmpty).exists, "the destination is kept")
+        XCTAssertTrue(app.navigationBars["All Unread"].exists)
         requireFullWidth()
     }
 

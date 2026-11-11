@@ -33,8 +33,9 @@ final class AccessibilityTests: NewsPawUITestCase {
 
     private func assertTapTarget(_ element: XCUIElement, _ name: String, file: StaticString = #filePath, line: UInt = #line) {
         waitFor(element, file: file, line: line)
-        XCTAssertGreaterThanOrEqual(element.frame.width, 44, "\(name) width \(element.frame)", file: file, line: line)
-        XCTAssertGreaterThanOrEqual(element.frame.height, 44, "\(name) height \(element.frame)", file: file, line: line)
+        // Frames come back with floating-point noise (43.99999999999994).
+        XCTAssertGreaterThanOrEqual(element.frame.width, 44 - 0.001, "\(name) width \(element.frame)", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(element.frame.height, 44 - 0.001, "\(name) height \(element.frame)", file: file, line: line)
     }
 
     func testControlsHaveLabelsAndTapTargets() {
@@ -64,7 +65,7 @@ final class AccessibilityTests: NewsPawUITestCase {
             assertBarButtonTapTarget(edit, "Edit", activated: toggleEdit, reset: endEditing)
             assertTapTarget(button(AccessibilityID.newCategoryButton), "New Category")
             for row in [AccessibilityID.todayRow, AccessibilityID.allUnreadRow, AccessibilityID.starredRow, AccessibilityID.settingsRow] {
-                XCTAssertGreaterThanOrEqual(element(row).frame.height, 44, row)
+                XCTAssertGreaterThanOrEqual(element(row).frame.height, 44 - 0.001, row)
             }
         } else {
             app.tabBars.buttons["Library"].tap()
@@ -86,12 +87,12 @@ final class AccessibilityTests: NewsPawUITestCase {
         })
         var saved = 0
         field.tap()
-        field.typeText("Target 0")
+        field.typeText("Target 0\n")
         assertBarButtonTapTarget(button(AccessibilityID.saveButton), "Save", activated: { !field.exists }, reset: {
             saved += 1
             self.openNewCategory()
             field.tap()
-            field.typeText("Target \(saved)")
+            field.typeText("Target \(saved)\n")
         })
         let icons = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'editor.icon.'")).allElementsBoundByIndex
         XCTAssertEqual(icons.count, 23)

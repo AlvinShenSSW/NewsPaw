@@ -81,11 +81,13 @@ class NewsPawUITestCase: XCTestCase {
     func rotate(_ orientation: UIDeviceOrientation) {
         XCUIDevice.shared.orientation = orientation
         let landscape = orientation.isLandscape
+        // Judged on the screen: a narrow window can stay taller than wide in
+        // landscape.
         let settled = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
-            let frame = self.window
+            let frame = self.screen
             return landscape ? frame.width > frame.height : frame.height > frame.width
         }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: timeout), .completed, "the window did not rotate")
+        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: timeout), .completed, "the screen did not rotate")
     }
 
     /// Drags the window's lower trailing corner by `dx` points (iPad
@@ -145,16 +147,25 @@ class NewsPawUITestCase: XCTestCase {
         openNewCategory()
         let field = app.textFields[AccessibilityID.nameField]
         field.tap()
-        field.typeText(name)
+        // Return dismisses the keyboard, which would cover the icon grid.
+        field.typeText(name + "\n")
         if let icon {
             button(AccessibilityID.iconButton(icon)).tap()
         }
-        button(AccessibilityID.saveButton).tap()
+        tapSave()
         waitForAbsence(field)
         if !app.tabBars.firstMatch.exists {
             openSidebarIfNeeded()
         }
         waitFor(element(AccessibilityID.categoryRow(name)))
+    }
+
+    /// Taps Save once SwiftUI has enabled it for the typed name.
+    func tapSave(file: StaticString = #filePath, line: UInt = #line) {
+        let save = waitFor(button(AccessibilityID.saveButton), file: file, line: line)
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: save)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: timeout), .completed, "Save stayed disabled", file: file, line: line)
+        save.tap()
     }
 
     /// Opens the slide-over when the sidebar is not a pane.

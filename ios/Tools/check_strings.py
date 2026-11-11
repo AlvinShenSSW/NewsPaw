@@ -9,9 +9,9 @@ RD03).
 
 The build writes one `.stringsdata` file per Swift source file and
 architecture when `SWIFT_EMIT_LOC_STRINGS` is on. Only the app target's files
-are read (not the package's or the UI tests'), and keys are de-duplicated
-across architectures. The script sees literal keys only, so the app never
-builds a key at run time.
+are read (not the package's or the UI tests'), files of deleted sources are
+skipped, and keys are de-duplicated across architectures. The script sees
+literal keys only, so the app never builds a key at run time.
 
 Usage: check_strings.py --derived-data PATH [--catalog PATH]
 Exit status: 0 when the catalog matches, 1 when it does not, 2 on bad input.
@@ -32,13 +32,23 @@ TARGET_BUILD_DIR = "NewsPaw.build"
 def extracted_keys(derived_data: Path) -> set[str]:
     """Keys of the app target's `Localizable` table in every architecture."""
     intermediates = derived_data / "Build" / "Intermediates.noindex" / "NewsPaw.build"
-    files = sorted(intermediates.glob(f"*/{TARGET_BUILD_DIR}/Objects-normal/*/*.stringsdata"))
+    files = sorted(
+        intermediates.glob(f"*/{TARGET_BUILD_DIR}/Objects-normal/*/*.stringsdata")
+    )
     if not files:
-        print(f"error: no .stringsdata files of the app target under {intermediates}; build first", file=sys.stderr)
+        print(
+            f"error: no .stringsdata files of the app target under {intermediates}; build first",
+            file=sys.stderr,
+        )
         raise SystemExit(2)
     keys: set[str] = set()
     for path in files:
         data = json.loads(path.read_text(encoding="utf-8"))
+        # A file left behind by a Swift source that has since been deleted
+        # describes code that no longer exists.
+        source = data.get("source")
+        if source and not Path(source).exists():
+            continue
         for entry in data.get("tables", {}).get(TABLE, []):
             keys.add(entry["key"])
     return keys
@@ -72,10 +82,21 @@ def check(catalog_path: Path, keys: set[str]) -> list[str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--derived-data", required=True, type=Path, help="the -derivedDataPath of the build")
-    default_catalog = Path(__file__).resolve().parent.parent / "NewsPaw" / "Localizable.xcstrings"
-    parser.add_argument("--catalog", type=Path, default=default_catalog, help="the app's string catalog")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--derived-data",
+        required=True,
+        type=Path,
+        help="the -derivedDataPath of the build",
+    )
+    default_catalog = (
+        Path(__file__).resolve().parent.parent / "NewsPaw" / "Localizable.xcstrings"
+    )
+    parser.add_argument(
+        "--catalog", type=Path, default=default_catalog, help="the app's string catalog"
+    )
     arguments = parser.parse_args()
     if not arguments.catalog.is_file():
         print(f"error: no catalog at {arguments.catalog}", file=sys.stderr)
@@ -87,7 +108,9 @@ def main() -> int:
     if problems:
         print(f"{len(problems)} problem(s) in {arguments.catalog}", file=sys.stderr)
         return 1
-    print(f"{len(keys)} extracted keys, all in the catalog with a {LANGUAGE} translation; no unused key")
+    print(
+        f"{len(keys)} extracted keys, all in the catalog with a {LANGUAGE} translation; no unused key"
+    )
     return 0
 
 

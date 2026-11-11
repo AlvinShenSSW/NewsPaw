@@ -53,6 +53,7 @@ final class AppModel {
                 try await library.insertSyntheticSourcesForUITests(count: count)
             }
             categories.failNextSave = options.failNextSave
+            categories.slowNextSave = options.slowNextSave
             #endif
             await categories.reload()
             status = .ready(categories)

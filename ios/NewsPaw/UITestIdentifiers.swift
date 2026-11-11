@@ -63,5 +63,7 @@ enum UITestLaunchKey {
     static let syntheticSources = "NEWSPAW_UITEST_SYNTHETIC_SOURCES"
     /// "1" makes the next category save fail.
     static let failNextSave = "NEWSPAW_UITEST_FAIL_NEXT_SAVE"
+    /// A number of seconds the next category save waits before it runs.
+    static let slowNextSave = "NEWSPAW_UITEST_SLOW_NEXT_SAVE"
 }
 #endif

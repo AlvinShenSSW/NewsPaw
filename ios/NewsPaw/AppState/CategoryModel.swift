@@ -56,6 +56,8 @@ final class CategoryModel {
     #if DEBUG
     /// Set by the UI tests: the next save fails before reaching storage.
     var failNextSave = false
+    /// Set by the UI tests: the next save waits this long before it runs.
+    var slowNextSave: Duration?
     #endif
 
     init(library: Library, navigation: NavigationModel) {
@@ -241,6 +243,10 @@ final class CategoryModel {
             }
             do {
                 #if DEBUG
+                if let delay = slowNextSave {
+                    slowNextSave = nil
+                    try? await Task.sleep(for: delay, tolerance: .zero)
+                }
                 if failNextSave {
                     failNextSave = false
                     throw LibraryError.storage("Simulated failure for a UI test")

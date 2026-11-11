@@ -11,6 +11,8 @@ struct DebugLaunchOptions {
     let syntheticSources: Int?
     /// Whether the next category save fails.
     let failNextSave: Bool
+    /// How long the next save waits before it runs.
+    let slowNextSave: Duration?
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -25,6 +27,11 @@ struct DebugLaunchOptions {
             syntheticSources = nil
         }
         failNextSave = environment[UITestLaunchKey.failNextSave] == "1"
+        if let text = environment[UITestLaunchKey.slowNextSave], let seconds = Int(text), seconds > 0 {
+            slowNextSave = .seconds(seconds)
+        } else {
+            slowNextSave = nil
+        }
     }
 
     /// Accepts only a name that stays inside the temporary directory.

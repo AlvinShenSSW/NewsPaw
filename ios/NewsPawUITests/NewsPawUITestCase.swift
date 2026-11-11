@@ -26,7 +26,7 @@ class NewsPawUITestCase: XCTestCase {
 
     /// Launches the app on this test's library.
     @discardableResult
-    func launch(syntheticSources: Int? = nil, failNextSave: Bool = false, arguments: [String] = []) -> XCUIApplication {
+    func launch(syntheticSources: Int? = nil, failNextSave: Bool = false, slowNextSave: Int? = nil, arguments: [String] = []) -> XCUIApplication {
         app = XCUIApplication()
         app.launchArguments = arguments
         app.launchEnvironment[UITestLaunchKey.libraryDirectory] = libraryName
@@ -35,6 +35,9 @@ class NewsPawUITestCase: XCTestCase {
         }
         if failNextSave {
             app.launchEnvironment[UITestLaunchKey.failNextSave] = "1"
+        }
+        if let slowNextSave {
+            app.launchEnvironment[UITestLaunchKey.slowNextSave] = String(slowNextSave)
         }
         app.launch()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: timeout))
@@ -201,8 +204,8 @@ class NewsPawUITestCase: XCTestCase {
         }
     }
 
-    func launchAtFullWidth(_ orientation: UIDeviceOrientation = .portrait, syntheticSources: Int? = nil, failNextSave: Bool = false) {
-        launch(syntheticSources: syntheticSources, failNextSave: failNextSave)
+    func launchAtFullWidth(_ orientation: UIDeviceOrientation = .portrait, syntheticSources: Int? = nil, failNextSave: Bool = false, slowNextSave: Int? = nil) {
+        launch(syntheticSources: syntheticSources, failNextSave: failNextSave, slowNextSave: slowNextSave)
         rotate(orientation)
         requireFullWidth()
     }

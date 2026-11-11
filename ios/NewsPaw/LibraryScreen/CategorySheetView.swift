@@ -8,6 +8,7 @@ struct CategorySheetView: View {
     let sheet: CategorySheet
     @Environment(CategoryModel.self) private var categories
     @State private var isSaving = false
+    @FocusState private var isNameFocused: Bool
 
     var body: some View {
         @Bindable var categories = categories
@@ -15,6 +16,16 @@ struct CategorySheetView: View {
             Form {
                 Section {
                     TextField("Name", text: $categories.draftName)
+                        .focused($isNameFocused)
+                        // The field is drawn 22 pt tall in its row; the 44 pt
+                        // around it focuses it too, so its tap target is at
+                        // least 44 pt (ux section 6).
+                        .frame(minHeight: Theme.minimumTapTarget)
+                        .background {
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture { isNameFocused = true }
+                        }
                         .accessibilityIdentifier(AccessibilityID.nameField)
                         .submitLabel(.done)
                     if categories.draftNameProblem == .tooLong {

@@ -84,7 +84,7 @@ final class AccessibilityTests: NewsPawUITestCase {
         }
         openNewCategory()
         let field = app.textFields[AccessibilityID.nameField]
-        assertTapTarget(field, "Name field")
+        assertFieldTapTarget(field, "Name field")
         assertBarButtonTapTarget(button(AccessibilityID.cancelButton), "Cancel", activated: { !field.exists }, reset: {
             self.openNewCategory()
         })
@@ -117,7 +117,7 @@ final class AccessibilityTests: NewsPawUITestCase {
         showCategoryList()
         assertTapTarget(element(AccessibilityID.categoryRow("Target 0")), "category row")
         openCategorySettings("Target 0")
-        assertTapTarget(app.textFields[AccessibilityID.nameField], "Name field in Category Settings")
+        assertFieldTapTarget(app.textFields[AccessibilityID.nameField], "Name field in Category Settings")
         assertTapTarget(button(AccessibilityID.deleteCategoryButton), "Delete Category")
         button(AccessibilityID.cancelButton).tap()
         waitForAbsence(field)
@@ -128,6 +128,24 @@ final class AccessibilityTests: NewsPawUITestCase {
             app.tabBars.buttons["Settings"].tap()
         }
         assertTapTarget(element(AccessibilityID.aboutRow), "About row")
+    }
+
+    /// A text field's tap target: a tap at each edge of a 44 pt square
+    /// centred on the field, along an axis where the field is drawn smaller,
+    /// gives it keyboard focus (the field itself is drawn 22 pt tall in its
+    /// row).
+    private func assertFieldTapTarget(_ field: XCUIElement, _ name: String, file: StaticString = #filePath, line: UInt = #line) {
+        waitFor(field, file: file, line: line)
+        func focused() -> Bool { (field.value(forKey: "hasKeyboardFocus") as? Bool) == true }
+        func unfocus() {
+            if focused() {
+                field.typeText("\n")
+            }
+            let gone = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !focused() }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 5), .completed, "\(name) kept focus", file: file, line: line)
+        }
+        unfocus()
+        assertBarButtonTapTarget(field, name, activated: focused, reset: unfocus, file: file, line: line)
     }
 
     /// The Edit control in its Done state: a tap at each edge of a 44 pt

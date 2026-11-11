@@ -1,0 +1,35 @@
+#if DEBUG
+import Foundation
+
+/// What the UI tests ask of a debug build through the launch environment.
+/// Release builds contain none of this.
+struct DebugLaunchOptions {
+    /// A directory inside the app's temporary directory, used instead of the
+    /// real library directory.
+    let libraryDirectory: URL?
+    /// Synthetic sources to insert into the first category.
+    let syntheticSources: Int?
+    /// Whether the next category save fails.
+    let failNextSave: Bool
+
+    init(environment: [String: String]) {
+        if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
+            libraryDirectory = FileManager.default.temporaryDirectory
+                .appending(path: name, directoryHint: .isDirectory)
+        } else {
+            libraryDirectory = nil
+        }
+        if let text = environment[UITestLaunchKey.syntheticSources], let count = Int(text), count > 0 {
+            syntheticSources = count
+        } else {
+            syntheticSources = nil
+        }
+        failNextSave = environment[UITestLaunchKey.failNextSave] == "1"
+    }
+
+    /// Accepts only a name that stays inside the temporary directory.
+    static func isSinglePathComponent(_ name: String) -> Bool {
+        !name.isEmpty && name != "." && name != ".." && !name.contains("/") && !name.contains("\0")
+    }
+}
+#endif

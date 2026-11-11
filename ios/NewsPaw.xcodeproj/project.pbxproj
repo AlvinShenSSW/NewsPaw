@@ -12,12 +12,31 @@
 
 /* Begin PBXFileReference section */
 		4E5057000000000000000001 /* NewsPaw.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NewsPaw.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4E5057000000000000000002 /* NewsPawUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NewsPawUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		4E5057000000000000000701 /* Exceptions for "NewsPaw" folder in "NewsPawUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				UITestIdentifiers.swift,
+			);
+			target = 4E5057000000000000000202 /* NewsPawUITests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		4E5057000000000000000011 /* NewsPaw */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				4E5057000000000000000701 /* Exceptions for "NewsPaw" folder in "NewsPawUITests" target */,
+			);
 			path = NewsPaw;
+			sourceTree = "<group>";
+		};
+		4E5057000000000000000013 /* NewsPawUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NewsPawUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -31,6 +50,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4E5057000000000000000112 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -38,6 +64,7 @@
 			isa = PBXGroup;
 			children = (
 				4E5057000000000000000011 /* NewsPaw */,
+				4E5057000000000000000013 /* NewsPawUITests */,
 				4E5057000000000000000012 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -46,11 +73,22 @@
 			isa = PBXGroup;
 			children = (
 				4E5057000000000000000001 /* NewsPaw.app */,
+				4E5057000000000000000002 /* NewsPawUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
+
+/* Begin PBXContainerItemProxy section */
+		4E5057000000000000000601 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4E5057000000000000000301 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4E5057000000000000000201;
+			remoteInfo = NewsPaw;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXNativeTarget section */
 		4E5057000000000000000201 /* NewsPaw */ = {
@@ -76,6 +114,27 @@
 			productReference = 4E5057000000000000000001 /* NewsPaw.app */;
 			productType = "com.apple.product-type.application";
 		};
+		4E5057000000000000000202 /* NewsPawUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4E5057000000000000000403 /* Build configuration list for PBXNativeTarget "NewsPawUITests" */;
+			buildPhases = (
+				4E5057000000000000000113 /* Sources */,
+				4E5057000000000000000112 /* Frameworks */,
+				4E5057000000000000000114 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4E5057000000000000000602 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				4E5057000000000000000013 /* NewsPawUITests */,
+			);
+			name = NewsPawUITests;
+			productName = NewsPawUITests;
+			productReference = 4E5057000000000000000002 /* NewsPawUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -88,6 +147,10 @@
 				TargetAttributes = {
 					4E5057000000000000000201 = {
 						CreatedOnToolsVersion = 27.1;
+					};
+					4E5057000000000000000202 = {
+						CreatedOnToolsVersion = 27.1;
+						TestTargetID = 4E5057000000000000000201;
 					};
 				};
 			};
@@ -110,12 +173,20 @@
 			projectRoot = "";
 			targets = (
 				4E5057000000000000000201 /* NewsPaw */,
+				4E5057000000000000000202 /* NewsPawUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		4E5057000000000000000104 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4E5057000000000000000114 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -132,7 +203,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4E5057000000000000000113 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4E5057000000000000000602 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4E5057000000000000000201 /* NewsPaw */;
+			targetProxy = 4E5057000000000000000601 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		4E5057000000000000000411 /* Debug */ = {
@@ -175,7 +261,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = NewsPaw;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -205,7 +291,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = NewsPaw;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -227,6 +313,40 @@
 			};
 			name = Release;
 		};
+		4E5057000000000000000431 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.newspaw.reader.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = NewsPaw;
+			};
+			name = Debug;
+		};
+		4E5057000000000000000432 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.newspaw.reader.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = NewsPaw;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -244,6 +364,15 @@
 			buildConfigurations = (
 				4E5057000000000000000421 /* Debug */,
 				4E5057000000000000000422 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4E5057000000000000000403 /* Build configuration list for PBXNativeTarget "NewsPawUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4E5057000000000000000431 /* Debug */,
+				4E5057000000000000000432 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

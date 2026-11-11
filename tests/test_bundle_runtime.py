@@ -26,7 +26,9 @@ from newspaw.store import Store
         ("/usr/lib/__newspaw_missing_fixture__.dylib", None, False),
     ],
 )
-def test_bundle_checks_macho_dependency_resolution(tmp_path, monkeypatch, target, runpath, accepted):
+def test_bundle_checks_macho_dependency_resolution(
+    tmp_path, monkeypatch, target, runpath, accepted
+):
     app = tmp_path / "Fixture.app"
     contents = app / "Contents"
     helpers = contents / "Helpers"
@@ -55,7 +57,9 @@ def test_bundle_checks_macho_dependency_resolution(tmp_path, monkeypatch, target
         return commands
 
     monkeypatch.setattr(subprocess, "check_output", output)
-    validate = runpy.run_path(str(Path(__file__).parents[1] / "packaging" / "validate_bundle.py"))["validate"]
+    validate = runpy.run_path(str(Path(__file__).parents[1] / "packaging" / "validate_bundle.py"))[
+        "validate"
+    ]
     if accepted:
         validate(app)
     else:

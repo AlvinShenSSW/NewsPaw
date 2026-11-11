@@ -366,7 +366,9 @@ def test_log_preparation_refuses_a_linked_log_file(tmp_path):
         "https://news.internal/feed",
     ],
 )
-def test_export_preserves_explicit_empty_after_omitting_the_only_private_source(tmp_path, private_url):
+def test_export_preserves_explicit_empty_after_omitting_the_only_private_source(
+    tmp_path, private_url
+):
     from newspaw.app_config import uses_category_sources
 
     with closing(Store(tmp_path / "state.db")) as store:
@@ -460,7 +462,9 @@ def test_upgraded_untouched_instance_still_accepts_a_restore(tmp_path):
         holds={"normal": None, "adult": None},
     )
     with sqlite3.connect(path) as db:
-        db.execute("UPDATE app_configuration SET document=?", (json.dumps(downgrade_to_v3(config)),))
+        db.execute(
+            "UPDATE app_configuration SET document=?", (json.dumps(downgrade_to_v3(config)),)
+        )
         db.execute("UPDATE budget_policy SET document=?", (json.dumps(legacy_budget),))
         db.execute("UPDATE schedule_policy SET settings=?", (json.dumps(legacy_schedule),))
         db.execute("PRAGMA user_version=23")

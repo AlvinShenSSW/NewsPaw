@@ -390,7 +390,9 @@ def test_operation_breakdown_separates_search_images_text_and_x_reads(budget):
     ledger.settle("vision.fixture", units=5, cost_source="reported")
     reserve(ledger, "legacy.fixture", task="legacy", amount=2, image=True)
     assert (
-        reserve(ledger, "legacy.fixture", task="legacy", amount=2, image=True, operation="vision")["state"]
+        reserve(ledger, "legacy.fixture", task="legacy", amount=2, image=True, operation="vision")[
+            "state"
+        ]
         == "reserved"
     )
     assert ledger.get("vision.fixture")["quote"] == UNKNOWN
@@ -398,22 +400,33 @@ def test_operation_breakdown_separates_search_images_text_and_x_reads(budget):
     with pytest.raises(BudgetError, match="idempotency_conflict"):
         reserve(ledger, "vision.fixture", task="vision", amount=6, image=True, operation="image")
     ledger.reserve(
-        "x.fixture", "x", max_units=3, meter="x", provider="x",
-        quote={"known": True, "source": "x_read_cap"}, now=NOW,
+        "x.fixture",
+        "x",
+        max_units=3,
+        meter="x",
+        provider="x",
+        quote={"known": True, "source": "x_read_cap"},
+        now=NOW,
     )
     with store._write():
         store._db.execute(
             "INSERT INTO web_search_requests VALUES ('request','{}','search.fixture','completed',?,NULL,NULL)",
             (NOW.isoformat(),),
         )
-        store._db.execute("INSERT INTO newspapers VALUES ('paper','normal','edition','{}','prepared',NULL)")
+        store._db.execute(
+            "INSERT INTO newspapers VALUES ('paper','normal','edition','{}','prepared',NULL)"
+        )
         store._db.execute(
             "INSERT INTO newspaper_effects VALUES ('legacy.paper','paper','inflight',NULL,NULL,NULL)"
         )
     periods = {row["meter"]: row for row in ledger.report()["periods"]}
     split = periods["model"]["operations"]
     assert split["text"] == {"known_settled": 7, "held": 0, "known_by_source": {"reported": 7}}
-    assert split["search"] == {"known_settled": 4, "held": 0, "known_by_source": {"usage_derived": 4}}
+    assert split["search"] == {
+        "known_settled": 4,
+        "held": 0,
+        "known_by_source": {"usage_derived": 4},
+    }
     assert split["image"]["held"] == 23 and split["image"]["known_settled"] == 0
     assert split["vision"]["known_settled"] == 5
     assert split["unclassified_media"]["held"] == 2

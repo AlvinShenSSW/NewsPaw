@@ -9,7 +9,7 @@ import unicodedata
 from dataclasses import asdict
 from datetime import UTC, datetime
 
-from .av_rules import AV_CONTRACT, AV_PUBLISHER, industry_copy
+from .av_rules import AV_CONTRACT, AV_CONTRACTS, AV_PUBLISHER
 from .evidence import EvidenceError, EvidenceStore
 from .newsparse import canonical_url, known_av_origin
 from .providers import ModelRequest, ProfileRegistry
@@ -64,6 +64,7 @@ _INDEPENDENCE = re.compile(
 )
 _LABELS = {
     "zh-Hans": dict(
+        overview="今日概览",
         empty="未获得可用的新鲜新闻证据。",
         coverage="来源覆盖缺口",
         omitted="未进入本期候选",
@@ -77,6 +78,7 @@ _LABELS = {
         quality="仅检查证据对应与语言形式，不代表独立核实。",
     ),
     "en": dict(
+        overview="Today at a glance",
         empty="No usable fresh news evidence was obtained.",
         coverage="Source coverage gaps",
         omitted="Candidates outside this edition",
@@ -90,6 +92,7 @@ _LABELS = {
         quality="Evidence links and language form are checked; this is not independent verification.",
     ),
     "ja": dict(
+        overview="本日の概要",
         empty="利用できる新しいニュースの根拠を取得できませんでした。",
         coverage="情報源の取得不足",
         omitted="今回の候補に含まれない記事",
@@ -222,10 +225,16 @@ class BriefValidator:
             text,
         )
 
-    def _language(self, text, *, title=False, require_kana=True):
-        remaining = unicodedata.normalize(
-            "NFKC", self._remaining(unicodedata.normalize("NFKC", text))
-        )
+    @staticmethod
+    def _without(text, kept):
+        # Names the model declared as kept in the source script are not prose to translate.
+        text = unicodedata.normalize("NFKC", text)
+        for name in sorted(kept, key=len, reverse=True):
+            text = text.replace(unicodedata.normalize("NFKC", name), "")
+        return text
+
+    def _language(self, text, *, title=False, require_kana=True, kept=()):
+        remaining = unicodedata.normalize("NFKC", self._remaining(self._without(text, kept)))
         if any(
             unicodedata.category(c).startswith("L")
             and not (_HAN.fullmatch(c) or _KANA.fullmatch(c) or _LATIN.fullmatch(c))
@@ -291,16 +300,19 @@ class BriefValidator:
             raise EditorialError("missing_support")
         return "\n".join(quotes)
 
-    def _prose(self, text, support, *, title=False, require_kana=True):
-        _text(text, 160 if title else 1200)
+    def _prose(self, text, support, *, title=False, require_kana=True, kept=(), maximum=1200):
+        _text(text, 160 if title else maximum)
         if not _numbers(text) <= _numbers(support):
             raise EditorialError("unsupported_number")
         if _INDEPENDENCE.search(text):
             raise EditorialError("unverified_corroboration")
-        self._language(text, title=title, require_kana=require_kana)
+        self._language(text, title=title, require_kana=require_kana, kept=kept)
 
     def validate(self, data):
-        _fields(data, "locale items conflicts")
+        _fields(
+            data,
+            "locale items conflicts overview" if self.av_industry else "locale items conflicts",
+        )
         if (
             data["locale"] != self.locale
             or not isinstance(data["items"], list)
@@ -309,9 +321,8 @@ class BriefValidator:
             or len(data["conflicts"]) > 5
         ):
             raise EditorialError("invalid_brief")
-        if self.av_industry and data["conflicts"]:
-            raise EditorialError("av_industry_template_required")
         used, anchors = set(), set()
+        cited, names = [], set()
         for item in data["items"]:
             _fields(item, "anchor evidence_ids title body kind stage support entities")
             support = self._support(item["evidence_ids"], item["support"])
@@ -350,25 +361,36 @@ class BriefValidator:
                     or entity["translated"] not in item["title"] + "\n" + item["body"]
                 ):
                     raise EditorialError("unsupported_entity")
-            if self.av_industry:
-                fact = self.pool[item["anchor"]].get("metadata", {}).get("av_industry")
-                if (
-                    (item["title"], item["body"]) != industry_copy(self.locale, fact)
-                    or item["kind"] != "report"
-                    or item["stage"] != "unknown"
-                    or item["entities"]
-                ):
-                    raise EditorialError("av_industry_template_required")
-            self._prose(item["title"], support, title=True, require_kana=False)
-            self._prose(item["body"], support, require_kana=False)
+            kept = (
+                {e["source"] for e in item["entities"] if e["source"] == e["translated"]}
+                if self.av_industry
+                else set()
+            )
+            cited.append(support)
+            names |= kept
+            self._prose(item["title"], support, title=True, require_kana=False, kept=kept)
+            self._prose(item["body"], support, require_kana=False, kept=kept)
             if self.locale == "ja" and not _KANA.search(
-                self._remaining(item["title"] + item["body"])
+                self._remaining(self._without(item["title"] + item["body"], kept))
             ):
                 raise EditorialError("wrong_output_language")
+        if self.av_industry:
+            overview = data["overview"]
+            if not data["items"]:
+                if overview != "":
+                    raise EditorialError("invalid_brief")
+            else:
+                self._prose(overview, "\n".join(cited), kept=names, maximum=600)
         for conflict in data["conflicts"]:
             _fields(conflict, "evidence_ids note support")
             support = self._support(conflict["evidence_ids"], conflict["support"], minimum=2)
-            self._prose(conflict["note"], support)
+            evidence = "\n".join(
+                self.pool[i]["title"] + "\n" + self.pool[i]["excerpt"]
+                for i in conflict["evidence_ids"]
+            )
+            self._prose(
+                conflict["note"], support, kept={name for name in names if name in evidence}
+            )
         return data
 
     def __call__(self, data):
@@ -410,6 +432,7 @@ class BriefValidator:
         return obj(
             dict(
                 locale={"type": "string", "enum": [self.locale]},
+                **({"overview": text} if self.av_industry else {}),
                 items=array(item, self.max_items),
                 conflicts=array(conflict, 5),
             )
@@ -513,16 +536,8 @@ class EditorialService:
                     for article in articles
                     if not known_av_origin(article.url) and not known_av_origin(article.feed_url)
                 ]
-            if effective["category_id"] == "av":
-                articles = [
-                    article
-                    for article in articles
-                    if effective["partition"] == "adult"
-                    and article.evidence_scope == "av_industry_excerpt"
-                    and known_av_origin(article.feed_url)
-                    and known_av_origin(article.url)
-                    and industry_copy(effective["locale"], article.metadata.get("av_industry"))
-                ]
+            elif effective["partition"] != "adult":
+                articles = []
             coverage.append(
                 dict(
                     attempt_id=key,
@@ -671,7 +686,7 @@ class EditorialService:
     def delivery_allowed(self, edition_id, route):
         row = self._row(edition_id)
         if route.effective["category_id"] == "av":
-            return bool(row["result"] and row["result"].get("av_contract") == AV_CONTRACT)
+            return bool(row["result"] and row["result"].get("av_contract") in AV_CONTRACTS)
         return not _unscoped_av(route, row["payload"]["pool"])
 
     def task_status(self, edition_id):
@@ -716,28 +731,15 @@ class EditorialService:
                 "preferences. Prefer earlier equally relevant evidence. Do not fill missing topics."
             )
         if validator.av_industry:
-            if any(
-                not industry_copy(
-                    route.effective["locale"], entry.get("metadata", {}).get("av_industry")
-                )
-                for entry in evidence
-            ):
-                raise EditorialError("av_edition_requires_rebuild")
             instructions += (
-                " For AV industry report only relevant announcements using the exact allowed title/body "
-                "pair from the selected evidence anchor. Use kind report, stage unknown, and empty "
-                "entities/conflicts. Do not reproduce original descriptions or infer details. "
-                "If the evidence is not suitable, return an empty items list."
+                " This is an adult-industry news brief for an adult-only reader. Write each title "
+                "and body as a neutral factual summary of the cited evidence. Personal, label and "
+                "work names may stay exactly as written in the evidence; list every name kept that "
+                "way in that item's entities with identical source and translated values. Also "
+                "return overview: one short paragraph in the requested locale on the most notable "
+                "developments among the items you return, using only facts, names and numbers "
+                "from those items. Use an empty string for overview when items is empty."
             )
-            evidence = [
-                {
-                    **entry,
-                    "allowed_copy": industry_copy(
-                        route.effective["locale"], entry["metadata"]["av_industry"]
-                    ),
-                }
-                for entry in evidence
-            ]
         elif route.effective["category_id"] in {"x", "x_adult"}:
             instructions += (
                 " These are attributed X posts. Present each author’s claims or opinions as "
@@ -860,6 +862,7 @@ class EditorialService:
         )
         if route.effective["category_id"] == "av":
             result["av_contract"] = AV_CONTRACT
+            result["overview"] = data.get("overview", "")
         previous = {}
         rows = self.db.execute(
             "SELECT result_json FROM editorial_editions WHERE subscription_id=? AND partition=? AND state='ready' ORDER BY created_at DESC LIMIT 100",
@@ -987,6 +990,8 @@ class EditorialService:
         result = edition["result"]
         labels = _LABELS[result["locale"]]
         parts = []
+        if result.get("overview"):
+            parts.append(labels["overview"] + "\n" + result["overview"])
         for index, item in enumerate(result["items"], 1):
             parts.append(
                 f"{index}. {item['title']}\n{item['kind']}：{item['body']}\n{labels['stage']}：{item['stage']} · {item['scope']}"

@@ -23,7 +23,7 @@ struct ArticleListView: View {
 
     var body: some View {
         emptyState
-            .background(Theme.background)
+            .stackBackground(Theme.background)
             .navigationTitle(title)
     }
 
@@ -52,7 +52,7 @@ struct ArticleListView: View {
 struct ReadingPlaceholderView: View {
     var body: some View {
         EmptyStateView(title: Text("No article selected"), systemImage: "doc.text", identifier: AccessibilityID.noArticleSelected)
-            .background(Theme.background)
+            .stackBackground(Theme.background)
             .navigationBarTitleDisplayMode(.inline)
     }
 }

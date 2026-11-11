@@ -4,7 +4,7 @@ import SwiftUI
 struct TodayView: View {
     var body: some View {
         EmptyStateView(title: Text("Nothing new today"), systemImage: "sun.max", identifier: AccessibilityID.todayEmpty)
-            .background(Theme.groupedBackground)
+            .stackBackground(Theme.groupedBackground)
             .navigationTitle("Today")
     }
 }

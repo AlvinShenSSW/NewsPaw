@@ -14,7 +14,7 @@ struct SettingsView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Theme.groupedBackground)
+        .stackBackground(Theme.groupedBackground)
         .navigationTitle("Settings")
     }
 }
@@ -36,7 +36,7 @@ struct AboutView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Theme.groupedBackground)
+        .stackBackground(Theme.groupedBackground)
         .navigationTitle("About")
     }
 

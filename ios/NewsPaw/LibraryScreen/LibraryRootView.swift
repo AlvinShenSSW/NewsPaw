@@ -24,7 +24,7 @@ struct LibraryRootView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Theme.groupedBackground)
+        .stackBackground(Theme.groupedBackground)
         .navigationTitle("Library")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

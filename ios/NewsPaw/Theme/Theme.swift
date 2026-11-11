@@ -55,3 +55,14 @@ enum Theme {
     /// The smallest tap target (ux section 6).
     static let minimumTapTarget = 44.0
 }
+
+extension View {
+    /// Paints the enclosing navigation stack's own background with a palette
+    /// colour, so the colour reaches every edge of the stack. A view's own
+    /// background is not enough: after the software keyboard has been shown,
+    /// a stack created after a rotation ends its content 20 pt above the
+    /// bottom and its default background shows there (RD03 F1).
+    func stackBackground(_ color: Color) -> some View {
+        containerBackground(color, for: .navigation)
+    }
+}

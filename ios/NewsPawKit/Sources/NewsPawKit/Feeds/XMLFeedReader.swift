@@ -185,6 +185,8 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
             switch element.name {
             case "title":
                 result.hasFeedMarker = true
+                // A repeated title keeps the first one and its type.
+                guard result.title == nil else { break }
                 let kind = atomKind(attributeDict)
                 result.titleKind = kind == .text ? .text : .html
                 if kind == .xhtml {

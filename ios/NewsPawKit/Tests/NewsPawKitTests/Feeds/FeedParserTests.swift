@@ -281,6 +281,21 @@ struct FeedParserTests {
         #expect(parse(document) == nil, "\(label)")
     }
 
+    @Test("a JSON Feed behind a byte-order mark and white space is read")
+    func jsonWithByteOrderMark() throws {
+        var data = Data([0xEF, 0xBB, 0xBF])
+        data.append(Data("\n  ".utf8))
+        data.append(try FeedFixture.data("feed.json"))
+        #expect(parse(data) == parse(try FeedFixture.data("feed.json")))
+        #expect(parse(data)?.items.count == 2)
+    }
+
+    @Test("a repeated Atom feed title keeps the first one and its type")
+    func repeatedAtomTitle() throws {
+        let feed = try #require(parse(#"<feed xmlns="http://www.w3.org/2005/Atom"><title>&lt;kept&gt;</title><title type="html">&lt;b&gt;second&lt;/b&gt;</title><id>x</id></feed>"#))
+        #expect(feed.title == "<kept>")
+    }
+
     @Test("a valid feed with zero items is a feed with nothing in it")
     func zeroItems() throws {
         for document in [

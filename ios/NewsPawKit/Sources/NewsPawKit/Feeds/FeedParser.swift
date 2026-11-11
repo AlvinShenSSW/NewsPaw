@@ -21,7 +21,8 @@ public enum FeedParser {
     /// - Returns: the feed, or `nil` when the document is not a feed.
     public static func parse(_ data: Data, charset: String?, baseURL: URL) -> ParsedFeed? {
         if firstSignificantByte(of: data) == UInt8(ascii: "{") {
-            return JSONFeedReader.read(data, baseURL: baseURL)
+            let json = data.starts(with: [0xEF, 0xBB, 0xBF]) ? Data(data.dropFirst(3)) : data
+            return JSONFeedReader.read(json, baseURL: baseURL)
         }
         let asSent = XMLFeedReader.read(data)
         var chosen = asSent

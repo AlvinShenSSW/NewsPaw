@@ -279,7 +279,10 @@ func stubTransport(_ limits: TransportLimits = .standard) -> URLSessionTransport
 /// stub cannot show: cookies, decompression, a real authentication
 /// challenge, the headers actually sent, embedded credentials. Every answer
 /// closes its connection.
-final class LoopbackServer: Sendable {
+///
+/// Unchecked: the listener is used only through its own thread-safe
+/// methods, the log is behind a mutex, and everything else is immutable.
+final class LoopbackServer: @unchecked Sendable {
     struct Request: Sendable {
         var method: String
         var path: String

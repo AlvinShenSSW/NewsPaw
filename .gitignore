@@ -14,3 +14,7 @@ htmlcov/
 data/
 *.sqlite3*
 *.log
+.build/
+.swiftpm/
+xcuserdata/
+DerivedData/

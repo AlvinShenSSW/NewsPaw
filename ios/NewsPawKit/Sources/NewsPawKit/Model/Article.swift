@@ -29,7 +29,14 @@ struct Article: Sendable, Hashable {
 extension Article: Codable, FetchableRecord, PersistableRecord {
     static let databaseTableName = "article"
 
-    enum CodingKeys: String, CodingKey {
+    /// The columns a list reads: every column but `content_html`, which can
+    /// be large and is read by article identifier when an article is opened.
+    /// Without this declaration a record selects every column.
+    static var databaseSelection: [any SQLSelectable] {
+        CodingKeys.allCases.map { Column($0.rawValue) }
+    }
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case sourceID = "source_id"
         case externalID = "external_id"

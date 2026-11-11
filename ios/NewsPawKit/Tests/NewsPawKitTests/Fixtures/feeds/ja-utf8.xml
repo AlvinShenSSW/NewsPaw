@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic Japanese feed. Nothing here refers to a real source. -->
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>架空ニュース 表示テスト</title>
+    <link>https://example.invalid/ja/</link>
+    <description>ソフトウェアの能力を予測する架空の記事</description>
+    <item>
+      <title>ソニー風の新しい表計算ソフトを発表</title>
+      <link>https://example.invalid/ja/articles/1</link>
+      <guid isPermaLink="false">ja-1</guid>
+      <description>噂の機能は十分か。ｶﾀｶﾅとひらがな、漢字の混在。</description>
+      <content:encoded><![CDATA[<p>本文：予定表に貼り付ける能力。申し込みは不要です。</p>]]></content:encoded>
+      <dc:creator>山田 太郎</dc:creator>
+      <pubDate>Tue, 10 Nov 2026 08:00:00 JST</pubDate>
+    </item>
+    <item>
+      <title>構造改革、暴力ではなく対話を</title>
+      <link>https://example.invalid/ja/articles/2</link>
+      <description>東京から大阪まで &amp; 京都へ。ﾃｽﾄ用の半角カナ。</description>
+      <pubDate>Tue, 10 Nov 2026 09:30:00 +0900</pubDate>
+    </item>
+  </channel>
+</rss>

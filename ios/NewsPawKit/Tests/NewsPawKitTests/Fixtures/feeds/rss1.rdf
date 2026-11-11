@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Synthetic RSS 1.0 (RDF) feed for the FeedKit check. Nothing here refers to a real source. -->
+<!-- Synthetic RSS 1.0 (RDF) feed. Nothing here refers to a real source. -->
 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
          xmlns="http://purl.org/rss/1.0/"
-         xmlns:dc="http://purl.org/dc/elements/1.1/">
+         xmlns:dc="http://purl.org/dc/elements/1.1/"
+         xmlns:content="http://purl.org/rss/1.0/modules/content/">
   <channel rdf:about="https://example.invalid/feed.rdf">
     <title>Synthetic RDF feed</title>
-    <link>https://example.invalid/</link>
+    <link>https://example.invalid/rdf/</link>
     <description>A fixture feed with two items.</description>
     <items>
       <rdf:Seq>
@@ -14,16 +15,18 @@
       </rdf:Seq>
     </items>
   </channel>
-  <item rdf:about="https://example.invalid/articles/first">
+  <item rdf:about="https://example.invalid/articles/first#about">
     <title>First synthetic item</title>
     <link>https://example.invalid/articles/first</link>
-    <description>The first item's excerpt.</description>
+    <description>The first item&apos;s excerpt.</description>
+    <content:encoded><![CDATA[<p>The first item's <strong>body</strong>.</p>]]></content:encoded>
+    <dc:creator>Fay Writer</dc:creator>
     <dc:date>2026-11-01T10:00:00Z</dc:date>
   </item>
-  <item rdf:about="https://example.invalid/articles/second">
+  <item rdf:about="https://example.invalid/articles/second#about">
     <title>Second synthetic item</title>
     <link>https://example.invalid/articles/second</link>
     <description>The second item's excerpt.</description>
-    <dc:date>2026-11-02T10:00:00Z</dc:date>
+    <dc:date>2026-11-02T10:00:00+01:00</dc:date>
   </item>
 </rdf:RDF>

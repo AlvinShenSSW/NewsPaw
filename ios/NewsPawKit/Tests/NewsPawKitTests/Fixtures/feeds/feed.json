@@ -1,0 +1,27 @@
+{
+  "version": "https://jsonfeed.org/version/1.1",
+  "title": "Synthetic   Garden <Diary>",
+  "home_page_url": "https://example.invalid/garden/",
+  "feed_url": "https://example.invalid/garden/feed.json",
+  "items": [
+    {
+      "id": "garden-1",
+      "url": "https://example.invalid/garden/tulips",
+      "title": "Tulips <early> this   year",
+      "summary": "Bulbs came up in November.",
+      "content_html": "<p>Tulip <b>text</b>.</p>",
+      "image": "/garden/tulips.jpg",
+      "date_published": "2026-11-08T06:00:00Z",
+      "authors": [{ "name": "Dee Gardener" }]
+    },
+    {
+      "id": 42,
+      "url": "https://example.invalid/garden/compost",
+      "title": "Compost notes",
+      "content_text": "Turn it weekly.\nKeep it <moist> & warm.",
+      "date_modified": "2026-11-07T06:00:00+01:00",
+      "author": { "name": "Eli Gardener" },
+      "banner_image": "https://example.invalid/garden/compost.jpg"
+    }
+  ]
+}

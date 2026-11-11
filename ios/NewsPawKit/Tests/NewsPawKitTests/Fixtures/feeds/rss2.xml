@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic RSS 2.0 feed. Nothing here refers to a real source. -->
+<rss version="2.0"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     xmlns:dc="http://purl.org/dc/elements/1.1/"
+     xmlns:media="http://search.yahoo.com/mrss/"
+     xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Synthetic Harbour &amp;amp; Gazette</title>
+    <link>https://example.invalid/</link>
+    <atom:link href="https://example.invalid/elsewhere.xml" rel="self" type="application/rss+xml"/>
+    <description>Invented news for tests.</description>
+    <item>
+      <title>Lighthouse keepers vote to &lt;b&gt;repaint&lt;/b&gt; the tower</title>
+      <link>https://example.invalid/articles/lighthouse</link>
+      <guid isPermaLink="false">gazette-0001</guid>
+      <description><![CDATA[<p>The keepers met on <b>Tuesday</b> &amp; agreed.</p>]]></description>
+      <content:encoded><![CDATA[<p>Full text about the <em>tower</em>.</p><script>document.write("x")</script>]]></content:encoded>
+      <author>keeper@example.invalid (Ada Keeper)</author>
+      <dc:creator>Not used when an author is present</dc:creator>
+      <pubDate>Tue, 10 Nov 2026 08:00:00 +0900</pubDate>
+      <enclosure url="https://example.invalid/images/tower.jpg" length="1234" type="image/jpeg"/>
+    </item>
+    <item>
+      <title>Ferry timetable changes for winter</title>
+      <link>/articles/ferry</link>
+      <guid>https://example.invalid/articles/ferry-guid</guid>
+      <description>Ferries run less often.</description>
+      <dc:creator>Ben Pilot</dc:creator>
+      <dc:date>2026-11-09T12:30:00Z</dc:date>
+      <media:thumbnail url="/images/ferry-thumb.jpg"/>
+    </item>
+    <item>
+      <title>Market square reopens</title>
+      <guid>https://example.invalid/articles/market</guid>
+      <pubDate>Mon, 09 Nov 2026 10:00:00 GMT</pubDate>
+      <media:group>
+        <media:content url="https://example.invalid/video/market.mp4" type="video/mp4"/>
+        <media:content url="https://example.invalid/images/market.png" medium="image"/>
+      </media:group>
+    </item>
+  </channel>
+</rss>

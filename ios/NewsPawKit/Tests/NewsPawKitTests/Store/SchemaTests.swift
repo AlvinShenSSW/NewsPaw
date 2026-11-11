@@ -111,7 +111,10 @@ struct SchemaTests {
     func version1Columns() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let library = try await LibraryStore(directory: directory).openNormal()
+        // Up to v1 only: what v1 froze must not drift when later migrations
+        // are added.
+        let library = try await LibraryStore(directory: directory)
+            .open(.normal, migrator: migrator(addingTestMigrations: []), create: true)
 
         let (tables, columns, foreignKeys, uniqueKeys) = try await library.pool.read { db in
             let tables = try String.fetchSet(
@@ -206,6 +209,77 @@ struct SchemaTests {
             try db.execute(sql: "DELETE FROM source WHERE id = ?", arguments: [sources[0].id.databaseKey])
         }
         #expect(try await rowCounts(library) == ["category": 1, "source": 1, "article": 2, "article_body": 2, "seen": 1])
+    }
+
+    // MARK: - RD04 criterion 16: migration v2
+
+    @Test("v2 adds a nullable content_html column to article and an index on the article's link")
+    func version2() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = try await LibraryStore(directory: directory).openNormal()
+
+        let (migrations, columns, indexes) = try await library.pool.read { db in
+            let migrations = try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY identifier")
+            let columns = try Row.fetchAll(db, sql: "PRAGMA table_info(article)").map { row in
+                ColumnInfo(row["name"], row["type"], notNull: row["notnull"], default: row["dflt_value"], pk: row["pk"])
+            }
+            var indexes: [String: [String]] = [:]
+            for index in try Row.fetchAll(db, sql: "PRAGMA index_list(article)") where (index["origin"] as String) == "c" {
+                let name: String = index["name"]
+                indexes[name] = try Row.fetchAll(db, sql: "PRAGMA index_info(\(name))").map { $0["name"] }
+            }
+            return (migrations, columns, indexes)
+        }
+        #expect(migrations == ["v1", "v2"])
+        #expect(columns == Self.expectedColumns["article"]! + [ColumnInfo("content_html", "TEXT", notNull: false)])
+        #expect(indexes == ["article_url": ["url"]])
+    }
+
+    @Test("the version-1 fixture migrates to v2 with its rows intact")
+    func fixtureMigratesToVersion2() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "normal.sqlite")
+        try restoreVersion1Fixture(to: url)
+        let before = try await DatabaseQueue(path: url.path).read { try DatabaseSnapshot.read($0) }
+
+        let library = try await LibraryStore(directory: directory).openNormal()
+
+        let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
+        #expect(after.appliedMigrations == ["v1", "v2"])
+        for table in ["category", "source", "article_body", "seen"] {
+            #expect(after.rows[table] == before.rows[table], "rows of \(table)")
+        }
+        // Each article keeps every value and gains an empty content column.
+        #expect(after.rows["article"] == before.rows["article"]?.map { $0 + [nil] })
+        #expect(after.integrity == ["ok"])
+        #expect(try await library.articles().count == 3)
+        #expect(try await library.sources().count == 3)
+    }
+
+    @Test("the same-link query of collection uses the index on the article's link")
+    func sameLinkQueryUsesIndex() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = try await LibraryStore(directory: directory).openNormal()
+        let plan = try await library.pool.read { db in
+            try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + Library.linkHeldSQL, arguments: ["https://example.invalid/x", "c"])
+                .map { $0["detail"] as String }
+        }
+        #expect(plan.contains { $0.contains("article_url") }, "\(plan)")
+    }
+
+    @Test("list queries do not carry content_html; it is read by article identifier")
+    func listRecordLeavesContentOut() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = try await LibraryStore(directory: directory).openNormal()
+        let columns = try await library.pool.read { db in
+            try Article.all().makePreparedRequest(db, forSingleResult: false).statement.columnNames
+        }
+        #expect(columns == Self.expectedColumns["article"]!.map(\.name))
+        #expect(!columns.contains("content_html"))
     }
 
     // MARK: - Criterion 3: the version-1 fixture

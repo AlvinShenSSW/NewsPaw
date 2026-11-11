@@ -12,6 +12,7 @@ enum Schema {
     static var migrator: DatabaseMigrator {
         var migrator = DatabaseMigrator()
         registerV1(in: &migrator)
+        registerV2(in: &migrator)
         return migrator
     }
 
@@ -75,6 +76,19 @@ enum Schema {
                     last_seen_at TEXT NOT NULL,
                     PRIMARY KEY (source_id, external_id_hash)
                 );
+                """)
+        }
+    }
+
+    /// `v2`: the feed's own HTML for each article (RD04), and an index on
+    /// the article's link for the same-link rule of collection (spec N04).
+    /// `content_html` is read by article identifier; list queries do not
+    /// select it.
+    static func registerV2(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v2") { db in
+            try db.execute(sql: """
+                ALTER TABLE article ADD COLUMN content_html TEXT;
+                CREATE INDEX article_url ON article(url);
                 """)
         }
     }

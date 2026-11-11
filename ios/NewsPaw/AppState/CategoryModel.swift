@@ -30,7 +30,12 @@ final class CategoryModel {
         case failed
     }
 
+    /// Every category in storage, a category awaiting deletion included.
     private(set) var summaries: [CategorySummary] = []
+    /// The category whose row the list has taken away while its deletion is
+    /// confirmed (edit mode or a swipe). It is still a category: titles and
+    /// the empty state keep counting it until the deletion succeeds.
+    private(set) var hiddenForDeletion: UUID?
     private(set) var loadState = LoadState.loading
     var sheet: CategorySheet?
     var draftName = ""
@@ -45,8 +50,6 @@ final class CategoryModel {
     /// changes are saved one after another in the order made.
     private var lastOperation: Task<Bool, Never>?
     private var queuedOperations = 0
-    /// The row taken out of the list while its deletion is being confirmed.
-    private var removedAwaitingConfirmation: UUID?
     /// Categories whose deletion has been chosen and not yet finished.
     private var deletionsStarted: Set<UUID> = []
 
@@ -76,6 +79,12 @@ final class CategoryModel {
 
     func summary(_ id: UUID) -> CategorySummary? {
         summaries.first { $0.id == id }
+    }
+
+    /// The rows the category list shows: every category except the one the
+    /// list has taken away while its deletion is confirmed.
+    var listedSummaries: [CategorySummary] {
+        summaries.filter { $0.id != hiddenForDeletion }
     }
 
     /// Reads the categories from storage.
@@ -141,9 +150,14 @@ final class CategoryModel {
 
     // MARK: - Order and deletion
 
-    /// Shows the new order at once, then saves it.
+    /// Shows the new order at once, then saves it. The offsets are those of
+    /// `listedSummaries`.
     func move(fromOffsets source: IndexSet, toOffset destination: Int) {
-        summaries.move(fromOffsets: source, toOffset: destination)
+        var listed = listedSummaries
+        listed.move(fromOffsets: source, toOffset: destination)
+        // A row hidden for a deletion keeps its slot.
+        var moved = listed.makeIterator()
+        summaries = summaries.map { $0.id == hiddenForDeletion ? $0 : moved.next() ?? $0 }
         let order = summaries.map(\.id)
         Task {
             _ = await perform { library in
@@ -152,15 +166,15 @@ final class CategoryModel {
         }
     }
 
-    /// A deletion asked for from the list (edit mode or a swipe). The list
-    /// has already taken the row away when it calls this, so the row leaves
-    /// the shown list at once; it comes back from storage if the deletion is
-    /// not confirmed.
+    /// A deletion asked for from the list (edit mode or a swipe), with
+    /// offsets of `listedSummaries`. The list has already taken the row away
+    /// when it calls this, so the row stays out of `listedSummaries` until
+    /// the dialog closes; it comes back if the deletion is not confirmed.
     func requestDeletion(atOffsets offsets: IndexSet) {
-        guard let index = offsets.first, summaries.indices.contains(index) else { return }
-        let summary = summaries.remove(at: index)
-        removedAwaitingConfirmation = summary.id
-        pendingDeletion = summary
+        let listed = listedSummaries
+        guard let index = offsets.first, listed.indices.contains(index) else { return }
+        hiddenForDeletion = listed[index].id
+        pendingDeletion = listed[index]
     }
 
     /// A deletion asked for from Category Settings.
@@ -169,16 +183,15 @@ final class CategoryModel {
     }
 
     /// The deletion dialog closed, by a choice or without one. A row taken
-    /// out of the list for it is restored from storage unless the deletion
-    /// went ahead; the check waits for the dialog's own action to run.
+    /// out of the list for it comes back unless the deletion went ahead; the
+    /// check waits for the dialog's own action to run.
     func deletionDialogDismissed() {
         pendingDeletion = nil
-        guard let id = removedAwaitingConfirmation else { return }
-        removedAwaitingConfirmation = nil
+        guard let id = hiddenForDeletion else { return }
         Task {
             await Task.yield()
-            if !deletionsStarted.contains(id) {
-                _ = await perform(nil)
+            if !deletionsStarted.contains(id), hiddenForDeletion == id {
+                hiddenForDeletion = nil
             }
         }
     }
@@ -194,6 +207,11 @@ final class CategoryModel {
         defer { deletionsStarted.remove(id) }
         let deleted = await perform { library in
             try await library.deleteCategory(id, sources: sources)
+        }
+        // On success the reload has removed the category; on failure it is
+        // still stored and its row comes back.
+        if hiddenForDeletion == id {
+            hiddenForDeletion = nil
         }
         if deleted {
             navigation.categoryDeleted(id)

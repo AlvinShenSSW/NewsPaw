@@ -63,6 +63,7 @@ final class AccessibilityTests: NewsPawUITestCase {
                 waitFor(panel)
             })
             assertBarButtonTapTarget(edit, "Edit", activated: toggleEdit, reset: endEditing)
+            assertDoneTapTarget(edit)
             assertTapTarget(button(AccessibilityID.newCategoryButton), "New Category")
             for row in [AccessibilityID.todayRow, AccessibilityID.allUnreadRow, AccessibilityID.starredRow, AccessibilityID.settingsRow] {
                 XCTAssertGreaterThanOrEqual(element(row).frame.height, 44 - 0.001, row)
@@ -78,10 +79,12 @@ final class AccessibilityTests: NewsPawUITestCase {
                 waitForAbsence(app.textFields[AccessibilityID.nameField])
             })
             assertBarButtonTapTarget(edit, "Edit", activated: toggleEdit, reset: endEditing)
+            assertDoneTapTarget(edit)
             assertTapTarget(element(AccessibilityID.allUnreadRow), "All Unread")
         }
         openNewCategory()
         let field = app.textFields[AccessibilityID.nameField]
+        assertTapTarget(field, "Name field")
         assertBarButtonTapTarget(button(AccessibilityID.cancelButton), "Cancel", activated: { !field.exists }, reset: {
             self.openNewCategory()
         })
@@ -108,6 +111,34 @@ final class AccessibilityTests: NewsPawUITestCase {
         button(AccessibilityID.iconButton("leaf")).tap()
         XCTAssertEqual(icons.filter(\.isSelected).map(\.identifier), [AccessibilityID.iconButton("leaf")])
         button(AccessibilityID.cancelButton).tap()
+        waitForAbsence(field)
+
+        // A category row, Category Settings' Delete control, the About row.
+        showCategoryList()
+        assertTapTarget(element(AccessibilityID.categoryRow("Target 0")), "category row")
+        openCategorySettings("Target 0")
+        assertTapTarget(app.textFields[AccessibilityID.nameField], "Name field in Category Settings")
+        assertTapTarget(button(AccessibilityID.deleteCategoryButton), "Delete Category")
+        button(AccessibilityID.cancelButton).tap()
+        waitForAbsence(field)
+        if isPad {
+            openSidebarIfNeeded()
+            element(AccessibilityID.settingsRow).tap()
+        } else {
+            app.tabBars.buttons["Settings"].tap()
+        }
+        assertTapTarget(element(AccessibilityID.aboutRow), "About row")
+    }
+
+    /// The Edit control in its Done state: a tap at each edge of a 44 pt
+    /// square ends edit mode.
+    private func assertDoneTapTarget(_ edit: XCUIElement) {
+        edit.tap()
+        XCTAssertEqual(edit.label, "Done")
+        assertBarButtonTapTarget(edit, "Done", activated: { edit.label == "Edit" }, reset: { edit.tap() })
+        if edit.label == "Done" {
+            edit.tap()
+        }
     }
 
     /// At the largest accessibility text size category rows grow and their

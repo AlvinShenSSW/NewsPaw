@@ -2,50 +2,6 @@ import XCTest
 
 /// Criteria 4–7: categories in Library and the sidebar.
 final class CategoryFlowTests: NewsPawUITestCase {
-    /// Starts at the category list: the Library tab, or the sidebar.
-    private func showCategoryList() {
-        if app.tabBars.firstMatch.exists {
-            app.tabBars.buttons["Library"].tap()
-            waitFor(app.navigationBars["Library"])
-        } else {
-            openSidebarIfNeeded()
-        }
-    }
-
-    private func launchAtFullWidth(syntheticSources: Int? = nil, failNextSave: Bool = false) {
-        launch(syntheticSources: syntheticSources, failNextSave: failNextSave)
-        rotate(.portrait)
-        requireFullWidth()
-    }
-
-    private func setEditing(_ editing: Bool) {
-        let edit = waitFor(button(AccessibilityID.editButton))
-        if (edit.label == "Done") != editing {
-            edit.tap()
-        }
-    }
-
-    private func reorderHandle(_ name: String) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label == %@", "Reorder \(name)")).firstMatch
-    }
-
-    /// Edit mode: the delete control, then the row's Delete button.
-    private func deleteInEditMode(_ name: String) {
-        setEditing(true)
-        // The control's element spans the row; its minus sits at the leading
-        // edge.
-        let remove = waitFor(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Remove, \(name)")).firstMatch)
-        remove.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 22, dy: remove.frame.height / 2)).tap()
-        waitFor(app.buttons["Delete"]).tap()
-    }
-
-    private func openCategorySettings(_ name: String) {
-        showCategoryList()
-        waitFor(element(AccessibilityID.categoryRow(name))).press(forDuration: 1.2)
-        waitFor(app.buttons["Category Settings"]).tap()
-        waitFor(app.textFields[AccessibilityID.nameField])
-    }
-
     func testEmptyLibraryAndNewCategory() {
         launchAtFullWidth()
         showCategoryList()
@@ -82,16 +38,13 @@ final class CategoryFlowTests: NewsPawUITestCase {
         // Reorder: Japan to the top.
         setEditing(true)
         waitFor(reorderHandle("Japan")).press(forDuration: 0.8, thenDragTo: reorderHandle("World"))
-        let reordered = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
-            self.categoryNamesShown() == ["Japan", "World", "Technology"]
-        }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [reordered], timeout: timeout), .completed, "order: \(categoryNamesShown())")
+        waitForOrder(["Japan", "World", "Technology"])
 
         // Delete World, which has no sources: a plain confirmation.
         deleteInEditMode("World")
         waitFor(app.staticTexts["Delete “World”?"])
         XCTAssertFalse(app.buttons["Delete Category and Sources"].exists)
-        app.buttons["Delete Category"].tap()
+        deletionDialogButton("Delete Category").tap()
         waitForAbsence(element(AccessibilityID.categoryRow("World")))
         setEditing(false)
 
@@ -158,6 +111,43 @@ final class CategoryFlowTests: NewsPawUITestCase {
         waitFor(element(AccessibilityID.noCategories))
     }
 
+    /// F3, F7: cancelling a deletion keeps the category, also after a
+    /// relaunch; while the dialog is open the only category still counts, so
+    /// the list does not say there are none. On iPad the dialog is also
+    /// dismissed by a tap outside it when it is a popover.
+    func testCancellingADeletionKeepsTheCategory() {
+        launchAtFullWidth()
+        createCategory("Keep")
+        showCategoryList()
+        let title = app.staticTexts["Delete “Keep”?"]
+        deleteInEditMode("Keep")
+        waitFor(title)
+        XCTAssertFalse(element(AccessibilityID.noCategories).exists, "the only category is still a category while the dialog is open")
+        let isPopover = app.popovers.firstMatch.exists
+        let cancel = deletionDialogButton("Cancel")
+        if cancel.exists {
+            cancel.tap()
+        } else {
+            XCTAssertTrue(isPopover, "a dialog without Cancel must be a popover")
+            tapOutsideDialog()
+        }
+        waitForAbsence(title)
+        waitFor(element(AccessibilityID.categoryRow("Keep")))
+        if isPad, isPopover {
+            deleteInEditMode("Keep")
+            waitFor(title)
+            tapOutsideDialog()
+            waitForAbsence(title)
+            waitFor(element(AccessibilityID.categoryRow("Keep")))
+        }
+        setEditing(false)
+
+        relaunch()
+        rotate(.portrait)
+        showCategoryList()
+        waitFor(element(AccessibilityID.categoryRow("Keep")))
+    }
+
     /// Criterion 5: deleting the category that is shown moves the selection
     /// to All Unread. In the tab structure the category list and a shown
     /// category are never on screen together, so this is an iPad test.
@@ -174,8 +164,7 @@ final class CategoryFlowTests: NewsPawUITestCase {
         openCategorySettings("World")
         button(AccessibilityID.deleteCategoryButton).tap()
         // The dialog's button, not the sheet's own Delete Category button.
-        let confirm = app.buttons.matching(NSPredicate(format: "label == 'Delete Category' AND identifier != %@", AccessibilityID.deleteCategoryButton)).firstMatch
-        waitFor(confirm).tap()
+        waitFor(deletionDialogButton("Delete Category")).tap()
         waitForAbsence(app.textFields[AccessibilityID.nameField])
         waitFor(app.navigationBars["All Unread"])
         XCTAssertTrue(element(AccessibilityID.allUnreadEmpty).exists)

@@ -35,11 +35,13 @@ struct CategoryRows: View {
             }
             .accessibilityIdentifier(AccessibilityID.categoriesLoadFailed)
         case .loaded where categories.summaries.isEmpty:
+            // A category awaiting deletion still counts: until the deletion
+            // is confirmed the library is not empty.
             Text("No categories yet")
                 .foregroundStyle(Theme.secondaryText)
                 .accessibilityIdentifier(AccessibilityID.noCategories)
         case .loaded:
-            ForEach(categories.summaries) { summary in
+            ForEach(categories.listedSummaries) { summary in
                 row(summary)
                     .accessibilityIdentifier(AccessibilityID.categoryRow(summary.category.name))
                     .contextMenu {
@@ -67,9 +69,9 @@ struct CategoryRows: View {
     }
 }
 
-/// The app's own Edit / Done control: an unfilled text button in the
-/// accent, because the system's Done button is a white glyph on the accent
-/// (2.5:1 in dark appearance).
+/// The app's own Edit / Done control: an unfilled text button drawn in the
+/// text colour, because the system's Done button is a white glyph on the
+/// accent (2.5:1 in dark appearance).
 struct EditDoneButton: View {
     @Binding var editMode: EditMode
 

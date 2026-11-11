@@ -22,6 +22,8 @@ final class TabStructureTests: NewsPawUITestCase {
         try XCTSkipIf(isPad, "iPhone structure")
         launch()
         assertTabDestinations()
+        createCategory("World")
+        assertTabDestinations(category: "World")
     }
 
     /// Below 700 pt an iPad window uses the tab structure with the bottom
@@ -90,18 +92,25 @@ final class TabStructureTests: NewsPawUITestCase {
 
     /// Each tab is a real destination with a truthful empty state; Settings
     /// shows About with the version.
-    private func assertTabDestinations() {
+    private func assertTabDestinations(category: String? = nil) {
         let tabs = app.tabBars.firstMatch
         tabs.buttons["Today"].tap()
         waitFor(element(AccessibilityID.todayEmpty))
         tabs.buttons["Starred"].tap()
         waitFor(element(AccessibilityID.starredEmpty))
         tabs.buttons["Library"].tap()
-        waitFor(element(AccessibilityID.noCategories))
+        if let category {
+            waitFor(element(AccessibilityID.categoryRow(category))).tap()
+            waitFor(element(AccessibilityID.categoryEmpty))
+            XCTAssertTrue(app.navigationBars[category].exists, "the category's title")
+            app.navigationBars[category].buttons.element(boundBy: 0).tap()
+        } else {
+            waitFor(element(AccessibilityID.noCategories))
+        }
         element(AccessibilityID.allUnreadRow).tap()
         waitFor(element(AccessibilityID.allUnreadEmpty))
         app.navigationBars["All Unread"].buttons.element(boundBy: 0).tap()
-        waitFor(element(AccessibilityID.noCategories))
+        waitFor(element(AccessibilityID.allUnreadRow))
         tabs.buttons["Settings"].tap()
         waitFor(element(AccessibilityID.aboutRow)).tap()
         let version = waitFor(element(AccessibilityID.versionValue))

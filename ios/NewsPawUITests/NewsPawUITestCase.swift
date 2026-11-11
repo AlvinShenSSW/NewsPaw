@@ -191,6 +191,71 @@ class NewsPawUITestCase: XCTestCase {
         return seen.sorted { $0.1 < $1.1 }.map(\.0)
     }
 
+    /// Starts at the category list: the Library tab, or the sidebar.
+    func showCategoryList() {
+        if app.tabBars.firstMatch.exists {
+            app.tabBars.buttons["Library"].tap()
+            waitFor(app.navigationBars["Library"])
+        } else {
+            openSidebarIfNeeded()
+        }
+    }
+
+    func launchAtFullWidth(_ orientation: UIDeviceOrientation = .portrait, syntheticSources: Int? = nil, failNextSave: Bool = false) {
+        launch(syntheticSources: syntheticSources, failNextSave: failNextSave)
+        rotate(orientation)
+        requireFullWidth()
+    }
+
+    func setEditing(_ editing: Bool) {
+        let edit = waitFor(button(AccessibilityID.editButton))
+        if (edit.label == "Done") != editing {
+            edit.tap()
+        }
+    }
+
+    func reorderHandle(_ name: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label == %@", "Reorder \(name)")).firstMatch
+    }
+
+    /// Edit mode: the delete control, then the row's Delete button.
+    func deleteInEditMode(_ name: String) {
+        setEditing(true)
+        // The control's element spans the row; its minus sits at the leading
+        // edge.
+        let remove = waitFor(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Remove, \(name)")).firstMatch)
+        remove.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 22, dy: remove.frame.height / 2)).tap()
+        waitFor(app.buttons["Delete"]).tap()
+    }
+
+    func openCategorySettings(_ name: String) {
+        showCategoryList()
+        waitFor(element(AccessibilityID.categoryRow(name))).press(forDuration: 1.2)
+        waitFor(app.buttons["Category Settings"]).tap()
+        waitFor(app.textFields[AccessibilityID.nameField])
+    }
+
+    /// Waits until the categories are shown in `names`' order.
+    func waitForOrder(_ names: [String], file: StaticString = #filePath, line: UInt = #line) {
+        let ordered = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            self.categoryNamesShown() == names
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ordered], timeout: timeout), .completed, "order: \(categoryNamesShown())", file: file, line: line)
+    }
+
+    /// A button of the deletion dialog (not a sheet's own button of the same
+    /// name).
+    func deletionDialogButton(_ label: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label == %@ AND NOT (identifier BEGINSWITH 'editor.')", label)).firstMatch
+    }
+
+    /// Taps far from a popover dialog, which closes it.
+    func tapOutsideDialog() {
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: window.maxX - 30, dy: window.maxY - 30))
+            .tap()
+    }
+
     func screenshot(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name

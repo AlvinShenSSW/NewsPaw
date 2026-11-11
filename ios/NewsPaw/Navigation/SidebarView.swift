@@ -57,8 +57,12 @@ struct SidebarView: View {
             }
             if case .slideOver(let close) = form {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close Sidebar", systemImage: "xmark") {
+                    Button {
                         close(true)
+                    } label: {
+                        Label("Close Sidebar", systemImage: "xmark")
+                            .labelStyle(.iconOnly)
+                            .minimumTapTarget()
                     }
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier(AccessibilityID.closeSidebarButton)

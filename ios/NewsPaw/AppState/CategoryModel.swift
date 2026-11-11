@@ -45,6 +45,10 @@ final class CategoryModel {
     /// changes are saved one after another in the order made.
     private var lastOperation: Task<Bool, Never>?
     private var queuedOperations = 0
+    /// The row taken out of the list while its deletion is being confirmed.
+    private var removedAwaitingConfirmation: UUID?
+    /// Categories whose deletion has been chosen and not yet finished.
+    private var deletionsStarted: Set<UUID> = []
 
     #if DEBUG
     /// Set by the UI tests: the next save fails before reaching storage.
@@ -148,13 +152,35 @@ final class CategoryModel {
         }
     }
 
+    /// A deletion asked for from the list (edit mode or a swipe). The list
+    /// has already taken the row away when it calls this, so the row leaves
+    /// the shown list at once; it comes back from storage if the deletion is
+    /// not confirmed.
     func requestDeletion(atOffsets offsets: IndexSet) {
         guard let index = offsets.first, summaries.indices.contains(index) else { return }
-        pendingDeletion = summaries[index]
+        let summary = summaries.remove(at: index)
+        removedAwaitingConfirmation = summary.id
+        pendingDeletion = summary
     }
 
+    /// A deletion asked for from Category Settings.
     func requestDeletion(_ id: UUID) {
         pendingDeletion = summary(id)
+    }
+
+    /// The deletion dialog closed, by a choice or without one. A row taken
+    /// out of the list for it is restored from storage unless the deletion
+    /// went ahead; the check waits for the dialog's own action to run.
+    func deletionDialogDismissed() {
+        pendingDeletion = nil
+        guard let id = removedAwaitingConfirmation else { return }
+        removedAwaitingConfirmation = nil
+        Task {
+            await Task.yield()
+            if !deletionsStarted.contains(id) {
+                _ = await perform(nil)
+            }
+        }
     }
 
     /// The categories the sources of `summary` can move to.
@@ -164,6 +190,8 @@ final class CategoryModel {
 
     func delete(_ summary: CategorySummary, sources: CategorySourcesDisposition) async {
         let id = summary.id
+        deletionsStarted.insert(id)
+        defer { deletionsStarted.remove(id) }
         let deleted = await perform { library in
             try await library.deleteCategory(id, sources: sources)
         }
@@ -180,14 +208,19 @@ final class CategoryModel {
     /// Runs `operation` after every operation queued before it. On failure
     /// the list is reloaded from storage and the error is shown; on success
     /// it is reloaded once nothing else is queued, so an optimistic order is
-    /// not replaced by an intermediate one.
-    private func perform(_ operation: @escaping @Sendable (Library) async throws -> Void) async -> Bool {
+    /// not replaced by an intermediate one. A `nil` operation only reloads,
+    /// in its turn.
+    private func perform(_ operation: (@Sendable (Library) async throws -> Void)?) async -> Bool {
         let previous = lastOperation
         let library = library
         queuedOperations += 1
         let task = Task { @MainActor in
             _ = await previous?.value
             defer { queuedOperations -= 1 }
+            guard let operation else {
+                await reload()
+                return true
+            }
             do {
                 #if DEBUG
                 if failNextSave {

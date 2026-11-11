@@ -26,8 +26,9 @@ class NewsPawUITestCase: XCTestCase {
 
     /// Launches the app on this test's library.
     @discardableResult
-    func launch(syntheticSources: Int? = nil, failNextSave: Bool = false) -> XCUIApplication {
+    func launch(syntheticSources: Int? = nil, failNextSave: Bool = false, arguments: [String] = []) -> XCUIApplication {
         app = XCUIApplication()
+        app.launchArguments = arguments
         app.launchEnvironment[UITestLaunchKey.libraryDirectory] = libraryName
         if let syntheticSources {
             app.launchEnvironment[UITestLaunchKey.syntheticSources] = String(syntheticSources)

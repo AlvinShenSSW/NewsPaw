@@ -59,19 +59,23 @@ struct CategorySheetView: View {
                 // Plain bar buttons: a confirmation-action button would be
                 // filled with the accent under a white label.
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") {
+                    Button {
                         categories.cancelSheet()
+                    } label: {
+                        Text("Cancel").minimumTapTarget()
                     }
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier(AccessibilityID.cancelButton)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
+                    Button {
                         isSaving = true
                         Task {
                             await categories.saveSheet()
                             isSaving = false
                         }
+                    } label: {
+                        Text("Save").minimumTapTarget()
                     }
                     .disabled(categories.draftNameProblem != nil || isSaving)
                     .accessibilityIdentifier(AccessibilityID.saveButton)

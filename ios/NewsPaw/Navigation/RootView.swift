@@ -45,7 +45,6 @@ struct ShellView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea(.keyboard)
         .onGeometryChange(for: Double.self) { $0.size.width } action: { width = $0 }
         .onChange(of: layout) { _, layout in
             // The slide-over exists only for panes below 1100 pt.

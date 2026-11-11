@@ -41,7 +41,7 @@ private struct CategoryDialogs: ViewModifier {
             isFrontmost && categories.pendingDeletion != nil
         } set: { presented in
             if !presented {
-                categories.pendingDeletion = nil
+                categories.deletionDialogDismissed()
             }
         }
     }

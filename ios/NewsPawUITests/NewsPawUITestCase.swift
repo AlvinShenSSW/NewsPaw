@@ -329,7 +329,7 @@ class NewsPawUITestCase: XCTestCase {
         // In the slide-over the sidebar scrolls, not what is behind it.
         let panel = self.element(AccessibilityID.slideOverPanel)
         var swipes = 0
-        while !element.exists, swipes < 5 {
+        while !(element.exists && element.isHittable), swipes < 5 {
             if panel.exists {
                 panel.swipeUp()
             } else {
@@ -356,9 +356,7 @@ class NewsPawUITestCase: XCTestCase {
     /// Shows the category list with `category` expanded.
     func expand(_ category: String) {
         showCategoryList()
-        let row = waitFor(element(AccessibilityID.categoryRow(category)))
-        _ = row
-        let disclosure = button(AccessibilityID.disclosure(category))
+        let disclosure = scrollTo(button(AccessibilityID.disclosure(category)))
         if disclosure.value as? String != "Shown" {
             disclosure.tap()
         }

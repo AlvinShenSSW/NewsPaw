@@ -10,7 +10,7 @@ struct CollectionTarget: Sendable, Hashable {
 }
 
 /// Storing a collection (spec N04). One collection touches one source's
-/// articles and that source's four status columns — `etag`,
+/// articles, that source's `seen` rows and its four status columns — `etag`,
 /// `last_modified`, `last_success_at`, `last_error` — and nothing the owner
 /// can edit.
 extension Library {
@@ -60,6 +60,14 @@ extension Library {
                     sql: "UPDATE source SET etag = ?, last_modified = ?, last_success_at = ?, last_error = NULL WHERE id = ?",
                     arguments: [fetched.validators.etag, fetched.validators.lastModified, now, sourceKey]
                 )
+                if fetched.feed.isComplete {
+                    // After the listed items have refreshed their rows, so a
+                    // feed that still lists an item keeps it.
+                    try db.execute(
+                        sql: "DELETE FROM seen WHERE source_id = ? AND last_seen_at < ?",
+                        arguments: [sourceKey, now.addingTimeInterval(-Self.seenLifetime)]
+                    )
+                }
                 return .collected(newArticles: inserted, complete: fetched.feed.isComplete)
             case .notAFeed, .failed:
                 let failure = result.failure ?? .unreachable
@@ -86,24 +94,67 @@ extension Library {
         )
         """
 
-    /// Decides duplicates in feed order — an item whose link an article of
-    /// the category already holds, or an earlier item of the batch, is
-    /// dropped; items without a link are never duplicates of each other —
-    /// then inserts the survivors in reverse feed order, so that the table's
-    /// row order follows the feed's age. Returns the number of new articles.
-    /// Called inside the caller's transaction: the collection's, or the one
-    /// that adds a feed source with its first articles (RD05).
+    /// Decides each listed item in feed order (RD06 decision 8), then
+    /// inserts the survivors in reverse feed order, so that the table's row
+    /// order follows the feed's age. Returns the number of new articles.
+    ///
+    /// 1. An identifier that is already an article of this source: nothing
+    ///    to do. (An identifier repeated within the feed counts as decided
+    ///    by its first occurrence.)
+    /// 2. An identifier in `seen` for this source: the row's last-seen time
+    ///    becomes `now` and its link joins the batch's links; not inserted.
+    /// 3. A link that is one of the batch's links, or that an article of the
+    ///    category holds: not inserted, and the identifier is put into
+    ///    `seen` with `now`, so that it does not come back as new once the
+    ///    article holding the link is cleaned up.
+    /// 4. Otherwise inserted; its link joins the batch's links.
+    ///
+    /// Items without links are never duplicates of each other. Called inside
+    /// the caller's transaction: the collection's, or the one that adds a
+    /// feed source with its first articles (RD05).
     static func insertArticles(
         _ items: [ParsedItem], sourceKey: String, categoryKey: String, now: Date, in db: Database
     ) throws -> Int {
+        let isArticle = try db.makeStatement(sql: """
+            SELECT EXISTS (SELECT 1 FROM article WHERE source_id = ? AND external_id = ?)
+            """)
+        let refreshSeen = try db.makeStatement(sql: """
+            UPDATE seen SET last_seen_at = ? WHERE source_id = ? AND external_id_hash = ?
+            """)
         let linkHeld = try db.makeStatement(sql: linkHeldSQL)
+        let remember = try db.makeStatement(sql: """
+            INSERT INTO seen (source_id, external_id_hash, last_seen_at) VALUES (?, ?, ?)
+            ON CONFLICT (source_id, external_id_hash) DO UPDATE SET last_seen_at = excluded.last_seen_at
+            """)
+        var decided = Set<String>()
         var linksInBatch = Set<String>()
         var survivors: [ParsedItem] = []
         for item in items {
-            if let link = item.url {
-                guard linksInBatch.insert(link).inserted else { continue }
-                if try Bool.fetchOne(linkHeld, arguments: [link, categoryKey]) == true { continue }
+            guard decided.insert(item.externalID).inserted else { continue }
+            // 1. Already an article of this source.
+            if try Bool.fetchOne(isArticle, arguments: [sourceKey, item.externalID]) == true {
+                continue
             }
+            // 2. Remembered for this source.
+            let hash = seenHash(item.externalID)
+            try refreshSeen.execute(arguments: [now, sourceKey, hash])
+            if db.changesCount > 0 {
+                if let link = item.url {
+                    linksInBatch.insert(link)
+                }
+                continue
+            }
+            // 3. The same link as an earlier item or an article of the
+            //    category.
+            if let link = item.url {
+                let held = try linksInBatch.contains(link) || Bool.fetchOne(linkHeld, arguments: [link, categoryKey]) == true
+                if held {
+                    try remember.execute(arguments: [sourceKey, hash, now])
+                    continue
+                }
+                linksInBatch.insert(link)
+            }
+            // 4. New.
             survivors.append(item)
         }
 
@@ -127,5 +178,15 @@ extension Library {
             inserted += db.changesCount
         }
         return inserted
+    }
+
+    /// How long a `seen` row is kept after its feed last listed the item
+    /// (spec N04): fixed, and independent of the retention setting.
+    static let seenLifetime: TimeInterval = 30 * 24 * 60 * 60
+
+    /// The form in which an external identifier is kept in `seen`: the
+    /// lowercase hexadecimal SHA-256 of its UTF-8 bytes.
+    static func seenHash(_ externalID: String) -> String {
+        sha256Hex(externalID)
     }
 }

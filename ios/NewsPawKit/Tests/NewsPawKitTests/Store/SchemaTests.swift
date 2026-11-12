@@ -231,12 +231,12 @@ struct SchemaTests {
             }
             return (migrations, columns, indexes)
         }
-        #expect(migrations == ["v1", "v2"])
+        #expect(migrations == ["v1", "v2", "v3"])
         #expect(columns == Self.expectedColumns["article"]! + [ColumnInfo("content_html", "TEXT", notNull: false)])
         #expect(indexes == ["article_url": ["url"]])
     }
 
-    @Test("the version-1 fixture migrates to v2 with its rows intact")
+    @Test("the version-1 fixture migrates to v2 and v3 with its rows intact")
     func fixtureMigratesToVersion2() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -247,7 +247,8 @@ struct SchemaTests {
         let library = try await LibraryStore(directory: directory).openNormal()
 
         let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
-        #expect(after.appliedMigrations == ["v1", "v2"])
+        #expect(after.appliedMigrations == ["v1", "v2", "v3"])
+        #expect(after.rows["setting"] == [])
         for table in ["category", "source", "article_body", "seen"] {
             #expect(after.rows[table] == before.rows[table], "rows of \(table)")
         }
@@ -256,6 +257,88 @@ struct SchemaTests {
         #expect(after.integrity == ["ok"])
         #expect(try await library.articles().count == 3)
         #expect(try await library.sources().count == 3)
+    }
+
+    // MARK: - RD06 criterion 7: migration v3
+
+    @Test("v3 creates setting with key as its primary key and value")
+    func version3() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = try await LibraryStore(directory: directory).openNormal()
+        let columns = try await library.pool.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA table_info(setting)").map { row in
+                ColumnInfo(row["name"], row["type"], notNull: row["notnull"], default: row["dflt_value"], pk: row["pk"])
+            }
+        }
+        #expect(columns == [ColumnInfo("key", "TEXT", notNull: true, pk: 1), ColumnInfo("value", "TEXT", notNull: true)])
+    }
+
+    @Test("a v2 database with rows in every table migrates to v3 and keeps every row")
+    func version2DatabaseMigratesToVersion3() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var upToVersion2 = DatabaseMigrator()
+        Schema.registerV1(in: &upToVersion2)
+        Schema.registerV2(in: &upToVersion2)
+        let clock = TestClock()
+        let before: DatabaseSnapshot
+        do {
+            let store = LibraryStore(directory: directory, now: clock.now)
+            let library = try await store.open(.normal, migrator: upToVersion2, create: true)
+            let world = try await library.createCategory(name: "World", icon: .globe)
+            try await Sample.fill(library, category: world.id, prefix: "v2", at: clock.now())
+            try await library.pool.write { db in
+                try db.execute(sql: "UPDATE article SET content_html = '<p>kept</p>'")
+            }
+            before = try await library.pool.read { try DatabaseSnapshot.read($0) }
+        }
+        #expect(before.appliedMigrations == ["v1", "v2"])
+        for table in ["category", "source", "article", "article_body", "seen"] {
+            #expect(before.rows[table]?.isEmpty == false, "\(table) has rows")
+        }
+
+        let library = try await LibraryStore(directory: directory).openNormal()
+
+        let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
+        #expect(after.appliedMigrations == ["v1", "v2", "v3"])
+        for table in ["category", "source", "article", "article_body", "seen"] {
+            #expect(after.rows[table] == before.rows[table], "rows of \(table)")
+        }
+        #expect(after.rows["setting"] == [])
+        #expect(after.integrity == ["ok"])
+    }
+
+    @Test("a database migrated to v3 with a later migration is refused by the app's migrator and left logically unchanged")
+    func version3DatabaseWithLaterMigrationRefused() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var newer = Schema.migrator
+        newer.registerMigration("test_after_v3") { db in
+            try db.execute(sql: "CREATE TABLE test_after_v3 (note TEXT)")
+        }
+        let before = try await buildDatabase(in: directory, migrator: newer)
+        #expect(before.appliedMigrations == ["test_after_v3", "v1", "v2", "v3"])
+
+        try await expectRefusal(in: directory, migrator: Schema.migrator)
+
+        #expect(try await snapshot(in: directory, migrator: newer) == before)
+    }
+
+    @Test("the recorded refresh time round-trips through setting")
+    func lastRefreshRoundTrip() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = TestClock()
+        let library = try await LibraryStore(directory: directory, now: clock.now).openNormal()
+        #expect(try await library.lastRefreshAt() == nil)
+        try await library.setLastRefreshAt(clock.now())
+        #expect(try await library.lastRefreshAt() == clock.now())
+        clock.advance(seconds: 90)
+        try await library.setLastRefreshAt(clock.now())
+        #expect(try await library.lastRefreshAt() == clock.now())
+        let keys = try await library.pool.read { db in try String.fetchAll(db, sql: "SELECT key FROM setting") }
+        #expect(keys == ["last_refresh_at"])
     }
 
     @Test("the same-link query of collection uses the index on the article's link")

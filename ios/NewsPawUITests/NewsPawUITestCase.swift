@@ -203,8 +203,9 @@ class NewsPawUITestCase: XCTestCase {
     /// Starts at the category list: the Library tab, or the sidebar.
     func showCategoryList() {
         if app.tabBars.firstMatch.exists {
-            app.tabBars.buttons["Library"].tap()
-            waitFor(app.navigationBars["Library"])
+            // By position, so that it also works in Simplified Chinese.
+            app.tabBars.buttons.element(boundBy: 1).tap()
+            waitFor(button(AccessibilityID.addMenu))
         } else {
             openSidebarIfNeeded()
         }

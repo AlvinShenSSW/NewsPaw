@@ -10,7 +10,49 @@ import Foundation
 /// markup where text is expected is absent, and nothing else about its item
 /// changes. When the document stops being well-formed, the items completed
 /// before that point are kept.
+///
+/// Some documents make the system parser take time growing faster than
+/// their size, or more. Reading stops where such a document goes past one of
+/// the limits below, as if it stopped being well-formed there: the items
+/// completed before are kept and the document is incomplete; with no item
+/// completed it is not a feed. Declarations come before the root, so a
+/// document refused for one is never a feed.
+/// - A start tag with more than `StartTagScan.maximumAttributes` attributes,
+///   found by a pass over the bytes before parsing, since the parser's time
+///   goes into the tag before any callback.
+/// - More than `maximumMappingsInScope` namespace declarations in scope: each
+///   element's start costs time in proportion to them.
+/// - More than `maximumDistinctNames` distinct names (element and attribute
+///   names, namespace prefixes and addresses, processing-instruction
+///   targets, declared names): past about a hundred thousand the parser's
+///   name table grows faster than the document (measured: one million
+///   distinct element names in 9.9 MB, 3 s, against 0.1 s for a quarter of
+///   that).
+/// - In the document type: an internal entity whose value is longer than
+///   `maximumEntityValueBytes` or contains `&` (a reference to another
+///   entity), any attribute-list declaration (the parser applies their
+///   defaults to every element, at a cost growing with the square of their
+///   number), and more than `maximumDeclarations` declarations.
 final class XMLFeedReader: NSObject, XMLParserDelegate {
+    /// Namespace declarations in scope at once. A feed declares a dozen or
+    /// two on its root; at 256 a 10 MB document of elements in their scope
+    /// parses in about 0.8 s on the system parser (measured on this Mac).
+    static let maximumMappingsInScope = 256
+
+    /// Distinct names in one document. A feed with XHTML content uses a few
+    /// hundred.
+    static let maximumDistinctNames = 4096
+
+    /// Declarations in the internal subset. A document that declares HTML's
+    /// named characters as entities needs about 250.
+    static let maximumDeclarations = 1024
+
+    /// The longest internal entity value accepted, in bytes as the parser
+    /// delivers it (character references already decoded). Values up to
+    /// this length without `&` are read in time proportional to the number
+    /// of references (measured: 2 million references, linear).
+    static let maximumEntityValueBytes = 256
+
     enum Namespace {
         static let atom = "http://www.w3.org/2005/Atom"
         static let rdf = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -40,16 +82,20 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
         var rootRefused = false
     }
 
-    /// Reads `data` in one pass.
+    /// Reads `data` in one pass, up to the first start tag with too many
+    /// attributes.
     static func read(_ data: Data) -> Result {
+        let cut = StartTagScan.cutOffset(in: data)
         let reader = XMLFeedReader()
-        let parser = XMLParser(data: data)
+        let parser = XMLParser(data: cut.map { data.prefix($0) } ?? data)
         parser.shouldProcessNamespaces = true
         parser.shouldReportNamespacePrefixes = true
         parser.shouldResolveExternalEntities = false
         parser.delegate = reader
         let finished = parser.parse()
-        reader.result.wellFormed = finished && !reader.refusedRoot
+        // A cut document is incomplete even when the part before the cut
+        // happens to be well-formed (the tag came after the root's end).
+        reader.result.wellFormed = finished && !reader.refusedRoot && cut == nil
         reader.result.rootRefused = reader.refusedRoot
         if reader.refusedRoot {
             reader.result.format = nil
@@ -117,20 +163,109 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
     private var markup: MarkupCapture?
     private var prefixes: [String: [String]] = [:]
 
+    /// Set once reading has been stopped at a limit; later events are
+    /// ignored.
+    private var stopped = false
+    private var mappingsInScope = 0
+    private var names = Set<String>()
+    private var declarations = 0
+
+    // MARK: - Limits
+
+    private func stop(_ parser: XMLParser) {
+        stopped = true
+        parser.abortParsing()
+    }
+
+    /// Records `name` among the document's distinct names; stops reading
+    /// and returns false when that makes too many.
+    private func note(_ name: String, _ parser: XMLParser) -> Bool {
+        if names.insert(name).inserted, names.count > Self.maximumDistinctNames {
+            stop(parser)
+            return false
+        }
+        return true
+    }
+
+    /// Counts one declaration of the internal subset; stops reading and
+    /// returns false past the limit.
+    private func noteDeclaration(_ name: String, _ parser: XMLParser) -> Bool {
+        declarations += 1
+        if declarations > Self.maximumDeclarations {
+            stop(parser)
+            return false
+        }
+        return note(name, parser)
+    }
+
+    func parser(_ parser: XMLParser, foundInternalEntityDeclarationWithName name: String, value: String?) {
+        guard !stopped, noteDeclaration(name, parser) else { return }
+        guard let value, value.utf8.count <= Self.maximumEntityValueBytes, !value.utf8.contains(UInt8(ascii: "&")) else {
+            stop(parser)
+            return
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundExternalEntityDeclarationWithName name: String, publicID: String?, systemID: String?) {
+        guard !stopped else { return }
+        _ = noteDeclaration(name, parser)
+    }
+
+    func parser(_ parser: XMLParser, foundUnparsedEntityDeclarationWithName name: String, publicID: String?, systemID: String?, notationName: String?) {
+        guard !stopped else { return }
+        _ = noteDeclaration(name, parser)
+    }
+
+    func parser(_ parser: XMLParser, foundNotationDeclarationWithName name: String, publicID: String?, systemID: String?) {
+        guard !stopped else { return }
+        _ = noteDeclaration(name, parser)
+    }
+
+    func parser(_ parser: XMLParser, foundElementDeclarationWithName elementName: String, model: String) {
+        guard !stopped else { return }
+        _ = noteDeclaration(elementName, parser)
+    }
+
+    func parser(
+        _ parser: XMLParser, foundAttributeDeclarationWithName attributeName: String, forElement elementName: String,
+        type: String?, defaultValue: String?
+    ) {
+        guard !stopped else { return }
+        stop(parser)
+    }
+
+    func parser(_ parser: XMLParser, foundProcessingInstructionWithTarget target: String, data: String?) {
+        guard !stopped else { return }
+        _ = note(target, parser)
+    }
+
     // MARK: - Parser events
 
     func parser(_ parser: XMLParser, didStartMappingPrefix prefix: String, toURI namespaceURI: String) {
+        guard !stopped else { return }
+        mappingsInScope += 1
+        guard mappingsInScope <= Self.maximumMappingsInScope else {
+            stop(parser)
+            return
+        }
+        guard note(prefix, parser), note(namespaceURI, parser) else { return }
         prefixes[prefix, default: []].append(namespaceURI)
     }
 
     func parser(_ parser: XMLParser, didEndMappingPrefix prefix: String) {
-        prefixes[prefix]?.removeLast()
+        guard !stopped else { return }
+        mappingsInScope -= 1
+        _ = prefixes[prefix]?.popLast()
     }
 
     func parser(
         _ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
         qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]
     ) {
+        guard !stopped, note(qName ?? elementName, parser) else { return }
+        for name in attributeDict.keys {
+            guard note(name, parser) else { return }
+        }
         let element = Element(namespace: namespaceURI ?? "", name: elementName)
         stack.append(element)
         let depth = stack.count
@@ -212,6 +347,7 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
     }
 
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+        guard !stopped, !stack.isEmpty else { return }
         let depth = stack.count
         defer { stack.removeLast() }
 
@@ -239,6 +375,7 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
+        guard !stopped else { return }
         if let markup {
             markup.markup += Self.escapeMarkup(string, attribute: false)
         } else if let capture, !capture.invalid {

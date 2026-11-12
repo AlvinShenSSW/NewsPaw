@@ -90,7 +90,7 @@ public enum FeedParser {
 
     /// The range of the value of pseudo-attribute `name` inside an XML
     /// declaration, quotes excluded.
-    private static func quotedValue(named name: String, in declaration: [UInt8]) -> Range<Int>? {
+    static func quotedValue(named name: String, in declaration: [UInt8]) -> Range<Int>? {
         guard var index = firstIndex(of: Array(name.utf8), in: declaration[...], from: 0) else { return nil }
         index += name.utf8.count
         while index < declaration.count, isXMLSpace(declaration[index]) { index += 1 }
@@ -106,7 +106,7 @@ public enum FeedParser {
         return start..<close
     }
 
-    private static func firstIndex(of needle: [UInt8], in haystack: ArraySlice<UInt8>, from start: Int) -> Int? {
+    static func firstIndex(of needle: [UInt8], in haystack: ArraySlice<UInt8>, from start: Int) -> Int? {
         guard !needle.isEmpty, haystack.count >= needle.count else { return nil }
         var index = haystack.startIndex + start
         while index + needle.count <= haystack.endIndex {

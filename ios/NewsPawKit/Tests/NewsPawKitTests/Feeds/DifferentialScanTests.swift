@@ -19,7 +19,8 @@ import Testing
 /// tags written inside CDATA, comments, processing instructions and entity
 /// literals (where they are not tags), real over-limit tags, and now and
 /// then a construct that is not well-formed.
-@Suite("Start-tag scan against the parser")
+// One encoding at a time, for the same reason as the label proof.
+@Suite("Start-tag scan against the parser", .serialized)
 struct DifferentialScanTests {
     struct Encoding: Sendable, CustomStringConvertible {
         var label: String

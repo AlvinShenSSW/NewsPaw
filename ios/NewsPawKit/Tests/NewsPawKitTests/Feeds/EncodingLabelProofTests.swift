@@ -16,7 +16,9 @@ import Testing
 ///   be consumed exactly when the scan's walk makes it a second byte.
 /// A sequence the parser refuses to decode ends its reading there, so it
 /// cannot hide anything and passes.
-@Suite("Encoding labels proven against the parser")
+// One label at a time: run in parallel, these synchronous parses fill every
+// thread of the shared pool and stall the timed transport tests beside them.
+@Suite("Encoding labels proven against the parser", .serialized)
 struct EncodingLabelProofTests {
     enum Probe {
         case refused
@@ -38,20 +40,69 @@ struct EncodingLabelProofTests {
     static let neverSecondBytes: [UInt8] = Array("<>\"'-?=/! \t\n\r".utf8)
     static let steppedBytes: [UInt8] = Array("[]".utf8)
 
-    /// Parses `prefix`, X, `Z` inside a CDATA section of a document that
-    /// declares `label`.
-    static func probe(_ label: String, prefix: [UInt8], x: UInt8) -> Probe {
-        var bytes = head(label) + Array("<r><![CDATA[".utf8)
-        bytes += prefix + [x] + Array("Z]]></r>".utf8)
-        let collector = TextCollector()
-        let parser = XMLParser(data: Data(bytes))
-        parser.shouldProcessNamespaces = true
-        parser.shouldReportNamespacePrefixes = true
-        parser.shouldResolveExternalEntities = false
-        parser.delegate = collector
-        guard parser.parse() else { return .refused }
-        guard !collector.text.isEmpty else { return .textDropped }
-        let scalars = Array(collector.text.unicodeScalars)
+    struct Case {
+        var prefix: [UInt8]
+        var x: UInt8
+    }
+
+    /// Records the text of each `p` element.
+    final class SectionCollector: NSObject, XMLParserDelegate {
+        var texts: [String] = []
+
+        func parser(
+            _ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
+            qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]
+        ) {
+            if elementName == "p" {
+                texts.append("")
+            }
+        }
+
+        func parser(_ parser: XMLParser, foundCharacters string: String) {
+            if !texts.isEmpty {
+                texts[texts.count - 1] += string
+            }
+        }
+    }
+
+    /// Probes each case — its prefix, X and `Z` inside a CDATA section of its
+    /// own `p` element — in documents that declare `label`. Cases go into one
+    /// document together; a document the parser refuses is split in halves
+    /// until each refused case stands alone, so every case gets the outcome
+    /// it gets on its own. (Each case starts after ASCII `[`, a character
+    /// boundary in all these encodings, so its neighbours cannot change it.)
+    static func probe(_ label: String, cases: [Case]) -> [Probe] {
+        var results = [Probe](repeating: .refused, count: cases.count)
+        func run(_ range: Range<Int>) {
+            guard !range.isEmpty else { return }
+            var bytes = head(label) + Array("<r>".utf8)
+            for index in range {
+                bytes += Array("<p><![CDATA[".utf8) + cases[index].prefix + [cases[index].x] + Array("Z]]></p>".utf8)
+            }
+            bytes += Array("</r>".utf8)
+            let collector = SectionCollector()
+            let parser = XMLParser(data: Data(bytes))
+            parser.shouldProcessNamespaces = true
+            parser.shouldReportNamespacePrefixes = true
+            parser.shouldResolveExternalEntities = false
+            parser.delegate = collector
+            if parser.parse(), collector.texts.count == range.count {
+                for (offset, index) in range.enumerated() {
+                    results[index] = classify(collector.texts[offset], x: cases[index].x)
+                }
+            } else if range.count > 1 {
+                let middle = range.lowerBound + range.count / 2
+                run(range.lowerBound..<middle)
+                run(middle..<range.upperBound)
+            }
+        }
+        run(0..<cases.count)
+        return results
+    }
+
+    static func classify(_ text: String, x: UInt8) -> Probe {
+        guard !text.isEmpty else { return .textDropped }
+        let scalars = Array(text.unicodeScalars)
         // A carriage return may arrive as itself or as a line feed.
         let accepted: [Unicode.Scalar] = x == 0x0D ? ["\r", "\n"] : [Unicode.Scalar(x)]
         let separate = scalars.count >= 2 && scalars.last == "Z" && accepted.contains(scalars[scalars.count - 2])
@@ -131,31 +182,37 @@ struct EncodingLabelProofTests {
             print("label proof | \(label) | \(mode) | refused by the parser")
             return
         }
-        var failures: [String] = []
+        var cases: [Case] = []
         for lead in UInt8(0x80)...UInt8(0xFF) {
             for prefix in [[lead], [lead, 0xA1]] {
                 for x in Self.neverSecondBytes + Self.steppedBytes {
-                    let consumed: Bool
-                    switch Self.probe(label, prefix: prefix, x: x) {
-                    case .refused:
-                        continue
-                    case .decoded(let xConsumed):
-                        consumed = xConsumed
-                    case .textDropped:
-                        // Only in an ASCII-compatible mode can one ASCII byte
-                        // stand for all: a decoder that leaves `<` alone
-                        // after the prefix treats every ASCII byte alike.
-                        guard mode == .asciiCompatible else {
-                            failures.append(prefix.map { String(format: "%02X", $0) }.joined() + " text dropped")
-                            continue
-                        }
-                        consumed = !Self.characterStarts(after: prefix, label: label)
-                    }
-                    let allowed = Self.steppedBytes.contains(x) ? Self.scanConsumes(after: prefix, mode: mode) : false
-                    if consumed != allowed {
-                        failures.append(prefix.map { String(format: "%02X", $0) }.joined() + "+" + String(format: "%02X", x) + (consumed ? " consumed" : " separate"))
-                    }
+                    cases.append(Case(prefix: prefix, x: x))
                 }
+            }
+        }
+        var failures: [String] = []
+        for (testCase, outcome) in zip(cases, Self.probe(label, cases: cases)) {
+            let prefix = testCase.prefix
+            let x = testCase.x
+            let consumed: Bool
+            switch outcome {
+            case .refused:
+                continue
+            case .decoded(let xConsumed):
+                consumed = xConsumed
+            case .textDropped:
+                // Only in an ASCII-compatible mode can one ASCII byte stand
+                // for all: a decoder that leaves `]` alone after the prefix
+                // treats every ASCII byte alike.
+                guard mode == .asciiCompatible else {
+                    failures.append(prefix.map { String(format: "%02X", $0) }.joined() + " text dropped")
+                    continue
+                }
+                consumed = !Self.characterStarts(after: prefix, label: label)
+            }
+            let allowed = Self.steppedBytes.contains(x) ? Self.scanConsumes(after: prefix, mode: mode) : false
+            if consumed != allowed {
+                failures.append(prefix.map { String(format: "%02X", $0) }.joined() + "+" + String(format: "%02X", x) + (consumed ? " consumed" : " separate"))
             }
         }
         print("label proof | \(label) | \(mode) | \(failures.isEmpty ? "proven" : "FAILED \(failures.count): \(failures.prefix(8))")")

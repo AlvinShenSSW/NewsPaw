@@ -2,6 +2,8 @@ import Foundation
 @testable import NewsPawKit
 import Testing
 
+// Nested in the serialized group: see `TimedAndHeavySuites`.
+extension TimedAndHeavySuites {
 /// The real transport against a listener on 127.0.0.1 inside the test
 /// process, for what a URL-loading stub cannot show (criteria 6, 7, 15):
 /// cookies, decompression, a real authentication challenge, the headers on
@@ -197,4 +199,5 @@ struct TransportLoopbackTests {
         try await Task.sleep(for: .milliseconds(200))
         #expect(server.requests.isEmpty)
     }
+}
 }

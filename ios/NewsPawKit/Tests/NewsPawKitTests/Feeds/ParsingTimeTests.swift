@@ -2,6 +2,8 @@ import Foundation
 @testable import NewsPawKit
 import Testing
 
+// Nested in the serialized group: see `TimedAndHeavySuites`.
+extension TimedAndHeavySuites {
 /// Criterion 13: parsing time grows in proportion to the document's size.
 ///
 /// For each shape the test finds a size N whose parse takes at least about
@@ -328,4 +330,5 @@ struct ParsingTimeTests {
         }
         Self.check(measurement)
     }
+}
 }

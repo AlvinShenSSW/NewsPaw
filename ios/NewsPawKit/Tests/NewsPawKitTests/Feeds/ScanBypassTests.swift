@@ -30,6 +30,8 @@ func deliveredByParser(_ data: Data) -> (cut: Int?, maximumAttributes: Int, star
     return (cut, counter.maximumAttributes, counter.startTags, wellFormed)
 }
 
+// Nested in the serialized group: see `TimedAndHeavySuites`.
+extension TimedAndHeavySuites {
 /// Fix round 2: an encoding label or a declaration the scan reads
 /// differently from the parser must not hide a start tag (D2, D3).
 @Suite("Start-tag scan: encoding bypasses")
@@ -78,4 +80,5 @@ struct ScanBypassTests {
         #expect(ContinuousClock.now - start < .seconds(1))
         #expect(feed == nil || feed?.isComplete == false)
     }
+}
 }

@@ -2,6 +2,8 @@ import Foundation
 @testable import NewsPawKit
 import Testing
 
+// Nested in the serialized group: see `TimedAndHeavySuites`.
+extension TimedAndHeavySuites {
 /// V1: Swift hashes and compares a string made of a long run of combining
 /// marks in time growing with the square of its length. The reader bounds
 /// the length of every feed string it hashes or compares instead; these
@@ -134,4 +136,5 @@ struct LengthBoundTests {
         #expect(try #require(valued).items.first?.publishedAt == nil)
         #expect(valueTime < Self.limit)
     }
+}
 }

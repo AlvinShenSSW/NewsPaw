@@ -2,6 +2,8 @@ import Foundation
 @testable import NewsPawKit
 import Testing
 
+// Nested in the serialized group: see `TimedAndHeavySuites`.
+extension TimedAndHeavySuites {
 /// Tests the start-tag scan's soundness claim against the real parser rather
 /// than against hand-picked cases (fix round 2): no start tag the parser
 /// delivers has more than 256 attributes unless the scan cut before it; a
@@ -95,6 +97,7 @@ struct DifferentialScanTests {
         return (counter.maximumAttributes, wellFormed)
     }
 }
+}
 
 /// Builds one document.
 struct DocumentBuilder {
@@ -110,13 +113,13 @@ struct DocumentBuilder {
         }
     }
 
-    let encoding: DifferentialScanTests.Encoding
+    let encoding: TimedAndHeavySuites.DifferentialScanTests.Encoding
     var generator: SeededGenerator
     private var bytes: [UInt8] = []
     private var overLimitOffsets: [Int] = []
     private var wellFormed = true
 
-    init(encoding: DifferentialScanTests.Encoding, generator: SeededGenerator) {
+    init(encoding: TimedAndHeavySuites.DifferentialScanTests.Encoding, generator: SeededGenerator) {
         self.encoding = encoding
         self.generator = generator
     }

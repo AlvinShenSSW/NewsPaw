@@ -2,6 +2,8 @@ import Foundation
 @testable import NewsPawKit
 import Testing
 
+// Nested in the serialized group: see `TimedAndHeavySuites`.
+extension TimedAndHeavySuites {
 /// The parser's limits on documents that would otherwise crash it or take
 /// time growing faster than their size (criteria 4, 13; fix round 1, R1–R3).
 /// The numbers here are the limits in `JSONFeedReader` and `XMLFeedReader`.
@@ -299,4 +301,5 @@ struct ParserLimitsTests {
         let feed = Data((#"{"version":"https://jsonfeed.org/version/1.1","title":"Many","items":["# + items + "]}").utf8)
         #expect(try #require(await Task.detached { FeedParser.parse(feed, charset: nil, baseURL: fixtureBase) }.value).items.count == 4_000)
     }
+}
 }

@@ -2,6 +2,8 @@ import Foundation
 @testable import NewsPawKit
 import Testing
 
+// Nested in the serialized group: see `TimedAndHeavySuites`.
+extension TimedAndHeavySuites {
 /// Proves each label the start-tag scan accepts against the system parser
 /// (fix round 2, D2): the parser either refuses the label, or it groups
 /// bytes into characters the way the label's byte mode assumes.
@@ -218,4 +220,5 @@ struct EncodingLabelProofTests {
         print("label proof | \(label) | \(mode) | \(failures.isEmpty ? "proven" : "FAILED \(failures.count): \(failures.prefix(8))")")
         #expect(failures.isEmpty, "\(label) (\(mode)): \(failures.prefix(16))")
     }
+}
 }

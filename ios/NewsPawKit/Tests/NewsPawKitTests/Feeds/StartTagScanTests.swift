@@ -2,6 +2,8 @@ import Foundation
 @testable import NewsPawKit
 import Testing
 
+// Nested in the serialized group: see `TimedAndHeavySuites`.
+extension TimedAndHeavySuites {
 /// The pass that finds a start tag with too many attributes before the
 /// system parser reads it (fix round 1, R3).
 @Suite("Start-tag scan")
@@ -232,4 +234,5 @@ struct StartTagScanTests {
         #expect(StartTagScan.cutOffset(in: Data(text.utf8)) == 0)
         #expect(StartTagScan.cutOffset(in: text.data(using: .utf16BigEndian)!) == 0)
     }
+}
 }

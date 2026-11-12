@@ -442,3 +442,13 @@ private func crc32(_ data: Data) -> UInt32 {
     }
     return crc ^ 0xFFFF_FFFF
 }
+
+/// The suites that measure wall-clock time, wait for URL-loading callbacks,
+/// or run thousands of synchronous parses, nested here so that they run one
+/// after another. Swift Testing runs suites in parallel on the shared pool;
+/// on a runner with few cores the heavy ones occupied every thread and the
+/// timed ones measured the wait, not the work (CI, macos-26). The trait is
+/// inherited by the nested suites, so no two of them run at once; the other
+/// suites still run in parallel beside them.
+@Suite("Timed and heavy suites, one at a time", .serialized)
+struct TimedAndHeavySuites {}

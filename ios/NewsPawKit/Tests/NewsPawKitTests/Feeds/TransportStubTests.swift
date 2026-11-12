@@ -2,6 +2,8 @@ import Foundation
 @testable import NewsPawKit
 import Testing
 
+// Nested in the serialized group: see `TimedAndHeavySuites`.
+extension TimedAndHeavySuites {
 /// The real transport driven through an in-process URL-loading stub
 /// (criteria 5 and 6). Every stub host is under `.invalid`.
 @Suite("Transport with a URL-loading stub")
@@ -293,4 +295,5 @@ struct TransportStubTests {
         failed.urlSession(failedSession, task: failedTask, didCompleteWithError: URLError(.cannotConnectToHost))
         #expect(await Self.start(failed, failedTask) as? TransportFailure == .unreachable)
     }
+}
 }

@@ -2,6 +2,8 @@ import Foundation
 @testable import NewsPawKit
 import Testing
 
+// Nested in the serialized group: see `TimedAndHeavySuites`.
+extension TimedAndHeavySuites {
 @Suite("Feed parser")
 struct FeedParserTests {
     // MARK: - Criterion 1: the four formats
@@ -490,6 +492,7 @@ struct FeedParserTests {
             }
         }
     }
+}
 }
 
 /// A small deterministic generator (SplitMix64) so that failures reproduce.

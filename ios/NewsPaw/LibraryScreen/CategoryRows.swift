@@ -76,6 +76,7 @@ struct CategoryRows: View {
 /// accent (2.5:1 in dark appearance).
 struct EditDoneButton: View {
     @Binding var editMode: EditMode
+    @Environment(CategoryModel.self) private var categories
 
     var body: some View {
         Button {
@@ -89,6 +90,10 @@ struct EditDoneButton: View {
                 Text("Edit")
             }
         }
+        // Edit mode is not entered while a save runs: rows entering it while
+        // they cannot be moved or deleted get no edit controls when the save
+        // ends (measured). Done stays available.
+        .disabled(!editMode.isEditing && categories.isBusy)
         .accessibilityIdentifier(AccessibilityID.editButton)
     }
 }

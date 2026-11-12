@@ -94,11 +94,16 @@ final class ConcurrentSaveTests: NewsPawUITestCase {
         XCTAssertEqual(categoryNamesShown(), ["Alpha", "Gamma"], "a long press and drag did not move a row")
         guard requireWithinDelay(since: confirmed, delay: delay, "the move attempts") else { return }
 
-        // The reorder handle comes back when the deletion has finished.
+        // Edit mode cannot be entered again until the deletion has finished;
+        // then the rows can be moved again.
+        let edit = button(AccessibilityID.editButton)
+        XCTAssertEqual(edit.label, "Edit")
+        XCTAssertFalse(edit.isEnabled, "edit mode cannot be entered while a deletion runs")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: edit)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: delay + 30), .completed, "Edit comes back after the deletion")
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(confirmed), delay - 1, "Edit came back only after the save's delay")
         setEditing(true)
-        let back = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true"), object: reorderHandle("Gamma"))
-        XCTAssertEqual(XCTWaiter.wait(for: [back], timeout: delay + 30), .completed, "rows can be moved again after the deletion")
-        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(confirmed), delay - 1, "moving came back only after the save's delay")
+        waitFor(reorderHandle("Gamma"))
         XCTAssertFalse(app.alerts["The change could not be saved."].exists, "no save error")
         XCTAssertFalse(element(AccessibilityID.categoryRow("Beta")).exists, "the deleted category is gone")
         XCTAssertEqual(categoryNamesShown(), ["Alpha", "Gamma"])

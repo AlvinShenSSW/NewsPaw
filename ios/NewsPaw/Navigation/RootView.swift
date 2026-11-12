@@ -12,9 +12,10 @@ struct RootView: View {
             Theme.background.ignoresSafeArea()
         case .failed(let failure):
             LibraryFailureView(failure: failure)
-        case .ready(let categories):
+        case .ready(let categories, let sources):
             ShellView()
                 .environment(categories)
+                .environment(sources)
                 .environment(model.navigation)
         }
     }
@@ -26,6 +27,7 @@ struct RootView: View {
 /// dismiss them.
 struct ShellView: View {
     @Environment(CategoryModel.self) private var categories
+    @Environment(SourceModel.self) private var sources
     @Environment(NavigationModel.self) private var navigation
     @State private var width = 0.0
 
@@ -34,7 +36,7 @@ struct ShellView: View {
     }
 
     var body: some View {
-        @Bindable var categories = categories
+        @Bindable var navigation = navigation
         Group {
             if width == 0 {
                 Theme.background
@@ -46,20 +48,42 @@ struct ShellView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onGeometryChange(for: Double.self) { $0.size.width } action: { width = $0 }
-        .onChange(of: layout) { _, layout in
+        .onChange(of: layout, initial: true) { _, layout in
+            navigation.layout = width == 0 ? nil : layout
             // The slide-over exists only for panes below 1100 pt.
             if layout.structure == .tabs || layout.sidebarIsPane {
                 navigation.closeSlideOver()
             }
         }
-        .sheet(item: $categories.sheet) { sheet in
-            CategorySheetView(sheet: sheet)
+        .sheet(item: $navigation.sheet, onDismiss: sheetDismissed) { sheet in
+            sheetContent(sheet)
                 .categoryDialogs(host: .sheet)
+                .sourceDialogs(host: .sheet)
                 .environment(categories)
+                .environment(sources)
                 .tint(Theme.accent)
         }
         .categoryDialogs(host: .root)
+        .sourceDialogs(host: .root)
         .tint(Theme.accent)
         .foregroundStyle(Theme.text)
+    }
+
+    @ViewBuilder
+    private func sheetContent(_ sheet: AppSheet) -> some View {
+        switch sheet {
+        case .newCategory: CategorySheetView(sheet: .newCategory)
+        case .categorySettings(let id): CategorySheetView(sheet: .settings(id))
+        case .addSource: AddSourceView()
+        case .sourceSettings(let id): SourceSettingsView(sourceID: id)
+        }
+    }
+
+    /// A sheet closed by any means. Add source cancels its detection and
+    /// releases what it parsed.
+    private func sheetDismissed() {
+        if navigation.sheet != .addSource, sources.addSource != nil {
+            sources.addSourceClosed()
+        }
     }
 }

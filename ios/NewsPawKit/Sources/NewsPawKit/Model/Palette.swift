@@ -70,6 +70,9 @@ public enum Palette {
     /// A label on a control filled with an accent. White on the dark accent
     /// would be 2.5:1, so dark appearance uses the dark ink.
     public static let onAccent = PaletteToken("onAccent", light: 0xFFFFFF, dark: 0x121211)
+    /// The fill of the system paste button, the same in both appearances;
+    /// the system draws its label white. Used for nothing else.
+    public static let neutralFill = PaletteToken("neutralFill", light: 0x5E5D58, dark: 0x5E5D58)
 
     /// The backgrounds that text and accents are drawn on.
     public static let backgrounds = [background, groupedBackground, surface]

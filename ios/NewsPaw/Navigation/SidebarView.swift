@@ -10,12 +10,13 @@ enum SidebarForm {
 }
 
 /// The sidebar's content, the same in both forms: Today, All Unread,
-/// Starred; the categories, with edit mode for reorder and delete; New
-/// category and Settings at the bottom.
+/// Starred; the categories with their sources, with edit mode for reorder
+/// and delete; Add source, New category and Settings at the bottom.
 struct SidebarView: View {
     let form: SidebarForm
     @Environment(NavigationModel.self) private var navigation
     @Environment(CategoryModel.self) private var categories
+    @Environment(SourceModel.self) private var sources
     @State private var editMode = EditMode.inactive
 
     var body: some View {
@@ -37,6 +38,13 @@ struct SidebarView: View {
                 Text("Categories")
             }
             Section {
+                Button {
+                    presentSheet { sources.beginAddSource() }
+                } label: {
+                    Label("Add Source", systemImage: "plus.circle")
+                        .foregroundStyle(.tint)
+                }
+                .accessibilityIdentifier(AccessibilityID.addSourceButton)
                 Button {
                     presentSheet { categories.beginNewCategory() }
                 } label: {

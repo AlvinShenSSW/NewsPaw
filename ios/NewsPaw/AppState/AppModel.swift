@@ -24,7 +24,7 @@ enum LibraryFailure: Equatable {
 final class AppModel {
     enum Status {
         case loading
-        case ready(CategoryModel)
+        case ready(CategoryModel, SourceModel)
         case failed(LibraryFailure)
     }
 
@@ -37,26 +37,38 @@ final class AppModel {
     /// shown and left as it is: the file is never deleted, reset or replaced.
     func start() async {
         guard case .loading = status else { return }
+        // The one transport the app makes requests through. Under a UI-test
+        // library directory it is the fixture transport, never the real one.
         #if DEBUG
         let options = DebugLaunchOptions(environment: ProcessInfo.processInfo.environment)
         let directory = options.libraryDirectory ?? LibraryStore.defaultDirectory()
+        let transport: any Transport = options.libraryDirectory != nil ? FixtureTransport() : URLSessionTransport()
+        let candidateLimit = options.libraryDirectory != nil ? FixtureTransport.candidateLimit : .seconds(20)
         #else
         let directory = LibraryStore.defaultDirectory()
+        let transport: any Transport = URLSessionTransport()
+        let candidateLimit = Duration.seconds(20)
         #endif
         do {
             let store = LibraryStore(directory: directory)
             self.store = store
             let library = try await store.openNormal()
             let categories = CategoryModel(library: library, navigation: navigation)
+            let sources = SourceModel(
+                library: library, transport: transport, candidateLimit: candidateLimit,
+                navigation: navigation, categories: categories
+            )
+            categories.onReload = { [weak sources] in await sources?.reload() }
             #if DEBUG
             if let count = options.syntheticSources {
                 try await library.insertSyntheticSourcesForUITests(count: count)
             }
             categories.failNextSave = options.failNextSave
             categories.slowNextSave = options.slowNextSave
+            sources.failNextSave = options.failNextSourceSave
             #endif
             await categories.reload()
-            status = .ready(categories)
+            status = .ready(categories, sources)
         } catch is CancellationError {
             return
         } catch {

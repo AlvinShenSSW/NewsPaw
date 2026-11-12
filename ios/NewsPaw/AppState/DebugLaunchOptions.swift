@@ -13,6 +13,8 @@ struct DebugLaunchOptions {
     let failNextSave: Bool
     /// How long the next save waits before it runs.
     let slowNextSave: Duration?
+    /// Whether the next source save fails.
+    let failNextSourceSave: Bool
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -27,6 +29,7 @@ struct DebugLaunchOptions {
             syntheticSources = nil
         }
         failNextSave = environment[UITestLaunchKey.failNextSave] == "1"
+        failNextSourceSave = environment[UITestLaunchKey.failNextSourceSave] == "1"
         if let text = environment[UITestLaunchKey.slowNextSave], let seconds = Int(text), seconds > 0 {
             slowNextSave = .seconds(seconds)
         } else {

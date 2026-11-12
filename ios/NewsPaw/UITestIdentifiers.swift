@@ -31,6 +31,65 @@ enum AccessibilityID {
         categoryRowPrefix + name
     }
 
+    static func disclosure(_ categoryName: String) -> String {
+        "row.disclosure." + categoryName
+    }
+
+    // Sources
+    static let addSourceButton = "sources.add"
+    static let sourceRowPrefix = "row.source."
+
+    static func sourceRow(_ name: String) -> String {
+        sourceRowPrefix + name
+    }
+
+    // Add source
+    static let addressField = "add.address"
+    static let pasteButton = "add.paste"
+    static let continueButton = "add.continue"
+    static let addressProblem = "add.addressProblem"
+    static let detecting = "add.detecting"
+    static let noFeedMessage = "add.noFeed"
+    static let duplicateMessage = "add.duplicate"
+    static let failureMessage = "add.failure"
+    static let saveAsWebPageButton = "add.saveAsWebPage"
+    static let tryAnotherAddressButton = "add.tryAnother"
+    static let tryAgainButton = "add.tryAgain"
+    static let showInLibraryButton = "add.showInLibrary"
+    static let suggestedSourcesRow = "add.suggested"
+    static let confirmAddress = "add.confirmAddress"
+    static let pageItselfChoice = "add.choice.page"
+    static let categoryChoiceRow = "add.category"
+    static let kindValue = "add.kind"
+    static let previewItem = "add.preview"
+    static let newCategoryInSheetButton = "add.newCategory"
+    static let newCategoryNameField = "add.newCategoryName"
+    static let createCategoryButton = "add.createCategory"
+
+    static func candidateChoice(_ address: String) -> String {
+        "add.choice." + address
+    }
+
+    static func categoryChoice(_ name: String) -> String {
+        "add.categoryChoice." + name
+    }
+
+    static func suggestedSource(_ name: String) -> String {
+        "add.suggested." + name
+    }
+
+    // Source settings
+    static let sourceAddress = "source.address"
+    static let copyAddressButton = "source.copy"
+    static let sourceCategoryPicker = "source.category"
+    static let pausedToggle = "source.paused"
+    static let translateTitlesPicker = "source.translateTitles"
+    static let bodyModePicker = "source.body"
+    static let translatePageToggle = "source.translatePage"
+    static let sourceStatus = "source.status"
+    static let updateNowButton = "source.updateNow"
+    static let deleteSourceButton = "source.delete"
+
     // Category editor sheets
     static let nameField = "editor.name"
     static let nameTooLongMessage = "editor.nameTooLong"
@@ -48,6 +107,8 @@ enum AccessibilityID {
     static let starredEmpty = "empty.starred"
     static let categoryEmpty = "empty.category"
     static let noArticleSelected = "empty.reading"
+    /// RD09 deletes this identifier with the interim state.
+    static let interimUnread = "interim.unread"
     static let aboutRow = "settings.about"
     static let versionValue = "about.version"
 }
@@ -65,5 +126,7 @@ enum UITestLaunchKey {
     static let failNextSave = "NEWSPAW_UITEST_FAIL_NEXT_SAVE"
     /// A number of seconds the next category save waits before it runs.
     static let slowNextSave = "NEWSPAW_UITEST_SLOW_NEXT_SAVE"
+    /// "1" makes the next source save fail.
+    static let failNextSourceSave = "NEWSPAW_UITEST_FAIL_NEXT_SOURCE_SAVE"
 }
 #endif

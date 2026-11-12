@@ -8,6 +8,7 @@ struct PaneContainer: View {
     let layout: WindowLayout
     @Environment(NavigationModel.self) private var navigation
     @Environment(CategoryModel.self) private var categories
+    @Environment(SourceModel.self) private var sources
 
     var body: some View {
         HStack(spacing: 0) {
@@ -26,6 +27,7 @@ struct PaneContainer: View {
             SlideOverSidebar()
                 .environment(navigation)
                 .environment(categories)
+                .environment(sources)
         }
     }
 

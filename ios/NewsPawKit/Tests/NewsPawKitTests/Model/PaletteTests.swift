@@ -32,6 +32,18 @@ struct PaletteTests {
         #expect(whiteOnDarkAccent < Palette.minimumTextContrast)
     }
 
+    @Test("the system paste button's white label reaches 4.5:1 on the neutral fill, in light and dark")
+    func neutralFill() {
+        let white = PaletteColor(hex: 0xFFFFFF)
+        #expect(Palette.neutralFill.light == PaletteColor(hex: 0x5E5D58))
+        #expect(Palette.neutralFill.dark == PaletteColor(hex: 0x5E5D58))
+        let light = PaletteColor.contrastRatio(white, Palette.neutralFill.light)
+        let dark = PaletteColor.contrastRatio(white, Palette.neutralFill.dark)
+        #expect(light >= Palette.minimumTextContrast, "light: \(light)")
+        #expect(dark >= Palette.minimumTextContrast, "dark: \(dark)")
+        #expect(abs(light - 6.6) < 0.05)
+    }
+
     @Test("the tokens hold the values of ux section 5")
     func values() {
         #expect(Palette.background == token(0xFFFFFF, 0x121211))

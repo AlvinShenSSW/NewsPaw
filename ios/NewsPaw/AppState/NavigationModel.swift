@@ -1,4 +1,5 @@
 import Foundation
+import NewsPawKit
 import SwiftUI
 
 enum AppTab: Hashable {
@@ -16,6 +17,17 @@ enum LibraryRoute: Hashable {
 
 enum SettingsRoute: Hashable {
     case about
+}
+
+/// The one sheet presented from the root. Two sheets can never be asked for
+/// at once, and "is a sheet open" has one answer for every dialog host.
+enum AppSheet: Hashable, Identifiable {
+    case newCategory
+    case categorySettings(UUID)
+    case addSource
+    case sourceSettings(UUID)
+
+    var id: Self { self }
 }
 
 /// A row of the sidebar.
@@ -54,6 +66,11 @@ final class NavigationModel {
     var settingsPath: [SettingsRoute] = []
     /// Whether the slide-over sidebar is open (panes below 1100 pt only).
     private(set) var isSlideOverOpen = false
+    /// The sheet presented from the root.
+    var sheet: AppSheet?
+    /// The window's current layout, set by the shell, so that "Show in
+    /// Library" knows where the category list is.
+    var layout: WindowLayout?
 
     /// The sidebar's selection, derived from the state.
     var sidebarSelection: SidebarItem {
@@ -92,6 +109,27 @@ final class NavigationModel {
     func categoryDeleted(_ id: UUID) {
         if libraryPath.contains(.category(id)) {
             libraryPath = []
+        }
+    }
+
+    /// The category open in Library: the one pushed in the tab structure,
+    /// the one selected in the sidebar.
+    var openCategory: UUID? {
+        guard tab == .library, case .category(let id) = libraryPath.last else { return nil }
+        return id
+    }
+
+    /// Closes the sheet and, in the same state change, shows the category
+    /// list where it is: the Library tab at its root in the tab structure;
+    /// the sidebar pane from 1100 pt; the slide-over, opened, below 1100 pt.
+    func closeSheetAndShowCategoryList() {
+        sheet = nil
+        guard let layout else { return }
+        if layout.structure == .tabs {
+            tab = .library
+            libraryPath = []
+        } else if !layout.sidebarIsPane {
+            openSlideOver()
         }
     }
 

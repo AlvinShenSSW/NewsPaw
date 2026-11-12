@@ -26,7 +26,10 @@ class NewsPawUITestCase: XCTestCase {
 
     /// Launches the app on this test's library.
     @discardableResult
-    func launch(syntheticSources: Int? = nil, failNextSave: Bool = false, slowNextSave: Int? = nil, arguments: [String] = []) -> XCUIApplication {
+    func launch(
+        syntheticSources: Int? = nil, failNextSave: Bool = false, slowNextSave: Int? = nil, failNextSourceSave: Bool = false,
+        arguments: [String] = []
+    ) -> XCUIApplication {
         app = XCUIApplication()
         app.launchArguments = arguments
         app.launchEnvironment[UITestLaunchKey.libraryDirectory] = libraryName
@@ -38,6 +41,9 @@ class NewsPawUITestCase: XCTestCase {
         }
         if let slowNextSave {
             app.launchEnvironment[UITestLaunchKey.slowNextSave] = String(slowNextSave)
+        }
+        if failNextSourceSave {
+            app.launchEnvironment[UITestLaunchKey.failNextSourceSave] = "1"
         }
         app.launch()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: timeout))
@@ -197,15 +203,19 @@ class NewsPawUITestCase: XCTestCase {
     /// Starts at the category list: the Library tab, or the sidebar.
     func showCategoryList() {
         if app.tabBars.firstMatch.exists {
-            app.tabBars.buttons["Library"].tap()
-            waitFor(app.navigationBars["Library"])
+            // By position, so that it also works in Simplified Chinese.
+            app.tabBars.buttons.element(boundBy: 1).tap()
+            waitFor(button(AccessibilityID.addMenu))
         } else {
             openSidebarIfNeeded()
         }
     }
 
-    func launchAtFullWidth(_ orientation: UIDeviceOrientation = .portrait, syntheticSources: Int? = nil, failNextSave: Bool = false, slowNextSave: Int? = nil) {
-        launch(syntheticSources: syntheticSources, failNextSave: failNextSave, slowNextSave: slowNextSave)
+    func launchAtFullWidth(
+        _ orientation: UIDeviceOrientation = .portrait, syntheticSources: Int? = nil, failNextSave: Bool = false,
+        slowNextSave: Int? = nil, failNextSourceSave: Bool = false
+    ) {
+        launch(syntheticSources: syntheticSources, failNextSave: failNextSave, slowNextSave: slowNextSave, failNextSourceSave: failNextSourceSave)
         rotate(orientation)
         requireFullWidth()
     }
@@ -257,6 +267,129 @@ class NewsPawUITestCase: XCTestCase {
         app.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: window.maxX - 30, dy: window.maxY - 30))
             .tap()
+    }
+
+    // MARK: - Sources
+
+    /// Opens Add source from wherever it is offered on this structure.
+    func openAddSource() {
+        if app.tabBars.firstMatch.exists {
+            app.tabBars.buttons.element(boundBy: 1).tap()
+            waitFor(button(AccessibilityID.addMenu)).tap()
+            waitFor(button(AccessibilityID.addSourceButton)).tap()
+        } else {
+            openSidebarIfNeeded()
+            waitFor(button(AccessibilityID.addSourceButton)).tap()
+        }
+        waitFor(app.textFields[AccessibilityID.addressField])
+    }
+
+    /// Types `address` into the address field and submits it.
+    func detect(_ address: String) {
+        let field = waitFor(app.textFields[AccessibilityID.addressField])
+        // Back to the top of the step when an outcome was scrolled to; the
+        // field is at the top, so the sheet is never swiped further.
+        var swipes = 0
+        while !field.isHittable, swipes < 3 {
+            app.swipeDown()
+            swipes += 1
+        }
+        // At the trailing end, so that the cursor follows the text and the
+        // deletes below remove all of it.
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        let current = field.value as? String ?? ""
+        let placeholder = field.placeholderValue ?? ""
+        let existing = current == placeholder ? 0 : current.count
+        // Return submits the field, as Continue does. A tap on Continue right
+        // after typing was sometimes not delivered on the iPad simulators.
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing) + address + "\n")
+    }
+
+    /// On the confirm step: chooses `category` and saves; waits for the
+    /// sheet to close.
+    func chooseCategoryAndSave(_ category: String) {
+        waitFor(button(AccessibilityID.categoryChoiceRow)).tap()
+        waitFor(button(AccessibilityID.categoryChoice(category))).tap()
+        waitForAbsence(button(AccessibilityID.categoryChoice(category)))
+        tapSave()
+        waitForAbsence(button(AccessibilityID.saveButton))
+    }
+
+    /// Adds `address` to `category` through the sheet, choosing the first
+    /// candidate the sheet chose.
+    func addSource(_ address: String, to category: String) {
+        openAddSource()
+        detect(address)
+        waitFor(element(AccessibilityID.confirmAddress))
+        chooseCategoryAndSave(category)
+    }
+
+    /// The back button of the frontmost navigation stack (inside a sheet,
+    /// the sheet's).
+    func goBack() {
+        waitFor(app.buttons.matching(identifier: "BackButton").firstMatch).tap()
+    }
+
+    /// Scrolls the frontmost list up until `element` exists, a few times
+    /// at most; rows below the fold are not in the hierarchy.
+    @discardableResult
+    func scrollTo(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+        // In the slide-over the sidebar scrolls, not what is behind it.
+        let panel = self.element(AccessibilityID.slideOverPanel)
+        var swipes = 0
+        // Each look waits a little, so that an outcome still being shown is
+        // not scrolled past.
+        while !(element.waitForExistence(timeout: 2) && element.isHittable), swipes < 5 {
+            if panel.exists {
+                panel.swipeUp()
+            } else {
+                app.swipeUp()
+            }
+            swipes += 1
+        }
+        return waitFor(element, file: file, line: line)
+    }
+
+    /// Flips a SwiftUI toggle: its element spans the row, and only the
+    /// switch at its trailing end flips it.
+    func flip(_ toggle: XCUIElement) {
+        let before = toggle.value as? String
+        waitFor(toggle).coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        let flipped = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in toggle.value as? String != before }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [flipped], timeout: timeout), .completed, "the toggle did not flip")
+    }
+
+    func sourceRow(_ name: String) -> XCUIElement {
+        element(AccessibilityID.sourceRow(name))
+    }
+
+    /// Shows the category list with `category` expanded.
+    func expand(_ category: String) {
+        showCategoryList()
+        let disclosure = scrollTo(button(AccessibilityID.disclosure(category)))
+        if !isShown(disclosure) {
+            disclosure.tap()
+        }
+    }
+
+    func collapse(_ category: String) {
+        showCategoryList()
+        let disclosure = waitFor(button(AccessibilityID.disclosure(category)))
+        if isShown(disclosure) {
+            disclosure.tap()
+        }
+    }
+
+    /// A disclosure control's value, in English or Simplified Chinese.
+    private func isShown(_ disclosure: XCUIElement) -> Bool {
+        ["Shown", "已展开"].contains(disclosure.value as? String ?? "")
+    }
+
+    /// Opens Source settings from the source's row.
+    func openSourceSettings(_ name: String, in category: String) {
+        expand(category)
+        waitFor(sourceRow(name)).tap()
+        waitFor(app.textFields[AccessibilityID.nameField])
     }
 
     func screenshot(_ name: String) {

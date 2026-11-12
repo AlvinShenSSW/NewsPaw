@@ -15,7 +15,7 @@ struct SourceSettingsView: View {
 
     var body: some View {
         @Bindable var sources = sources
-        let locked = isSaving || sources.isBusy && !isUpdating
+        let locked = isSaving || sources.isBusy
         NavigationStack {
             Form {
                 if let source = sources.summary(sourceID) {

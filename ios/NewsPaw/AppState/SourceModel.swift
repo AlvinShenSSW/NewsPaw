@@ -256,10 +256,17 @@ final class SourceModel {
         guard let summary = summary(id), summary.isFeedLike, !summary.paused, !updating.contains(id) else { return }
         updating.insert(id)
         defer { updating.remove(id) }
-        let collector = FeedCollector(transport: transport)
-        _ = await perform { library in
-            _ = try await collector.collect(id, in: library)
+        // Not in the save queue: a fetch can take up to 20 seconds, and the
+        // collector writes only the source's status columns and new articles,
+        // never what an editor changes. A feed failure is stored on the
+        // source, not thrown.
+        do {
+            _ = try await FeedCollector(transport: transport).collect(id, in: library)
+        } catch is CancellationError {
+        } catch {
+            isShowingSaveError = true
         }
+        await categories.reload()
     }
 
     // MARK: - Saving

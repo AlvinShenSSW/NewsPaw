@@ -287,6 +287,13 @@ class NewsPawUITestCase: XCTestCase {
     /// Types `address` into the address field and submits it.
     func detect(_ address: String) {
         let field = waitFor(app.textFields[AccessibilityID.addressField])
+        // Back to the top of the step when an outcome was scrolled to; the
+        // field is at the top, so the sheet is never swiped further.
+        var swipes = 0
+        while !field.isHittable, swipes < 3 {
+            app.swipeDown()
+            swipes += 1
+        }
         // At the trailing end, so that the cursor follows the text and the
         // deletes below remove all of it.
         field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()

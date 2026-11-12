@@ -45,6 +45,8 @@ final class SourceListTests: NewsPawUITestCase {
             button(AccessibilityID.cancelButton).tap()
             waitForAbsence(app.textFields[AccessibilityID.nameField])
         }
+        // A source row opened from the slide-over closes it first.
+        expand("World")
         waitFor(sourceRow("Fixture Feed"))
 
         // Edit mode: a handle and a delete control for each category, none

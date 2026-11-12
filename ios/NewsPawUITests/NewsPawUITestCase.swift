@@ -326,9 +326,15 @@ class NewsPawUITestCase: XCTestCase {
     /// at most; rows below the fold are not in the hierarchy.
     @discardableResult
     func scrollTo(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+        // In the slide-over the sidebar scrolls, not what is behind it.
+        let panel = self.element(AccessibilityID.slideOverPanel)
         var swipes = 0
         while !element.exists, swipes < 5 {
-            app.swipeUp()
+            if panel.exists {
+                panel.swipeUp()
+            } else {
+                app.swipeUp()
+            }
             swipes += 1
         }
         return waitFor(element, file: file, line: line)

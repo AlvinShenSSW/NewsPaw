@@ -44,6 +44,8 @@ enum SourceWording {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         formatter.doesRelativeDateFormatting = true
+        // It follows "·" inside a sentence: "today", not "Today".
+        formatter.formattingContext = .middleOfSentence
         return formatter.string(from: date)
     }
 

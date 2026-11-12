@@ -145,7 +145,7 @@ final class ScreenshotTests: NewsPawUITestCase {
         scrollTo(button(AccessibilityID.saveAsWebPageButton)).tap()
         chooseCategoryAndSave(category)
         openSourceSettings("One Feed", in: category)
-        flip(app.switches[AccessibilityID.pausedToggle])
+        flip(scrollTo(app.switches[AccessibilityID.pausedToggle]))
         tapSave()
         waitForAbsence(app.switches[AccessibilityID.pausedToggle])
         openSourceSettings("Sequence Feed", in: category)

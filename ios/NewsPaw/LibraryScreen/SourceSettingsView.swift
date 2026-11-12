@@ -144,6 +144,7 @@ struct SourceSettingsView: View {
                     UIPasteboard.general.string = source.address
                 }
                 .buttonStyle(.borderless)
+                .foregroundStyle(.tint)
                 .frame(minWidth: Theme.minimumTapTarget, minHeight: Theme.minimumTapTarget)
                 .accessibilityIdentifier(AccessibilityID.copyAddressButton)
             }
@@ -188,11 +189,14 @@ struct SourceSettingsView: View {
                 Button {
                     Task { await sources.updateNow(sourceID) }
                 } label: {
-                    if case .failing = source.status {
-                        Text("Try Again")
-                    } else {
-                        Text("Update Now")
+                    Group {
+                        if case .failing = source.status {
+                            Text("Try Again")
+                        } else {
+                            Text("Update Now")
+                        }
                     }
+                    .foregroundStyle(.tint)
                 }
                 .frame(minHeight: Theme.minimumTapTarget)
                 .disabled(isUpdating || isSaving)

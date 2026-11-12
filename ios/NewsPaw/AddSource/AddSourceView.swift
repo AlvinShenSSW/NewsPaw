@@ -188,6 +188,7 @@ struct AddressStepView: View {
     private func actionButton(_ title: Text, _ identifier: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             title
+                .foregroundStyle(.tint)
         }
         .frame(minHeight: Theme.minimumTapTarget)
         .accessibilityIdentifier(identifier)

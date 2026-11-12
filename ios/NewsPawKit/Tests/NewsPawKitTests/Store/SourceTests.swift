@@ -244,6 +244,27 @@ struct SourceTests {
         #expect(page.articleCount == 0 && page.newestItemAt == nil && page.status == nil && !page.isFeedLike)
     }
 
+    @Test("the newest item is the newest published time when it differs from every first-seen time, rows out of order")
+    func newestPublishedTime() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let library = fixture.library
+        let id = try await library.addFeedSource(try feedCandidate(items: 0), name: "Feed", categoryID: fixture.category)
+        let base = Date(timeIntervalSince1970: 1_790_000_000)
+        // (published, first seen), inserted with the newest published time in
+        // the middle and every first-seen time later than every published one.
+        let rows: [(TimeInterval, TimeInterval)] = [(100, 5_000), (300, 4_000), (200, 6_000)]
+        for (index, row) in rows.enumerated() {
+            try await library.insert(Article(
+                id: UUID(), sourceID: id, externalID: "row-\(index)", url: nil, title: "Row \(index)", excerpt: nil,
+                author: nil, imageURL: nil, publishedAt: base.addingTimeInterval(row.0),
+                firstSeenAt: base.addingTimeInterval(row.1), language: nil, readAt: nil, starredAt: nil
+            ))
+        }
+        let summary = try #require(try await library.sourceSummaries().first { $0.id == id })
+        #expect(summary.newestItemAt == base.addingTimeInterval(300))
+    }
+
     @Test("the status: paused, failing with a known or unknown code, working, not updated yet")
     func status() {
         let time = Date(timeIntervalSince1970: 1_800_000_000)

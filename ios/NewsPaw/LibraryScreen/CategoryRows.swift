@@ -2,8 +2,16 @@ import NewsPawKit
 import SwiftUI
 
 /// The categories in the owner's order, with reorder, delete and a context
-/// menu with Category settings: the one category list used by the Library
-/// root and by the sidebar.
+/// menu with Category settings, each with a disclosure control that shows
+/// its sources: the one category list used by the Library root and by the
+/// sidebar.
+///
+/// Source rows carry `.deleteDisabled(true)` and `.moveDisabled(true)`:
+/// without them a swipe on a source row runs the category deletion at the
+/// source's index within its category, and edit mode shows handles on
+/// them. Expansion is never changed when edit mode starts: collapsing then
+/// strips the edit controls from every category but the first (RD05,
+/// measured).
 struct CategoryRows: View {
     enum RowContent {
         /// Rows tagged for the sidebar's selection.
@@ -17,6 +25,7 @@ struct CategoryRows: View {
     /// first.
     let presentSheet: (() -> Void) -> Void
     @Environment(CategoryModel.self) private var categories
+    @Environment(SourceModel.self) private var sources
     @Environment(\.editMode) private var editMode
 
     var body: some View {
@@ -24,16 +33,9 @@ struct CategoryRows: View {
         case .loading:
             EmptyView()
         case .failed:
-            VStack(alignment: .leading, spacing: Theme.Spacing.small) {
-                Text("The categories could not be loaded.")
-                    .foregroundStyle(Theme.secondaryText)
-                Button("Try Again") {
-                    Task { await categories.reload() }
-                }
-                .foregroundStyle(.tint)
-                .frame(minHeight: Theme.minimumTapTarget)
-            }
-            .accessibilityIdentifier(AccessibilityID.categoriesLoadFailed)
+            loadFailure
+        case .loaded where sources.loadFailed:
+            loadFailure
         case .loaded where categories.summaries.isEmpty:
             // A category awaiting deletion still counts: until the deletion
             // is confirmed the library is not empty.
@@ -43,7 +45,6 @@ struct CategoryRows: View {
         case .loaded:
             ForEach(categories.listedSummaries) { summary in
                 row(summary)
-                    .accessibilityIdentifier(AccessibilityID.categoryRow(summary.category.name))
                     .moveDisabled(categories.isBusy)
                     .deleteDisabled(categories.isBusy)
                     .contextMenu {
@@ -51,23 +52,93 @@ struct CategoryRows: View {
                             presentSheet { categories.beginSettings(summary.id) }
                         }
                     }
+                if sources.expanded.contains(summary.id) {
+                    ForEach(sources.sources(in: summary.id)) { source in
+                        SourceRow(source: source, presentSheet: presentSheet)
+                            .deleteDisabled(true)
+                            .moveDisabled(true)
+                    }
+                }
             }
             .onMove { categories.move(fromOffsets: $0, toOffset: $1) }
             .onDelete { categories.requestDeletion(atOffsets: $0) }
         }
     }
 
+    /// The categories or the sources could not be read.
+    private var loadFailure: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.small) {
+            Text("The categories could not be loaded.")
+                .foregroundStyle(Theme.secondaryText)
+            Button("Try Again") {
+                // Reloading the categories reloads the sources too.
+                Task { await categories.reload() }
+            }
+            .foregroundStyle(.tint)
+            .frame(minHeight: Theme.minimumTapTarget)
+        }
+        .accessibilityIdentifier(AccessibilityID.categoriesLoadFailed)
+    }
+
+    /// In edit mode the disclosure control is hidden from VoiceOver, so the
+    /// row is one element again and the edit controls the system adds are
+    /// named after the category ("Reorder World", "Remove, World"); with two
+    /// elements in the row the delete control has no name and the handle
+    /// is named after the disclosure control (measured). The control still
+    /// works for touch, and expansion stays as it is.
     @ViewBuilder
     private func row(_ summary: CategorySummary) -> some View {
+        let isEditing = editMode?.wrappedValue.isEditing == true
         let label = Label(summary.category.name, systemImage: summary.category.icon.rawValue)
+        let disclosure = DisclosureButton(
+            name: summary.category.name, isExpanded: sources.expanded.contains(summary.id)
+        ) {
+            withAnimation { sources.toggleExpanded(summary.id) }
+        }
+        .accessibilityHidden(isEditing)
         switch rowContent {
         case .tagged:
-            label.tag(SidebarItem.category(summary.id))
-        case .navigating:
-            RouteRow(route: .category(summary.id), isEditing: editMode?.wrappedValue.isEditing == true) {
+            HStack(spacing: 0) {
+                disclosure
                 label
+                    .frame(maxWidth: .infinity, minHeight: Theme.minimumTapTarget, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .accessibilityIdentifier(AccessibilityID.categoryRow(summary.category.name))
+            }
+            .tag(SidebarItem.category(summary.id))
+        case .navigating:
+            HStack(spacing: 0) {
+                disclosure
+                RouteRow(route: .category(summary.id), isEditing: isEditing, showsChevron: false) {
+                    label
+                }
+                .accessibilityIdentifier(AccessibilityID.categoryRow(summary.category.name))
             }
         }
+    }
+}
+
+/// The leading control of a category row that shows or hides its sources:
+/// its own 44 × 44 pt target, so a tap on the rest of the row still opens
+/// the category.
+struct DisclosureButton: View {
+    let name: String
+    let isExpanded: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        Button(action: toggle) {
+            Image(systemName: "chevron.forward")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.secondaryText)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .frame(width: Theme.minimumTapTarget, height: Theme.minimumTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(Text("Sources of “\(name)”"))
+        .accessibilityValue(isExpanded ? Text("Shown") : Text("Hidden"))
+        .accessibilityIdentifier(AccessibilityID.disclosure(name))
     }
 }
 

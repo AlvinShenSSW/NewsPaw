@@ -15,11 +15,13 @@ enum ArticleListKind: Hashable {
     }
 }
 
-/// All Unread, Starred or a category. No source can be added yet, so each
-/// says truthfully that it has no articles.
+/// All Unread, Starred or a category. Until article lists exist (RD09),
+/// each says truthfully that it has no articles, or how many unread ones
+/// its scope holds.
 struct ArticleListView: View {
     let kind: ArticleListKind
     @Environment(CategoryModel.self) private var categories
+    @Environment(SourceModel.self) private var sources
 
     var body: some View {
         emptyState
@@ -30,6 +32,10 @@ struct ArticleListView: View {
     @ViewBuilder
     private var emptyState: some View {
         switch kind {
+        case .allUnread where sources.totalUnread > 0:
+            InterimUnreadView(count: sources.totalUnread)
+        case .category(let id) where sources.unreadCount(in: id) > 0:
+            InterimUnreadView(count: sources.unreadCount(in: id))
         case .allUnread:
             EmptyStateView(title: Text("All caught up"), systemImage: "checkmark.circle", identifier: AccessibilityID.allUnreadEmpty)
         case .starred:

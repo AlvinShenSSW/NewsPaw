@@ -1,5 +1,6 @@
 import Foundation
 import NewsPawKit
+import Synchronization
 
 /// A category sheet presented from the root.
 enum CategorySheet: Hashable, Identifiable {
@@ -9,7 +10,7 @@ enum CategorySheet: Hashable, Identifiable {
     var id: Self { self }
 }
 
-/// Where an alert or dialog about categories is attached: the root, the
+/// Where an alert or dialog about categories or sources is attached: the root, the
 /// slide-over sidebar's content, or the open sheet's content. Only the
 /// frontmost host presents, so a dialog never closes a sheet or waits behind
 /// the slide-over.
@@ -37,7 +38,26 @@ final class CategoryModel {
     /// the empty state keep counting it until the deletion succeeds.
     private(set) var hiddenForDeletion: UUID?
     private(set) var loadState = LoadState.loading
-    var sheet: CategorySheet?
+    /// The category sheet: a view of the root's one sheet state.
+    var sheet: CategorySheet? {
+        get {
+            switch navigation.sheet {
+            case .newCategory: .newCategory
+            case .categorySettings(let id): .settings(id)
+            case .addSource, .sourceSettings, nil: nil
+            }
+        }
+        set {
+            switch newValue {
+            case .newCategory: navigation.sheet = .newCategory
+            case .settings(let id): navigation.sheet = .categorySettings(id)
+            case nil:
+                if sheet != nil {
+                    navigation.sheet = nil
+                }
+            }
+        }
+    }
     var draftName = ""
     var draftIcon = CategoryIcon.folder
     /// The category whose deletion is being confirmed.
@@ -46,6 +66,9 @@ final class CategoryModel {
 
     private let library: Library
     private let navigation: NavigationModel
+    /// Run after every reload, so that the source list follows a change of
+    /// categories (a deletion removes or moves sources).
+    var onReload: (@MainActor () async -> Void)?
     /// The last queued operation; each waits for the one before it, so
     /// changes are saved one after another in the order made.
     private var lastOperation: Task<Bool, Never>?
@@ -77,7 +100,7 @@ final class CategoryModel {
     }
 
     var activeDialogHost: CategoryDialogHost {
-        if sheet != nil {
+        if navigation.sheet != nil {
             .sheet
         } else if navigation.isSlideOverOpen {
             .slideOver
@@ -109,6 +132,7 @@ final class CategoryModel {
             summaries = []
             loadState = .failed
         }
+        await onReload?()
     }
 
     // MARK: - Sheets
@@ -163,6 +187,17 @@ final class CategoryModel {
         if saved, sheet == current, editorSession == session {
             sheet = nil
         }
+    }
+
+    /// Creates a category from inside Add source ("New Category…"). It is
+    /// written at once and stays if Add source is cancelled (RD05 decision
+    /// 24). Returns the new category, or `nil` when the save failed.
+    func createCategory(name: String, icon: CategoryIcon) async -> LibraryCategory? {
+        let created = LockedValue<LibraryCategory?>(nil)
+        let saved = await perform { library in
+            created.value = try await library.createCategory(name: name, icon: icon)
+        }
+        return saved ? created.value : nil
     }
 
     // MARK: - Order and deletion
@@ -280,5 +315,19 @@ final class CategoryModel {
         }
         lastOperation = task
         return await task.value
+    }
+}
+
+/// A value one task writes and another reads.
+final class LockedValue<Value: Sendable>: Sendable {
+    private let mutex: Mutex<Value>
+
+    init(_ value: Value) {
+        mutex = Mutex(value)
+    }
+
+    var value: Value {
+        get { mutex.withLock { $0 } }
+        set { mutex.withLock { $0 = newValue } }
     }
 }

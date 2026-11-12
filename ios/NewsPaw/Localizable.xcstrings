@@ -1,6 +1,98 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ · latest item %@" : {
+      "comment" : "Second line of a declared feed in Add source: the feed format (RSS, Atom, JSON Feed; not translated) and the relative time of its newest item.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 最新一条 %@"
+          }
+        }
+      }
+    },
+    "%lld unread" : {
+      "comment" : "VoiceOver value of a source row: its unread articles.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld unread"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld unread"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld 篇未读"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld unread articles — article lists are not available in this version yet." : {
+      "comment" : "Interim text of Today, All Unread and a category while their scope holds unread articles. RD09 deletes it.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld unread article — article lists are not available in this version yet."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld unread articles — article lists are not available in this version yet."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "有 %lld 篇未读文章，这个版本还不能查看文章列表。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "AI" : {
+      "comment" : "Group of suggested sources.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI"
+          }
+        }
+      }
+    },
     "About" : {
       "comment" : "Settings row and screen title: the app's version.",
       "localizations" : {
@@ -19,6 +111,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加"
+          }
+        }
+      }
+    },
+    "Add Source" : {
+      "comment" : "Menu item, sidebar row and sheet title: add a source by its address.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加来源"
+          }
+        }
+      }
+    },
+    "Added" : {
+      "comment" : "Mark on a suggested source that is already in the library.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已添加"
+          }
+        }
+      }
+    },
+    "Address" : {
+      "comment" : "Placeholder of the address field and header of the address section.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地址"
+          }
+        }
+      }
+    },
+    "Addresses with a user name or password cannot be added." : {
+      "comment" : "Message under the address field.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不能添加带用户名或密码的地址。"
           }
         }
       }
@@ -52,6 +188,61 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "都读完了"
+          }
+        }
+      }
+    },
+    "Already in “%@”" : {
+      "comment" : "Second line of a declared feed that is already in the library. %@ is the category's name.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已在“%@”里"
+          }
+        }
+      }
+    },
+    "Always Fetch the Page" : {
+      "comment" : "Body option of a source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "总是抓取网页"
+          }
+        }
+      }
+    },
+    "Australia" : {
+      "comment" : "Group of suggested sources.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "澳大利亚"
+          }
+        }
+      }
+    },
+    "Automatic" : {
+      "comment" : "Body option of a source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动"
+          }
+        }
+      }
+    },
+    "Body" : {
+      "comment" : "Picker in Source settings: how an article's body is obtained.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正文"
           }
         }
       }
@@ -111,6 +302,17 @@
         }
       }
     },
+    "Category" : {
+      "comment" : "Row and screen title: the category a source is filed in.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分类"
+          }
+        }
+      }
+    },
     "Category Settings" : {
       "comment" : "Context-menu item and sheet title: a category's name, icon and delete.",
       "localizations" : {
@@ -118,6 +320,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分类设置"
+          }
+        }
+      }
+    },
+    "China" : {
+      "comment" : "Group of suggested sources.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中国"
           }
         }
       }
@@ -133,6 +346,17 @@
         }
       }
     },
+    "Choose" : {
+      "comment" : "Header of the choice list in Add source, and the value of the category row before one is chosen.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择"
+          }
+        }
+      }
+    },
     "Close Sidebar" : {
       "comment" : "Accessibility label of the icon-only button that closes the slide-over sidebar on iPad.",
       "localizations" : {
@@ -140,6 +364,94 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭边栏"
+          }
+        }
+      }
+    },
+    "Continue" : {
+      "comment" : "Bar button of Add source: look up the typed address.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "继续"
+          }
+        }
+      }
+    },
+    "Copy" : {
+      "comment" : "Button: copies a source's address.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制"
+          }
+        }
+      }
+    },
+    "Could not check in time" : {
+      "comment" : "Second line of a declared feed that did not answer within the time limit; choosing it checks it again.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未能及时检查"
+          }
+        }
+      }
+    },
+    "Could not read this address · %@" : {
+      "comment" : "Add source failure. %@ is the reason.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取这个地址 · %@"
+          }
+        }
+      }
+    },
+    "Could not update · %@" : {
+      "comment" : "Status of a source whose last update failed and that has never worked. %@ is the reason.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新失败 · %@"
+          }
+        }
+      }
+    },
+    "Could not update · %@ · last worked %@" : {
+      "comment" : "Status of a failing source. The first %@ is the reason, the second the time of the last success.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新失败 · %@ · 上次成功 %@"
+          }
+        }
+      }
+    },
+    "Create" : {
+      "comment" : "Bar button: creates the category typed inside Add source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建"
+          }
+        }
+      }
+    },
+    "Delete" : {
+      "comment" : "Context-menu item of a source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除"
           }
         }
       }
@@ -166,8 +478,19 @@
         }
       }
     },
+    "Delete Source" : {
+      "comment" : "Destructive button: deletes a source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除来源"
+          }
+        }
+      }
+    },
     "Delete “%@”?" : {
-      "comment" : "Title of the deletion dialog. %@ is the category's name.",
+      "comment" : "Title of the deletion dialog. %@ is the category's or the source's name.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -195,6 +518,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "编辑"
+          }
+        }
+      }
+    },
+    "Enter an address." : {
+      "comment" : "Message under the address field.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请输入地址。"
+          }
+        }
+      }
+    },
+    "Feed Content Only" : {
+      "comment" : "Body option of a source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只用 Feed 内容"
+          }
+        }
+      }
+    },
+    "Feed · %@" : {
+      "comment" : "Kind of the source being added. %@ is the feed format (RSS, Atom, JSON Feed; not translated).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Feed · %@"
           }
         }
       }
@@ -232,6 +588,17 @@
         }
       }
     },
+    "Follow Global Setting" : {
+      "comment" : "Translate-titles option of a source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟随全局设置"
+          }
+        }
+      }
+    },
     "Fork and knife" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -239,6 +606,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刀叉"
+          }
+        }
+      }
+    },
+    "Found %lld feeds on this page" : {
+      "comment" : "Add source: how many feeds the page declares.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Found %lld feed on this page"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Found %lld feeds on this page"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "在这个页面上找到 %lld 个 Feed"
+                }
+              }
+            }
           }
         }
       }
@@ -309,6 +711,17 @@
         }
       }
     },
+    "Hidden" : {
+      "comment" : "VoiceOver value of a category's disclosure control: its sources are hidden.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已收起"
+          }
+        }
+      }
+    },
     "Icon" : {
       "comment" : "Header of the category icon grid.",
       "localizations" : {
@@ -320,6 +733,17 @@
         }
       }
     },
+    "If this site only supports http, type http:// in front of the address." : {
+      "comment" : "Hint after a failure when the app put https:// in front of the typed address.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果这个网站只支持 http，请在地址前加上 http://。"
+          }
+        }
+      }
+    },
     "It was created by a newer version of the app. Update NewsPaw to open it." : {
       "comment" : "Library failure screen: the reason shown when the library was written by a newer version of the app.",
       "localizations" : {
@@ -327,6 +751,63 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "它由更新版本的 App 创建。请更新 NewsPaw 后再打开。"
+          }
+        }
+      }
+    },
+    "Its %lld articles are deleted with it, including any you starred." : {
+      "comment" : "Message of the source deletion dialog.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Its %lld article is deleted with it, even if you starred it."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Its %lld articles are deleted with it, including any you starred."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "它的 %lld 篇文章会一并删除，包括已收藏的。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Japan" : {
+      "comment" : "Group of suggested sources.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日本"
+          }
+        }
+      }
+    },
+    "Kind" : {
+      "comment" : "Row in Add source: feed or web page.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "类型"
           }
         }
       }
@@ -364,6 +845,17 @@
         }
       }
     },
+    "Looking for a feed…" : {
+      "comment" : "Progress line while Add source looks up an address.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在查找 Feed…"
+          }
+        }
+      }
+    },
     "Move Sources to “%@”" : {
       "comment" : "Button in the deletion dialog: move the deleted category's sources to the named category, then delete it. %@ is the other category's name.",
       "localizations" : {
@@ -387,7 +879,7 @@
       }
     },
     "Name" : {
-      "comment" : "Placeholder of the category name field and header of its section.",
+      "comment" : "Placeholder of a category's or a source's name field and header of its section.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -404,6 +896,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新建分类"
+          }
+        }
+      }
+    },
+    "New Category…" : {
+      "comment" : "Row in Add source's category picker.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新建分类…"
+          }
+        }
+      }
+    },
+    "Newest item %@" : {
+      "comment" : "Status section of a source. %@ is the relative time of its newest article.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新一条 %@"
           }
         }
       }
@@ -474,6 +988,17 @@
         }
       }
     },
+    "No feed was found at this address" : {
+      "comment" : "Add source outcome: the page declares no feed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个地址没有找到 Feed"
+          }
+        }
+      }
+    },
     "No starred articles" : {
       "comment" : "Empty state of Starred.",
       "localizations" : {
@@ -481,6 +1006,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "还没有收藏的文章"
+          }
+        }
+      }
+    },
+    "Not updated yet" : {
+      "comment" : "Status of a source never updated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未更新"
           }
         }
       }
@@ -507,6 +1043,39 @@
         }
       }
     },
+    "Off" : {
+      "comment" : "Translate-titles option of a source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关"
+          }
+        }
+      }
+    },
+    "On" : {
+      "comment" : "Translate-titles option of a source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开"
+          }
+        }
+      }
+    },
+    "Only http and https addresses can be added." : {
+      "comment" : "Message under the address field.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只能添加 http 或 https 地址。"
+          }
+        }
+      }
+    },
     "Paint palette" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -514,6 +1083,61 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "调色板"
+          }
+        }
+      }
+    },
+    "Pause" : {
+      "comment" : "Context-menu item of a source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂停"
+          }
+        }
+      }
+    },
+    "Paused" : {
+      "comment" : "Toggle in Source settings, status of a paused source, and VoiceOver value of its row.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已暂停"
+          }
+        }
+      }
+    },
+    "Paused · last updated %@" : {
+      "comment" : "Status of a paused source. %@ is the time of the last success.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已暂停 · 上次更新 %@"
+          }
+        }
+      }
+    },
+    "Preview" : {
+      "comment" : "Header of the latest items in Add source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预览"
+          }
+        }
+      }
+    },
+    "Resume" : {
+      "comment" : "Context-menu item of a paused source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复"
           }
         }
       }
@@ -540,6 +1164,28 @@
         }
       }
     },
+    "Save as a Web Page" : {
+      "comment" : "Button in Add source: save the address as a web-page source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存为网页"
+          }
+        }
+      }
+    },
+    "Saved now; used once translation and full-text reading are available." : {
+      "comment" : "Footnote under source options that nothing acts on yet.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "现在先保存，翻译和全文阅读可用后生效。"
+          }
+        }
+      }
+    },
     "Settings" : {
       "comment" : "Destination name: the tab and sidebar row for settings (ux section 2).",
       "localizations" : {
@@ -562,6 +1208,28 @@
         }
       }
     },
+    "Show in Library" : {
+      "comment" : "Button in Add source: shows where an address already is.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在订阅中显示"
+          }
+        }
+      }
+    },
+    "Shown" : {
+      "comment" : "VoiceOver value of a category's disclosure control: its sources are shown.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已展开"
+          }
+        }
+      }
+    },
     "Something went wrong while opening it." : {
       "comment" : "Library failure screen: the reason shown for any other failure. The technical detail, in English, appears below it.",
       "localizations" : {
@@ -569,6 +1237,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开资料库时出现问题。"
+          }
+        }
+      }
+    },
+    "Source Settings" : {
+      "comment" : "Context-menu item and sheet title: a source's settings.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来源设置"
+          }
+        }
+      }
+    },
+    "Sources of “%@”" : {
+      "comment" : "VoiceOver label of a category's disclosure control. %@ is the category's name.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”的来源"
           }
         }
       }
@@ -606,6 +1296,39 @@
         }
       }
     },
+    "Status" : {
+      "comment" : "Header of the status section in Source settings.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "状态"
+          }
+        }
+      }
+    },
+    "Suggested Sources" : {
+      "comment" : "Row and screen title: the suggested feeds.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推荐来源"
+          }
+        }
+      }
+    },
+    "Tech" : {
+      "comment" : "Group of suggested sources.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数码"
+          }
+        }
+      }
+    },
     "The categories could not be loaded." : {
       "comment" : "Shown in place of the category list when reading the categories from storage failed.",
       "localizations" : {
@@ -628,6 +1351,41 @@
         }
       }
     },
+    "The first %lld are shown." : {
+      "comment" : "Add source: the page declares more feeds than are listed.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The first %lld is shown."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The first %lld are shown."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "只显示前 %lld 个。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "The library file is damaged or is not a NewsPaw library." : {
       "comment" : "Library failure screen: the reason shown when the library file is corrupt or is not a database.",
       "localizations" : {
@@ -635,6 +1393,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "资料库文件已损坏，或不是 NewsPaw 资料库。"
+          }
+        }
+      }
+    },
+    "This address is already in “%@” as “%@”." : {
+      "comment" : "Add source outcome. The first %@ is the category's name, the second the source's name.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个地址已经在“%@”里，名称是“%@”。"
+          }
+        }
+      }
+    },
+    "This address is too long." : {
+      "comment" : "Message under the address field.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个地址太长了。"
           }
         }
       }
@@ -709,6 +1489,39 @@
         }
       }
     },
+    "This feed has no items yet" : {
+      "comment" : "Preview of a feed without items.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个 Feed 还没有内容"
+          }
+        }
+      }
+    },
+    "This is not a web address." : {
+      "comment" : "Message under the address field.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这不是一个网址。"
+          }
+        }
+      }
+    },
+    "This page itself" : {
+      "comment" : "Last choice in Add source: save the page as a web-page source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个页面本身"
+          }
+        }
+      }
+    },
     "Today" : {
       "comment" : "Destination name: the tab and sidebar row for today's overviews (ux section 2).",
       "localizations" : {
@@ -720,13 +1533,68 @@
         }
       }
     },
+    "Translate Titles" : {
+      "comment" : "Picker in Source settings.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译标题"
+          }
+        }
+      }
+    },
+    "Translate When Opened" : {
+      "comment" : "Toggle in the settings of a web-page source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开时翻译"
+          }
+        }
+      }
+    },
     "Try Again" : {
-      "comment" : "Button: reads the categories from storage again.",
+      "comment" : "Button: repeats what failed (reading the categories, looking up an address, updating a source).",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "重试"
+          }
+        }
+      }
+    },
+    "Try Another Address" : {
+      "comment" : "Button in Add source: clears the address.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "换一个地址"
+          }
+        }
+      }
+    },
+    "Update Now" : {
+      "comment" : "Button in Source settings: updates the source once.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立即更新"
+          }
+        }
+      }
+    },
+    "Updating…" : {
+      "comment" : "Status while a source is being updated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在更新…"
           }
         }
       }
@@ -749,6 +1617,138 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "版本"
+          }
+        }
+      }
+    },
+    "Web page" : {
+      "comment" : "Kind of a source, and the VoiceOver value of a web-page source's row.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网页"
+          }
+        }
+      }
+    },
+    "Working · last updated %@" : {
+      "comment" : "Status of a working source. %@ is the time of the last success.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正常 · 上次更新 %@"
+          }
+        }
+      }
+    },
+    "World" : {
+      "comment" : "Group of suggested sources.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "世界"
+          }
+        }
+      }
+    },
+    "could not connect" : {
+      "comment" : "Reason a source could not be read, used after “·”; lower case in English.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接不上"
+          }
+        }
+      }
+    },
+    "not a recognisable feed" : {
+      "comment" : "Reason a source could not be read, used after “·”; lower case in English.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不是可识别的 Feed"
+          }
+        }
+      }
+    },
+    "something went wrong" : {
+      "comment" : "Reason a source could not be read, used after “·”; lower case in English.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "出了点问题"
+          }
+        }
+      }
+    },
+    "the address is gone" : {
+      "comment" : "Reason a source could not be read, used after “·”; lower case in English.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地址已失效"
+          }
+        }
+      }
+    },
+    "the response is too large" : {
+      "comment" : "Reason a source could not be read, used after “·”; lower case in English.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内容太大"
+          }
+        }
+      }
+    },
+    "the server answered with error %lld" : {
+      "comment" : "Reason a source could not be read, used after “·”; lower case in English. %lld is the HTTP status.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器返回错误 %lld"
+          }
+        }
+      }
+    },
+    "this address cannot be used" : {
+      "comment" : "Reason a source could not be read, used after “·”; lower case in English.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个地址无法使用"
+          }
+        }
+      }
+    },
+    "timed out" : {
+      "comment" : "Reason a source could not be read, used after “·”; lower case in English.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接超时"
+          }
+        }
+      }
+    },
+    "too many redirects" : {
+      "comment" : "Reason a source could not be read, used after “·”; lower case in English.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重定向次数太多"
           }
         }
       }

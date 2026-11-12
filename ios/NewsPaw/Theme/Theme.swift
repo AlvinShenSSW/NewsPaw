@@ -28,6 +28,8 @@ enum Theme {
     static let secondaryText = Color(Palette.secondaryText)
     static let accent = Color(Palette.accent)
     static let onAccent = Color(Palette.onAccent)
+    /// The fill of the system paste button; used for nothing else.
+    static let neutralFill = Color(Palette.neutralFill)
     /// The layer the slide-over sidebar dims the content with.
     static let scrim = Color.black.opacity(0.35)
 

@@ -29,6 +29,7 @@ struct SlideOverSidebar: View {
         }
         .presentationBackground(.clear)
         .categoryDialogs(host: .slideOver)
+        .sourceDialogs(host: .slideOver)
         .tint(Theme.accent)
         .foregroundStyle(Theme.text)
         .onAppear {

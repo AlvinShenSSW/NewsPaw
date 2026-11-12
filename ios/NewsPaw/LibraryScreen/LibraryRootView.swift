@@ -3,6 +3,7 @@ import SwiftUI
 /// The Library tab's root (tab structure): All Unread, then the categories.
 struct LibraryRootView: View {
     @Environment(CategoryModel.self) private var categories
+    @Environment(SourceModel.self) private var sources
     @State private var editMode = EditMode.inactive
 
     var body: some View {
@@ -32,6 +33,10 @@ struct LibraryRootView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("Add", systemImage: "plus") {
+                    Button("Add Source", systemImage: "plus.circle") {
+                        sources.beginAddSource()
+                    }
+                    .accessibilityIdentifier(AccessibilityID.addSourceButton)
                     Button("New Category", systemImage: "folder.badge.plus") {
                         categories.beginNewCategory()
                     }
@@ -49,6 +54,9 @@ struct LibraryRootView: View {
 struct RouteRow<Content: View>: View {
     let route: LibraryRoute
     let isEditing: Bool
+    /// A category row has a leading disclosure control and no trailing
+    /// chevron (RD05).
+    var showsChevron = true
     @ViewBuilder let content: () -> Content
     @Environment(NavigationModel.self) private var navigation
 
@@ -60,13 +68,14 @@ struct RouteRow<Content: View>: View {
             HStack {
                 content()
                 Spacer(minLength: Theme.Spacing.small)
-                if !isEditing {
+                if !isEditing, showsChevron {
                     Image(systemName: "chevron.forward")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(Theme.secondaryText)
                         .accessibilityHidden(true)
                 }
             }
+            .frame(minHeight: Theme.minimumTapTarget)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

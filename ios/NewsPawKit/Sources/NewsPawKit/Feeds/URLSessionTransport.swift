@@ -107,8 +107,9 @@ public final class URLSessionTransport: Transport {
     }
 }
 
-/// The state of one exchange and its task's delegate.
-private final class Exchange: NSObject, URLSessionDataDelegate, Sendable {
+/// The state of one exchange and its task's delegate. Internal so that tests
+/// can drive the order of its events.
+final class Exchange: NSObject, URLSessionDataDelegate, Sendable {
     private struct State {
         var redirects = 0
         /// Why the transport ended the exchange, recorded before the task is
@@ -121,6 +122,9 @@ private final class Exchange: NSObject, URLSessionDataDelegate, Sendable {
         var stoppedAfterHead = false
         var continuation: CheckedContinuation<TransportResponse, any Error>?
         var finished = false
+        /// The result of an exchange that ended before `start` handed over
+        /// its continuation.
+        var outcome: Result<TransportResponse, any Error>?
     }
 
     private let state = Mutex(State())
@@ -130,18 +134,28 @@ private final class Exchange: NSObject, URLSessionDataDelegate, Sendable {
         self.limits = limits
     }
 
+    /// Starts the task, or ends at once with the exchange's result when it
+    /// has already ended: cancelled by the caller, refused (the deadline
+    /// passed, say), or finished, before `start` was called.
     func start(_ task: URLSessionDataTask, continuation: CheckedContinuation<TransportResponse, any Error>) {
-        let alreadyCancelled = state.withLock { state in
+        let ended: Result<TransportResponse, any Error>? = state.withLock { state in
             if state.callerCancelled {
                 state.finished = true
-                return true
+                return .failure(CancellationError())
+            }
+            if let outcome = state.outcome {
+                return outcome
+            }
+            if let refusal = state.refusal {
+                state.finished = true
+                return .failure(refusal)
             }
             state.continuation = continuation
-            return false
+            return nil
         }
-        if alreadyCancelled {
+        if let ended {
             task.cancel()
-            continuation.resume(throwing: CancellationError())
+            continuation.resume(with: ended)
         } else {
             task.resume()
         }
@@ -165,8 +179,13 @@ private final class Exchange: NSObject, URLSessionDataDelegate, Sendable {
         let continuation: CheckedContinuation<TransportResponse, any Error>? = state.withLock { state in
             guard !state.finished else { return nil }
             state.finished = true
-            defer { state.continuation = nil }
-            return state.continuation
+            guard let continuation = state.continuation else {
+                // Ended before `start`: kept for it.
+                state.outcome = result
+                return nil
+            }
+            state.continuation = nil
+            return continuation
         }
         continuation?.resume(with: result)
     }

@@ -247,4 +247,50 @@ struct TransportStubTests {
         }
         #expect(time < .seconds(2))
     }
+
+    // MARK: - An exchange that ends before it starts (fix round 1, R4)
+
+    /// A task on a stub session that is never resumed, with an exchange as
+    /// its delegate.
+    private static func unstartedExchange() -> (Exchange, URLSessionDataTask, URLSession) {
+        let base = StubProtocol.register { _ in }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let task = session.dataTask(with: URL(string: base + "/never")!)
+        let exchange = Exchange(limits: TransportLimits(deadline: .seconds(30), maximumBytes: 1024, maximumRedirects: 5))
+        task.delegate = exchange
+        return (exchange, task, session)
+    }
+
+    private static func start(_ exchange: Exchange, _ task: URLSessionDataTask) async -> (any Error)? {
+        await failure {
+            try await withCheckedThrowingContinuation { continuation in exchange.start(task, continuation: continuation) }
+        }
+    }
+
+    @Test("an exchange refused before it starts ends at once with its reason", .timeLimit(.minutes(1)))
+    func refusedBeforeStart() async {
+        let (exchange, task, session) = Self.unstartedExchange()
+        defer { session.invalidateAndCancel() }
+        exchange.refuse(.timedOut, task: task)
+        #expect(await Self.start(exchange, task) as? TransportFailure == .timedOut)
+    }
+
+    @Test("an exchange whose task completed before it starts ends at once with that result", .timeLimit(.minutes(1)))
+    func completedBeforeStart() async {
+        // The deadline cancels the task, and the cancelled task's completion
+        // arrives, all before `start` hands over its continuation.
+        let (refused, refusedTask, refusedSession) = Self.unstartedExchange()
+        defer { refusedSession.invalidateAndCancel() }
+        refused.refuse(.timedOut, task: refusedTask)
+        refused.urlSession(refusedSession, task: refusedTask, didCompleteWithError: URLError(.cancelled))
+        #expect(await Self.start(refused, refusedTask) as? TransportFailure == .timedOut)
+
+        // A completion with an error and no refusal.
+        let (failed, failedTask, failedSession) = Self.unstartedExchange()
+        defer { failedSession.invalidateAndCancel() }
+        failed.urlSession(failedSession, task: failedTask, didCompleteWithError: URLError(.cannotConnectToHost))
+        #expect(await Self.start(failed, failedTask) as? TransportFailure == .unreachable)
+    }
 }

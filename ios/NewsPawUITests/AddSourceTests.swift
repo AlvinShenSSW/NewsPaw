@@ -285,6 +285,10 @@ final class AddSourceTests: NewsPawUITestCase {
         UIPasteboard.general.string = Fixture.feed
         openAddSource()
         let paste = waitFor(button(AccessibilityID.pasteButton))
+        // The system enables its paste button once it has seen text on the
+        // pasteboard.
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: paste)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: timeout), .completed, "the paste button stayed disabled")
         let frame = paste.frame
         paste.tap()
         let field = app.textFields[AccessibilityID.addressField]

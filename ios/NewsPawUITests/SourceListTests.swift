@@ -39,6 +39,12 @@ final class SourceListTests: NewsPawUITestCase {
         screenshot("swipe-on-source-row")
         XCTAssertFalse(app.buttons["Delete"].exists, "a swipe on a source row offers Delete")
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label == 'Delete'")).firstMatch.exists)
+        // On the iPhone the list does not take a horizontal swipe, so the
+        // row's button can take it as a tap and open Source settings.
+        if app.textFields[AccessibilityID.nameField].exists {
+            button(AccessibilityID.cancelButton).tap()
+            waitForAbsence(app.textFields[AccessibilityID.nameField])
+        }
         waitFor(sourceRow("Fixture Feed"))
 
         // Edit mode: a handle and a delete control for each category, none
@@ -169,7 +175,10 @@ final class SourceListTests: NewsPawUITestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [working], timeout: timeout), .completed, status.label)
         button(AccessibilityID.cancelButton).tap()
         showCategoryList()
-        XCTAssertEqual(waitFor(sourceRow("Sequence Feed")).value as? String, "2 unread")
+        // The third answer holds a new item.
+        let row2 = waitFor(sourceRow("Sequence Feed"))
+        let two = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '2 unread'"), object: row2)
+        XCTAssertEqual(XCTWaiter.wait(for: [two], timeout: timeout), .completed, "\(String(describing: row2.value))")
     }
 
     /// Criterion 15: the confirmation names the source and its articles;
@@ -183,7 +192,7 @@ final class SourceListTests: NewsPawUITestCase {
         scrollTo(button(AccessibilityID.deleteSourceButton)).tap()
         waitFor(app.staticTexts["Delete “Fixture Feed”?"])
         XCTAssertTrue(app.staticTexts["Its 3 articles are deleted with it, including any you starred."].exists)
-        deletionDialogButton("Delete Source").tap()
+        sourceDeletionDialogButton().tap()
         waitForAbsence(app.textFields[AccessibilityID.nameField])
         showCategoryList()
         waitForAbsence(sourceRow("Fixture Feed"))
@@ -208,7 +217,7 @@ final class SourceListTests: NewsPawUITestCase {
         row.press(forDuration: 1.2)
         waitFor(app.buttons["Delete"]).tap()
         waitFor(app.staticTexts["Delete “Fixture Feed”?"])
-        deletionDialogButton("Delete Source").tap()
+        sourceDeletionDialogButton().tap()
         waitForAbsence(row)
     }
 
@@ -252,6 +261,14 @@ final class SourceListTests: NewsPawUITestCase {
     }
 
     // MARK: - Helpers
+
+    /// The deletion dialog's button, not Source settings' own button of the
+    /// same name.
+    private func sourceDeletionDialogButton() -> XCUIElement {
+        waitFor(app.buttons.matching(NSPredicate(
+            format: "label == 'Delete Source' AND identifier != %@", AccessibilityID.deleteSourceButton
+        )).firstMatch)
+    }
 
     /// Chooses `option` in a menu picker.
     private func choose(_ option: String, in picker: String) {

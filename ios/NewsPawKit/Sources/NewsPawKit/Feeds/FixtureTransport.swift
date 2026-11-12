@@ -105,7 +105,7 @@ public final class FixtureTransport: Transport {
     private static func rss(title: String, items: [String]) -> String {
         let entries = items.enumerated().map { index, item in
             """
-            <item><title>\(item)</title><link>https://example.invalid/\(slug(title))/\(index)</link>\
+            <item><title>\(item)</title><link>https://example.invalid/\(slug(title))/\(slug(item))</link>\
             <guid>\(slug(title))-\(index)-\(item)</guid><pubDate>\(date(hoursAgo: index + 1))</pubDate></item>
             """
         }.joined(separator: "\n")

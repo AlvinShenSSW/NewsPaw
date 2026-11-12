@@ -90,7 +90,7 @@ A three-column split view: sidebar → article list → reading screen.
 - "All Unread" row with the total.
 - Categories in the owner's order: icon, name, unread count, disclosure chevron. Expanded, a category lists its sources: site icon, name, unread count. A web-page source shows a globe and no count. A paused source is dimmed; a failing source shows a warning mark.
 - "+" in the navigation bar: Add source, New category, Import.
-- Edit mode: reorder and delete categories, move sources between categories.
+- Edit mode: reorder and delete categories, move sources between categories. A source is moved from Source settings (its Category row), not by dragging in edit mode.
 - Long press on a category: Refresh, Mark all as read, Category settings. On a source: Refresh, Source settings, Pause, Delete.
 - Tapping a feed-like source or a category opens S3. Tapping a web-page source opens S5.
 
@@ -137,9 +137,9 @@ A sheet in two steps.
 1. **Address.** A text field with "Paste", then "Continue". Below: Suggested sources (normal partition only), Import OPML, Import configuration.
 2. **Confirm.** What was found — kind (Feed / GitHub / Hugging Face / Web page), name (editable), and a choice when the page declares several feeds or, for a GitHub repository, between Releases, Tags and Commits; the category picker (required; shows which partition it is in; includes "New category…"); a preview of the latest three items with their times; "Save".
 
-- No feed found: "No feed was found at this address", with "Save as a web page" and "Try another address".
+- No feed found: "No feed was found at this address", with "Save as a web page" and "Try another address". A page that declares feeds can also be saved as itself: the choice list ends with "This page itself".
 - Already added in the current partition: says where it is filed and offers to open it. The other partition is never consulted, so this screen cannot reveal anything about it.
-- Could not connect: the reason and "Try again".
+- Could not connect: the reason and "Try again". When the site answered but the app could not use the answer (an HTTP error, too large, too many redirects), "Save as a web page" is offered as well.
 
 ### S7 Unlocking and the cover
 

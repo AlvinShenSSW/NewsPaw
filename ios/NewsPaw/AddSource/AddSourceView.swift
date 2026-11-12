@@ -77,7 +77,7 @@ struct AddressStepView: View {
                 .tint(Theme.neutralFill)
                 .disabled(model.isDetecting)
                 .accessibilityIdentifier(AccessibilityID.pasteButton)
-                if case .invalidAddress(let problem) = model.detection {
+                if model.showsOutcome, case .invalidAddress(let problem) = model.detection {
                     message(SourceWording.addressProblem(problem))
                         .accessibilityIdentifier(AccessibilityID.addressProblem)
                 }
@@ -92,7 +92,7 @@ struct AddressStepView: View {
                 }
             }
             .listRowBackground(Theme.surface)
-            if !model.isDetecting {
+            if !model.isDetecting, model.showsOutcome {
                 outcome
             }
             if !sources.library.suggestedSources.isEmpty {

@@ -126,6 +126,13 @@ final class AddSourceModel {
         }
     }
 
+    /// Whether the address step shows the last detection's outcome: only
+    /// while the field holds the text it ran on, so an outcome (and its
+    /// "Save as a Web Page") never stands beside another address.
+    var showsOutcome: Bool {
+        detectedText == addressText
+    }
+
     /// "Continue": shows the confirm step again when the text has not
     /// changed since a detection that found something to save; otherwise
     /// detects.

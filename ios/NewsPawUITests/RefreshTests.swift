@@ -23,7 +23,7 @@ final class RefreshTests: NewsPawUITestCase {
     /// returns, so "Updating…" cannot be read during a pull of the 3-second
     /// slow source; how long the pull kept the app busy is recorded instead
     /// (the `.refreshable` assumption of RD06), and "Updating…" is read
-    /// during a refresh started from the source's menu.
+    /// during a refresh started from the category's menu.
     func testPullShowsUpdatingThenUpdated() {
         launchAtFullWidth()
         showToday()
@@ -59,9 +59,11 @@ final class RefreshTests: NewsPawUITestCase {
         XCTAssertFalse(element(AccessibilityID.failedSourcesButton).exists)
 
         // "Updating…" while the slow source is collected, then "Updated".
-        expand("World")
-        let slow = waitFor(sourceRow("Slow Feed"))
-        slow.press(forDuration: 1.2)
+        // From the category's menu with the category collapsed: a row's
+        // activity indicator, even in a tab not shown, keeps the app busy
+        // and the harness waiting until the collection has ended.
+        collapse("World")
+        openMenu(ofCategory: "World")
         waitFor(menuButton("Refresh")).tap()
         showToday()
         waitForLabel(status, "Updating…", timeout: 5)
@@ -150,6 +152,9 @@ final class RefreshTests: NewsPawUITestCase {
         launchAtFullWidth()
         openRefreshSettings()
         choose("Manual Only", in: AccessibilityID.refreshIntervalPicker)
+        // Back to Settings: in the panes the back button has taken the
+        // sidebar button's place.
+        goBack()
         createCategory("World")
         addSource(Fixture.counting, to: "World")
         expand("World")
@@ -320,7 +325,7 @@ final class RefreshTests: NewsPawUITestCase {
             XCTAssertLessThanOrEqual(row.frame.maxX, window.maxX + 0.5, "\(picker) \(row.frame)")
             XCTAssertGreaterThan(row.frame.height, 60, "\(picker) grows")
         }
-        let footer = app.staticTexts["Counted from when an article was first seen. Starred articles are always kept. A change takes effect the next time you open the app."]
+        let footer = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Counted from when an article was first seen.'")).firstMatch
         scrollTo(footer)
         XCTAssertLessThanOrEqual(footer.frame.maxX, window.maxX + 0.5)
         XCTAssertGreaterThan(footer.frame.height, 200, "the footer wraps onto many lines")
@@ -343,8 +348,10 @@ final class RefreshTests: NewsPawUITestCase {
     private func pullToRefresh() {
         let anchor = [element(AccessibilityID.todayStatus), element(AccessibilityID.todayEmpty), element(AccessibilityID.interimUnread)]
             .first(where: \.exists) ?? app.scrollViews.firstMatch
+        // 350 pt was enough on the iPhone but not on the iPads (measured).
         let start = anchor.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 350)), withVelocity: .slow, thenHoldForDuration: 0.5)
+        let distance = min(600, window.maxY - anchor.frame.midY - 20)
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: distance)), withVelocity: .slow, thenHoldForDuration: 1)
     }
 
     private func openRefreshSettings() {
@@ -352,7 +359,8 @@ final class RefreshTests: NewsPawUITestCase {
             app.tabBars.buttons.element(boundBy: 3).tap()
         } else {
             openSidebarIfNeeded()
-            waitFor(element(AccessibilityID.settingsRow)).tap()
+            // Below the fold at the largest text size.
+            scrollTo(element(AccessibilityID.settingsRow)).tap()
             waitForAbsence(element(AccessibilityID.slideOverPanel))
         }
         waitFor(element(AccessibilityID.refreshRow)).tap()

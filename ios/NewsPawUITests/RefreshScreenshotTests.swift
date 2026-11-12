@@ -37,8 +37,10 @@ final class RefreshScreenshotTests: NewsPawUITestCase {
             }
         }
         func pull() {
-            let start = waitFor(element(AccessibilityID.todayStatus)).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 350)), withVelocity: .slow, thenHoldForDuration: 0.5)
+            let status = waitFor(element(AccessibilityID.todayStatus))
+            let start = status.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            let distance = min(600, window.maxY - status.frame.midY - 20)
+            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: distance)), withVelocity: .slow, thenHoldForDuration: 1)
         }
         func waitForLabel(_ predicate: String) {
             let shown = XCTNSPredicateExpectation(predicate: NSPredicate(format: predicate), object: element(AccessibilityID.todayStatus))
@@ -58,11 +60,12 @@ final class RefreshScreenshotTests: NewsPawUITestCase {
         waitFor(element(AccessibilityID.todayStatus))
         capture("today-not-updated")
 
-        // "Updating…" while the slow source, refreshed from its menu, is
-        // collected for three seconds. (During a pull the harness waits for
-        // the system's refresh indicator to stop before it can look.)
-        expand(category)
-        scrollTo(sourceRow("Slow Feed")).press(forDuration: 1.2)
+        // "Updating…" while the slow source, refreshed from its collapsed
+        // category's menu, is collected for three seconds. (During a pull,
+        // or with the row's indicator on screen, the harness waits for the
+        // app to be idle before it can look.)
+        collapse(category)
+        waitFor(element(AccessibilityID.categoryRow(category))).press(forDuration: 1.2)
         waitFor(app.buttons[variant == "zh" ? "刷新" : "Refresh"].firstMatch).tap()
         showToday()
         waitForLabel("label BEGINSWITH 'Updating' OR label BEGINSWITH '正在更新'")
@@ -88,7 +91,8 @@ final class RefreshScreenshotTests: NewsPawUITestCase {
             app.tabBars.buttons.element(boundBy: 3).tap()
         } else {
             openSidebarIfNeeded()
-            waitFor(element(AccessibilityID.settingsRow)).tap()
+            // Below the fold at the largest text size.
+            scrollTo(element(AccessibilityID.settingsRow)).tap()
             waitForAbsence(element(AccessibilityID.slideOverPanel))
         }
         capture("settings")

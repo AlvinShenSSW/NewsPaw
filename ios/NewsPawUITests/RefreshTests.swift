@@ -77,7 +77,10 @@ final class RefreshTests: NewsPawUITestCase {
         waitFor(menuButton("Refresh")).tap()
         waitForLabel(status, "Updating…", timeout: 5)
         screenshot("today-updating")
-        waitForLabel(status, "Updated just now")
+        // A category refresh records no time: the line goes back to the
+        // pull's.
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH 'Updated '"), object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: timeout), .completed, status.label)
         if element(AccessibilityID.slideOverPanel).exists {
             button(AccessibilityID.closeSidebarButton).tap()
         }

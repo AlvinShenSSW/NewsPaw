@@ -46,9 +46,11 @@ final class RefreshModel {
         }
     }
 
-    /// Reads the recorded refresh time.
+    /// Reads the recorded refresh time. A failed read keeps the time shown.
     func load() async {
-        lastRefreshAt = try? await library.lastRefreshAt()
+        do {
+            lastRefreshAt = try await library.lastRefreshAt()
+        } catch {}
     }
 
     /// Entering the app (decision 3): clean up, then refresh the whole
@@ -64,8 +66,11 @@ final class RefreshModel {
     }
 
     /// A refresh the owner asked for: a pull, a menu's Refresh, or Update Now.
+    /// It runs in a task of its own, so that a caller that is cancelled
+    /// (SwiftUI cancels a pull's task) neither cancels the reads that follow
+    /// the run nor makes them fail; the caller still waits for the end.
     func refresh(_ scope: RefreshScope) async {
-        await run(scope, ownerStarted: true)
+        await Task { await run(scope, ownerStarted: true) }.value
     }
 
     private func run(_ scope: RefreshScope, ownerStarted: Bool) async {

@@ -112,6 +112,9 @@ final class SourceModel {
         do {
             summaries = try await library.sourceSummaries()
             loadFailed = false
+        } catch is CancellationError {
+            // Not a failure to read: what is shown stays.
+            return
         } catch {
             summaries = []
             loadFailed = true

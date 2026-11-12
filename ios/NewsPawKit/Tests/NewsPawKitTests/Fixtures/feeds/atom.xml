@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Synthetic Atom feed. Nothing here refers to a real source. -->
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+  <title type="text">Synthetic Observatory &lt;Notes&gt;</title>
+  <link rel="self" href="https://example.invalid/atom.xml"/>
+  <link rel="alternate" type="text/html" href="/observatory/"/>
+  <id>urn:uuid:00000000-0000-4000-8000-000000000001</id>
+  <updated>2026-11-10T09:00:00Z</updated>
+  <entry>
+    <title type="text">Comet &lt;C/2026 X1&gt;   brightens</title>
+    <link rel="alternate" href="/observatory/comet"/>
+    <link rel="enclosure" type="image/jpeg" href="https://example.invalid/images/comet.jpg"/>
+    <id>urn:uuid:00000000-0000-4000-8000-000000000002</id>
+    <published>2026-11-10T08:00:00+09:00</published>
+    <updated>2026-11-10T10:00:00Z</updated>
+    <author><name>Cara Astronomer</name></author>
+    <summary type="html">&lt;p&gt;A &lt;em&gt;bright&lt;/em&gt; comet.&lt;/p&gt;</summary>
+    <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><p class="lead">Seen at 5 &lt; 6 o'clock &amp; later.<br/>Next line <img src="/i.png" alt="a &quot;q&quot;"/></p></div></content>
+  </entry>
+  <entry>
+    <title type="html">&lt;b&gt;Telescope&lt;/b&gt; upgrade &amp;amp; repairs</title>
+    <link href="https://example.invalid/observatory/telescope"/>
+    <id>tag:example.invalid,2026:telescope</id>
+    <updated>2026-11-09T07:00:00Z</updated>
+    <content type="text">Plain text with &lt;angle&gt; brackets &amp; an ampersand.</content>
+    <media:thumbnail url="https://example.invalid/images/telescope.jpg"/>
+  </entry>
+</feed>

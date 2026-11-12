@@ -27,6 +27,68 @@ enum BodyMode: String, Sendable, Codable, CaseIterable {
     case feed
 }
 
+/// Why the last collection of a source failed (spec N03, N04), stored in
+/// `source.last_error` as a short code that RD05 words for the owner.
+///
+/// The column is free text, not one of the closed sets: a value that is not
+/// a code (an older build's message, a later build's new code) reads as no
+/// known reason rather than as an error.
+public enum CollectionFailure: Sendable, Hashable {
+    /// No answer: name lookup, connection, TLS, or any other transport error.
+    case unreachable
+    /// The 20-second deadline passed.
+    case timedOut
+    /// 404 or 410.
+    case gone
+    /// Any other status that is not 200 or 304, including a redirect without
+    /// a target and a declined 401 or 407.
+    case httpStatus(Int)
+    /// The answer is not a feed.
+    case notAFeed
+    /// More than 10 MB decoded.
+    case tooLarge
+    /// More than 5 redirects.
+    case tooManyRedirects
+    /// The address or a redirect target is not http or https, or carries a
+    /// user name or password.
+    case unsupportedAddress
+
+    /// The code stored in `source.last_error`.
+    public var code: String {
+        switch self {
+        case .unreachable: "unreachable"
+        case .timedOut: "timed_out"
+        case .gone: "gone"
+        case .httpStatus(let status): "http:\(status)"
+        case .notAFeed: "not_a_feed"
+        case .tooLarge: "too_large"
+        case .tooManyRedirects: "too_many_redirects"
+        case .unsupportedAddress: "unsupported_address"
+        }
+    }
+
+    /// Reads a stored code; `nil` for any text that is not one.
+    public init?(code: String) {
+        switch code {
+        case "unreachable": self = .unreachable
+        case "timed_out": self = .timedOut
+        case "gone": self = .gone
+        case "not_a_feed": self = .notAFeed
+        case "too_large": self = .tooLarge
+        case "too_many_redirects": self = .tooManyRedirects
+        case "unsupported_address": self = .unsupportedAddress
+        default:
+            let prefix = "http:"
+            guard code.hasPrefix(prefix) else { return nil }
+            let digits = code.dropFirst(prefix.count)
+            guard (1...3).contains(digits.count), digits.allSatisfy(\.isASCII), digits.allSatisfy(\.isNumber),
+                  let status = Int(digits)
+            else { return nil }
+            self = .httpStatus(status)
+        }
+    }
+}
+
 /// A source of one library (spec N03, section 4). Its operations become
 /// public in RD04 and RD05; until then only the package and its tests use it.
 struct Source: Sendable, Hashable {
@@ -43,8 +105,15 @@ struct Source: Sendable, Hashable {
     var etag: String?
     var lastModified: String?
     var lastSuccessAt: Date?
+    /// Free text; a collection writes a `CollectionFailure` code.
     var lastError: String?
     var updatedAt: Date
+
+    /// The reason of the last failed collection, when `lastError` holds a
+    /// code this build knows.
+    var lastFailure: CollectionFailure? {
+        lastError.flatMap(CollectionFailure.init(code:))
+    }
 }
 
 extension Source: Codable, FetchableRecord, PersistableRecord {

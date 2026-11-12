@@ -99,7 +99,7 @@ Requirements are numbered N01–N13. Later issues freeze their scope against the
 
 - Foreground: on entering the app, refresh when the last refresh is older than the chosen interval (15 / 30 / 60 minutes / manual only; default 30). Pull to refresh at any time. A single category or source can be refreshed on its own.
 - Background: the app registers for background refresh. The system decides when it runs and gives no guarantee. Background work collects and translates titles only, and sends no notification. (Milestone M2.)
-- Collection rules: a cap on simultaneous requests; a 20-second timeout per request; a 10 MB response limit; at most 5 redirects, http / https only; conditional requests (ETag / Last-Modified); one failing source does not affect the others.
+- Collection rules: a cap on simultaneous requests; a 20-second limit on each collection's whole exchange, redirects included (parsing comes after it and is not counted); a 10 MB response limit, counted on the decoded body; at most 5 redirects, http / https only; conditional requests (ETag / Last-Modified); one failing source does not affect the others.
 - What counts as new: the identifier the feed provides; without one, the link; without that, a hash of title and date. Within a category, two items with the same link keep only the first.
 - Time: the published time from the feed. When it is missing, unparseable or later than the moment of collection, the time the item was first seen is used and never changes afterwards.
 - Retention: articles are kept 30 days by default (7 / 30 / 90 days / forever), counted from the time an article was first seen, not from its published time. Starred articles are never cleaned up. A cleaned-up item keeps its identifier, so it does not come back as new while it is still in the feed. The identifier's last-seen time is refreshed by every collection in which the feed still lists the item, and the identifier is deleted once the feed has not listed it for 30 days.
@@ -219,7 +219,7 @@ Primary keys are UUID strings. Times are UTC. Configuration entities carry `upda
 | --- | --- |
 | `category` | id, name, sort_order, icon, overview (`auto` / `manual` / `off`), updated_at |
 | `source` | id, category_id, kind (`feed` / `github` / `huggingface` / `webpage`), url, name, site_url, paused, auto_translate (inherit / on / off), body_mode, translate_page (web pages only), etag, last_modified, last_success_at, last_error, updated_at |
-| `article` | id, source_id, external_id, url, title, excerpt, author, image_url, published_at, first_seen_at, language, read_at, starred_at |
+| `article` | id, source_id, external_id, url, title, excerpt, author, image_url, published_at, first_seen_at, language, read_at, starred_at, content_html (the feed's own content, else its description, kept as text and read only when the article is opened) |
 | `article_body` | article_id, origin (`feed` / `extracted`), blocks (JSON: paragraphs, headings, images …), fetched_at |
 | `translation` | article_id, locale, title, excerpt, body_blocks (JSON, may be partial), state, error, model, updated_at |
 | `page_text` | text_hash, locale, translated, model, updated_at, last_used_at (cache for in-place page translation) |
@@ -270,7 +270,7 @@ No keys and no reading state.
 
 ## 6 Technical approach
 
-SwiftUI plus one local Swift package, with few dependencies. The libraries and the reasons for them are in [open-source.md](open-source.md): FeedKit for feed parsing, GRDB for SQLite, SwiftSoup for HTML, Mozilla's Readability script for main-text extraction, and a small model client of our own.
+SwiftUI plus one local Swift package, with few dependencies. The libraries and the reasons for them are in [open-source.md](open-source.md): GRDB for SQLite, SwiftSoup for HTML, Mozilla's Readability script for main-text extraction, and a small model client of our own. Feeds are parsed by the package itself, on the system's streaming XML parser and JSON decoder: FeedKit, chosen first, failed a whole feed over one bad value and took time growing with the square of the document's size (RD04).
 
 ```
 ios/
@@ -362,6 +362,8 @@ Handling of the repository (settled on 2026-11-11; section 11, items 1 and 2):
 - Hugging Face's public API can list an account's models by creation time: not verified. The old connector sorted by last modification.
 - All four of the owner's current model services accept the OpenAI-compatible chat interface and can be asked for JSON output: not verified. The old system called them through the Responses interface, which is no evidence for the chat interface. Each preset is checked against its real service (RD13) before it is called supported.
 - None of the four libraries has been built for this project; open-source.md records that nothing was cloned or built. RD01 builds all four for iOS 26 and runs one representative call of each.
+- The package's own feed parser (RD04) has been tested on synthetic feeds only; it has not met real feeds yet. RD05's preview is the first place it does.
+- Known limit (RD04, accepted by the owner on 2026-11-12): a feed document built on purpose can still make the system XML or JSON parser stall for seconds to minutes, or crash the app; the guards close the shapes that were found, not the class. Ordinary feeds are unaffected. To be revisited before any wider distribution (section 8).
 - Static extraction (N12) relies on the system web view still running the app's own script when page JavaScript is disabled and subresource loading is off, and on the app being able to refuse every later navigation. That is taken from Apple's documentation and has not been tried.
 - How often main-text extraction succeeds on the sites the owner actually follows, adult-partition sites in particular, is unknown. On failure the app falls back to the excerpt and the original page.
 - Whether a model refuses adult-partition content depends on the service the owner chooses. The app only reports the refusal.

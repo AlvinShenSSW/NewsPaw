@@ -20,6 +20,7 @@ public enum FeedParser {
     ///     image addresses are resolved.
     /// - Returns: the feed, or `nil` when the document is not a feed.
     public static func parse(_ data: Data, charset: String?, baseURL: URL) -> ParsedFeed? {
+        let data = trimmingSpaceBeforeDeclaration(data)
         if firstSignificantByte(of: data) == UInt8(ascii: "{") {
             let json = data.starts(with: [0xEF, 0xBB, 0xBF]) ? Data(data.dropFirst(3)) : data
             return JSONFeedReader.read(json, baseURL: baseURL)
@@ -120,6 +121,20 @@ public enum FeedParser {
 
     private static func isXMLSpace(_ byte: UInt8) -> Bool {
         byte == 0x20 || byte == 0x09 || byte == 0x0A || byte == 0x0D
+    }
+
+    /// `data` without the XML white space between an optional UTF-8
+    /// byte-order mark and an XML declaration: the system parser refuses a
+    /// declaration that is not at the very start, and some servers send a
+    /// newline before it (RD05).
+    static func trimmingSpaceBeforeDeclaration(_ data: Data) -> Data {
+        let start = data.startIndex + (data.starts(with: [0xEF, 0xBB, 0xBF]) ? 3 : 0)
+        var index = start
+        while index < data.endIndex, isXMLSpace(data[index]) {
+            index += 1
+        }
+        guard index > start, data[index...].starts(with: Array("<?xml".utf8)) else { return data }
+        return Data(data[data.startIndex..<start] + data[index...])
     }
 
     /// The first byte after a UTF-8 byte-order mark and white space.

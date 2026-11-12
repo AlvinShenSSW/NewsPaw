@@ -6,7 +6,7 @@ import GRDB
 // the row.
 
 /// What a source is (spec N03).
-enum SourceKind: String, Sendable, Codable, CaseIterable {
+public enum SourceKind: String, Sendable, Codable, CaseIterable {
     case feed
     case github
     case huggingface
@@ -14,14 +14,14 @@ enum SourceKind: String, Sendable, Codable, CaseIterable {
 }
 
 /// Whether a source's titles are translated automatically (spec N03).
-enum AutoTranslate: String, Sendable, Codable, CaseIterable {
+public enum AutoTranslate: String, Sendable, Codable, CaseIterable {
     case inherit
     case on
     case off
 }
 
 /// How a source's article bodies are obtained (spec N03, N05).
-enum BodyMode: String, Sendable, Codable, CaseIterable {
+public enum BodyMode: String, Sendable, Codable, CaseIterable {
     case auto
     case page
     case feed
@@ -89,35 +89,36 @@ public enum CollectionFailure: Sendable, Hashable {
     }
 }
 
-/// A source of one library (spec N03, section 4). Its operations become
-/// public in RD04 and RD05; until then only the package and its tests use it.
-struct Source: Sendable, Hashable {
-    var id: UUID
-    var categoryID: UUID
-    var kind: SourceKind
-    var url: String
-    var name: String
-    var siteURL: String?
-    var paused: Bool
-    var autoTranslate: AutoTranslate
-    var bodyMode: BodyMode
-    var translatePage: Bool
-    var etag: String?
-    var lastModified: String?
-    var lastSuccessAt: Date?
+/// A source of one library (spec N03, section 4), public for reading.
+/// Change it through the `Library` source methods; `url` holds the
+/// address's normal form (`SourceAddress`).
+public struct Source: Sendable, Hashable, Identifiable {
+    public internal(set) var id: UUID
+    public internal(set) var categoryID: UUID
+    public internal(set) var kind: SourceKind
+    public internal(set) var url: String
+    public internal(set) var name: String
+    public internal(set) var siteURL: String?
+    public internal(set) var paused: Bool
+    public internal(set) var autoTranslate: AutoTranslate
+    public internal(set) var bodyMode: BodyMode
+    public internal(set) var translatePage: Bool
+    public internal(set) var etag: String?
+    public internal(set) var lastModified: String?
+    public internal(set) var lastSuccessAt: Date?
     /// Free text; a collection writes a `CollectionFailure` code.
-    var lastError: String?
-    var updatedAt: Date
+    public internal(set) var lastError: String?
+    public internal(set) var updatedAt: Date
 
     /// The reason of the last failed collection, when `lastError` holds a
     /// code this build knows.
-    var lastFailure: CollectionFailure? {
+    public var lastFailure: CollectionFailure? {
         lastError.flatMap(CollectionFailure.init(code:))
     }
 }
 
 extension Source: Codable, FetchableRecord, PersistableRecord {
-    static let databaseTableName = "source"
+    public static let databaseTableName = "source"
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -137,7 +138,7 @@ extension Source: Codable, FetchableRecord, PersistableRecord {
         case updatedAt = "updated_at"
     }
 
-    static func databaseUUIDEncodingStrategy(for column: String) -> DatabaseUUIDEncodingStrategy {
+    public static func databaseUUIDEncodingStrategy(for column: String) -> DatabaseUUIDEncodingStrategy {
         .lowercaseString
     }
 }

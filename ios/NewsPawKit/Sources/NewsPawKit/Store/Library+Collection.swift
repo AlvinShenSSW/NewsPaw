@@ -91,7 +91,9 @@ extension Library {
     /// dropped; items without a link are never duplicates of each other —
     /// then inserts the survivors in reverse feed order, so that the table's
     /// row order follows the feed's age. Returns the number of new articles.
-    private static func insertArticles(
+    /// Called inside the caller's transaction: the collection's, or the one
+    /// that adds a feed source with its first articles (RD05).
+    static func insertArticles(
         _ items: [ParsedItem], sourceKey: String, categoryKey: String, now: Date, in db: Database
     ) throws -> Int {
         let linkHeld = try db.makeStatement(sql: linkHeldSQL)

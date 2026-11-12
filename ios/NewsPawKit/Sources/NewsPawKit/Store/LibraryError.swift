@@ -11,12 +11,22 @@ public enum LibraryError: Error, Sendable, Equatable {
     case missing
     /// A source with the same address already exists in this library.
     case duplicateAddress
-    /// A category name is empty once surrounding white space is removed.
+    /// A category or source name is empty once surrounding white space is
+    /// removed.
     case emptyName
-    /// A category name is longer than `Library.maximumCategoryNameLength`.
+    /// A category name is longer than `Library.maximumCategoryNameLength`,
+    /// or a source name longer than `Library.maximumSourceNameLength`.
     case nameTooLong
     /// No category of this library has the given identifier.
     case unknownCategory
+    /// No source of this library has the given identifier.
+    case unknownSource
+    /// The address is refused by the normal form (`SourceAddress`).
+    case invalidAddress(SourceAddressProblem)
+    /// An option that does not belong to the source's kind (a web page has
+    /// no title or body options and is not paused; a feed has no page
+    /// translation).
+    case optionNotApplicable
     /// A reordering is not a permutation of the library's categories.
     case invalidOrder
     /// The category chosen to receive the sources is the one being deleted or

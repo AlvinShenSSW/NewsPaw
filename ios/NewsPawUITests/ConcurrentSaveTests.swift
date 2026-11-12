@@ -1,15 +1,9 @@
 import XCTest
 
-/// RD03 C1, C2: a save that is still running when the user acts again. The
+/// RD03 C2–C5: a save that is still running when the user acts again. The
 /// debug launch key makes the next save wait before it runs; each test fails
 /// as inconclusive if its own steps did not finish well inside that wait.
 final class ConcurrentSaveTests: NewsPawUITestCase {
-    /// Waits `seconds` without polling the app.
-    private func pause(_ seconds: TimeInterval) {
-        guard seconds > 0 else { return }
-        _ = XCTWaiter.wait(for: [XCTestExpectation(description: "the slow save")], timeout: seconds)
-    }
-
     private func requireWithinDelay(since start: Date, delay: TimeInterval, _ what: String) -> Bool {
         let elapsed = Date().timeIntervalSince(start)
         if elapsed < delay - 5 {
@@ -19,39 +13,39 @@ final class ConcurrentSaveTests: NewsPawUITestCase {
         return false
     }
 
-    /// C1: a New Category save that finishes after its editor was cancelled
-    /// does not close a second New Category editor opened meanwhile. (The
-    /// Category Settings variant takes the same path through the editor
-    /// session; it is not run here because each context menu costs the test
-    /// harness about 60 s of idle wait, more than the save's delay.)
-    func testAnEarlierSaveDoesNotCloseAReplacementEditor() {
+    /// While its save runs the editor is locked (RD03 C3–C5): Cancel is not
+    /// enabled, the name field takes no text and an icon tap changes
+    /// nothing. When the save finishes the sheet closes by itself and the
+    /// category has the name and icon it had when Save was tapped.
+    func testTheEditorIsLockedWhileItsSaveRuns() {
         let delay = 25.0
         launchAtFullWidth(slowNextSave: Int(delay))
         openNewCategory()
         let field = app.textFields[AccessibilityID.nameField]
         field.tap()
         field.typeText("Alpha\n")
+        button(AccessibilityID.iconButton("leaf")).tap()
         tapSave()
         let saved = Date()
-        button(AccessibilityID.cancelButton).tap()
-        waitForAbsence(field)
-        showCategoryList()
-        XCTAssertFalse(element(AccessibilityID.categoryRow("Alpha")).exists, "the slow save has not finished yet")
 
-        openNewCategory()
+        XCTAssertFalse(button(AccessibilityID.cancelButton).isEnabled, "Cancel is locked during the save")
+        XCTAssertFalse(field.isEnabled, "the name field is locked during the save")
         field.tap()
-        field.typeText("Beta")
-        guard requireWithinDelay(since: saved, delay: delay, "opening the second editor") else { return }
+        XCTAssertNotEqual(field.value(forKey: "hasKeyboardFocus") as? Bool, true, "the name field takes no focus")
+        XCTAssertEqual(field.value as? String, "Alpha")
+        button(AccessibilityID.iconButton("star")).tap()
+        XCTAssertTrue(button(AccessibilityID.iconButton("leaf")).isSelected, "an icon tap changes nothing")
+        XCTAssertFalse(button(AccessibilityID.iconButton("star")).isSelected)
+        guard requireWithinDelay(since: saved, delay: delay, "the attempts during the save") else { return }
 
-        pause(delay - Date().timeIntervalSince(saved) + 4)
-        XCTAssertTrue(field.exists, "the second editor is still open after the first save finished")
-        XCTAssertEqual(field.value as? String, "Beta", "the second editor keeps its text")
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: delay + 15), .completed, "the sheet closes when the save finishes")
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(saved), delay - 1, "the sheet closed only after the save")
 
+        openCategorySettings("Alpha")
+        XCTAssertEqual(field.value as? String, "Alpha")
+        XCTAssertTrue(button(AccessibilityID.iconButton("leaf")).isSelected, "the icon chosen before Save was stored")
         button(AccessibilityID.cancelButton).tap()
-        waitForAbsence(field)
-        showCategoryList()
-        waitFor(element(AccessibilityID.categoryRow("Alpha")))
-        XCTAssertFalse(element(AccessibilityID.categoryRow("Beta")).exists)
     }
 
     /// C2: while a confirmed deletion is still running, rows cannot be

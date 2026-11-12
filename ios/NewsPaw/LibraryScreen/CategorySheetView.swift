@@ -12,6 +12,9 @@ struct CategorySheetView: View {
 
     var body: some View {
         @Bindable var categories = categories
+        // While a save is queued or running the editor is locked, so
+        // nothing entered then is lost when the sheet closes (RD03 C5).
+        let locked = isSaving || categories.isBusy
         NavigationStack {
             Form {
                 Section {
@@ -28,6 +31,7 @@ struct CategorySheetView: View {
                         }
                         .accessibilityIdentifier(AccessibilityID.nameField)
                         .submitLabel(.done)
+                        .disabled(locked)
                     if categories.draftNameProblem == .tooLong {
                         Label {
                             Text("Use at most \(Library.maximumCategoryNameLength) characters.")
@@ -45,6 +49,7 @@ struct CategorySheetView: View {
                 .listRowBackground(Theme.surface)
                 Section {
                     IconGrid(selection: $categories.draftIcon)
+                        .disabled(locked)
                 } header: {
                     Text("Icon")
                         .foregroundStyle(Theme.secondaryText)
@@ -56,6 +61,7 @@ struct CategorySheetView: View {
                             categories.requestDeletion(id)
                         }
                         .frame(minHeight: Theme.minimumTapTarget)
+                        .disabled(locked)
                         .accessibilityIdentifier(AccessibilityID.deleteCategoryButton)
                     }
                     .listRowBackground(Theme.surface)
@@ -74,6 +80,7 @@ struct CategorySheetView: View {
                         categories.cancelSheet()
                     }
                     .keyboardShortcut(.cancelAction)
+                    .disabled(locked)
                     .accessibilityIdentifier(AccessibilityID.cancelButton)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -84,11 +91,12 @@ struct CategorySheetView: View {
                             isSaving = false
                         }
                     }
-                    .disabled(categories.draftNameProblem != nil || isSaving)
+                    .disabled(categories.draftNameProblem != nil || locked)
                     .accessibilityIdentifier(AccessibilityID.saveButton)
                 }
             }
         }
+        .interactiveDismissDisabled(locked)
     }
 
     private var title: Text {

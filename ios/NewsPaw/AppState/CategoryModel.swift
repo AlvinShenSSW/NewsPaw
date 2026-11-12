@@ -69,11 +69,11 @@ final class CategoryModel {
         self.navigation = navigation
     }
 
-    /// Whether a confirmed deletion is still running. Rows cannot be moved
-    /// meanwhile: the order would still hold the category being deleted and
-    /// storage would refuse it.
-    var isDeleting: Bool {
-        !deletionsStarted.isEmpty
+    /// Whether a category save is queued or running. Meanwhile the open
+    /// editor is locked and rows cannot be moved or deleted: an edit made
+    /// then would be built on a list that is about to change (RD03 C2–C5).
+    var isBusy: Bool {
+        queuedOperations > 0
     }
 
     var activeDialogHost: CategoryDialogHost {

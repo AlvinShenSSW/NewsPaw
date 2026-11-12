@@ -17,7 +17,13 @@ import Foundation
 /// these abbreviations, and in date-only mode they accept any string that
 /// merely starts with a date.
 enum FeedDate {
+    /// The longest string looked at, in UTF-8 bytes, white space included.
+    /// A date is at most 64 bytes once trimmed; the cap keeps a megabyte of
+    /// "date" from being copied first.
+    static let maximumBytes = 1_024
+
     static func parse(_ text: String) -> Date? {
+        guard text.utf8.count <= maximumBytes else { return nil }
         let bytes = Array(text.utf8)
         var start = 0
         var end = bytes.count

@@ -131,10 +131,14 @@ struct StartTagScanTests {
             ("GB2312", .asciiCompatible), ("unicode-1-1-utf-8", .asciiCompatible), ("US-ASCII", .asciiCompatible),
             ("Shift_JIS", .shiftJIS), ("shift-jis", .shiftJIS), ("windows-31j", .shiftJIS), ("MS_Kanji", .shiftJIS), ("x-sjis", .shiftJIS),
             ("Big5", .doubleByte), ("GBK", .doubleByte), ("GB18030", .doubleByte), ("ks_c_5601-1987", .doubleByte), ("windows-949", .doubleByte),
+            // Aliases real feeds use (R16), in the mode the proof shows.
+            ("CP932", .shiftJIS), ("SHIFTJIS", .shiftJIS), ("utf_8", .asciiCompatible), ("iso8859_1", .asciiCompatible),
+            ("Latin-1", .asciiCompatible), ("EUC_JP", .asciiCompatible), ("eucJP", .asciiCompatible), ("koi8r", .asciiCompatible),
+            ("cp936", .doubleByte), ("CP949", .asciiCompatible), ("cp950", .doubleByte),
             // Labels the parser knows as double-byte sets but the list does
             // not hold, and labels nobody knows.
-            ("pck", nil), ("ibm-942", nil), ("x-IBM942", nil), ("IBM-942_P12A-1999", nil), ("CP932", nil), ("ibm-1386", nil),
-            ("cp1386", nil), ("ibm-5471", nil), ("ibm-1373", nil), ("johab", nil), ("SHIFTJIS", nil), ("nonsense-xyz", nil), ("", nil),
+            ("pck", nil), ("ibm-942", nil), ("x-IBM942", nil), ("IBM-942_P12A-1999", nil), ("ibm-1386", nil),
+            ("cp1386", nil), ("ibm-5471", nil), ("ibm-1373", nil), ("johab", nil), ("nonsense-xyz", nil), ("", nil),
             (" Shift_JIS ", nil),
         ]
     )
@@ -145,7 +149,7 @@ struct StartTagScanTests {
     @Test("every label on the list is lowercase, so that matching ignores case exactly")
     func labelTable() {
         #expect(StartTagScan.labels.keys.allSatisfy { $0 == $0.lowercased() })
-        #expect(StartTagScan.labels.count == 210)
+        #expect(StartTagScan.labels.count == 221)
     }
 
     private func declaration(_ text: String, bom: Bool = false) -> StartTagScan.Declaration {

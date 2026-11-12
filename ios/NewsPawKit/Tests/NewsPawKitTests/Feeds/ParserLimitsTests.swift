@@ -175,4 +175,128 @@ struct ParserLimitsTests {
         let read = try #require(parse(Self.itemThenOpen + fewer + "<item><guid>after</guid></item></channel></rss>"))
         #expect(read.items.map(\.externalID) == ["first", "after"])
     }
+
+    // MARK: - R12: a stop due in the namespace-mapping callback
+
+    /// The review's shape (`crash-9884.xml`): after a completed item, four
+    /// nested tags, each with 90 namespace declarations and 90 prefixed
+    /// attributes. The third tag passes the limit of 256 mappings in scope
+    /// inside the mapping callback, where aborting the parser used freed
+    /// memory and ended the process.
+    static func mappingCrashShape() -> String {
+        var document = #"<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>T</title><item><guid>1</guid><title>One</title></item><item><guid>2</guid>"#
+        for level in 0..<4 {
+            document += "<l\(level)" + (0..<90).map { #" xmlns:m\#(level)x\#($0)="u:\#($0)" m\#(level)x\#($0):a\#($0)="v""# }.joined() + ">"
+        }
+        return document
+    }
+
+    @Test("a mapping limit passed inside the mapping callback stops at the next element, without crashing")
+    func mappingLimitInTheMappingCallback() async throws {
+        let shape = Self.mappingCrashShape()
+        let documents = [
+            // The review's 9,884 bytes, cut inside the fourth tag.
+            Data(Array(shape.utf8).prefix(9_884)),
+            Data((shape + "</l3></l2></l1></l0></item><item><guid>3</guid></item></channel></rss>").utf8),
+        ]
+        // The review's crash came with a header charset, so that the cut
+        // document is read a second time.
+        for data in documents {
+            for charset in [nil, "Shift_JIS"] {
+                for _ in 0..<5 {
+                    let feed = try #require(await Task.detached { FeedParser.parse(data, charset: charset, baseURL: fixtureBase) }.value)
+                    #expect(feed.items.map(\.externalID) == ["1"])
+                    #expect(feed.isComplete == false)
+                }
+            }
+        }
+    }
+
+    // MARK: - R13 and R11: attribute-list declarations
+
+    @Test("an enumerated attribute type of 25,000 values is not a feed and does not crash")
+    func enumeratedAttributeType() async {
+        let values = (0..<25_000).map { "v\($0)" }.joined(separator: "|")
+        let body = #"<rss version="2.0"><channel><title>T</title><item><guid>1</guid></item></channel></rss>"#
+        let documents = [
+            #"<?xml version="1.0"?><!DOCTYPE rss [<!ATTLIST item kind (\#(values)) "v0">]>"# + body,
+            // Unterminated: the parser would meet the enumeration all the same.
+            #"<?xml version="1.0"?><!DOCTYPE rss [<!ATTLIST item kind (\#(values)"#,
+        ]
+        for document in documents {
+            let data = Data(document.utf8)
+            #expect(StartTagScan.cutOffset(in: data) == 0)
+            #expect(await Task.detached { FeedParser.parse(data, charset: nil, baseURL: fixtureBase) }.value == nil)
+        }
+    }
+
+    @Test("4,000 default attributes after an error return in milliseconds")
+    func attributeDefaultsAfterAnError() async {
+        let defaults = (0..<4_000).map { #" a\#($0) CDATA "v""# }.joined()
+        let elements = String(repeating: "<x/>", count: 20_000)
+        let data = Data((#"<?xml version="1.0"?><?xml x?><!DOCTYPE rss [<!ATTLIST x\#(defaults)>]><rss version="2.0"><channel><title>T</title>"#
+            + elements + "<item><guid>1</guid></item></channel></rss>").utf8)
+        let start = ContinuousClock.now
+        let feed = await Task.detached { FeedParser.parse(data, charset: nil, baseURL: fixtureBase) }.value
+        let elapsed = ContinuousClock.now - start
+        print("R11 attribute defaults after an error | \(data.count) bytes | \(elapsed)")
+        #expect(feed == nil)
+        #expect(elapsed < .milliseconds(500))
+    }
+
+    // MARK: - R14: JSON that is not UTF-8
+
+    @Test("600 nested JSON objects in UTF-16LE or UTF-32LE reach the collector as not a feed, without crashing")
+    func nestedJSONInWideEncodings() async throws {
+        let depth = 600
+        // U+2200 in a string is the bytes 00 22 (00 00) in these
+        // encodings: a byte pass that ignored the zero bytes would take it
+        // for a quote and stop counting brackets (the review's bypass).
+        let text = #"{"version":"https://jsonfeed.org/version/1","t":"\#u{2200}","items":[],"x":"#
+            + String(repeating: #"{"a":"#, count: depth) + "1" + String(repeating: "}", count: depth) + "}"
+        for encoding in [String.Encoding.utf16LittleEndian, .utf32LittleEndian] {
+            let body = try #require(text.data(using: encoding))
+            let result = try await Task.detached {
+                try await FeedFetcher(transport: FakeTransport.answering(body: body, headers: ["Content-Type": "application/feed+json"]))
+                    .fetch("https://example.invalid/feed.json")
+            }.value
+            #expect(result.failure == .notAFeed, "\(encoding)")
+        }
+    }
+
+    // MARK: - R15: JSON objects with many members
+
+    /// The review's colliding keys: 40 equal bytes, a number, 40 more, the
+    /// number again, 40 more.
+    static func collidingKeys(_ count: Int) -> Data {
+        let edge = String(repeating: "x", count: 40)
+        let middle = String(repeating: "m", count: 40)
+        let keys = (0..<count).map { index -> String in
+            let unique = String(format: "%08d", index)
+            return "\"" + edge + unique + middle + unique + edge + "\":1"
+        }
+        return Data((#"{"version":"https://jsonfeed.org/version/1","items":[{"id":"1"}],"x":{"# + keys.joined(separator: ",") + "}}").utf8)
+    }
+
+    @Test("an object of 80,000 colliding keys is refused in milliseconds")
+    func manyMembers() async {
+        let data = Self.collidingKeys(80_000)
+        let start = ContinuousClock.now
+        let feed = await Task.detached { FeedParser.parse(data, charset: nil, baseURL: fixtureBase) }.value
+        let elapsed = ContinuousClock.now - start
+        print("R15 colliding keys | \(data.count) bytes | \(elapsed)")
+        #expect(feed == nil)
+        #expect(elapsed < .milliseconds(500))
+    }
+
+    @Test("4,096 members in one object are read, 4,097 are not; 4,000 items are array elements, not members")
+    func memberLimit() async throws {
+        let atLimit = Self.collidingKeys(4_096)
+        #expect(try #require(await Task.detached { FeedParser.parse(atLimit, charset: nil, baseURL: fixtureBase) }.value).items.count == 1)
+        let past = Self.collidingKeys(4_097)
+        #expect(await Task.detached { FeedParser.parse(past, charset: nil, baseURL: fixtureBase) }.value == nil)
+        let items = (0..<4_000).map { #"{"id":"\#($0)","title":"Item \#($0)"}"# }.joined(separator: ",")
+        let feed = Data((#"{"version":"https://jsonfeed.org/version/1.1","title":"Many","items":["# + items + "]}").utf8)
+        #expect(try #require(await Task.detached { FeedParser.parse(feed, charset: nil, baseURL: fixtureBase) }.value).items.count == 4_000)
+    }
 }

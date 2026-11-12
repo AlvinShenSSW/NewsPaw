@@ -28,15 +28,29 @@ import Foundation
 ///   name table grows faster than the document (measured: one million
 ///   distinct element names in 9.9 MB, 3 s, against 0.1 s for a quarter of
 ///   that).
+/// - Such a name longer than `maximumNameBytes`: Swift hashes and compares a
+///   string made of a long run of combining marks in time growing with the
+///   square of its length (V1).
 /// - In the document type: an internal entity whose value is longer than
 ///   `maximumEntityValueBytes` or contains `&` (a reference to another
 ///   entity), any attribute-list declaration (the parser applies their
 ///   defaults to every element, at a cost growing with the square of their
-///   number), and more than `maximumDeclarations` declarations. A parameter
+///   number; `StartTagScan` refuses them before parsing, and this callback
+///   stays as a second guard), and more than `maximumDeclarations`
+///   declarations. A parameter
 ///   entity's declaration is counted and its value checked like any other;
 ///   the parser refuses every reference to one in the internal subset
 ///   (measured: no element is delivered, in time proportional to the
 ///   document), so references need no limit of their own.
+///
+/// A stop found in the namespace-mapping callback is not carried out there:
+/// aborting the system parser inside that callback uses freed memory and can
+/// end the process (R12). It is carried out at the start of the element
+/// callback that follows, which the parser delivers for the same tag.
+///
+/// Attribute values the reader compares with keywords (`rel`, `type`,
+/// `isPermaLink`, `medium`) are compared only up to `maximumKeywordBytes`; a
+/// longer value matches nothing.
 final class XMLFeedReader: NSObject, XMLParserDelegate {
     /// Namespace declarations in scope at once. A feed declares a dozen or
     /// two on its root; at 256 a 10 MB document of elements in their scope
@@ -56,6 +70,14 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
     /// this length without `&` are read in time proportional to the number
     /// of references (measured: 2 million references, linear).
     static let maximumEntityValueBytes = 256
+
+    /// The longest name, namespace prefix or namespace address accepted, in
+    /// UTF-8 bytes. A namespace address in a feed is well under a hundred.
+    static let maximumNameBytes = 1_024
+
+    /// The longest attribute value compared with a keyword, in UTF-8 bytes.
+    /// The keywords are a few dozen bytes at most.
+    static let maximumKeywordBytes = 256
 
     enum Namespace {
         static let atom = "http://www.w3.org/2005/Atom"
@@ -99,7 +121,7 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
         let finished = parser.parse()
         // A cut document is incomplete even when the part before the cut
         // happens to be well-formed (the tag came after the root's end).
-        reader.result.wellFormed = finished && !reader.refusedRoot && cut == nil
+        reader.result.wellFormed = finished && !reader.refusedRoot && !reader.stopPending && cut == nil
         reader.result.rootRefused = reader.refusedRoot
         if reader.refusedRoot {
             reader.result.format = nil
@@ -170,6 +192,9 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
     /// Set once reading has been stopped at a limit; later events are
     /// ignored.
     private var stopped = false
+    /// Set in the namespace-mapping callback when a limit is passed there;
+    /// the stop is carried out by the next element callback.
+    private var stopPending = false
     private var mappingsInScope = 0
     private var names = Set<String>()
     private var declarations = 0
@@ -182,10 +207,18 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
     }
 
     /// Records `name` among the document's distinct names; stops reading
-    /// and returns false when that makes too many.
-    private func note(_ name: String, _ parser: XMLParser) -> Bool {
-        if names.insert(name).inserted, names.count > Self.maximumDistinctNames {
-            stop(parser)
+    /// and returns false when it is too long or makes too many. With
+    /// `deferred`, the stop is only marked as pending (see `stopPending`).
+    private func note(_ name: String, _ parser: XMLParser, deferred: Bool = false) -> Bool {
+        // `utf8.count` is linear on the bridged strings the parser hands
+        // over (measured: 0.3 ms for 160 KB), and the length is checked
+        // before the name is hashed.
+        if name.utf8.count > Self.maximumNameBytes || (names.insert(name).inserted && names.count > Self.maximumDistinctNames) {
+            if deferred {
+                stopPending = true
+            } else {
+                stop(parser)
+            }
             return false
         }
         return true
@@ -246,18 +279,18 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
     // MARK: - Parser events
 
     func parser(_ parser: XMLParser, didStartMappingPrefix prefix: String, toURI namespaceURI: String) {
-        guard !stopped else { return }
+        guard !stopped, !stopPending else { return }
         mappingsInScope += 1
         guard mappingsInScope <= Self.maximumMappingsInScope else {
-            stop(parser)
+            stopPending = true
             return
         }
-        guard note(prefix, parser), note(namespaceURI, parser) else { return }
+        guard note(prefix, parser, deferred: true), note(namespaceURI, parser, deferred: true) else { return }
         prefixes[prefix, default: []].append(namespaceURI)
     }
 
     func parser(_ parser: XMLParser, didEndMappingPrefix prefix: String) {
-        guard !stopped else { return }
+        guard !stopped, !stopPending else { return }
         mappingsInScope -= 1
         _ = prefixes[prefix]?.popLast()
     }
@@ -266,7 +299,12 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
         _ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
         qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]
     ) {
-        guard !stopped, note(qName ?? elementName, parser) else { return }
+        guard !stopped else { return }
+        if stopPending {
+            stop(parser)
+            return
+        }
+        guard note(qName ?? elementName, parser) else { return }
         for name in attributeDict.keys {
             guard note(name, parser) else { return }
         }
@@ -351,7 +389,7 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
     }
 
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
-        guard !stopped, !stack.isEmpty else { return }
+        guard !stopped, !stopPending, !stack.isEmpty else { return }
         let depth = stack.count
         defer { stack.removeLast() }
 
@@ -379,7 +417,7 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
-        guard !stopped else { return }
+        guard !stopped, !stopPending else { return }
         if let markup {
             markup.markup += Self.escapeMarkup(string, attribute: false)
         } else if let capture, !capture.invalid {
@@ -456,7 +494,7 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
         case "title": startCapture(.title, depth: depth)
         case "link": startCapture(.link, depth: depth)
         case "guid":
-            item?.identifierIsPermalink = attributes["isPermaLink"]?.trimmingCharacters(in: .whitespaces).lowercased() != "false"
+            item?.identifierIsPermalink = keyword(attributes["isPermaLink"], absent: "true") != "false"
             startCapture(.identifier, depth: depth)
         case "description":
             item?.summaryKind = .html
@@ -495,7 +533,7 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
         case "published": startCapture(.date, depth: depth)
         case "updated": startCapture(.fallbackDate, depth: depth)
         case "link":
-            let rel = attributes["rel"]?.trimmingCharacters(in: .whitespaces).lowercased() ?? "alternate"
+            let rel = keyword(attributes["rel"], absent: "alternate")
             if rel == "alternate", item?.link == nil {
                 item?.link = attributes["href"]
             } else if rel == "enclosure", item?.enclosureImage == nil, isImage(type: attributes["type"]) {
@@ -536,7 +574,7 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
                 item?.thumbnail = attributes["url"]
             }
         case "content":
-            let medium = attributes["medium"]?.lowercased()
+            let medium = keyword(attributes["medium"], absent: "")
             if item?.mediaImage == nil, medium == "image" || isImage(type: attributes["type"]) {
                 item?.mediaImage = attributes["url"]
             }
@@ -601,7 +639,10 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
             return
         }
         var tag = "<" + element.name
-        for (name, value) in attributes.sorted(by: { $0.key < $1.key }) {
+        // Sorted by bytes: comparing names as strings costs time growing
+        // with the square of a run of combining marks (V1; 10 MB of
+        // 1 KB names: 1.5 s).
+        for (name, value) in attributes.sorted(by: { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }) {
             tag += " \(name)=\"\(Self.escapeMarkup(value, attribute: true))\""
         }
         tag += ">"
@@ -633,8 +674,17 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
         case text, html, xhtml, unsupported
     }
 
+    /// An attribute value compared with keywords: trimmed and lowercased,
+    /// `absent` when the attribute is missing, and `nil` — matching nothing
+    /// — when it is longer than `maximumKeywordBytes`.
+    private func keyword(_ value: String?, absent: String) -> String? {
+        guard let value else { return absent }
+        guard value.utf8.count <= Self.maximumKeywordBytes else { return nil }
+        return value.trimmingCharacters(in: .whitespaces).lowercased()
+    }
+
     private func atomKind(_ attributes: [String: String]) -> AtomKind {
-        let type = attributes["type"]?.trimmingCharacters(in: .whitespaces).lowercased() ?? "text"
+        guard let type = keyword(attributes["type"], absent: "text") else { return .unsupported }
         switch type {
         case "text", "", "text/plain": return .text
         case "html", "text/html": return .html
@@ -644,11 +694,11 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
     }
 
     private func isAlternate(_ attributes: [String: String]) -> Bool {
-        (attributes["rel"]?.trimmingCharacters(in: .whitespaces).lowercased() ?? "alternate") == "alternate"
+        keyword(attributes["rel"], absent: "alternate") == "alternate"
     }
 
     private func isImage(type: String?) -> Bool {
-        type?.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("image/") == true
+        keyword(type, absent: "")?.hasPrefix("image/") == true
     }
 
     private func isRSS1(_ namespace: String) -> Bool {

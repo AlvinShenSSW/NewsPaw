@@ -15,10 +15,21 @@ enum JSONFeedReader {
     /// sees them.
     static let maximumNesting = 64
 
-    /// The feed, or `nil` when `data` is not JSON, not a JSON Feed, or nested
-    /// deeper than `maximumNesting`.
+    /// The most members of one object. A feed's objects have a few dozen;
+    /// items are array elements, not members. The system parser keys an
+    /// object's members by a hash in which chosen keys collide, at a cost
+    /// growing with the square of their number (R15: 11.3 MB, 23 s).
+    static let maximumMembers = 4_096
+
+    /// The longest object key, in bytes as written. Swift hashes and
+    /// compares a key made of a long run of combining marks in time growing
+    /// with the square of its length (V1).
+    static let maximumKeyBytes = 1_024
+
+    /// The feed, or `nil` when `data` is not JSON, not a JSON Feed, or past
+    /// one of the limits above.
     static func read(_ data: Data, baseURL: URL) -> ParsedFeed? {
-        guard !nestsDeeper(than: maximumNesting, data),
+        guard !exceedsLimits(data),
               let root = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
               let version = root["version"] as? String, version.hasPrefix(versionPrefix)
         else { return nil }
@@ -37,17 +48,34 @@ enum JSONFeedReader {
         )
     }
 
-    /// Whether objects and arrays in `data` nest deeper than `limit`, in one
-    /// pass over the bytes. Brackets inside strings are not counted; a
-    /// backslash in a string escapes the byte after it. Unclosed brackets
-    /// count as open, so a truncated document is judged by the depth it
-    /// reached.
-    static func nestsDeeper(than limit: Int, _ data: Data) -> Bool {
+    /// Whether `data` must not reach the system parser, decided before it
+    /// does. A zero byte means the text is not UTF-8 JSON (UTF-16 and UTF-32
+    /// put one in every ASCII character), which the system parser would
+    /// accept and nest without the limit below (R14). Then, in one pass over
+    /// the bytes: objects and arrays nested deeper than `maximumNesting`, an
+    /// object with more than `maximumMembers` members (`:` outside strings,
+    /// counted per open object), or a key — a string followed by `:` —
+    /// longer than `maximumKeyBytes`. Brackets and colons inside strings are
+    /// not counted; a backslash in a string escapes the byte after it.
+    /// Unclosed brackets count as open, so a truncated document is judged by
+    /// what it reached.
+    static func exceedsLimits(_ data: Data) -> Bool {
         data.withUnsafeBytes { buffer in
+            guard let base = buffer.baseAddress else { return false }
+            if memchr(base, 0, buffer.count) != nil {
+                return true
+            }
+            // Members of each open container; arrays count too, harmlessly
+            // (a `:` in an array is not JSON).
+            var members = [Int](repeating: 0, count: maximumNesting + 1)
             var depth = 0
             var inString = false
             var escaped = false
-            for byte in buffer {
+            var stringStart = 0
+            // The length of the string just closed, while only white space
+            // has followed it.
+            var closedString: Int?
+            for (index, byte) in buffer.enumerated() {
                 if inString {
                     if escaped {
                         escaped = false
@@ -55,23 +83,40 @@ enum JSONFeedReader {
                         escaped = true
                     } else if byte == UInt8(ascii: "\"") {
                         inString = false
+                        closedString = index - stringStart
                     }
                     continue
                 }
                 switch byte {
                 case UInt8(ascii: "\""):
                     inString = true
-                case UInt8(ascii: "{"), UInt8(ascii: "["):
-                    depth += 1
-                    if depth > limit {
+                    stringStart = index + 1
+                    closedString = nil
+                case UInt8(ascii: " "), UInt8(ascii: "\t"), UInt8(ascii: "\n"), UInt8(ascii: "\r"):
+                    break
+                case UInt8(ascii: ":"):
+                    if let length = closedString, length > maximumKeyBytes {
                         return true
                     }
+                    closedString = nil
+                    members[depth] += 1
+                    if members[depth] > maximumMembers {
+                        return true
+                    }
+                case UInt8(ascii: "{"), UInt8(ascii: "["):
+                    closedString = nil
+                    depth += 1
+                    if depth > maximumNesting {
+                        return true
+                    }
+                    members[depth] = 0
                 case UInt8(ascii: "}"), UInt8(ascii: "]"):
+                    closedString = nil
                     // A closer without an opener is invalid JSON; never
                     // letting it lower the count keeps the check conservative.
                     depth = max(0, depth - 1)
                 default:
-                    break
+                    closedString = nil
                 }
             }
             return false

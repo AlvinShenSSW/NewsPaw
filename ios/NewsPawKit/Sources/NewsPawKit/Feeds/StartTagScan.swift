@@ -37,6 +37,12 @@ import Foundation
 /// document whose declaration cannot be read exactly, or that is in UTF-16,
 /// UTF-32 or EBCDIC, is cut at its first byte, so it is not a feed: its tags
 /// cannot be found reliably byte by byte.
+///
+/// A document type whose internal subset holds an attribute-list declaration
+/// is cut at the first byte too, so the parser never sees it: an enumerated
+/// type of some twenty thousand values overflows the parser's stack (R13),
+/// and many default attributes make every later element slow, even after an
+/// error (R11).
 enum StartTagScan {
     /// The most attributes, namespace declarations included, accepted on one
     /// start tag. Real feeds use a few dozen at most (the root's namespace
@@ -117,12 +123,18 @@ enum StartTagScan {
             // EUC-JP: every byte of a multibyte character is 0x8E, 0x8F or
             // 0xA1 and above.
             "cseucpkdfmtjapanese", "euc-jp", "x-euc-jp",
+            // Aliases seen in feeds, outside the WHATWG list, each proven
+            // like the rest.
+            "utf_8", "iso8859_1", "latin-1", "euc_jp", "eucjp", "koi8r",
+            // The parser reads cp949 as strict EUC-KR, like euc-kr below
+            // (proven: 0x81 is a single byte).
+            "cp949",
             // The system parser reads these as strict EUC-KR and EUC-CN,
             // whose characters use only bytes 0xA1 and above, and 0x81–0xA0
             // as single bytes (measured), unlike the web.
             "cseuckr", "euc-kr", "csgb2312", "gb2312", "gb_2312",
         ]
-        let shiftJIS = ["csshiftjis", "ms932", "ms_kanji", "shift-jis", "shift_jis", "sjis", "windows-31j", "x-sjis"]
+        let shiftJIS = ["csshiftjis", "ms932", "ms_kanji", "shift-jis", "shift_jis", "sjis", "windows-31j", "x-sjis", "cp932", "shiftjis"]
         let doubleByte = [
             // GBK and gb18030
             "chinese", "csiso58gb231280", "gb_2312-80", "gbk", "iso-ir-58", "x-gbk", "gb18030",
@@ -131,6 +143,8 @@ enum StartTagScan {
             // The web's EUC-KR labels, read as windows-949
             "csksc56011987", "iso-ir-149", "korean", "ks_c_5601-1987", "ks_c_5601-1989", "ksc5601",
             "ksc_5601", "windows-949",
+            // Aliases seen in feeds, proven like the rest.
+            "cp936", "cp950",
         ]
         for label in asciiCompatible { table[label] = .asciiCompatible }
         for label in shiftJIS { table[label] = .shiftJIS }
@@ -138,10 +152,17 @@ enum StartTagScan {
         return table
     }()
 
+    /// The longest label looked up, in UTF-8 bytes. The longest in `labels`
+    /// is 19.
+    static let maximumLabelBytes = 64
+
     /// The byte mode for a declared encoding label; `nil` for a label not in
-    /// `labels`.
+    /// `labels`. A label longer than `maximumLabelBytes` is refused before it
+    /// is lowercased or hashed: Swift does both in time growing with the
+    /// square of a long run of combining marks (V1).
     static func mode(forLabel label: String) -> ByteMode? {
-        labels[label.lowercased()]
+        guard label.utf8.count <= maximumLabelBytes else { return nil }
+        return labels[label.lowercased()]
     }
 
     /// What the document's XML declaration says, read exactly as XML writes
@@ -243,6 +264,13 @@ enum StartTagScan {
             case notWellFormed
         }
 
+        private enum DocumentType {
+            case ended(at: Int)
+            case notWellFormed
+            /// It holds an attribute-list declaration.
+            case refused
+        }
+
         private static let lessThan = UInt8(ascii: "<")
         private static let greaterThan = UInt8(ascii: ">")
         private static let slash = UInt8(ascii: "/")
@@ -266,8 +294,11 @@ enum StartTagScan {
                         guard let end = findCDATAEnd(from: open + 9) else { return nil }
                         index = end + 3
                     } else if has("<!DOCTYPE", at: open) {
-                        guard let end = skipDocumentType(from: open + 9) else { return nil }
-                        index = end
+                        switch skipDocumentType(from: open + 9) {
+                        case .ended(let end): index = end
+                        case .notWellFormed: return nil
+                        case .refused: return 0
+                        }
                     } else {
                         return nil
                     }
@@ -323,17 +354,18 @@ enum StartTagScan {
         /// Skips the rest of `<!DOCTYPE`: an external identifier whose
         /// literals may hold anything, then an internal subset whose
         /// declarations' literals, comments and processing instructions may
-        /// hold `]` and `>`. Returns the index after the closing `>`.
-        private func skipDocumentType(from start: Int) -> Int? {
+        /// hold `]` and `>`. Ends after the closing `>`; refused at an
+        /// attribute-list declaration.
+        private func skipDocumentType(from start: Int) -> DocumentType {
             let count = bytes.count
             var index = start
             while index < count {
                 let byte = bytes[index]
                 if byte == Self.quote || byte == Self.apostrophe {
-                    guard let close = find(byte, from: index + 1) else { return nil }
+                    guard let close = find(byte, from: index + 1) else { return .notWellFormed }
                     index = close + 1
                 } else if byte == Self.greaterThan {
-                    return index + 1
+                    return .ended(at: index + 1)
                 } else if byte == Self.openBracket {
                     index += 1
                     break
@@ -345,23 +377,25 @@ enum StartTagScan {
                 let byte = bytes[index]
                 switch byte {
                 case Self.quote, Self.apostrophe:
-                    guard let close = find(byte, from: index + 1) else { return nil }
+                    guard let close = find(byte, from: index + 1) else { return .notWellFormed }
                     index = close + 1
+                case Self.lessThan where has("<!ATTLIST", at: index):
+                    return .refused
                 case Self.lessThan where has("<!--", at: index):
-                    guard let end = find("-->", from: index + 4) else { return nil }
+                    guard let end = find("-->", from: index + 4) else { return .notWellFormed }
                     index = end + 3
                 case Self.lessThan where has("<?", at: index):
-                    guard let end = find("?>", from: index + 2) else { return nil }
+                    guard let end = find("?>", from: index + 2) else { return .notWellFormed }
                     index = end + 2
                 case Self.closeBracket:
                     index = skipSpace(from: index + 1)
-                    guard index < count, bytes[index] == Self.greaterThan else { return nil }
-                    return index + 1
+                    guard index < count, bytes[index] == Self.greaterThan else { return .notWellFormed }
+                    return .ended(at: index + 1)
                 default:
                     index = advance(index)
                 }
             }
-            return nil
+            return .notWellFormed
         }
 
         /// The index of the `]]>` that ends a CDATA section, found character

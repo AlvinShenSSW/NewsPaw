@@ -150,14 +150,34 @@ struct TransportLoopbackTests {
         #expect(error as? TransportFailure == .tooLarge)
     }
 
-    @Test("a body that passes 10 MB on the real loader is abandoned")
-    func streamedTooLargeOnTheWire() async throws {
+    @Test("a body announced larger than 10 MB on the real loader is refused")
+    func announcedTooLargeOnTheWire() async throws {
         let big = Data(repeating: 0x61, count: 10 * 1024 * 1024 + 1)
         let server = try LoopbackServer { _, _ in
             LoopbackServer.Reply(headers: ["Content-Type: text/plain", "Content-Length: \(big.count)"], body: big)
         }
         let error = await Self.failure { try await loopbackTransport().fetch(TransportRequest(url: URL(string: server.base + "/big")!)) }
         #expect(error as? TransportFailure == .tooLarge)
+    }
+
+    @Test("a body that streams past 10 MB with no announced length is abandoned on the real loader")
+    func streamedTooLargeOnTheWire() async throws {
+        let big = Data(repeating: 0x61, count: 10 * 1024 * 1024 + 1)
+        let server = try LoopbackServer { _, _ in
+            // No Content-Length: the body ends when the connection closes.
+            LoopbackServer.Reply(headers: ["Content-Type: text/plain"], body: big, announceLength: false)
+        }
+        let transport = loopbackTransport()
+        let error = await Self.failure { try await transport.fetch(TransportRequest(url: URL(string: server.base + "/big")!)) }
+        #expect(error as? TransportFailure == .tooLarge)
+
+        // The same kind of answer within the limit is read to its end.
+        let small = try LoopbackServer { _, _ in
+            LoopbackServer.Reply(headers: ["Content-Type: text/plain"], body: Data(repeating: 0x62, count: 300_000), announceLength: false)
+        }
+        let response = try await transport.fetch(TransportRequest(url: URL(string: small.base + "/small")!))
+        #expect(response.body.count == 300_000)
+        #expect(response.header("Content-Length") == nil)
     }
 
     // MARK: - Criterion 15: nothing a feed mentions is requested

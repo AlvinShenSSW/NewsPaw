@@ -295,11 +295,15 @@ final class LoopbackServer: @unchecked Sendable {
         var status: String
         var headers: [String]
         var body: Data
+        /// When false, no Content-Length is sent and the body ends when the
+        /// connection closes.
+        var announceLength: Bool
 
-        init(_ status: String = "200 OK", headers: [String] = [], body: Data = Data()) {
+        init(_ status: String = "200 OK", headers: [String] = [], body: Data = Data(), announceLength: Bool = true) {
             self.status = status
             self.headers = headers
             self.body = body
+            self.announceLength = announceLength
         }
     }
 
@@ -393,7 +397,7 @@ final class LoopbackServer: @unchecked Sendable {
         for header in reply.headers {
             text += header + "\r\n"
         }
-        if !reply.headers.contains(where: { $0.lowercased().hasPrefix("content-length:") }) {
+        if reply.announceLength, !reply.headers.contains(where: { $0.lowercased().hasPrefix("content-length:") }) {
             text += "Content-Length: \(reply.body.count)\r\n"
         }
         text += "Connection: close\r\n\r\n"

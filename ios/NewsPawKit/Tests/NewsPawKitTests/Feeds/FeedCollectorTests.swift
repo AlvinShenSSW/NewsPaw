@@ -64,6 +64,27 @@ struct FeedCollectorTests {
         #expect(try await fixture.storedSource().lastSuccessAt == fixture.clock.now())
     }
 
+    @Test("items without links collected twice add nothing the second time: their identity alone decides")
+    func secondCollectionWithoutLinks() async throws {
+        let fixture = try await CollectionFixture.make()
+        defer { fixture.remove() }
+        let collector = FeedCollector(transport: feedResponse(rss("""
+            <item><guid>no-link-1</guid><title>One</title></item>
+            <item><guid>no-link-2</guid><title>Two</title></item>
+            <item><title>Hashed, with neither guid nor link</title><pubDate>Tue, 10 Nov 2026 08:00:00 GMT</pubDate></item>
+            """)))
+        #expect(try await collector.collect(fixture.source.id, in: fixture.library) == .collected(newArticles: 3, complete: true))
+        let before = try await fixture.articles()
+        #expect(before.allSatisfy { $0.url == nil })
+        fixture.clock.advance(seconds: 3600)
+
+        let outcome = try await collector.collect(fixture.source.id, in: fixture.library)
+
+        #expect(outcome == .collected(newArticles: 0, complete: true))
+        #expect(try await rowCounts(fixture.library)["article"] == 3)
+        #expect(try await fixture.articles() == before)
+    }
+
     @Test("stored validators are sent on the next request unchanged and replaced after a 200")
     func validators() async throws {
         let fixture = try await CollectionFixture.make()

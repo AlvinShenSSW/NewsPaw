@@ -42,66 +42,83 @@ final class RefreshScreenshotTests: NewsPawUITestCase {
             let distance = min(600, window.maxY - status.frame.midY - 20)
             start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: distance)), withVelocity: .slow, thenHoldForDuration: 1)
         }
+        /// A sidebar row, scrolled to in the sidebar pane (the base class's
+        /// helper swipes the slide-over or the window).
+        func revealInSidebar(_ row: XCUIElement) -> XCUIElement {
+            let pane = element(AccessibilityID.sidebarPane)
+            guard pane.exists else { return scrollTo(row) }
+            var swipes = 0
+            while !(row.waitForExistence(timeout: 2) && row.isHittable), swipes < 5 {
+                pane.swipeUp()
+                swipes += 1
+            }
+            return waitFor(row)
+        }
         func waitForLabel(_ predicate: String) {
             let shown = XCTNSPredicateExpectation(predicate: NSPredicate(format: predicate), object: element(AccessibilityID.todayStatus))
             _ = XCTWaiter.wait(for: [shown], timeout: timeout)
         }
 
         // "Not updated yet" is not captured: a UI-test library is empty at
-        // its first launch, whose entry refresh then records a time.
-        launch(arguments: arguments)
-        // On iPad in landscape, where the sidebar is a pane beside Today, so
-        // that "Updating…" can be captured while the category list is used.
-        let orientation: UIDeviceOrientation = isPad ? .landscapeLeft : .portrait
-        rotate(orientation)
+        // its first launch, whose entry refresh then records a time. The
+        // set-up is made at the default text size, where the shared helpers
+        // find the sidebar's buttons without scrolling.
+        launch(arguments: variant == "largest-text" ? [] : arguments)
+        rotate(.portrait)
         requireFullWidth()
-        let category = variant == "zh" ? "世界" : "World"
-        createCategory(category, icon: "globe")
-        addSource("https://sequence.example.invalid/rss.xml", to: category)
-        addSource("https://slowfeeds.example.invalid/slow.xml", to: category)
+        let world = variant == "zh" ? "世界" : "World"
+        let tech = variant == "zh" ? "科技" : "Tech"
+        createCategory(world, icon: "globe")
+        createCategory(tech, icon: "cpu")
+        addSource("https://sequence.example.invalid/rss.xml", to: world)
+        addSource("https://slowfeeds.example.invalid/slow.xml", to: tech)
+
+        // Relaunched, every category is collapsed. On iPad "Updating…" is
+        // captured in landscape, where the sidebar is a pane beside Today;
+        // the rest in portrait, where the pulls were measured to work.
+        app.terminate()
+        launch(arguments: arguments)
+        rotate(isPad ? .landscapeLeft : .portrait)
+        requireFullWidth()
         showToday()
         waitFor(element(AccessibilityID.todayStatus))
         capture("today-before-pull")
 
-        // "Updating…" while the slow source, refreshed from its collapsed
-        // category's menu, is collected for three seconds. (During a pull,
-        // or with the row's indicator on screen, the harness waits for the
-        // app to be idle before it can look.)
-        // On the iPhone the category list is another tab, and switching
-        // tabs costs the harness about 2 s, so the state is captured on iPad
-        // only, where the sidebar pane is beside Today.
+        // "Updating…" while the slow source, refreshed from its category's
+        // menu, is collected for three seconds. On the iPhone the category
+        // list is another tab, and switching tabs costs the harness about
+        // 2 s, so the state is captured on iPad only.
         if isPad {
-            collapse(category)
-            showToday()
-            waitFor(element(AccessibilityID.categoryRow(category))).press(forDuration: 1.2)
+            revealInSidebar(element(AccessibilityID.categoryRow(tech))).press(forDuration: 1.2)
             waitFor(app.buttons[variant == "zh" ? "刷新" : "Refresh"].firstMatch).tap()
             waitForLabel("label BEGINSWITH 'Updating' OR label BEGINSWITH '正在更新'")
             capture("today-updating")
             waitForLabel("NOT (label BEGINSWITH 'Updating' OR label BEGINSWITH '正在更新')")
+            rotate(.portrait)
+            requireFullWidth()
+            showToday()
         }
 
-        // The sequenced source fails on its second request.
+        // The sequenced source's counter starts again in the relaunched
+        // process: its first request succeeds, its second fails.
+        pull()
+        waitForLabel("NOT (label BEGINSWITH 'Updating' OR label BEGINSWITH '正在更新')")
+        capture("today-updated")
         pull()
         waitFor(button(AccessibilityID.failedSourcesButton))
         waitForLabel("NOT (label BEGINSWITH 'Updating' OR label BEGINSWITH '正在更新')")
         capture("today-updated-one-failed")
 
-        // The third request succeeds.
-        pull()
-        waitForAbsence(button(AccessibilityID.failedSourcesButton))
-        waitForLabel("NOT (label BEGINSWITH 'Updating' OR label BEGINSWITH '正在更新')")
-        capture("today-updated")
-
         // Settings → Refresh.
         app.terminate()
         launch(arguments: arguments)
-        rotate(orientation)
+        rotate(.portrait)
         if app.tabBars.firstMatch.exists {
             app.tabBars.buttons.element(boundBy: 3).tap()
         } else {
             openSidebarIfNeeded()
             // Below the fold at the largest text size.
-            scrollTo(element(AccessibilityID.settingsRow)).tap()
+            revealInSidebar(element(AccessibilityID.settingsRow)).tap()
             waitForAbsence(element(AccessibilityID.slideOverPanel))
         }
         capture("settings")

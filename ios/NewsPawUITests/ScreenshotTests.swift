@@ -104,19 +104,29 @@ final class ScreenshotTests: NewsPawUITestCase {
         let category = variant == "zh" ? "世界" : "World"
         createCategory(category, icon: "globe")
 
-        // The sheet's outcomes.
+        // The sheet's outcomes, each in a fresh sheet: at the largest text
+        // size an address overflows the field, and editing it in place is
+        // not reliable from a test.
+        func freshSheet() {
+            button(AccessibilityID.cancelButton).tap()
+            waitForAbsence(app.textFields[AccessibilityID.addressField])
+            openAddSource()
+        }
         openAddSource()
         capture("add-address")
         detect("https://twofeeds.example.invalid/")
         waitFor(element(AccessibilityID.confirmAddress))
         capture("add-confirm-page-with-feeds")
         goBack()
+        freshSheet()
         detect("https://nofeed.example.invalid/")
         scrollTo(element(AccessibilityID.noFeedMessage))
         capture("add-no-feed")
+        freshSheet()
         detect("forbidden.example.invalid")
         scrollTo(element(AccessibilityID.failureMessage))
         capture("add-failure")
+        freshSheet()
         detect("https://feed.example.invalid/rss.xml")
         waitFor(element(AccessibilityID.confirmAddress))
         capture("add-confirm-feed")

@@ -251,6 +251,7 @@ final class SourceListTests: NewsPawUITestCase {
         launchAtFullWidth()
         createCategory("World")
         addSource(feed, to: "World")
+        expand("World")
         let defaultHeight = waitFor(sourceRow("Fixture Feed")).frame.height
         app.terminate()
         launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])

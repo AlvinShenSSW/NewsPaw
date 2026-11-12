@@ -1,0 +1,117 @@
+import XCTest
+
+/// RD03 C2–C5: a save that is still running when the user acts again. The
+/// debug launch key makes the next save wait before it runs; each test fails
+/// as inconclusive if its own steps did not finish well inside that wait.
+final class ConcurrentSaveTests: NewsPawUITestCase {
+    private func requireWithinDelay(since start: Date, delay: TimeInterval, _ what: String) -> Bool {
+        let elapsed = Date().timeIntervalSince(start)
+        if elapsed < delay - 5 {
+            return true
+        }
+        XCTFail("inconclusive: \(what) took \(Int(elapsed)) s, not well inside the \(Int(delay)) s save")
+        return false
+    }
+
+    /// While its save runs the editor is locked (RD03 C3–C5): Cancel is not
+    /// enabled, the name field takes no text and an icon tap changes
+    /// nothing. When the save finishes the sheet closes by itself and the
+    /// category has the name and icon it had when Save was tapped.
+    func testTheEditorIsLockedWhileItsSaveRuns() {
+        let delay = 25.0
+        launchAtFullWidth(slowNextSave: Int(delay))
+        openNewCategory()
+        let field = app.textFields[AccessibilityID.nameField]
+        field.tap()
+        field.typeText("Alpha\n")
+        button(AccessibilityID.iconButton("leaf")).tap()
+        tapSave()
+        let saved = Date()
+
+        XCTAssertFalse(button(AccessibilityID.cancelButton).isEnabled, "Cancel is locked during the save")
+        XCTAssertFalse(field.isEnabled, "the name field is locked during the save")
+        field.tap()
+        XCTAssertNotEqual(field.value(forKey: "hasKeyboardFocus") as? Bool, true, "the name field takes no focus")
+        XCTAssertEqual(field.value as? String, "Alpha")
+        button(AccessibilityID.iconButton("star")).tap()
+        XCTAssertTrue(button(AccessibilityID.iconButton("leaf")).isSelected, "an icon tap changes nothing")
+        XCTAssertFalse(button(AccessibilityID.iconButton("star")).isSelected)
+        guard requireWithinDelay(since: saved, delay: delay, "the attempts during the save") else { return }
+
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: delay + 15), .completed, "the sheet closes when the save finishes")
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(saved), delay - 1, "the sheet closed only after the save")
+
+        openCategorySettings("Alpha")
+        XCTAssertEqual(field.value as? String, "Alpha")
+        XCTAssertTrue(button(AccessibilityID.iconButton("leaf")).isSelected, "the icon chosen before Save was stored")
+        button(AccessibilityID.cancelButton).tap()
+    }
+
+    /// C2: while a confirmed deletion is still running, rows cannot be
+    /// moved, neither with the reorder handle in edit mode nor by a long
+    /// press and drag; no save error follows and the order is unchanged.
+    func testRowsCannotMoveWhileADeletionRuns() {
+        let delay = 90.0
+        launchAtFullWidth()
+        createCategory("Alpha")
+        createCategory("Beta")
+        createCategory("Gamma")
+        app.terminate()
+        launchAtFullWidth(slowNextSave: Int(delay))
+        showCategoryList()
+        waitForOrder(["Alpha", "Beta", "Gamma"])
+
+        deleteInEditMode("Beta")
+        waitFor(app.staticTexts["Delete “Beta”?"])
+        deletionDialogButton("Delete Category").tap()
+        let confirmed = Date()
+        waitForAbsence(element(AccessibilityID.categoryRow("Beta")))
+
+        // Edit mode: the reorder handle.
+        let handle = reorderHandle("Gamma")
+        let handleShown = handle.exists
+        if handleShown {
+            handle.press(forDuration: 0.8, thenDragTo: reorderHandle("Alpha"))
+        }
+        XCTAssertFalse(handleShown, "no reorder handle while a deletion runs")
+        XCTAssertEqual(categoryNamesShown(), ["Alpha", "Gamma"], "the handle did not move a row")
+
+        // Out of edit mode: a long press and drag.
+        setEditing(false)
+        element(AccessibilityID.categoryRow("Gamma"))
+            .press(forDuration: 1.2, thenDragTo: element(AccessibilityID.categoryRow("Alpha")))
+        let menu = app.buttons["Category Settings"]
+        if menu.exists {
+            // The long press opened the row's context menu instead of a
+            // drag; a tap on the bar's title area closes it.
+            app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: window.minX + 150, dy: window.minY + 100))
+                .tap()
+            waitForAbsence(menu)
+            showCategoryList()
+        }
+        XCTAssertEqual(categoryNamesShown(), ["Alpha", "Gamma"], "a long press and drag did not move a row")
+        guard requireWithinDelay(since: confirmed, delay: delay, "the move attempts") else { return }
+
+        // Edit mode cannot be entered again until the deletion has finished;
+        // then the rows can be moved again.
+        let edit = button(AccessibilityID.editButton)
+        XCTAssertEqual(edit.label, "Edit")
+        XCTAssertFalse(edit.isEnabled, "edit mode cannot be entered while a deletion runs")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: edit)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: delay + 30), .completed, "Edit comes back after the deletion")
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(confirmed), delay - 1, "Edit came back only after the save's delay")
+        setEditing(true)
+        waitFor(reorderHandle("Gamma"))
+        XCTAssertFalse(app.alerts["The change could not be saved."].exists, "no save error")
+        XCTAssertFalse(element(AccessibilityID.categoryRow("Beta")).exists, "the deleted category is gone")
+        XCTAssertEqual(categoryNamesShown(), ["Alpha", "Gamma"])
+        setEditing(false)
+
+        relaunch()
+        rotate(.portrait)
+        showCategoryList()
+        waitForOrder(["Alpha", "Gamma"])
+    }
+}

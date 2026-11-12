@@ -26,4 +26,5 @@ jobs:
           persist-credentials: false
       - run: xcodebuild -version && swift --version
       - run: swift test --package-path ios/NewsPawKit
-      - run: xcodebuild build -project ios/NewsPaw.xcodeproj -scheme NewsPaw -destination 'generic/platform=iOS Simulator' -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO
+      - run: xcodebuild build-for-testing -project ios/NewsPaw.xcodeproj -scheme NewsPaw -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/DerivedData" -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO
+      - run: python3 ios/Tools/check_strings.py --derived-data "$RUNNER_TEMP/DerivedData"

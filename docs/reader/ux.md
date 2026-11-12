@@ -41,6 +41,8 @@ A tab bar with four tabs:
 
 Navigation inside a tab is a stack: Library → article list → reading screen → embedded browser.
 
+iPhone uses this structure in every orientation, landscape included; the width rule below applies to iPad only.
+
 ### iPad
 
 A three-column split view: sidebar → article list → reading screen.
@@ -51,6 +53,7 @@ A three-column split view: sidebar → article list → reading screen.
   - 1100 pt and wider — three columns (both iPads in landscape);
   - 700 to 1099 pt — two columns, article list and reading screen; the sidebar slides over from a button, and the list can be hidden to read at full width (both iPads in portrait);
   - narrower than 700 pt — the iPhone structure (Split View, small Stage Manager windows).
+- The app has one window: iPad does not offer a second NewsPaw window.
 - Keyboard: `J` / `K` or arrow keys for next / previous article, `S` star, `U` toggle read, `T` cycle display mode, `R` refresh, `⌘F` search.
 
 ### The partition switch

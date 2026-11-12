@@ -1,6 +1,325 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "About" : {
+      "comment" : "Settings row and screen title: the app's version.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关于"
+          }
+        }
+      }
+    },
+    "Add" : {
+      "comment" : "Accessibility label of the + menu in the Library bar.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加"
+          }
+        }
+      }
+    },
+    "Airplane" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "飞机"
+          }
+        }
+      }
+    },
+    "All Unread" : {
+      "comment" : "Destination name: the list of every unread article.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部未读"
+          }
+        }
+      }
+    },
+    "All caught up" : {
+      "comment" : "Empty state of All Unread (ux section 4).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "都读完了"
+          }
+        }
+      }
+    },
+    "Book" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "书"
+          }
+        }
+      }
+    },
+    "Briefcase" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "公文包"
+          }
+        }
+      }
+    },
+    "Building with columns" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "柱廊建筑"
+          }
+        }
+      }
+    },
+    "Cancel" : {
+      "comment" : "Button: closes a sheet or dialog without saving.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        }
+      }
+    },
+    "Categories" : {
+      "comment" : "Section header above the owner's categories in Library and in the sidebar.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分类"
+          }
+        }
+      }
+    },
+    "Category Settings" : {
+      "comment" : "Context-menu item and sheet title: a category's name, icon and delete.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分类设置"
+          }
+        }
+      }
+    },
+    "Chip" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "芯片"
+          }
+        }
+      }
+    },
+    "Close Sidebar" : {
+      "comment" : "Accessibility label of the icon-only button that closes the slide-over sidebar on iPad.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭边栏"
+          }
+        }
+      }
+    },
+    "Delete Category" : {
+      "comment" : "Destructive button: deletes a category that has no sources, or opens the deletion choices from Category Settings.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除分类"
+          }
+        }
+      }
+    },
+    "Delete Category and Sources" : {
+      "comment" : "Destructive button: deletes a category together with its sources.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除分类及其来源"
+          }
+        }
+      }
+    },
+    "Delete “%@”?" : {
+      "comment" : "Title of the deletion dialog. %@ is the category's name.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除“%@”？"
+          }
+        }
+      }
+    },
+    "Done" : {
+      "comment" : "Button: ends edit mode of the category list.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成"
+          }
+        }
+      }
+    },
+    "Edit" : {
+      "comment" : "Button: puts the category list in edit mode to reorder and delete.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑"
+          }
+        }
+      }
+    },
+    "Film" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "胶片"
+          }
+        }
+      }
+    },
+    "Flask" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "烧瓶"
+          }
+        }
+      }
+    },
+    "Folder" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件夹"
+          }
+        }
+      }
+    },
+    "Fork and knife" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刀叉"
+          }
+        }
+      }
+    },
+    "Game controller" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "游戏手柄"
+          }
+        }
+      }
+    },
+    "Globe" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地球"
+          }
+        }
+      }
+    },
+    "Globe showing Asia and Australia" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示亚洲和澳洲的地球"
+          }
+        }
+      }
+    },
+    "Globe showing Europe and Africa" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示欧洲和非洲的地球"
+          }
+        }
+      }
+    },
+    "Globe showing the Americas" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示美洲的地球"
+          }
+        }
+      }
+    },
+    "Heart" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "心形"
+          }
+        }
+      }
+    },
+    "Icon" : {
+      "comment" : "Header of the category icon grid.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图标"
+          }
+        }
+      }
+    },
     "It was created by a newer version of the app. Update NewsPaw to open it." : {
       "comment" : "Library failure screen: the reason shown when the library was written by a newer version of the app.",
       "localizations" : {
@@ -12,8 +331,85 @@
         }
       }
     },
+    "Laptop" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "笔记本电脑"
+          }
+        }
+      }
+    },
+    "Leaf" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "树叶"
+          }
+        }
+      }
+    },
+    "Library" : {
+      "comment" : "Destination name: the tab that lists All Unread and the categories (ux section 2).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅"
+          }
+        }
+      }
+    },
+    "Move Sources to “%@”" : {
+      "comment" : "Button in the deletion dialog: move the deleted category's sources to the named category, then delete it. %@ is the other category's name.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将来源移到“%@”"
+          }
+        }
+      }
+    },
+    "Music note" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音符"
+          }
+        }
+      }
+    },
+    "Name" : {
+      "comment" : "Placeholder of the category name field and header of its section.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名称"
+          }
+        }
+      }
+    },
+    "New Category" : {
+      "comment" : "Button and sheet title: create a category.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新建分类"
+          }
+        }
+      }
+    },
     "NewsPaw" : {
-      "comment" : "The app's name, shown as the placeholder screen's title. The name is not translated.",
+      "comment" : "The app's name, shown as the sidebar's title. The name is not translated.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -34,6 +430,138 @@
         }
       }
     },
+    "Newspaper" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "报纸"
+          }
+        }
+      }
+    },
+    "No article selected" : {
+      "comment" : "Shown in the reading pane on iPad when no article is open.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未选择文章"
+          }
+        }
+      }
+    },
+    "No articles in this category" : {
+      "comment" : "Empty state of a category's article list.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个分类还没有文章"
+          }
+        }
+      }
+    },
+    "No categories yet" : {
+      "comment" : "Shown in place of the category list when no category exists.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有分类"
+          }
+        }
+      }
+    },
+    "No starred articles" : {
+      "comment" : "Empty state of Starred.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有收藏的文章"
+          }
+        }
+      }
+    },
+    "Nothing new today" : {
+      "comment" : "Empty state of Today (ux section 4).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今天还没有新文章"
+          }
+        }
+      }
+    },
+    "OK" : {
+      "comment" : "Button: dismisses an alert.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "好"
+          }
+        }
+      }
+    },
+    "Paint palette" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调色板"
+          }
+        }
+      }
+    },
+    "Rising chart" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上升的折线图"
+          }
+        }
+      }
+    },
+    "Save" : {
+      "comment" : "Button: saves the category being edited.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存"
+          }
+        }
+      }
+    },
+    "Settings" : {
+      "comment" : "Destination name: the tab and sidebar row for settings (ux section 2).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置"
+          }
+        }
+      }
+    },
+    "Show Sidebar" : {
+      "comment" : "Accessibility label of the icon-only button that slides the sidebar over the content on iPad.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示边栏"
+          }
+        }
+      }
+    },
     "Something went wrong while opening it." : {
       "comment" : "Library failure screen: the reason shown for any other failure. The technical detail, in English, appears below it.",
       "localizations" : {
@@ -41,6 +569,61 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开资料库时出现问题。"
+          }
+        }
+      }
+    },
+    "Sparkles" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "闪光"
+          }
+        }
+      }
+    },
+    "Star" : {
+      "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "星形"
+          }
+        }
+      }
+    },
+    "Starred" : {
+      "comment" : "Destination name: the tab and sidebar row for starred articles (ux section 2).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收藏"
+          }
+        }
+      }
+    },
+    "The categories could not be loaded." : {
+      "comment" : "Shown in place of the category list when reading the categories from storage failed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法载入分类。"
+          }
+        }
+      }
+    },
+    "The change could not be saved." : {
+      "comment" : "Alert title when a category change could not be written to storage. The list then shows what is stored.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保存这项更改。"
           }
         }
       }
@@ -56,13 +639,116 @@
         }
       }
     },
-    "The reader is being built." : {
-      "comment" : "Placeholder screen: the only line shown until the reader's first screens exist.",
+    "This category has %lld sources. Move them to another category, or delete them with it." : {
+      "comment" : "Message of the deletion dialog when the category has sources and another category exists. %lld is the number of sources.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "This category has %lld source. Move it to another category, or delete it with the category."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "This category has %lld sources. Move them to another category, or delete them with it."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "这个分类有 %lld 个来源。可以把它们移到其他分类，或随分类一起删除。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "This category has %lld sources. There is no other category to move them to, so they are deleted with it." : {
+      "comment" : "Message of the deletion dialog when the category has sources and is the only category. %lld is the number of sources.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "This category has %lld source. There is no other category to move it to, so it is deleted with the category."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "This category has %lld sources. There is no other category to move them to, so they are deleted with it."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "这个分类有 %lld 个来源。没有其他分类可以接收，它们会随分类一起删除。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Today" : {
+      "comment" : "Destination name: the tab and sidebar row for today's overviews (ux section 2).",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "阅读器正在开发中。"
+            "value" : "今日"
+          }
+        }
+      }
+    },
+    "Try Again" : {
+      "comment" : "Button: reads the categories from storage again.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试"
+          }
+        }
+      }
+    },
+    "Use at most %lld characters." : {
+      "comment" : "Shown under the category name field when the name is too long. %lld is the limit (100).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多可用 %lld 个字符。"
+          }
+        }
+      }
+    },
+    "Version" : {
+      "comment" : "Label of the app's version in About.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "版本"
           }
         }
       }

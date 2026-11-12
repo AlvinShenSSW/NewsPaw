@@ -2,7 +2,7 @@
 
 Cut on 2026-11-11 from [spec.md](spec.md) (requirements N01–N13, milestones M1 and M2) at the owner's request. It replaces the closed E01–E10 backlog of the Mac + Telegram product.
 
-The backlog authorises no development. An issue is started only when the owner hands it over; it is then worked alone, in dependency order: freeze its design against the requirement numbers, implement, internal check, Kimi K3.1 Pro external gate, final check, leave open.
+The backlog authorises no development. An issue is started only when the owner hands it over; it is then worked alone, in dependency order: freeze its design against the requirement numbers, implement, internal check, external gate (`AGENTS.md` names the model), final check, leave open.
 
 Issue numbers are GitHub issue numbers in `AlvinShenSSW/NewsPaw`. Labels: `reader`, `epic` or `task`, a priority (`P0`–`P2`) and a milestone (`M1`, `M2`, `Later`).
 

@@ -50,7 +50,10 @@ final class RefreshScreenshotTests: NewsPawUITestCase {
         // Manual only through the argument domain, so that the launch does
         // not record a refresh and Today can say "Not updated yet".
         launch(arguments: arguments + ["-refresh_minutes", "0"])
-        rotate(.portrait)
+        // On iPad in landscape, where the sidebar is a pane beside Today, so
+        // that "Updating…" can be captured while the category list is used.
+        let orientation: UIDeviceOrientation = isPad ? .landscapeLeft : .portrait
+        rotate(orientation)
         requireFullWidth()
         let category = variant == "zh" ? "世界" : "World"
         createCategory(category, icon: "globe")
@@ -64,13 +67,18 @@ final class RefreshScreenshotTests: NewsPawUITestCase {
         // category's menu, is collected for three seconds. (During a pull,
         // or with the row's indicator on screen, the harness waits for the
         // app to be idle before it can look.)
-        collapse(category)
-        waitFor(element(AccessibilityID.categoryRow(category))).press(forDuration: 1.2)
-        waitFor(app.buttons[variant == "zh" ? "刷新" : "Refresh"].firstMatch).tap()
-        showToday()
-        waitForLabel("label BEGINSWITH 'Updating' OR label BEGINSWITH '正在更新'")
-        capture("today-updating")
-        waitForLabel("NOT (label BEGINSWITH 'Updating' OR label BEGINSWITH '正在更新')")
+        // On the iPhone the category list is another tab, and switching
+        // tabs costs the harness about 2 s, so the state is captured on iPad
+        // only, where the sidebar pane is beside Today.
+        if isPad {
+            collapse(category)
+            showToday()
+            waitFor(element(AccessibilityID.categoryRow(category))).press(forDuration: 1.2)
+            waitFor(app.buttons[variant == "zh" ? "刷新" : "Refresh"].firstMatch).tap()
+            waitForLabel("label BEGINSWITH 'Updating' OR label BEGINSWITH '正在更新'")
+            capture("today-updating")
+            waitForLabel("NOT (label BEGINSWITH 'Updating' OR label BEGINSWITH '正在更新')")
+        }
 
         // The sequenced source fails on its second request.
         pull()
@@ -86,7 +94,7 @@ final class RefreshScreenshotTests: NewsPawUITestCase {
 
         // Settings → Refresh with the stored values, without the argument.
         relaunch()
-        rotate(.portrait)
+        rotate(orientation)
         if app.tabBars.firstMatch.exists {
             app.tabBars.buttons.element(boundBy: 3).tap()
         } else {

@@ -22,9 +22,9 @@ final class RefreshTests: NewsPawUITestCase {
     /// system's refresh indicator keeps it busy until the refresh action
     /// returns, so "Updating…" cannot be read during a pull of the 3-second
     /// slow source; how long the pull kept the app busy is recorded instead
-    /// (the `.refreshable` assumption of RD06), and "Updating…" is read
-    /// during a refresh started from the category's menu.
-    func testPullShowsUpdatingThenUpdated() {
+    /// (the `.refreshable` assumption of RD06), and on iPad "Updating…" is
+    /// read during a refresh started from the category's menu.
+    func testPullRefreshesAndTheLineShowsUpdating() {
         launchAtFullWidth()
         showToday()
         waitFor(element(AccessibilityID.todayEmpty))
@@ -58,17 +58,29 @@ final class RefreshTests: NewsPawUITestCase {
         waitForLabel(status, "Updated just now")
         XCTAssertFalse(element(AccessibilityID.failedSourcesButton).exists)
 
-        // "Updating…" while the slow source is collected, then "Updated".
-        // From the category's menu with the category collapsed: a row's
-        // activity indicator, even in a tab not shown, keeps the app busy
-        // and the harness waiting until the collection has ended.
+        // "Updating…" while the slow source is collected, then "Updated":
+        // on iPad only. It is started from the collapsed category's menu (a
+        // row's activity indicator would keep the harness waiting until the
+        // collection ended), with Today the destination, which the status
+        // line keeps behind the slide-over. On the iPhone the category list
+        // is another tab, and switching tabs costs the harness about 2 s of
+        // waiting (measured), so the 3-second collection has ended before
+        // Today can be read there.
+        guard isPad else { return }
         collapse("World")
+        if element(AccessibilityID.slideOverPanel).exists {
+            button(AccessibilityID.closeSidebarButton).tap()
+            waitForAbsence(element(AccessibilityID.slideOverPanel))
+        }
+        showToday()
         openMenu(ofCategory: "World")
         waitFor(menuButton("Refresh")).tap()
-        showToday()
         waitForLabel(status, "Updating…", timeout: 5)
         screenshot("today-updating")
         waitForLabel(status, "Updated just now")
+        if element(AccessibilityID.slideOverPanel).exists {
+            button(AccessibilityID.closeSidebarButton).tap()
+        }
     }
 
     /// With the sequenced source made to fail by a pull, "1 source failed"
@@ -319,6 +331,10 @@ final class RefreshTests: NewsPawUITestCase {
         XCTAssertEqual(failures.label, "1 source failed")
         screenshot("largest-text-today")
 
+        // At this size the failing source's row, with its status sentence,
+        // is taller than the slide-over; collapsed, the sidebar's Settings
+        // row is one swipe away.
+        collapse("World")
         openRefreshSettings()
         for picker in [AccessibilityID.refreshIntervalPicker, AccessibilityID.retentionPicker] {
             let row = scrollTo(button(picker))

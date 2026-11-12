@@ -6,10 +6,15 @@ import SwiftUI
 /// category and the suggested list are pushed.
 struct AddSourceView: View {
     @Environment(SourceModel.self) private var sources
+    /// The model this sheet showed. A save or "Show in Library" releases the
+    /// source model's copy in the same change that closes the sheet; this
+    /// one keeps the content on screen while the sheet slides away.
+    @State private var shown: AddSourceModel?
 
     var body: some View {
-        if let model = sources.addSource {
+        if let model = sources.addSource ?? shown {
             AddSourceStack(model: model)
+                .onAppear { shown = model }
         }
     }
 }

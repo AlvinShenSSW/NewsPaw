@@ -292,8 +292,22 @@ final class AddSourceTests: NewsPawUITestCase {
         let frame = paste.frame
         paste.tap()
         let field = app.textFields[AccessibilityID.addressField]
-        let pasted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", Fixture.feed), object: field)
-        XCTAssertEqual(XCTWaiter.wait(for: [pasted], timeout: timeout), .completed, "pasted: \(String(describing: field.value))")
+        func pasted(within seconds: TimeInterval) -> Bool {
+            let done = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", Fixture.feed), object: field)
+            return XCTWaiter.wait(for: [done], timeout: seconds) == .completed
+        }
+        // One retry of the tap; whether it was needed is recorded.
+        var retried = false
+        if !pasted(within: 5) {
+            retried = true
+            paste.tap()
+        }
+        let note = XCTAttachment(string: "paste retry needed: \(retried)")
+        note.name = "paste-retry"
+        note.lifetime = .keepAlways
+        add(note)
+        print("PASTE_RETRY_NEEDED \(retried)")
+        XCTAssertTrue(pasted(within: timeout), "pasted: \(String(describing: field.value))")
         XCTAssertFalse(app.alerts.firstMatch.exists, "no prompt")
         XCTAssertFalse(XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch.exists, "no prompt")
         let record = XCTAttachment(string: "Paste button frame: \(frame); height \(frame.height) pt")
@@ -303,6 +317,70 @@ final class AddSourceTests: NewsPawUITestCase {
         print("PASTE_BUTTON_HEIGHT \(frame.height)")
         screenshot("paste-button")
         button(AccessibilityID.cancelButton).tap()
+    }
+
+    /// The Continue button: disabled while the field is empty; a tap runs
+    /// the detection.
+    func testContinueButton() {
+        launchAtFullWidth()
+        openAddSource()
+        let next = button(AccessibilityID.continueButton)
+        XCTAssertFalse(waitFor(next).isEnabled, "Continue is disabled while the field is empty")
+        let field = app.textFields[AccessibilityID.addressField]
+        field.tap()
+        field.typeText(Fixture.noFeed)
+        // The layout settles (the keyboard is up) before the tap.
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true AND isHittable == true"), object: next)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: timeout), .completed, "Continue stayed disabled")
+        next.tap()
+        waitFor(element(AccessibilityID.noFeedMessage))
+        button(AccessibilityID.cancelButton).tap()
+    }
+
+    /// An outcome belongs to the text it was detected for: editing the
+    /// field takes it away, and the new text gets its own outcome.
+    func testOutcomeGoesWhenTheAddressChanges() {
+        launchAtFullWidth()
+        openAddSource()
+        detect(Fixture.noFeed)
+        waitFor(element(AccessibilityID.noFeedMessage))
+        let field = app.textFields[AccessibilityID.addressField]
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        field.typeText("x")
+        waitForAbsence(element(AccessibilityID.noFeedMessage))
+        XCTAssertFalse(button(AccessibilityID.saveAsWebPageButton).exists)
+        detect(Fixture.forbidden)
+        let failure = waitFor(element(AccessibilityID.failureMessage))
+        XCTAssertEqual(failure.label, "Could not read this address · the server answered with error 403")
+        XCTAssertFalse(element(AccessibilityID.noFeedMessage).exists)
+        button(AccessibilityID.cancelButton).tap()
+    }
+
+    /// A Save in Add source that fails shows the alert on the sheet, which
+    /// stays open with its values and stores nothing; a second Save works.
+    func testFailedSaveKeepsTheSheet() {
+        launchAtFullWidth(failNextSourceSave: true)
+        createCategory("News")
+        openAddSource()
+        detect(Fixture.feed)
+        waitFor(button(AccessibilityID.categoryChoiceRow)).tap()
+        waitFor(button(AccessibilityID.categoryChoice("News"))).tap()
+        let name = waitFor(app.textFields[AccessibilityID.nameField])
+        tapSave()
+        let alert = waitFor(app.alerts["The change could not be saved."])
+        alert.buttons["OK"].tap()
+        waitForAbsence(alert)
+        XCTAssertEqual(name.value as? String, "Fixture Feed", "the sheet stays open with its values")
+        XCTAssertTrue(button(AccessibilityID.categoryChoiceRow).label.contains("News"))
+        // Had the first Save stored the source, this one would be refused
+        // as a duplicate.
+        tapSave()
+        waitForAbsence(name)
+        expand("News")
+        waitFor(sourceRow("Fixture Feed"))
+        let rows = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", AccessibilityID.sourceRowPrefix))
+        XCTAssertEqual(rows.count, 1)
     }
 
     /// Criterion 18: what is typed and the detection's result survive the

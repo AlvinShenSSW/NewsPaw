@@ -337,7 +337,9 @@ class NewsPawUITestCase: XCTestCase {
         // In the slide-over the sidebar scrolls, not what is behind it.
         let panel = self.element(AccessibilityID.slideOverPanel)
         var swipes = 0
-        while !(element.exists && element.isHittable), swipes < 5 {
+        // Each look waits a little, so that an outcome still being shown is
+        // not scrolled past.
+        while !(element.waitForExistence(timeout: 2) && element.isHittable), swipes < 5 {
             if panel.exists {
                 panel.swipeUp()
             } else {
@@ -365,7 +367,7 @@ class NewsPawUITestCase: XCTestCase {
     func expand(_ category: String) {
         showCategoryList()
         let disclosure = scrollTo(button(AccessibilityID.disclosure(category)))
-        if disclosure.value as? String != "Shown" {
+        if !isShown(disclosure) {
             disclosure.tap()
         }
     }
@@ -373,9 +375,14 @@ class NewsPawUITestCase: XCTestCase {
     func collapse(_ category: String) {
         showCategoryList()
         let disclosure = waitFor(button(AccessibilityID.disclosure(category)))
-        if disclosure.value as? String == "Shown" {
+        if isShown(disclosure) {
             disclosure.tap()
         }
+    }
+
+    /// A disclosure control's value, in English or Simplified Chinese.
+    private func isShown(_ disclosure: XCUIElement) -> Bool {
+        ["Shown", "已展开"].contains(disclosure.value as? String ?? "")
     }
 
     /// Opens Source settings from the source's row.

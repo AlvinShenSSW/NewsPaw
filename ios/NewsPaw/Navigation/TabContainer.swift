@@ -32,7 +32,9 @@ struct TabContainer: View {
             Tab("Settings", systemImage: "gearshape", value: AppTab.settings) {
                 NavigationStack(path: $navigation.settingsPath) {
                     SettingsView()
-                        .navigationDestination(for: SettingsRoute.self) { _ in AboutView() }
+                        .navigationDestination(for: SettingsRoute.self) { route in
+                            SettingsDestination(route: route)
+                        }
                 }
             }
         }

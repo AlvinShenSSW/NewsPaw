@@ -29,14 +29,13 @@ final class SourceModel {
     /// The source whose deletion is being confirmed.
     var pendingDeletion: SourceSummary?
     var isShowingSaveError = false
-    /// Sources being collected by "Update Now".
-    private(set) var updating: Set<UUID> = []
 
     let library: Library
     let transport: any Transport
     let candidateLimit: Duration
     private let navigation: NavigationModel
     private let categories: CategoryModel
+    private let refresh: RefreshModel
     /// The last queued operation; each waits for the one before it.
     private var lastOperation: Task<Bool, Never>?
     private var queuedOperations = 0
@@ -47,12 +46,21 @@ final class SourceModel {
     var failNextSave = false
     #endif
 
-    init(library: Library, transport: any Transport, candidateLimit: Duration, navigation: NavigationModel, categories: CategoryModel) {
+    init(
+        library: Library, transport: any Transport, candidateLimit: Duration, navigation: NavigationModel,
+        categories: CategoryModel, refresh: RefreshModel
+    ) {
         self.library = library
         self.transport = transport
         self.candidateLimit = candidateLimit
         self.navigation = navigation
         self.categories = categories
+        self.refresh = refresh
+    }
+
+    /// Sources being collected: a view of the refresh engine.
+    var updating: Set<UUID> {
+        refresh.engine.collecting
     }
 
     /// Whether a source save is queued or running.
@@ -75,6 +83,27 @@ final class SourceModel {
 
     var totalUnread: Int {
         summaries.filter(\.isFeedLike).reduce(0) { $0 + $1.unreadCount }
+    }
+
+    /// Whether the library has a feed-like source: Today's status line is
+    /// shown only then.
+    var hasFeedLikeSource: Bool {
+        summaries.contains(where: \.isFeedLike)
+    }
+
+    /// The feed-like sources that are not paused and whose stored status is
+    /// failing.
+    var failingSources: [SourceSummary] {
+        summaries.filter { summary in
+            guard summary.isFeedLike, !summary.paused, case .failing = summary.status else { return false }
+            return true
+        }
+    }
+
+    /// Whether a refresh of `category` would collect anything: it has a
+    /// feed that is not paused.
+    func hasRefreshTarget(in category: UUID) -> Bool {
+        sources(in: category).contains { $0.kind == .feed && !$0.paused }
     }
 
     /// Reads the sources from storage. A settings sheet open on a source
@@ -167,6 +196,13 @@ final class SourceModel {
         navigation.closeSheetAndShowCategoryList()
     }
 
+    /// "N sources failed": shows the category list with the failing
+    /// sources' categories expanded.
+    func showFailingSources() {
+        expanded.formUnion(failingSources.map(\.categoryID))
+        navigation.showCategoryList()
+    }
+
     // MARK: - Source settings
 
     func beginSettings(_ id: UUID) {
@@ -249,24 +285,16 @@ final class SourceModel {
         }
     }
 
-    /// "Update Now": collects the source once with RD04's collector; the
-    /// status section then shows the stored result. A paused or web-page
-    /// source is not collected (the caller's rule).
+    /// "Update Now": collects the source once through the refresh engine,
+    /// joining a run that already holds it; the status section then shows
+    /// the stored result. A paused or web-page source is not collected (the
+    /// engine's targets).
     func updateNow(_ id: UUID) async {
-        guard let summary = summary(id), summary.isFeedLike, !summary.paused, !updating.contains(id) else { return }
-        updating.insert(id)
-        defer { updating.remove(id) }
-        // Not in the save queue: a fetch can take up to 20 seconds, and the
-        // collector writes only the source's status columns and new articles,
-        // never what an editor changes. A feed failure is stored on the
-        // source, not thrown.
-        do {
-            _ = try await FeedCollector(transport: transport).collect(id, in: library)
-        } catch is CancellationError {
-        } catch {
-            isShowingSaveError = true
-        }
-        await categories.reload()
+        // Not in the save queue: a fetch can take up to 20 seconds, and a
+        // collection writes only the source's status columns, articles and
+        // seen rows, never what an editor changes. A feed failure is stored
+        // on the source; a storage failure shows the save alert.
+        await refresh.refresh(.source(id))
     }
 
     // MARK: - Saving

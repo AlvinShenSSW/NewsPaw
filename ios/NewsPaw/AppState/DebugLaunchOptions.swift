@@ -15,6 +15,10 @@ struct DebugLaunchOptions {
     let slowNextSave: Duration?
     /// Whether the next source save fails.
     let failNextSourceSave: Bool
+    /// Seconds added to the clock of the library and of Today's status line,
+    /// from a whole number of days: it makes a refresh due and ages
+    /// articles.
+    let clockOffset: TimeInterval
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -34,6 +38,11 @@ struct DebugLaunchOptions {
             slowNextSave = .seconds(seconds)
         } else {
             slowNextSave = nil
+        }
+        if let text = environment[UITestLaunchKey.clockOffsetDays], let days = Int(text) {
+            clockOffset = TimeInterval(days) * 86_400
+        } else {
+            clockOffset = 0
         }
     }
 

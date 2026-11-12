@@ -12,6 +12,41 @@
         }
       }
     },
+    "%lld sources failed" : {
+      "comment" : "Today's status line: how many sources failed in their last update; a button that shows them in the category list.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld source failed"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sources failed"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld 个来源更新失败"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld unread" : {
       "comment" : "VoiceOver value of a source row: its unread articles.",
       "localizations" : {
@@ -78,6 +113,39 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "30 Days" : {
+      "comment" : "Settings → Refresh, Keep Articles: thirty days (the default).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 天"
+          }
+        }
+      }
+    },
+    "7 Days" : {
+      "comment" : "Settings → Refresh, Keep Articles: seven days.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "7 天"
+          }
+        }
+      }
+    },
+    "90 Days" : {
+      "comment" : "Settings → Refresh, Keep Articles: ninety days.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90 天"
           }
         }
       }
@@ -434,6 +502,17 @@
         }
       }
     },
+    "Counted from when an article was first seen. Starred articles are always kept. A change takes effect the next time you open the app." : {
+      "comment" : "Settings → Refresh: footer of Keep Articles.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从文章第一次出现时算起。加星标的文章始终保留。更改在下次打开 App 时生效。"
+          }
+        }
+      }
+    },
     "Create" : {
       "comment" : "Bar button: creates the category typed inside Add source.",
       "localizations" : {
@@ -533,6 +612,39 @@
         }
       }
     },
+    "Every 15 Minutes" : {
+      "comment" : "Settings → Refresh, Refresh Interval.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每 15 分钟"
+          }
+        }
+      }
+    },
+    "Every 30 Minutes" : {
+      "comment" : "Settings → Refresh, Refresh Interval (the default).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每 30 分钟"
+          }
+        }
+      }
+    },
+    "Every Hour" : {
+      "comment" : "Settings → Refresh, Refresh Interval.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每小时"
+          }
+        }
+      }
+    },
     "Feed Content Only" : {
       "comment" : "Body option of a source.",
       "localizations" : {
@@ -595,6 +707,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "跟随全局设置"
+          }
+        }
+      }
+    },
+    "Forever" : {
+      "comment" : "Settings → Refresh, Keep Articles: never delete.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "永久"
           }
         }
       }
@@ -801,6 +924,17 @@
         }
       }
     },
+    "Keep Articles" : {
+      "comment" : "Settings → Refresh: the picker for how long articles are kept.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文章保留时间"
+          }
+        }
+      }
+    },
     "Kind" : {
       "comment" : "Row in Add source: feed or web page.",
       "localizations" : {
@@ -852,6 +986,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在查找 Feed…"
+          }
+        }
+      }
+    },
+    "Manual Only" : {
+      "comment" : "Settings → Refresh, Refresh Interval: never refresh by itself.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅手动"
           }
         }
       }
@@ -1011,7 +1156,7 @@
       }
     },
     "Not updated yet" : {
-      "comment" : "Status of a source never updated.",
+      "comment" : "Status of a source never updated; on Today, of a library never refreshed.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1127,6 +1272,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "预览"
+          }
+        }
+      }
+    },
+    "Refresh" : {
+      "comment" : "The Settings row and screen for refreshing; the Refresh action in a category's or source's menu.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新"
+          }
+        }
+      }
+    },
+    "Refresh Interval" : {
+      "comment" : "Settings → Refresh: the picker for how often the library is refreshed when the app is opened.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新间隔"
           }
         }
       }
@@ -1588,8 +1755,41 @@
         }
       }
     },
+    "Updated %@" : {
+      "comment" : "Today's status line: when the library was last refreshed, followed by a relative time such as “5 minutes ago”.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@更新"
+          }
+        }
+      }
+    },
+    "Updated just now" : {
+      "comment" : "Today's status line: the library was refreshed less than a minute ago.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刚刚更新"
+          }
+        }
+      }
+    },
+    "Updating" : {
+      "comment" : "VoiceOver value of a source row while the source is being updated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在更新"
+          }
+        }
+      }
+    },
     "Updating…" : {
-      "comment" : "Status while a source is being updated.",
+      "comment" : "Status while a source, or on Today the library, is being updated.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1628,6 +1828,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "网页"
+          }
+        }
+      }
+    },
+    "When you open the app and this long has passed since the last refresh, the library is refreshed. Pull down on Today to refresh at any time." : {
+      "comment" : "Settings → Refresh: footer of Refresh Interval.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 App 时，如果距上次刷新已超过这个时间，就会刷新资料库。随时可在“今天”下拉刷新。"
           }
         }
       }

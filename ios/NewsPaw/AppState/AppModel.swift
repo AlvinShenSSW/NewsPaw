@@ -1,5 +1,6 @@
 import Foundation
 import NewsPawKit
+import SwiftUI
 
 /// Why the library could not be opened, as the failure screen tells it.
 enum LibraryFailure: Equatable {
@@ -24,7 +25,7 @@ enum LibraryFailure: Equatable {
 final class AppModel {
     enum Status {
         case loading
-        case ready(CategoryModel, SourceModel)
+        case ready(CategoryModel, SourceModel, RefreshModel)
         case failed(LibraryFailure)
     }
 
@@ -32,6 +33,9 @@ final class AppModel {
     let navigation = NavigationModel()
     /// The app's one store; it gives out one library per partition.
     private var store: LibraryStore?
+    /// Whether the scene has been in the background since it was last
+    /// active: the next `active` is an entry.
+    private var wasInBackground = false
 
     /// Opens the normal library, creating it on first launch. A failure is
     /// shown and left as it is: the file is never deleted, reset or replaced.
@@ -39,26 +43,40 @@ final class AppModel {
         guard case .loading = status else { return }
         // The one transport the app makes requests through. Under a UI-test
         // library directory it is the fixture transport, never the real one.
+        // The one clock of the library and of Today's status line.
         #if DEBUG
         let options = DebugLaunchOptions(environment: ProcessInfo.processInfo.environment)
         let directory = options.libraryDirectory ?? LibraryStore.defaultDirectory()
         let transport: any Transport = options.libraryDirectory != nil ? FixtureTransport() : URLSessionTransport()
         let candidateLimit = options.libraryDirectory != nil ? FixtureTransport.candidateLimit : .seconds(20)
+        // Under a UI-test library directory: the cache inside it, and a
+        // preferences suite named after it, never the standard one.
+        let cacheRoot = options.libraryDirectory.map { $0.appending(path: "Images", directoryHint: .isDirectory) }
+            ?? LibraryStore.defaultCacheRoot()
+        let defaults = options.libraryDirectory.flatMap { UserDefaults(suiteName: $0.lastPathComponent) } ?? .standard
+        let offset = options.clockOffset
+        let now: @Sendable () -> Date = { Date().addingTimeInterval(offset) }
         #else
         let directory = LibraryStore.defaultDirectory()
         let transport: any Transport = URLSessionTransport()
         let candidateLimit = Duration.seconds(20)
+        let cacheRoot = LibraryStore.defaultCacheRoot()
+        let defaults = UserDefaults.standard
+        let now: @Sendable () -> Date = { Date() }
         #endif
         do {
-            let store = LibraryStore(directory: directory)
+            let store = LibraryStore(directory: directory, cacheRoot: cacheRoot, now: now)
             self.store = store
             let library = try await store.openNormal()
             let categories = CategoryModel(library: library, navigation: navigation)
+            let refresh = RefreshModel(library: library, transport: transport, preferences: Preferences(defaults), now: now)
             let sources = SourceModel(
                 library: library, transport: transport, candidateLimit: candidateLimit,
-                navigation: navigation, categories: categories
+                navigation: navigation, categories: categories, refresh: refresh
             )
             categories.onReload = { [weak sources] in await sources?.reload() }
+            refresh.onListsChanged = { [weak sources] in await sources?.reload() }
+            refresh.onStorageError = { [weak sources] in sources?.isShowingSaveError = true }
             #if DEBUG
             if let count = options.syntheticSources {
                 try await library.insertSyntheticSourcesForUITests(count: count)
@@ -68,11 +86,32 @@ final class AppModel {
             sources.failNextSave = options.failNextSourceSave
             #endif
             await categories.reload()
-            status = .ready(categories, sources)
+            await refresh.load()
+            status = .ready(categories, sources, refresh)
+            // The launch is the first entry (RD06 decision 3).
+            Task { await refresh.entered() }
         } catch is CancellationError {
             return
         } catch {
             status = .failed(LibraryFailure(error))
+        }
+    }
+
+    /// Every return from the background to `active` is an entry; a return
+    /// from `inactive` alone (Control Centre, a system alert) is not. The
+    /// launch's own first `active` arrives while the library is still
+    /// opening and is not one either: `start()` makes the launch entry.
+    func scenePhaseChanged(to phase: ScenePhase) {
+        switch phase {
+        case .background:
+            wasInBackground = true
+        case .active where wasInBackground:
+            wasInBackground = false
+            if case .ready(_, _, let refresh) = status {
+                Task { await refresh.entered() }
+            }
+        default:
+            break
         }
     }
 }

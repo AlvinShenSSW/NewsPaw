@@ -26,6 +26,7 @@ struct CategoryRows: View {
     let presentSheet: (() -> Void) -> Void
     @Environment(CategoryModel.self) private var categories
     @Environment(SourceModel.self) private var sources
+    @Environment(RefreshModel.self) private var refresh
     @Environment(\.editMode) private var editMode
 
     var body: some View {
@@ -48,6 +49,11 @@ struct CategoryRows: View {
                     .moveDisabled(categories.isBusy)
                     .deleteDisabled(categories.isBusy)
                     .contextMenu {
+                        if sources.hasRefreshTarget(in: summary.id) {
+                            Button("Refresh", systemImage: "arrow.clockwise") {
+                                Task { await refresh.refresh(.category(summary.id)) }
+                            }
+                        }
                         Button("Category Settings", systemImage: "gearshape") {
                             presentSheet { categories.beginSettings(summary.id) }
                         }

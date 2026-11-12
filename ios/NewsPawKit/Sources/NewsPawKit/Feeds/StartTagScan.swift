@@ -20,19 +20,23 @@ import Foundation
 /// meets something that is not well-formed it stops looking: the parser
 /// stops at or before that point too, so nothing after it is ever parsed.
 ///
-/// It works on bytes. That is sound for the encodings the design supports,
-/// which keep ASCII bytes for ASCII characters:
-/// - UTF-8, the ISO 8859 and Windows single-byte sets, EUC-JP, EUC-KR and
-///   EUC-CN never use a byte below 0x80 inside a multibyte character;
-/// - Shift_JIS (and the double-byte Chinese and Korean sets) can use 0x40–0x7E
-///   as a second byte, but never `<`, `>`, `"`, `'`, `=`, `/`, `-`, `?` or
-///   white space; of the bytes the scan looks for only `]` (0x5D) can be a
-///   second byte, so the scan steps character by character, in the encoding
-///   the document declares, where it looks for `]`: inside CDATA sections and
-///   the internal subset.
-/// A document in an encoding that is not ASCII-compatible — UTF-16, UTF-32,
-/// ISO-2022, UTF-7, EBCDIC; all non-goals of the design — is cut at its first
-/// byte, so it is not a feed.
+/// It works on bytes, in the byte mode of the encoding the document
+/// declares. That is sound only for encodings whose mode is known, so the
+/// scan accepts a declared encoding only when its label is in `labels` —
+/// the labels of the WHATWG Encoding Standard for UTF-8, the legacy
+/// single-byte sets, EUC-JP, EUC-KR, GBK, gb18030, Big5 and Shift_JIS. Each
+/// was checked against the system parser (`EncodingLabelProofTests`):
+/// - in an ASCII-compatible encoding no byte below 0x80 is ever part of a
+///   multibyte character;
+/// - in Shift_JIS and the double-byte sets a second byte can be 0x40–0x7E,
+///   but never `<`, `>`, `"`, `'`, `=`, `/`, `-`, `?`, `!` or white space; of
+///   the bytes the scan looks for only `[` and `]` can be second bytes, so the
+///   scan steps character by character, with the lead bytes the parser uses,
+///   where it looks for those: inside CDATA sections and the document type.
+/// Any other declared label — whether or not the parser knows it — and any
+/// document whose declaration cannot be read exactly, or that is in UTF-16,
+/// UTF-32 or EBCDIC, is cut at its first byte, so it is not a feed: its tags
+/// cannot be found reliably byte by byte.
 enum StartTagScan {
     /// The most attributes, namespace declarations included, accepted on one
     /// start tag. Real feeds use a few dozen at most (the root's namespace
@@ -65,8 +69,141 @@ enum StartTagScan {
 
     // MARK: - Encoding
 
-    /// The byte mode of the encoding the parser will read the document in,
-    /// and where scanning starts; `nil` when it is not ASCII-compatible.
+    /// The labels the scan accepts, each with its byte mode, matched exactly
+    /// and without regard to case. From the WHATWG Encoding Standard's label
+    /// table; UTF-16, ISO-2022-JP, "replacement" and x-user-defined are left
+    /// out. A label the system parser does not know cannot hide anything:
+    /// the parser refuses the document.
+    static let labels: [String: ByteMode] = {
+        var table: [String: ByteMode] = [:]
+        let asciiCompatible = [
+            // UTF-8
+            "unicode-1-1-utf-8", "unicode11utf8", "unicode20utf8", "utf-8", "utf8", "x-unicode20utf8",
+            // IBM866
+            "866", "cp866", "csibm866", "ibm866",
+            // ISO-8859-2 to -16
+            "csisolatin2", "iso-8859-2", "iso-ir-101", "iso8859-2", "iso88592", "iso_8859-2", "iso_8859-2:1987", "l2", "latin2",
+            "csisolatin3", "iso-8859-3", "iso-ir-109", "iso8859-3", "iso88593", "iso_8859-3", "iso_8859-3:1988", "l3", "latin3",
+            "csisolatin4", "iso-8859-4", "iso-ir-110", "iso8859-4", "iso88594", "iso_8859-4", "iso_8859-4:1988", "l4", "latin4",
+            "csisolatincyrillic", "cyrillic", "iso-8859-5", "iso-ir-144", "iso8859-5", "iso88595", "iso_8859-5", "iso_8859-5:1988",
+            "arabic", "asmo-708", "csiso88596e", "csiso88596i", "csisolatinarabic", "ecma-114", "iso-8859-6", "iso-8859-6-e",
+            "iso-8859-6-i", "iso-ir-127", "iso8859-6", "iso88596", "iso_8859-6", "iso_8859-6:1987",
+            "csisolatingreek", "ecma-118", "elot_928", "greek", "greek8", "iso-8859-7", "iso-ir-126", "iso8859-7", "iso88597",
+            "iso_8859-7", "iso_8859-7:1987", "sun_eu_greek",
+            "csiso88598e", "csisolatinhebrew", "hebrew", "iso-8859-8", "iso-8859-8-e", "iso-ir-138", "iso8859-8", "iso88598",
+            "iso_8859-8", "iso_8859-8:1988", "visual",
+            "csiso88598i", "iso-8859-8-i", "logical",
+            "csisolatin6", "iso-8859-10", "iso-ir-157", "iso8859-10", "iso885910", "l6", "latin6",
+            "iso-8859-13", "iso8859-13", "iso885913",
+            "iso-8859-14", "iso8859-14", "iso885914",
+            "csisolatin9", "iso-8859-15", "iso8859-15", "iso885915", "iso_8859-15", "l9",
+            "iso-8859-16",
+            // KOI8-R, KOI8-U, macintosh, x-mac-cyrillic
+            "cskoi8r", "koi", "koi8", "koi8-r", "koi8_r", "koi8-ru", "koi8-u",
+            "csmacintosh", "mac", "macintosh", "x-mac-roman", "x-mac-cyrillic", "x-mac-ukrainian",
+            // windows-874 and windows-1250 to -1258
+            "dos-874", "iso-8859-11", "iso8859-11", "iso885911", "tis-620", "windows-874",
+            "cp1250", "windows-1250", "x-cp1250",
+            "cp1251", "windows-1251", "x-cp1251",
+            "ansi_x3.4-1968", "ascii", "cp1252", "cp819", "csisolatin1", "ibm819", "iso-8859-1", "iso-ir-100", "iso8859-1",
+            "iso88591", "iso_8859-1", "iso_8859-1:1987", "l1", "latin1", "us-ascii", "windows-1252", "x-cp1252",
+            "cp1253", "windows-1253", "x-cp1253",
+            "cp1254", "csisolatin5", "iso-8859-9", "iso-ir-148", "iso8859-9", "iso88599", "iso_8859-9", "iso_8859-9:1989", "l5",
+            "latin5", "windows-1254", "x-cp1254",
+            "cp1255", "windows-1255", "x-cp1255",
+            "cp1256", "windows-1256", "x-cp1256",
+            "cp1257", "windows-1257", "x-cp1257",
+            "cp1258", "windows-1258", "x-cp1258",
+            // EUC-JP: every byte of a multibyte character is 0x8E, 0x8F or
+            // 0xA1 and above.
+            "cseucpkdfmtjapanese", "euc-jp", "x-euc-jp",
+            // The system parser reads these as strict EUC-KR and EUC-CN,
+            // whose characters use only bytes 0xA1 and above, and 0x81–0xA0
+            // as single bytes (measured), unlike the web.
+            "cseuckr", "euc-kr", "csgb2312", "gb2312", "gb_2312",
+        ]
+        let shiftJIS = ["csshiftjis", "ms932", "ms_kanji", "shift-jis", "shift_jis", "sjis", "windows-31j", "x-sjis"]
+        let doubleByte = [
+            // GBK and gb18030
+            "chinese", "csiso58gb231280", "gb_2312-80", "gbk", "iso-ir-58", "x-gbk", "gb18030",
+            // Big5
+            "big5", "big5-hkscs", "cn-big5", "csbig5", "x-x-big5",
+            // The web's EUC-KR labels, read as windows-949
+            "csksc56011987", "iso-ir-149", "korean", "ks_c_5601-1987", "ks_c_5601-1989", "ksc5601",
+            "ksc_5601", "windows-949",
+        ]
+        for label in asciiCompatible { table[label] = .asciiCompatible }
+        for label in shiftJIS { table[label] = .shiftJIS }
+        for label in doubleByte { table[label] = .doubleByte }
+        return table
+    }()
+
+    /// The byte mode for a declared encoding label; `nil` for a label not in
+    /// `labels`.
+    static func mode(forLabel label: String) -> ByteMode? {
+        labels[label.lowercased()]
+    }
+
+    /// What the document's XML declaration says, read exactly as XML writes
+    /// it: `<?xml`, white space, `version`, then optionally `encoding` and
+    /// `standalone` in that order, each `name S? = S? quoted value` after
+    /// white space, then `S? ?>`.
+    enum Declaration: Equatable {
+        /// The document does not start with `<?xml` and white space.
+        case absent
+        /// The declaration, with its encoding label if it names one.
+        case read(encoding: String?)
+        /// It starts like a declaration but is not one the scan can read.
+        case unreadable
+    }
+
+    static func declaration(in bytes: UnsafeBufferPointer<UInt8>, from start: Int) -> Declaration {
+        let count = bytes.count
+        func has(_ text: String, at index: Int) -> Bool {
+            let pattern = Array(text.utf8)
+            guard index + pattern.count <= count else { return false }
+            return pattern.indices.allSatisfy { bytes[index + $0] == pattern[$0] }
+        }
+        func skipSpace(from index: Int) -> Int {
+            var index = index
+            while index < count, isSpace(bytes[index]) { index += 1 }
+            return index
+        }
+        /// `name S? = S? quoted` at `index`; the value and the index after it.
+        func pseudoAttribute(_ name: String, at index: Int) -> (value: String, end: Int)? {
+            guard has(name, at: index) else { return nil }
+            var position = skipSpace(from: index + name.utf8.count)
+            guard position < count, bytes[position] == UInt8(ascii: "=") else { return nil }
+            position = skipSpace(from: position + 1)
+            guard position < count, bytes[position] == UInt8(ascii: "\"") || bytes[position] == UInt8(ascii: "'") else { return nil }
+            let quote = bytes[position]
+            var close = position + 1
+            while close < count, bytes[close] != quote { close += 1 }
+            guard close < count else { return nil }
+            return (String(decoding: bytes[(position + 1)..<close], as: UTF8.self), close + 1)
+        }
+
+        guard has("<?xml", at: start), start + 5 < count, isSpace(bytes[start + 5]) else { return .absent }
+        var index = skipSpace(from: start + 5)
+        guard let version = pseudoAttribute("version", at: index) else { return .unreadable }
+        index = version.end
+        var encoding: String?
+        var spaced = skipSpace(from: index)
+        if spaced > index, let found = pseudoAttribute("encoding", at: spaced) {
+            encoding = found.value
+            index = found.end
+            spaced = skipSpace(from: index)
+        }
+        if spaced > index, let found = pseudoAttribute("standalone", at: spaced) {
+            index = found.end
+            spaced = skipSpace(from: index)
+        }
+        guard has("?>", at: spaced) else { return .unreadable }
+        return .read(encoding: encoding)
+    }
+
+    /// The byte mode the document is read in, and where scanning starts;
+    /// `nil` when the scan cannot read the document's encoding reliably.
     static func byteMode(of bytes: UnsafeBufferPointer<UInt8>) -> (ByteMode, Int)? {
         let head = Array(bytes.prefix(4))
         if head.starts(with: [0xFE, 0xFF]) || head.starts(with: [0xFF, 0xFE]) || head.contains(0x00)
@@ -75,44 +212,19 @@ enum StartTagScan {
             // `<?` in two or four bytes), or EBCDIC's `<?xm`.
             return nil
         }
+        // After a UTF-8 byte-order mark the parser still honours the
+        // declaration's encoding (measured: Shift_JIS), so it is read too.
         let start = head.starts(with: [0xEF, 0xBB, 0xBF]) ? 3 : 0
-        if start == 3 {
-            // With a UTF-8 byte-order mark the parser reads UTF-8.
+        switch declaration(in: bytes, from: start) {
+        case .absent, .read(encoding: nil):
+            // No declared encoding: the parser reads UTF-8 and stops at the
+            // first byte that is not.
             return (.asciiCompatible, start)
-        }
-        let window = Array(bytes.prefix(1024))
-        guard window.starts(with: Array("<?xml".utf8)), window.count > 5, isSpace(window[5]),
-              let end = FeedParser.firstIndex(of: Array("?>".utf8), in: window[...], from: 0),
-              let range = FeedParser.quotedValue(named: "encoding", in: Array(window[0..<end]))
-        else { return (.asciiCompatible, start) }
-        let label = String(decoding: window[range], as: UTF8.self)
-        return mode(forLabel: label).map { ($0, start) }
-    }
-
-    /// The byte mode for an encoding label; `nil` when the encoding is not
-    /// ASCII-compatible. A label not recognised here is read as
-    /// ASCII-compatible, which is what every other encoding the parser
-    /// knows is.
-    static func mode(forLabel label: String) -> ByteMode? {
-        let name = label.lowercased()
-        let notASCIICompatible = [
-            "utf-16", "utf16", "ucs-2", "ucs2", "utf-32", "utf32", "ucs-4", "ucs4", "2022", "utf-7", "utf7", "hz-gb",
-            "ebcdic", "cp037", "ibm037", "ibm-037", "cp500", "ibm500", "ibm-500", "cp1047", "ibm1047", "ibm-1047", "cp875",
-        ]
-        if notASCIICompatible.contains(where: name.contains) || name == "unicode" || name.hasPrefix("unicodef") {
+        case .read(encoding: let label?):
+            return mode(forLabel: label).map { ($0, start) }
+        case .unreadable:
             return nil
         }
-        if name.contains("euc") {
-            return .asciiCompatible
-        }
-        if ["shift", "sjis", "kanji", "31j", "932", "943", "japanese"].contains(where: name.contains) {
-            return .shiftJIS
-        }
-        if ["big5", "950", "gbk", "gb2312", "gb18030", "936", "949", "uhc", "5601", "johab", "chinese", "korean"]
-            .contains(where: name.contains) {
-            return .doubleByte
-        }
-        return .asciiCompatible
     }
 
     private static func isSpace(_ byte: UInt8) -> Bool {

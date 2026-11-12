@@ -32,7 +32,11 @@ import Foundation
 ///   `maximumEntityValueBytes` or contains `&` (a reference to another
 ///   entity), any attribute-list declaration (the parser applies their
 ///   defaults to every element, at a cost growing with the square of their
-///   number), and more than `maximumDeclarations` declarations.
+///   number), and more than `maximumDeclarations` declarations. A parameter
+///   entity's declaration is counted and its value checked like any other;
+///   the parser refuses every reference to one in the internal subset
+///   (measured: no element is delivered, in time proportional to the
+///   document), so references need no limit of their own.
 final class XMLFeedReader: NSObject, XMLParserDelegate {
     /// Namespace declarations in scope at once. A feed declares a dozen or
     /// two on its root; at 256 a 10 MB document of elements in their scope

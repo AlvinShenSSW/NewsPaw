@@ -124,17 +124,95 @@ struct StartTagScanTests {
     }
 
     @Test(
-        "encoding labels map to how bytes form characters",
+        "encoding labels map to how bytes form characters; labels not on the list are refused",
         arguments: [
-            ("UTF-8", StartTagScan.ByteMode.asciiCompatible), ("ISO-8859-1", .asciiCompatible), ("windows-1252", .asciiCompatible),
+            ("UTF-8", StartTagScan.ByteMode?.some(.asciiCompatible)), ("ISO-8859-1", .asciiCompatible), ("windows-1252", .asciiCompatible),
             ("EUC-JP", .asciiCompatible), ("euc-kr", .asciiCompatible), ("cseucpkdfmtjapanese", .asciiCompatible),
-            ("Shift_JIS", .shiftJIS), ("shift-jis", .shiftJIS), ("windows-31j", .shiftJIS), ("CP932", .shiftJIS), ("MS_Kanji", .shiftJIS),
-            ("x-sjis", .shiftJIS), ("Big5", .doubleByte), ("GBK", .doubleByte), ("GB18030", .doubleByte), ("GB2312", .doubleByte),
-            ("ks_c_5601-1987", .doubleByte), ("unicode-1-1-utf-8", .asciiCompatible),
+            ("GB2312", .asciiCompatible), ("unicode-1-1-utf-8", .asciiCompatible), ("US-ASCII", .asciiCompatible),
+            ("Shift_JIS", .shiftJIS), ("shift-jis", .shiftJIS), ("windows-31j", .shiftJIS), ("MS_Kanji", .shiftJIS), ("x-sjis", .shiftJIS),
+            ("Big5", .doubleByte), ("GBK", .doubleByte), ("GB18030", .doubleByte), ("ks_c_5601-1987", .doubleByte), ("windows-949", .doubleByte),
+            // Labels the parser knows as double-byte sets but the list does
+            // not hold, and labels nobody knows.
+            ("pck", nil), ("ibm-942", nil), ("x-IBM942", nil), ("IBM-942_P12A-1999", nil), ("CP932", nil), ("ibm-1386", nil),
+            ("cp1386", nil), ("ibm-5471", nil), ("ibm-1373", nil), ("johab", nil), ("SHIFTJIS", nil), ("nonsense-xyz", nil), ("", nil),
+            (" Shift_JIS ", nil),
         ]
     )
-    func labels(_ label: String, _ mode: StartTagScan.ByteMode) {
+    func labels(_ label: String, _ mode: StartTagScan.ByteMode?) {
         #expect(StartTagScan.mode(forLabel: label) == mode)
+    }
+
+    @Test("every label on the list is lowercase, so that matching ignores case exactly")
+    func labelTable() {
+        #expect(StartTagScan.labels.keys.allSatisfy { $0 == $0.lowercased() })
+        #expect(StartTagScan.labels.count == 210)
+    }
+
+    private func declaration(_ text: String, bom: Bool = false) -> StartTagScan.Declaration {
+        let bytes = (bom ? [0xEF, 0xBB, 0xBF] : []) + Array(text.utf8)
+        return bytes.withUnsafeBufferPointer { StartTagScan.declaration(in: $0, from: bom ? 3 : 0) }
+    }
+
+    /// The odd declarations measured against the system parser in fix round
+    /// 2. `parserReads` says what the parser does with the declaration
+    /// before a UTF-8 body: reads the document (true) or refuses it (false).
+    static let padding = String(repeating: " ", count: 2_000)
+    static let declarationCases: [(String, StartTagScan.Declaration, Bool)] = [
+            (#"<?xml version="1.0" encoding="Shift_JIS"?>"#, StartTagScan.Declaration.read(encoding: "Shift_JIS"), true),
+            (#"<?xml version="1.0""# + padding + #"encoding="Shift_JIS"?>"#, .read(encoding: "Shift_JIS"), true),
+            (#"<?xml version="1.0" encoding="Shift_JIS""# + padding + "?>", .read(encoding: "Shift_JIS"), false),
+            (#"<?xml encoding="Shift_JIS" version="1.0"?>"#, .unreadable, false),
+            (#"<?xml encoding="Shift_JIS"?>"#, .unreadable, false),
+            (#"<?xml version="1.0" encoding="UTF-8" encoding="Shift_JIS"?>"#, .unreadable, false),
+            ("<?xml version='1.0' encoding='Shift_JIS'?>", .read(encoding: "Shift_JIS"), true),
+            (#"<?xml version="1.0" ENCODING="Shift_JIS"?>"#, .unreadable, false),
+            (#"<?XML version="1.0" encoding="Shift_JIS"?>"#, .absent, false),
+            (#"<?xml version="1.0 encoding='Shift_JIS'"?>"#, .read(encoding: nil), false),
+            (#"<?xml version="1.0" standalone="yes" encoding="Shift_JIS"?>"#, .unreadable, false),
+            (#"<?xml version="1.0" encoding="Shift_JIS" standalone="yes"?>"#, .read(encoding: "Shift_JIS"), true),
+            (#"<?xml version = "1.0" encoding = "Shift_JIS" ?>"#, .read(encoding: "Shift_JIS"), true),
+            ("<?xml\tversion=\"1.0\"\n\tencoding=\"Shift_JIS\"\r\n?>", .read(encoding: "Shift_JIS"), true),
+            (#"<?xml version="1.0" encoding=" Shift_JIS "?>"#, .read(encoding: " Shift_JIS "), false),
+            (#"<?xml version="1.0" encoding=""?>"#, .read(encoding: ""), false),
+            (#"<?xml version="1.0"encoding="Shift_JIS"?>"#, .unreadable, false),
+            (#"<?xml version="1.1" encoding="Shift_JIS"?>"#, .read(encoding: "Shift_JIS"), true),
+            (#"<?xml version="1.0" foo="bar" encoding="Shift_JIS"?>"#, .unreadable, false),
+            ("<?xml?>", .absent, false),
+            (#"<?xml-stylesheet href="x"?>"#, .absent, true),
+            (#" <?xml version="1.0" encoding="Shift_JIS"?>"#, .absent, false),
+            (#"<?xml version="1.0" encoding="Shift_JIS""#, .unreadable, false),
+            ("", .absent, true),
+            (#"<?xml version="1.0"?>"#, .read(encoding: nil), true),
+        ]
+
+    @Test("the declaration is read exactly; whatever the scan cannot read the parser refuses as well", arguments: declarationCases)
+    func declarations(_ text: String, _ expected: StartTagScan.Declaration, _ parserReads: Bool) {
+        #expect(declaration(text) == expected)
+        // The parser's own verdict, before a UTF-8 body. Shift_JIS reads
+        // these ASCII bytes the same way.
+        let document = Data((text + "<r>ok</r>").utf8)
+        #expect(XMLParser(data: document).parse() == parserReads, "parser on \(text.prefix(60))")
+        // The scan refuses a document only when the parser refuses it too.
+        if parserReads {
+            #expect(StartTagScan.cutOffset(in: document) != 0, "\(text.prefix(60))")
+        }
+    }
+
+    @Test("a UTF-8 byte-order mark is followed by the declaration, which the parser honours")
+    func byteOrderMarkThenDeclaration() {
+        #expect(declaration(#"<?xml version="1.0" encoding="Shift_JIS"?>"#, bom: true) == .read(encoding: "Shift_JIS"))
+        let bytes: [UInt8] = [0xEF, 0xBB, 0xBF] + Array(#"<?xml version="1.0" encoding="pck"?><r/>"#.utf8)
+        #expect(StartTagScan.cutOffset(in: Data(bytes)) == 0)
+    }
+
+    @Test("a header charset not on the list, written into the declaration by the retry, is refused")
+    func retryWithAnUnlistedHeaderCharset() throws {
+        let data = try FeedFixture.data("ja-shift_jis-undeclared.xml")
+        #expect(parse(data, charset: "pck") == nil)
+        #expect(parse(data, charset: "ibm-942") == nil)
+        #expect(try #require(parse(data, charset: "x-sjis")).title == "架空ニュース 表示テスト")
+        let declared = try #require(FeedParser.declaring("pck", in: data))
+        #expect(StartTagScan.cutOffset(in: declared) == 0)
     }
 
     @Test("a document in an encoding that is not ASCII-compatible is cut at its first byte: not a feed")

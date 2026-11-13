@@ -279,7 +279,7 @@ final class NavigationModel {
             }
         }
         if shown {
-            libraryPath = []
+            closeLibraryList()
         }
     }
 
@@ -290,8 +290,16 @@ final class NavigationModel {
             if case .source(let id) = route { !existing.contains(id) } else { false }
         }
         if gone {
-            libraryPath = []
+            closeLibraryList()
         }
+    }
+
+    /// Closes the Library list: the Library root (tabs), All Unread
+    /// (panes), which is entered so that it is read again and holds no
+    /// article of what was deleted.
+    private func closeLibraryList() {
+        libraryPath = []
+        onListEntered?(.allUnread)
     }
 
     /// The category open in Library: the one pushed in the tab structure,

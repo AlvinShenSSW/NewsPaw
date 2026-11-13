@@ -261,6 +261,56 @@ final class ArticleListTests: ArticleTestCase {
         XCTAssertEqual(element(AccessibilityID.todayEmpty).label, "Nothing new today")
     }
 
+    /// Today scrolls past one screen: with six long-named categories at
+    /// the largest text size in landscape, the last row lies below the fold;
+    /// it can be scrolled to and opens its category's list.
+    func testTodayScrollsToItsLastRow() {
+        let names = (1...6).map { "Morning reading from the harbour districts \($0)" }
+        let feeds = [
+            Fixture.articles, Fixture.feed, Fixture.longCounting, "https://counting.example.invalid/rss.xml",
+            "https://onefeed.example.invalid/feed.xml", "https://twofeeds.example.invalid/news.xml",
+        ]
+        launchAtFullWidth()
+        for (name, feed) in zip(names, feeds) {
+            // Not the shared helper: it waits for the new row, which in the
+            // category list lies below the fold by the fifth category.
+            openNewCategory()
+            let field = app.textFields[AccessibilityID.nameField]
+            field.tap()
+            field.typeText(name + "\n")
+            tapSave()
+            waitForAbsence(field)
+            addSource(feed, to: name)
+            // Saving expanded it; collapsed, the sidebar's buttons stay above
+            // the fold for the next category.
+            collapse(name)
+        }
+        app.terminate()
+        launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        rotate(.landscapeLeft)
+        requireFullWidth()
+        if !usesTabs, element(AccessibilityID.slideOverPanel).exists {
+            button(AccessibilityID.closeSidebarButton).tap()
+        }
+        showToday()
+        let last = element(AccessibilityID.todayCategoryRow(names[5]))
+        waitFor(element(AccessibilityID.todayCategoryRow(names[0])))
+        XCTAssertFalse(last.exists && last.isHittable, "the last row starts below the fold: \(last.frame) in \(window)")
+        screenshot("today-before-scrolling")
+        // Today's own scroll view: a swipe on the application element did not
+        // scroll in landscape.
+        let today = app.scrollViews.containing(.any, identifier: AccessibilityID.todayDate).firstMatch
+        var swipes = 0
+        while !(last.exists && last.isHittable), swipes < 8 {
+            today.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(last.isHittable, "the last row could not be scrolled to")
+        screenshot("today-scrolled-to-the-last-row")
+        last.tap()
+        waitFor(app.navigationBars[names[5]])
+    }
+
     // MARK: - Criterion 10: navigation
 
     /// A feed's row opens its list, a web page's row its settings; deleting

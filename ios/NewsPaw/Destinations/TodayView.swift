@@ -27,14 +27,29 @@ struct TodayView: View {
                 }
             }
             // The empty state fills what the bars leave, as it did before
-            // Today could scroll.
-            .containerRelativeFrame(.vertical, alignment: .top) { length, _ in length }
+            // Today could scroll. With rows the content keeps its own height,
+            // so rows below the fold can be scrolled to.
+            .modifier(FillsViewport(when: rows.isEmpty))
         }
         .refreshable {
             await refresh.refresh(.library)
         }
         .stackBackground(Theme.groupedBackground)
         .navigationTitle("Today")
+    }
+}
+
+/// Makes the scroll content exactly the viewport's height when `when` is
+/// true; leaves it its own height otherwise.
+private struct FillsViewport: ViewModifier {
+    let when: Bool
+
+    func body(content: Content) -> some View {
+        if when {
+            content.containerRelativeFrame(.vertical, alignment: .top) { length, _ in length }
+        } else {
+            content
+        }
     }
 }
 

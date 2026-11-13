@@ -38,8 +38,10 @@ final class ArticleListModel {
         failedRead != nil
     }
 
-    /// The rows on screen, from their appearing and disappearing.
-    @ObservationIgnored private var visible: Set<UUID> = []
+    /// How many views of each row are on screen, from their appearing and
+    /// disappearing: counted, so that a new view's row appearing before the
+    /// old view's row disappears (a container switch) keeps it on screen.
+    @ObservationIgnored private var visible: [UUID: Int] = [:]
     /// Refreshes started from this list that have not ended.
     @ObservationIgnored var ownRefreshes = 0
     /// Whether a next page is being read.
@@ -54,15 +56,16 @@ final class ArticleListModel {
     /// at its top.
     var isAtTop: Bool {
         guard let first = rows.first else { return true }
-        return visible.contains(first.id)
+        return visible[first.id, default: 0] > 0
     }
 
     func rowAppeared(_ id: UUID) {
-        visible.insert(id)
+        visible[id, default: 0] += 1
     }
 
     func rowDisappeared(_ id: UUID) {
-        visible.remove(id)
+        let count = visible[id, default: 0] - 1
+        visible[id] = count > 0 ? count : nil
     }
 
     func index(of id: UUID) -> Int? {
@@ -126,6 +129,6 @@ final class ArticleListModel {
     /// The article no longer exists: its row leaves the list.
     func remove(_ id: UUID) {
         rows.removeAll { $0.id == id }
-        visible.remove(id)
+        visible[id] = nil
     }
 }

@@ -320,7 +320,7 @@ struct ArticleShortcuts: View {
     /// command in the system's list of shortcuts.
     private func shortcut(_ title: LocalizedStringKey, _ key: KeyEquivalent, action: @escaping () -> Void) -> some View {
         Button(title) {
-            if reading.keysMayAct {
+            if reading.keysMayAct(on: list) {
                 action()
             }
         }

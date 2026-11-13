@@ -32,6 +32,18 @@ final class TypedKeyTests: ArticleTestCase {
             XCTAssertEqual(XCTWaiter.wait(for: [shown], timeout: timeout), .completed,
                            "\(note): \(title.exists ? title.label : "nothing open")", file: file, line: line)
         }
+        // A key acts only for the list of the tab shown: on Today, J opens
+        // nothing. (At full width on iPad the list's shortcut buttons are
+        // not in the window while Today is shown, so this guards the
+        // behaviour rather than reproducing a case the panes can show.)
+        showToday()
+        press("j")
+        sleep(1)
+        XCTAssertFalse(title.exists, "J on Today opened an article")
+        openCategoryList("World")
+        XCTAssertTrue(isUnread(waitFor(articleRow("Image story"))), "J on Today marked nothing read")
+        XCTAssertFalse(title.exists)
+
         // S and U with nothing open do nothing.
         press("s")
         press("u")

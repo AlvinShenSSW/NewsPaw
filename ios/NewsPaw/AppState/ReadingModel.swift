@@ -109,6 +109,11 @@ final class ReadingModel {
     /// again, unless it started the run itself (it reads itself after).
     func runEnded() {
         for model in lists.values where model.isAtTop && model.ownRefreshes == 0 && model.state != .notLoaded {
+            // In the tab structure a list with its article pushed on it is
+            // not on screen, whatever its rows' appearance said.
+            if navigation.layout?.structure == .tabs, navigation.openArticle(on: model.kind) != nil {
+                continue
+            }
             reload(model)
         }
     }
@@ -220,6 +225,10 @@ final class ReadingModel {
         enqueue {
             do {
                 try await operation(library)
+                // A list read queued before the change may have landed after
+                // the optimistic update with the old state; the saved state
+                // is shown again.
+                self.apply(id, read: read, starred: starred)
             } catch LibraryError.unknownArticle {
                 self.articleVanished(id)
             } catch {
@@ -311,10 +320,13 @@ final class ReadingModel {
 
     // MARK: - Keyboard (decision 15)
 
-    /// Whether a shortcut key may act now: not while a sheet, the
-    /// slide-over or the "Mark All as Read" question is open.
-    var keysMayAct: Bool {
-        navigation.sheet == nil && pendingMarkAll == nil && !navigation.isSlideOverOpen
+    /// Whether a shortcut key of `list` may act now: only while the tab
+    /// that holds the list is selected (Starred for Starred, Library for the
+    /// others), and not while a sheet, the slide-over or the "Mark All as
+    /// Read" question is open.
+    func keysMayAct(on list: ArticleListKind) -> Bool {
+        let tab: AppTab = list == .starred ? .starred : .library
+        return navigation.currentTab == tab && navigation.sheet == nil && pendingMarkAll == nil && !navigation.isSlideOverOpen
     }
 
     /// `J`: the next article of the list. With nothing open, or the open

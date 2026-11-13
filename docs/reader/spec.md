@@ -108,7 +108,7 @@ Requirements are numbered N01–N13. Later issues freeze their scope against the
 
 ### N05 Lists and reading
 
-- Lists: Today, All Unread, Starred, a category, a source. Newest first. Filter: unread / all.
+- Lists: Today, All Unread, Starred, a category, a source. Newest first. Filter: unread / all, in a category's and a source's list (All Unread lists unread articles, Starred every starred article).
 - A row shows: the title (the translation when there is one; the original title as secondary text, switchable in Settings), source name, relative time, thumbnail when available, unread mark, star, and translation state (in progress, or a small mark on failure).
 - Actions: opening marks an article read. Swipes toggle read / unread and star. A long press opens a menu (open in browser, share, copy link, mark unread). "Mark all as read" asks first.
 - Where the body comes from, tried in order:

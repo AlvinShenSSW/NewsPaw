@@ -96,6 +96,27 @@ struct SeenTests {
         #expect(Set(try await seen(fixture, source).keys) == [Library.seenHash("first"), Library.seenHash("twin")])
     }
 
+    @Test("a remembered item's link joins the batch: a later item of the feed with the same link is not inserted and is remembered")
+    func rememberedItemLinkJoinsTheBatch() async throws {
+        let fixture = try await RefreshFixture.make()
+        defer { fixture.remove() }
+        let source = try await fixture.addFeed("one").id
+        try await collect(fixture, source, [item("old", link: "https://example.invalid/shared")])
+        try await cleanUpEverything(fixture)
+        #expect(try await externalIDs(fixture, source).isEmpty)
+        fixture.clock.advance(seconds: 3_600)
+
+        let outcome = try await collect(fixture, source, [
+            item("old", link: "https://example.invalid/shared"), item("twin", link: "https://example.invalid/shared"),
+        ])
+
+        #expect(outcome == .collected(newArticles: 0, complete: true))
+        #expect(try await externalIDs(fixture, source).isEmpty)
+        #expect(try await seen(fixture, source) == [
+            Library.seenHash("old"): fixture.clock.now(), Library.seenHash("twin"): fixture.clock.now(),
+        ])
+    }
+
     @Test("same link in two feeds of one category: B's twin is remembered, and after A's article is cleaned up B does not insert it")
     func sameLinkTwoFeeds() async throws {
         let fixture = try await RefreshFixture.make()

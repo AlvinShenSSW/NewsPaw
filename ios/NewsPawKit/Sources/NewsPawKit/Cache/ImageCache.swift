@@ -10,6 +10,11 @@ import Foundation
 /// image, is the caller's (RD09). I/O failures are not thrown: a read then
 /// returns nothing, a store returns false, and the size counts what can be
 /// listed.
+///
+/// The total size is kept as a running figure (RD09 criterion 13): listing
+/// the directory on every store cost about 100 ms at 20,000 files. It is
+/// taken from a listing at first use and again whenever an eviction is
+/// needed, so files removed behind the cache's back are noticed then.
 public actor ImageCache {
     /// 500 MB.
     public static let standardLimit = 500 * 1024 * 1024
@@ -18,6 +23,8 @@ public actor ImageCache {
     public nonisolated let directory: URL
     /// The largest total size kept, in bytes.
     public nonisolated let limit: Int
+    /// The running total in bytes; `nil` until first use.
+    private var total: Int?
 
     init(directory: URL, limit: Int = standardLimit) {
         self.directory = directory
@@ -42,37 +49,73 @@ public actor ImageCache {
     public func store(_ data: Data, for address: String) -> Bool {
         guard data.count <= limit else { return false }
         let url = fileURL(for: address)
+        var total = currentTotal()
+        let replaced = fileSize(at: url)
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try data.write(to: url, options: .atomic)
             try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
         } catch {
+            // What is on disk is no longer known; the next use lists it.
+            self.total = nil
             return false
         }
+        total += data.count - replaced
+        self.total = total
+        if total > limit {
+            evict(keeping: url)
+        }
+        return true
+    }
+
+    /// The sum of the stored files' sizes, in bytes: the running total,
+    /// listed at first use and kept by stores, evictions and Clear; zero
+    /// when the directory does not exist or cannot be listed.
+    public func size() -> Int {
+        currentTotal()
+    }
+
+    /// Removes every stored item it can; the total is then what is left.
+    public func clear() {
+        var left = 0
+        for item in entries() where (try? FileManager.default.removeItem(at: item.url)) == nil {
+            left += item.size
+        }
+        total = left
+    }
+
+    // MARK: - Total
+
+    /// The running total, taken from a listing at first use.
+    private func currentTotal() -> Int {
+        if let total {
+            return total
+        }
+        let listed = entries().reduce(0) { $0 + $1.size }
+        total = listed
+        return listed
+    }
+
+    /// Lists the directory, so that the total is exact again, then removes
+    /// the least recently used items until it is within the limit. The item
+    /// at `kept`, just stored, is never a candidate.
+    private func evict(keeping kept: URL) {
         var items = entries()
         var total = items.reduce(0) { $0 + $1.size }
-        // Oldest first; the item just stored is never a candidate.
-        items.removeAll { $0.url.lastPathComponent == url.lastPathComponent }
+        // Oldest first.
+        items.removeAll { $0.url.lastPathComponent == kept.lastPathComponent }
         items.sort { $0.used < $1.used }
         for item in items where total > limit {
             if (try? FileManager.default.removeItem(at: item.url)) != nil {
                 total -= item.size
             }
         }
-        return true
+        self.total = total
     }
 
-    /// The sum of the stored files' sizes, in bytes; zero when the directory
-    /// does not exist or cannot be listed.
-    public func size() -> Int {
-        entries().reduce(0) { $0 + $1.size }
-    }
-
-    /// Removes every stored item it can.
-    public func clear() {
-        for item in entries() {
-            try? FileManager.default.removeItem(at: item.url)
-        }
+    /// The size of the file at `url`, or zero when there is none.
+    private func fileSize(at url: URL) -> Int {
+        ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.intValue ?? 0
     }
 
     // MARK: - Files

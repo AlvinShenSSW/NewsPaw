@@ -419,11 +419,14 @@ final class RefreshTests: NewsPawUITestCase {
         app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
     }
 
-    /// Closes an open context menu without choosing.
+    /// Closes an open context menu without choosing. With animations off the
+    /// same tap can also close the slide-over panel, so the category list is
+    /// shown again.
     private func dismissMenu() {
         tapOutsideDialog()
         waitForAbsence(menuButton("Category Settings"))
         waitForAbsence(menuButton("Source Settings"))
+        showCategoryList()
     }
 
     /// After "N sources failed": Tech expanded with its failing row, where

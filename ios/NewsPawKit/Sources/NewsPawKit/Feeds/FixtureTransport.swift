@@ -1,6 +1,9 @@
 #if DEBUG
+import CoreGraphics
 import Foundation
+import ImageIO
 import Synchronization
+import UniformTypeIdentifiers
 
 /// The transport of a debug build running under the UI tests (RD05
 /// criterion 19): it answers a fixed table of synthetic documents and
@@ -43,6 +46,18 @@ public final class FixtureTransport: Transport {
         /// a link that no earlier answer had, in this process or another, so
         /// that each request shows as one more unread article (RD06).
         public static let counting = "https://counting.example.invalid/rss.xml"
+        /// A feed of three articles with authors and excerpts (RD09): "Image
+        /// story" names `articleImage`, "Plain story" names no image, and
+        /// "Linkless story" has no link.
+        public static let articles = "https://articles.example.invalid/rss.xml"
+        /// The image "Image story" names: a PNG made in code, larger than a
+        /// thumbnail, with a transparent part.
+        public static let articleImage = "https://articles.example.invalid/image.png"
+        /// A feed of 40 fixed items, an hour apart, long enough to scroll,
+        /// and in every answer one more undated item that no earlier answer
+        /// had, so that each request adds a row at the top of its list
+        /// (RD09).
+        public static let longCounting = "https://longcounting.example.invalid/rss.xml"
     }
 
     private let sequenceRequests = Mutex(0)
@@ -101,6 +116,12 @@ public final class FixtureTransport: Transport {
         case Address.counting:
             // The identifier and the link are built from the item's text.
             return answer(Self.rss(title: "Counting Feed", items: ["Counting story \(UUID().uuidString)"]), type: rss)
+        case Address.articles:
+            return answer(Self.articlesFeed, type: rss)
+        case Address.articleImage:
+            return TransportResponse(finalURL: url, status: 200, headers: ["Content-Type": "image/png"], body: Self.articleImagePNG)
+        case Address.longCounting:
+            return answer(Self.longCountingFeed(fresh: String(UUID().uuidString.prefix(8))), type: rss)
         default:
             throw TransportFailure.unreachable
         }
@@ -123,6 +144,82 @@ public final class FixtureTransport: Transport {
             </channel></rss>
             """
     }
+
+    /// The articles feed: dated items with excerpts and authors, newest
+    /// first.
+    private static let articlesFeed: String = {
+        let items = [
+            """
+            <item><title>Image story</title><link>https://example.invalid/articles/image-story</link>\
+            <guid>articles-image-story</guid><author>Fixture Writer</author>\
+            <description>The harbour at dusk, with the lights coming on along the quay.</description>\
+            <enclosure url="\(Address.articleImage)" type="image/png" length="0"/>\
+            <pubDate>\(date(hoursAgo: 1))</pubDate></item>
+            """,
+            """
+            <item><title>Plain story</title><link>https://example.invalid/articles/plain-story</link>\
+            <guid>articles-plain-story</guid><author>Fixture Writer</author>\
+            <description>A market opens early, before the rain arrives.</description>\
+            <pubDate>\(date(hoursAgo: 2))</pubDate></item>
+            """,
+            """
+            <item><title>Linkless story</title><guid isPermaLink="false">articles-linkless-story</guid>\
+            <description>A note that names no page of its own.</description>\
+            <pubDate>\(date(hoursAgo: 3))</pubDate></item>
+            """,
+        ]
+        return channel(title: "Articles Feed", items: items)
+    }()
+
+    /// The long counting feed: an undated new item, then the 40 fixed
+    /// items, newest first.
+    private static func longCountingFeed(fresh: String) -> String {
+        let new = """
+            <item><title>Fresh story \(fresh)</title><link>https://example.invalid/longcounting/fresh-\(fresh)</link>\
+            <guid>longcounting-fresh-\(fresh)</guid><description>One more story.</description></item>
+            """
+        let fixed = (1...40).map { number in
+            let name = String(format: "%02d", number)
+            return """
+                <item><title>Long story \(name)</title><link>https://example.invalid/longcounting/\(name)</link>\
+                <guid>longcounting-\(name)</guid><description>Story number \(name).</description>\
+                <pubDate>\(date(hoursAgo: number))</pubDate></item>
+                """
+        }
+        return channel(title: "Long Counting Feed", items: [new] + fixed)
+    }
+
+    private static func channel(title: String, items: [String]) -> String {
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0"><channel><title>\(title)</title><link>https://example.invalid/\(slug(title))</link>
+        \(items.joined(separator: "\n"))
+        </channel></rss>
+        """
+    }
+
+    /// A 600 × 400 PNG: a transparent field with an opaque blue disc, so
+    /// that a thumbnail of it shows the white it was flattened onto.
+    static let articleImagePNG: Data = {
+        let width = 600
+        let height = 400
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                  data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              )
+        else { return Data() }
+        context.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        context.setFillColor(CGColor(srgbRed: 0.16, green: 0.36, blue: 0.62, alpha: 1))
+        context.fillEllipse(in: CGRect(x: 150, y: 50, width: 300, height: 300))
+        let output = NSMutableData()
+        guard let image = context.makeImage(),
+              let destination = CGImageDestinationCreateWithData(output, UTType.png.identifier as CFString, 1, nil)
+        else { return Data() }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return Data() }
+        return output as Data
+    }()
 
     private static func atom(title: String, items: [String]) -> String {
         let formatter = ISO8601DateFormatter()

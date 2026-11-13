@@ -10,7 +10,7 @@ struct LibraryRootView: View {
     var body: some View {
         List {
             Section {
-                RouteRow(route: .allUnread, isEditing: editMode.isEditing) {
+                RouteRow(route: .allUnread, isEditing: editMode.isEditing, unread: sources.totalUnread) {
                     Label("All Unread", systemImage: "tray")
                 }
                 .accessibilityIdentifier(AccessibilityID.allUnreadRow)
@@ -54,24 +54,32 @@ struct LibraryRootView: View {
 }
 
 /// A row that pushes `route` onto the Library stack, and does nothing while
-/// the list is in edit mode.
+/// the list is in edit mode. With `unread` it shows the unread count (none
+/// at zero) and gives it to VoiceOver as the row's value (RD09 decision 8).
 struct RouteRow<Content: View>: View {
     let route: LibraryRoute
     let isEditing: Bool
     /// A category row has a leading disclosure control and no trailing
     /// chevron (RD05).
     var showsChevron = true
+    var unread: Int?
     @ViewBuilder let content: () -> Content
     @Environment(NavigationModel.self) private var navigation
 
     var body: some View {
         Button {
             guard !isEditing else { return }
-            navigation.libraryPath.append(route)
+            navigation.push(route)
         } label: {
             HStack {
                 content()
                 Spacer(minLength: Theme.Spacing.small)
+                if let unread, unread > 0 {
+                    Text(unread, format: .number)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
+                        .accessibilityHidden(true)
+                }
                 if !isEditing, showsChevron {
                     Image(systemName: "chevron.forward")
                         .font(.footnote.weight(.semibold))
@@ -83,5 +91,6 @@ struct RouteRow<Content: View>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityValue(unread.map { Text("\($0) unread") } ?? Text(verbatim: ""))
     }
 }

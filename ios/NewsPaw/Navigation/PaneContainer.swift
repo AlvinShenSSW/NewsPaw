@@ -10,6 +10,7 @@ struct PaneContainer: View {
     @Environment(CategoryModel.self) private var categories
     @Environment(SourceModel.self) private var sources
     @Environment(RefreshModel.self) private var refresh
+    @Environment(ReadingModel.self) private var reading
 
     var body: some View {
         HStack(spacing: 0) {
@@ -30,6 +31,7 @@ struct PaneContainer: View {
                 .environment(categories)
                 .environment(sources)
                 .environment(refresh)
+                .environment(reading)
         }
     }
 
@@ -65,9 +67,10 @@ struct PaneContainer: View {
                     }
             }
             .paneIdentifier(AccessibilityID.fullPane)
-        case .allUnread, .starred, .category:
+        case .allUnread, .starred, .category, .source:
+            let list = ArticleListKind(selection)
             NavigationStack {
-                ArticleListView(kind: ArticleListKind(selection))
+                ArticleListView(kind: list)
                     .toolbar { sidebarButton }
                     .paneRoot(inlineTitle: layout.sidebarIsPane)
             }
@@ -76,7 +79,7 @@ struct PaneContainer: View {
             .paneIdentifier(AccessibilityID.listPane)
             PaneSeparator()
             NavigationStack {
-                ReadingPlaceholderView()
+                ReadingPane(list: list)
                     .paneRoot(inlineTitle: false)
             }
             .paneIdentifier(AccessibilityID.readingPane)

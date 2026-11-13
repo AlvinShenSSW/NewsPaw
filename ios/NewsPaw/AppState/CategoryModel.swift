@@ -69,6 +69,9 @@ final class CategoryModel {
     /// Run after every reload, so that the source list follows a change of
     /// categories (a deletion removes or moves sources).
     var onReload: (@MainActor () async -> Void)?
+    /// The sources of a category, so that deleting it also closes a list of
+    /// one of them (RD09 decision 19). Set by the app model.
+    var sourcesOf: (@MainActor (UUID) -> Set<UUID>)?
     /// The last queued operation; each waits for the one before it, so
     /// changes are saved one after another in the order made.
     private var lastOperation: Task<Bool, Never>?
@@ -255,6 +258,7 @@ final class CategoryModel {
 
     func delete(_ summary: CategorySummary, sources: CategorySourcesDisposition) async {
         let id = summary.id
+        let heldSources = sourcesOf?(id) ?? []
         deletionsStarted.insert(id)
         defer { deletionsStarted.remove(id) }
         let deleted = await perform { library in
@@ -266,7 +270,7 @@ final class CategoryModel {
             hiddenForDeletion = nil
         }
         if deleted {
-            navigation.categoryDeleted(id)
+            navigation.categoryDeleted(id, sources: heldSources)
             if sheet == .settings(id) {
                 sheet = nil
             }

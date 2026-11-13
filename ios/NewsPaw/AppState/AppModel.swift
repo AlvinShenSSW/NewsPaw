@@ -25,7 +25,7 @@ enum LibraryFailure: Equatable {
 final class AppModel {
     enum Status {
         case loading
-        case ready(CategoryModel, SourceModel, RefreshModel)
+        case ready(CategoryModel, SourceModel, RefreshModel, ReadingModel)
         case failed(LibraryFailure)
     }
 
@@ -76,9 +76,15 @@ final class AppModel {
                 library: library, transport: transport, candidateLimit: candidateLimit,
                 navigation: navigation, categories: categories, refresh: refresh
             )
+            let reading = ReadingModel(
+                library: library, transport: transport, navigation: navigation, sources: sources, refresh: refresh
+            )
             categories.onReload = { [weak sources] in await sources?.reload() }
+            categories.sourcesOf = { [weak sources] id in Set(sources?.sources(in: id).map(\.id) ?? []) }
             refresh.onListsChanged = { [weak sources] in await sources?.reload() }
             refresh.onStorageError = { [weak sources] in sources?.isShowingSaveError = true }
+            refresh.onRunEnded = { [weak reading] in reading?.runEnded() }
+            navigation.onListEntered = { [weak reading] list in reading?.entered(list) }
             #if DEBUG
             if let count = options.syntheticSources {
                 try await library.insertSyntheticSourcesForUITests(count: count)
@@ -89,7 +95,7 @@ final class AppModel {
             #endif
             await categories.reload()
             await refresh.load()
-            status = .ready(categories, sources, refresh)
+            status = .ready(categories, sources, refresh, reading)
             // The launch is the first entry (RD06 decision 3).
             Task { await refresh.entered() }
         } catch is CancellationError {
@@ -109,7 +115,7 @@ final class AppModel {
             wasInBackground = true
         case .active where wasInBackground:
             wasInBackground = false
-            if case .ready(_, _, let refresh) = status {
+            if case .ready(_, _, let refresh, _) = status {
                 Task { await refresh.entered() }
             }
         default:

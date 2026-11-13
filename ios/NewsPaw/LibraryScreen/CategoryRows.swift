@@ -1,9 +1,10 @@
 import NewsPawKit
 import SwiftUI
 
-/// The categories in the owner's order, with reorder, delete and a context
-/// menu with Category settings, each with a disclosure control that shows
-/// its sources: the one category list used by the Library root and by the
+/// The categories in the owner's order, each with its unread count, with
+/// reorder, delete and a context menu with Refresh, Mark All as Read and
+/// Category settings, each with a disclosure control that shows its
+/// sources: the one category list used by the Library root and by the
 /// sidebar.
 ///
 /// Source rows carry `.deleteDisabled(true)` and `.moveDisabled(true)`:
@@ -27,6 +28,7 @@ struct CategoryRows: View {
     @Environment(CategoryModel.self) private var categories
     @Environment(SourceModel.self) private var sources
     @Environment(RefreshModel.self) private var refresh
+    @Environment(ReadingModel.self) private var reading
     @Environment(\.editMode) private var editMode
 
     var body: some View {
@@ -54,13 +56,18 @@ struct CategoryRows: View {
                                 Task { await refresh.refresh(.category(summary.id)) }
                             }
                         }
+                        if sources.unreadCount(in: summary.id) > 0 {
+                            Button("Mark All as Read", systemImage: "checkmark.circle") {
+                                reading.askMarkAllRead(.category(summary.id))
+                            }
+                        }
                         Button("Category Settings", systemImage: "gearshape") {
                             presentSheet { categories.beginSettings(summary.id) }
                         }
                     }
                 if sources.expanded.contains(summary.id) {
                     ForEach(sources.sources(in: summary.id)) { source in
-                        SourceRow(source: source, presentSheet: presentSheet)
+                        SourceRow(source: source, rowContent: rowContent, presentSheet: presentSheet)
                             .deleteDisabled(true)
                             .moveDisabled(true)
                     }
@@ -102,20 +109,34 @@ struct CategoryRows: View {
             withAnimation { sources.toggleExpanded(summary.id) }
         }
         .accessibilityHidden(isEditing)
+        let unread = sources.unreadCount(in: summary.id)
         switch rowContent {
         case .tagged:
             HStack(spacing: 0) {
                 disclosure
-                label
-                    .frame(maxWidth: .infinity, minHeight: Theme.minimumTapTarget, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .accessibilityIdentifier(AccessibilityID.categoryRow(summary.category.name))
+                HStack {
+                    label
+                    Spacer(minLength: Theme.Spacing.small)
+                    if unread > 0 {
+                        Text(unread, format: .number)
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.secondaryText)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: Theme.minimumTapTarget, alignment: .leading)
+                .contentShape(Rectangle())
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(verbatim: summary.category.name))
+                .accessibilityValue(Text("\(unread) unread"))
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier(AccessibilityID.categoryRow(summary.category.name))
             }
             .tag(SidebarItem.category(summary.id))
         case .navigating:
             HStack(spacing: 0) {
                 disclosure
-                RouteRow(route: .category(summary.id), isEditing: isEditing, showsChevron: false) {
+                RouteRow(route: .category(summary.id), isEditing: isEditing, showsChevron: false, unread: unread) {
                     label
                 }
                 .accessibilityIdentifier(AccessibilityID.categoryRow(summary.category.name))

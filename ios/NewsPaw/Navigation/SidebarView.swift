@@ -9,9 +9,10 @@ enum SidebarForm {
     case slideOver(close: (_ animated: Bool) -> Void)
 }
 
-/// The sidebar's content, the same in both forms: Today, All Unread,
-/// Starred; the categories with their sources, with edit mode for reorder
-/// and delete; Add source, New category and Settings at the bottom.
+/// The sidebar's content, the same in both forms: Today, All Unread with
+/// its unread count, Starred; the categories with their sources, with edit
+/// mode for reorder and delete; Add source, New category and Settings at
+/// the bottom. A feed-like source is selected like a category.
 struct SidebarView: View {
     let form: SidebarForm
     @Environment(NavigationModel.self) private var navigation
@@ -25,9 +26,21 @@ struct SidebarView: View {
                 Label("Today", systemImage: "sun.max")
                     .tag(SidebarItem.today)
                     .accessibilityIdentifier(AccessibilityID.todayRow)
-                Label("All Unread", systemImage: "tray")
-                    .tag(SidebarItem.allUnread)
-                    .accessibilityIdentifier(AccessibilityID.allUnreadRow)
+                HStack {
+                    Label("All Unread", systemImage: "tray")
+                    Spacer(minLength: Theme.Spacing.small)
+                    if sources.totalUnread > 0 {
+                        Text(sources.totalUnread, format: .number)
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.secondaryText)
+                    }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text("All Unread"))
+                .accessibilityValue(Text("\(sources.totalUnread) unread"))
+                .accessibilityAddTraits(.isButton)
+                .tag(SidebarItem.allUnread)
+                .accessibilityIdentifier(AccessibilityID.allUnreadRow)
                 Label("Starred", systemImage: "star")
                     .tag(SidebarItem.starred)
                     .accessibilityIdentifier(AccessibilityID.starredRow)

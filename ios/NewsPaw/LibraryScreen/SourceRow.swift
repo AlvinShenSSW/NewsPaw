@@ -6,14 +6,19 @@ import SwiftUI
 /// pause mark when paused, a warning mark and the status sentence when
 /// failing. State is carried by a glyph and a VoiceOver value, never by
 /// colour or dimming alone. While the source is being collected an
-/// activity indicator takes the place of the count or mark (RD06). A tap
-/// opens Source settings; the menu offers Refresh (a feed that is not
-/// paused), Source settings, Pause or Resume, and Delete.
+/// activity indicator takes the place of the count or mark (RD06). A tap on
+/// a feed-like source opens its article list (RD09 decision 11): pushed in
+/// Library, selected like a category in the sidebar; a web page's opens its
+/// settings until RD10. The menu offers Refresh (a feed that is not paused),
+/// Source settings, Pause or Resume, and Delete.
 struct SourceRow: View {
     let source: SourceSummary
+    let rowContent: CategoryRows.RowContent
     let presentSheet: (() -> Void) -> Void
     @Environment(SourceModel.self) private var sources
     @Environment(RefreshModel.self) private var refresh
+    @Environment(NavigationModel.self) private var navigation
+    @Environment(\.editMode) private var editMode
     @ScaledMetric private var tileSize = 28.0
 
     private var isFailing: Bool {
@@ -25,56 +30,81 @@ struct SourceRow: View {
     }
 
     var body: some View {
-        Button {
+        if source.isFeedLike, rowContent == .tagged {
+            // Selected through the sidebar's selection, like a category.
+            decorated(content)
+                .tag(SidebarItem.source(source.id))
+        } else {
+            decorated(
+                Button {
+                    open()
+                } label: {
+                    content
+                }
+                .buttonStyle(.plain)
+            )
+        }
+    }
+
+    private func open() {
+        if source.isFeedLike {
+            guard editMode?.wrappedValue.isEditing != true else { return }
+            navigation.push(.source(source.id))
+        } else {
             presentSheet { sources.beginSettings(source.id) }
-        } label: {
-            HStack(spacing: Theme.Spacing.medium) {
-                tile
-                    .opacity(source.paused ? 0.5 : 1)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: source.name)
-                        .foregroundStyle(source.paused ? Theme.secondaryText : Theme.text)
-                    if isFailing, let status = source.status {
-                        SourceWording.status(status)
-                            .font(.footnote)
-                            .foregroundStyle(Theme.secondaryText)
+        }
+    }
+
+    private var content: some View {
+        HStack(spacing: Theme.Spacing.medium) {
+            tile
+                .opacity(source.paused ? 0.5 : 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: source.name)
+                    .foregroundStyle(source.paused ? Theme.secondaryText : Theme.text)
+                if isFailing, let status = source.status {
+                    SourceWording.status(status)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+            }
+            Spacer(minLength: Theme.Spacing.small)
+            trailing
+        }
+        // Aligned with the category's label, after the disclosure
+        // control.
+        .padding(.leading, Theme.minimumTapTarget)
+        .frame(minHeight: Theme.minimumTapTarget)
+        .contentShape(Rectangle())
+    }
+
+    private func decorated(_ row: some View) -> some View {
+        row
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: source.name))
+            .accessibilityValue(accessibilityValue)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier(AccessibilityID.sourceRow(source.name))
+            .contextMenu {
+                if source.kind == .feed, !source.paused {
+                    Button("Refresh", systemImage: "arrow.clockwise") {
+                        Task { await refresh.refresh(.source(source.id)) }
                     }
                 }
-                Spacer(minLength: Theme.Spacing.small)
-                trailing
-            }
-            // Aligned with the category's label, after the disclosure
-            // control.
-            .padding(.leading, Theme.minimumTapTarget)
-            .frame(minHeight: Theme.minimumTapTarget)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: source.name))
-        .accessibilityValue(accessibilityValue)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityIdentifier(AccessibilityID.sourceRow(source.name))
-        .contextMenu {
-            if source.kind == .feed, !source.paused {
-                Button("Refresh", systemImage: "arrow.clockwise") {
-                    Task { await refresh.refresh(.source(source.id)) }
+                Button("Source Settings", systemImage: "gearshape") {
+                    presentSheet { sources.beginSettings(source.id) }
+                }
+                if source.isFeedLike {
+                    if source.paused {
+                        Button("Resume", systemImage: "play") { sources.setPaused(source.id, false) }
+                    } else {
+                        Button("Pause", systemImage: "pause") { sources.setPaused(source.id, true) }
+                    }
+                }
+                Button("Delete", systemImage: "trash", role: .destructive) {
+                    sources.requestDeletion(source.id)
                 }
             }
-            Button("Source Settings", systemImage: "gearshape") {
-                presentSheet { sources.beginSettings(source.id) }
-            }
-            if source.isFeedLike {
-                if source.paused {
-                    Button("Resume", systemImage: "play") { sources.setPaused(source.id, false) }
-                } else {
-                    Button("Pause", systemImage: "pause") { sources.setPaused(source.id, true) }
-                }
-            }
-            Button("Delete", systemImage: "trash", role: .destructive) {
-                sources.requestDeletion(source.id)
-            }
-        }
     }
 
     @ViewBuilder

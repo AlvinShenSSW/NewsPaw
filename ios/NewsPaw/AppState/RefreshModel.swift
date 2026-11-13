@@ -26,6 +26,9 @@ final class RefreshModel {
     @ObservationIgnored var onListsChanged: (@MainActor () async -> Void)?
     /// Shows the "could not be saved" alert; set by the app model.
     @ObservationIgnored var onStorageError: (@MainActor () -> Void)?
+    /// Told when a run has ended and the lists have been read again, so
+    /// that an article list at its top reads itself again (RD09 decision 3).
+    @ObservationIgnored var onRunEnded: (@MainActor () -> Void)?
 
     @ObservationIgnored private let library: Library
     @ObservationIgnored private let preferences: Preferences
@@ -90,6 +93,7 @@ final class RefreshModel {
         }
         await load()
         await reloadLists()
+        onRunEnded?()
     }
 
     // MARK: - Background time (decision 6)

@@ -82,41 +82,6 @@
         }
       }
     },
-    "%lld unread articles — article lists are not available in this version yet." : {
-      "comment" : "Interim text of Today, All Unread and a category while their scope holds unread articles. RD09 deletes it.",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld unread article — article lists are not available in this version yet."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld unread articles — article lists are not available in this version yet."
-                }
-              }
-            }
-          }
-        },
-        "zh-Hans" : {
-          "variations" : {
-            "plural" : {
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "有 %lld 篇未读文章，这个版本还不能查看文章列表。"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "30 Days" : {
       "comment" : "Settings → Refresh, Keep Articles: thirty days (the default).",
       "localizations" : {
@@ -234,6 +199,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "飞机"
+          }
+        }
+      }
+    },
+    "All" : {
+      "comment" : "Segment of an article list's filter: every article (RD09).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部"
           }
         }
       }
@@ -425,6 +401,17 @@
         }
       }
     },
+    "Clear Image Cache" : {
+      "comment" : "Settings → Data: button that empties the current library's image cache.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除图片缓存"
+          }
+        }
+      }
+    },
     "Close Sidebar" : {
       "comment" : "Accessibility label of the icon-only button that closes the slide-over sidebar on iPad.",
       "localizations" : {
@@ -458,6 +445,17 @@
         }
       }
     },
+    "Copy Link" : {
+      "comment" : "Context-menu item of an article row: copies the article's link.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制链接"
+          }
+        }
+      }
+    },
     "Could not check in time" : {
       "comment" : "Second line of a declared feed that did not answer within the time limit; choosing it checks it again.",
       "localizations" : {
@@ -465,6 +463,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未能及时检查"
+          }
+        }
+      }
+    },
+    "Could not load" : {
+      "comment" : "Last row of an article list whose page could not be read; followed by Try Again.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法载入"
           }
         }
       }
@@ -520,6 +529,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "创建"
+          }
+        }
+      }
+    },
+    "Data" : {
+      "comment" : "The Settings row and screen for data: the image cache (more arrives later).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据"
           }
         }
       }
@@ -867,6 +887,28 @@
         }
       }
     },
+    "Image Cache" : {
+      "comment" : "Settings → Data: the row that shows the image cache's size.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图片缓存"
+          }
+        }
+      }
+    },
+    "Images" : {
+      "comment" : "Settings → Data: section header of the image cache.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图片"
+          }
+        }
+      }
+    },
     "It was created by a newer version of the app. Update NewsPaw to open it." : {
       "comment" : "Library failure screen: the reason shown when the library was written by a newer version of the app.",
       "localizations" : {
@@ -1001,6 +1043,96 @@
         }
       }
     },
+    "Mark %lld articles as read?" : {
+      "comment" : "Title of the Mark All as Read question; %lld is the number of unread articles it will mark.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Mark %lld article as read?"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Mark %lld articles as read?"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "将 %lld 篇文章标为已读？"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Mark All as Read" : {
+      "comment" : "Toolbar button of an article list and context-menu item of a category: marks every unread article of the scope read, after asking.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部标为已读"
+          }
+        }
+      }
+    },
+    "Mark as Read" : {
+      "comment" : "Swipe, menu item and reading-screen button: marks an article read; also the confirming button of the Mark All as Read question.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标为已读"
+          }
+        }
+      }
+    },
+    "Mark as Read or Unread" : {
+      "comment" : "Keyboard command (U), shown in the iPad shortcut list: toggles the open article's read state.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标为已读或未读"
+          }
+        }
+      }
+    },
+    "Mark as Unread" : {
+      "comment" : "Swipe, menu item and reading-screen button: marks an article unread.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标为未读"
+          }
+        }
+      }
+    },
+    "More" : {
+      "comment" : "Accessibility label of an article list's toolbar menu (Refresh, Category or Source Settings).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多"
+          }
+        }
+      }
+    },
     "Move Sources to “%@”" : {
       "comment" : "Button in the deletion dialog: move the deleted category's sources to the named category, then delete it. %@ is the other category's name.",
       "localizations" : {
@@ -1100,6 +1232,17 @@
         }
       }
     },
+    "Next Article" : {
+      "comment" : "Keyboard command (J), shown in the iPad shortcut list: opens the next article of the list.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下一篇"
+          }
+        }
+      }
+    },
     "No article selected" : {
       "comment" : "Shown in the reading pane on iPad when no article is open.",
       "localizations" : {
@@ -1111,13 +1254,13 @@
         }
       }
     },
-    "No articles in this category" : {
-      "comment" : "Empty state of a category's article list.",
+    "No articles yet" : {
+      "comment" : "Empty state of an article list whose scope holds no article at all.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这个分类还没有文章"
+            "value" : "还没有文章"
           }
         }
       }
@@ -1221,6 +1364,28 @@
         }
       }
     },
+    "Open Original Page" : {
+      "comment" : "Button of the reading screen: opens the article's page (in Safari until the embedded browser arrives).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开原网页"
+          }
+        }
+      }
+    },
+    "Open in Browser" : {
+      "comment" : "Context-menu item of an article row: opens the article's page in the browser.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在浏览器中打开"
+          }
+        }
+      }
+    },
     "Paint palette" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -1272,6 +1437,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "预览"
+          }
+        }
+      }
+    },
+    "Previous Article" : {
+      "comment" : "Keyboard command (K), shown in the iPad shortcut list: opens the previous article of the list.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一篇"
           }
         }
       }
@@ -1364,6 +1540,39 @@
         }
       }
     },
+    "Share" : {
+      "comment" : "Context-menu item and reading-screen button: shares the article's link.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享"
+          }
+        }
+      }
+    },
+    "Show" : {
+      "comment" : "Accessibility label of an article list's Unread / All control (hidden label).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示"
+          }
+        }
+      }
+    },
+    "Show All" : {
+      "comment" : "Button under \"All caught up\" in a category or source list: switches the filter to All.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示全部"
+          }
+        }
+      }
+    },
     "Show Sidebar" : {
       "comment" : "Accessibility label of the icon-only button that slides the sidebar over the content on iPad.",
       "localizations" : {
@@ -1448,6 +1657,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "星形"
+          }
+        }
+      }
+    },
+    "Star or Unstar" : {
+      "comment" : "Keyboard command (S), shown in the iPad shortcut list: stars or unstars the open article.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收藏或取消收藏"
           }
         }
       }
@@ -1553,6 +1773,17 @@
         }
       }
     },
+    "The full article layout is not available in this version yet." : {
+      "comment" : "Reading screen, under the excerpt, until the full layout arrives (RD11).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个版本还不能显示完整的文章排版。"
+          }
+        }
+      }
+    },
     "The library file is damaged or is not a NewsPaw library." : {
       "comment" : "Library failure screen: the reason shown when the library file is corrupt or is not a database.",
       "localizations" : {
@@ -1582,6 +1813,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这个地址太长了。"
+          }
+        }
+      }
+    },
+    "This article is no longer available." : {
+      "comment" : "Reading screen of an article whose source was deleted or that clean-up removed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这篇文章已不存在。"
           }
         }
       }
@@ -1689,6 +1931,17 @@
         }
       }
     },
+    "Thumbnails of the images in article lists. Cleared images are fetched again when they are next shown." : {
+      "comment" : "Settings → Data: footer of the image cache section.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文章列表中图片的缩略图。清除后，下次显示时会重新获取。"
+          }
+        }
+      }
+    },
     "Today" : {
       "comment" : "Destination name: the tab and sidebar row for today's overviews (ux section 2).",
       "localizations" : {
@@ -1740,6 +1993,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "换一个地址"
+          }
+        }
+      }
+    },
+    "Unread" : {
+      "comment" : "Segment of an article list's filter: unread articles only; also the first part of an unread row's VoiceOver label (RD09).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未读"
+          }
+        }
+      }
+    },
+    "Unstar" : {
+      "comment" : "Swipe, menu item and reading-screen button: removes an article's star.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消收藏"
+          }
+        }
+      }
+    },
+    "Untitled" : {
+      "comment" : "Title of an article that has neither a title nor an excerpt.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无标题"
           }
         }
       }
@@ -1861,6 +2147,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "世界"
+          }
+        }
+      }
+    },
+    "action.star" : {
+      "comment" : "Swipe, menu item and reading-screen button: stars an article. (\"Star\" alone is the category icon's name.)",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收藏"
           }
         }
       }

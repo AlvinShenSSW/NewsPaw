@@ -39,6 +39,9 @@ final class SourceModel {
     /// The last queued operation; each waits for the one before it.
     private var lastOperation: Task<Bool, Never>?
     private var queuedOperations = 0
+    /// Raised by every read of the sources, so that a read that ends after
+    /// a newer one has started is dropped (RD09).
+    private var reloadToken = 0
 
     #if DEBUG
     /// Set by the UI tests: the next source save fails before reaching
@@ -85,6 +88,36 @@ final class SourceModel {
         summaries.filter(\.isFeedLike).reduce(0) { $0 + $1.unreadCount }
     }
 
+    /// Unread articles in a list's scope; Starred counts none.
+    func unreadCount(of list: ArticleListKind) -> Int {
+        switch list {
+        case .allUnread: totalUnread
+        case .category(let id): unreadCount(in: id)
+        case .source(let id): summary(id)?.unreadCount ?? 0
+        case .starred: 0
+        }
+    }
+
+    /// Every article stored in a list's scope, read or not; `nil` for
+    /// Starred, whose count the summaries do not hold.
+    func articleCount(of list: ArticleListKind) -> Int? {
+        switch list {
+        case .allUnread: summaries.reduce(0) { $0 + $1.articleCount }
+        case .category(let id): sources(in: id).reduce(0) { $0 + $1.articleCount }
+        case .source(let id): summary(id)?.articleCount ?? 0
+        case .starred: nil
+        }
+    }
+
+    /// The categories that hold unread articles, in the owner's order, with
+    /// their counts: Today's rows (RD09 decision 10).
+    func categoriesWithUnread(_ categories: [CategorySummary]) -> [(category: LibraryCategory, unread: Int)] {
+        categories.compactMap { summary in
+            let unread = unreadCount(in: summary.id)
+            return unread > 0 ? (summary.category, unread) : nil
+        }
+    }
+
     /// Whether the library has a feed-like source: Today's status line is
     /// shown only then.
     var hasFeedLikeSource: Bool {
@@ -106,16 +139,33 @@ final class SourceModel {
         sources(in: category).contains { $0.kind == .feed && !$0.paused }
     }
 
-    /// Reads the sources from storage. A settings sheet open on a source
-    /// that no longer exists closes.
+    /// Whether a list's Refresh would collect anything: its category's or
+    /// its source's targets, or the library's for All Unread and Starred.
+    func hasRefreshTarget(for list: ArticleListKind) -> Bool {
+        switch list {
+        case .allUnread, .starred: summaries.contains { $0.kind == .feed && !$0.paused }
+        case .category(let id): hasRefreshTarget(in: id)
+        case .source(let id): summary(id).map { $0.kind == .feed && !$0.paused } ?? false
+        }
+    }
+
+    /// Reads the sources from storage, with their counts. A read that ends
+    /// after a newer one has started is dropped. A settings sheet open on a
+    /// source that no longer exists closes, and so does that source's list
+    /// (RD09 decision 19).
     func reload() async {
+        reloadToken += 1
+        let token = reloadToken
         do {
-            summaries = try await library.sourceSummaries()
+            let read = try await library.sourceSummaries()
+            guard token == reloadToken else { return }
+            summaries = read
             loadFailed = false
         } catch is CancellationError {
             // Not a failure to read: what is shown stays.
             return
         } catch {
+            guard token == reloadToken else { return }
             summaries = []
             loadFailed = true
             return
@@ -123,6 +173,7 @@ final class SourceModel {
         if case .sourceSettings(let id) = navigation.sheet, summary(id) == nil {
             navigation.sheet = nil
         }
+        navigation.sourcesChanged(existing: Set(summaries.map(\.id)))
     }
 
     func toggleExpanded(_ category: UUID) {

@@ -69,6 +69,7 @@ struct ArticleListTests {
         #expect(row.link == "https://example.invalid/\(id.databaseKey)")
         #expect(row.imageAddress == nil)
         #expect(row.shownAt == fixture.at(100))
+        #expect(row.firstSeenAt == fixture.at(200))
         #expect(!row.isRead)
         #expect(row.isStarred)
         #expect(rows[1].shownAt == fixture.at(50), "an undated article shows its first-seen time")

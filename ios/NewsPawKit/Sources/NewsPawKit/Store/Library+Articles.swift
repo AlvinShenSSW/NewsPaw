@@ -164,14 +164,17 @@ extension Library {
             throw LibraryError.storage("Not an identifier: \(idText), \(sourceText)")
         }
         let shownText: String = row["shown_at"]
-        guard let shownAt = Date.fromDatabaseValue(shownText.databaseValue) else {
-            throw LibraryError.storage("Not a time: \(shownText)")
+        let firstSeenText: String = row["first_seen_at"]
+        guard let shownAt = Date.fromDatabaseValue(shownText.databaseValue),
+              let firstSeenAt = Date.fromDatabaseValue(firstSeenText.databaseValue)
+        else {
+            throw LibraryError.storage("Not a time: \(shownText), \(firstSeenText)")
         }
         return ArticleRow(
             id: id, sourceID: sourceID, sourceName: row["source_name"], title: row["title"], excerpt: row["excerpt"],
             author: row["author"], link: row["url"], imageAddress: row["image_url"], shownAt: shownAt,
-            isRead: row["is_read"], isStarred: row["is_starred"],
-            position: ArticlePosition(shownAt: shownText, firstSeenAt: row["first_seen_at"], rowID: row["row_id"])
+            firstSeenAt: firstSeenAt, isRead: row["is_read"], isStarred: row["is_starred"],
+            position: ArticlePosition(shownAt: shownText, firstSeenAt: firstSeenText, rowID: row["row_id"])
         )
     }
 

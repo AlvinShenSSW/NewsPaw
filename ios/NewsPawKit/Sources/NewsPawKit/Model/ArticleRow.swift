@@ -44,6 +44,9 @@ public struct ArticleRow: Sendable, Hashable, Identifiable {
     public let imageAddress: String?
     /// The time the row shows: the published time, else the first-seen time.
     public let shownAt: Date
+    /// When the library first stored the article: what "Mark All as Read"
+    /// compares with the moment it was asked (RD09 decision 7).
+    public let firstSeenAt: Date
     public var isRead: Bool
     public var isStarred: Bool
     /// Where the row stands in the list order.

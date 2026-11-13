@@ -12,11 +12,12 @@ struct RootView: View {
             Theme.background.ignoresSafeArea()
         case .failed(let failure):
             LibraryFailureView(failure: failure)
-        case .ready(let categories, let sources, let refresh):
+        case .ready(let categories, let sources, let refresh, let reading):
             ShellView()
                 .environment(categories)
                 .environment(sources)
                 .environment(refresh)
+                .environment(reading)
                 .environment(model.navigation)
         }
     }
@@ -66,6 +67,7 @@ struct ShellView: View {
         }
         .categoryDialogs(host: .root)
         .sourceDialogs(host: .root)
+        .markAllReadDialog(host: .root)
         .tint(Theme.accent)
         .foregroundStyle(Theme.text)
     }

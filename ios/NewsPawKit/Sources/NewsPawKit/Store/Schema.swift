@@ -14,6 +14,7 @@ enum Schema {
         registerV1(in: &migrator)
         registerV2(in: &migrator)
         registerV3(in: &migrator)
+        registerV4(in: &migrator)
         return migrator
     }
 
@@ -103,6 +104,19 @@ enum Schema {
                     key TEXT NOT NULL PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+                """)
+        }
+    }
+
+    /// `v4`: the order of the article lists (RD09 decision 2) — newest first
+    /// by the time a row shows (the published time, else the first-seen
+    /// time), then by first-seen time, then by `rowid`, which every index
+    /// carries — walked backwards by the list queries. It only creates the
+    /// index.
+    static func registerV4(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v4") { db in
+            try db.execute(sql: """
+                CREATE INDEX article_order ON article(COALESCE(published_at, first_seen_at), first_seen_at);
                 """)
         }
     }

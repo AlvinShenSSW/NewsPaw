@@ -81,7 +81,7 @@ A three-column split view: sidebar → article list → reading screen.
   - failed → reason and "Retry";
   - no new articles → "Nothing new today";
   - no model set up → "Set up a model to get overviews", linking to Settings.
-- Categories with overviews off appear as compact rows (icon, name, unread count) below the cards.
+- Categories with overviews off appear as compact rows (icon, name, unread count) below the cards. Until overviews exist, Today lists such a row for each category that has unread articles; a row opens that category's article list (on iPhone, in the Library tab).
 - Pull to refresh.
 - First run with no sources: an empty state with "Add a source" and "Import configuration".
 
@@ -96,7 +96,7 @@ A three-column split view: sidebar → article list → reading screen.
 
 ### S3 Article list
 
-- Title: the category or source name. A segmented control: Unread / All.
+- Title: the category or source name. A segmented control: Unread / All — in a category's and a source's list only; All Unread lists unread articles and Starred every starred article. A list is a snapshot: a row whose read or starred state changes keeps its place until the list is read again — when it is entered, when its filter changes, and when a refresh ends that was started from it or while its first row is on screen.
 - For a category with overviews on, today's overview sits at the top as a collapsible card (same content and states as on Today), with "Earlier overviews" for the last 7 days.
 - Rows: unread dot; title — the translation when present, in two to three lines; the original title in one secondary line (optional); source name and relative time; thumbnail on the trailing side; star when starred.
 - A row whose title is still being translated shows the original with a small activity mark; a failed one shows the original with a small warning mark. Tapping the mark explains the failure.

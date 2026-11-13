@@ -21,6 +21,9 @@ public enum LibraryError: Error, Sendable, Equatable {
     case unknownCategory
     /// No source of this library has the given identifier.
     case unknownSource
+    /// No article of this library has the given identifier: its source was
+    /// deleted, or clean-up removed it.
+    case unknownArticle
     /// The address is refused by the normal form (`SourceAddress`).
     case invalidAddress(SourceAddressProblem)
     /// An option that does not belong to the source's kind (a web page has

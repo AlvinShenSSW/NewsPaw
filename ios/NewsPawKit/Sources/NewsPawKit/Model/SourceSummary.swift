@@ -44,8 +44,7 @@ public struct SourceSummary: Sendable, Hashable, Identifiable {
     public let autoTranslate: AutoTranslate
     public let bodyMode: BodyMode
     public let translatePage: Bool
-    /// Articles not read. Until articles can be read (RD09) this is the
-    /// number of stored articles.
+    /// Articles not read.
     public let unreadCount: Int
     /// Every stored article, starred ones included.
     public let articleCount: Int

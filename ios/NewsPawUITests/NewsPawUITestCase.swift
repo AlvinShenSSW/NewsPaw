@@ -145,7 +145,7 @@ class NewsPawUITestCase: XCTestCase {
     /// Opens New Category from wherever it is offered on this structure.
     func openNewCategory() {
         if app.tabBars.firstMatch.exists {
-            app.tabBars.buttons.element(boundBy: 1).tap()
+            showCategoryList()
             waitFor(button(AccessibilityID.addMenu)).tap()
             waitFor(button(AccessibilityID.newCategoryButton)).tap()
         } else {
@@ -184,7 +184,13 @@ class NewsPawUITestCase: XCTestCase {
     func openSidebarIfNeeded() {
         if !element(AccessibilityID.sidebarPane).exists, !element(AccessibilityID.slideOverPanel).exists {
             waitFor(button(AccessibilityID.showSidebarButton)).tap()
-            waitFor(element(AccessibilityID.slideOverPanel))
+            let panel = waitFor(element(AccessibilityID.slideOverPanel))
+            // A tap while the panel still slides in can land on the dimmed
+            // layer, which closes it (seen in RD09's runs).
+            let settled = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+                panel.frame.minX >= self.window.minX - 0.5
+            }, object: nil)
+            _ = XCTWaiter.wait(for: [settled], timeout: timeout)
         }
     }
 
@@ -208,6 +214,11 @@ class NewsPawUITestCase: XCTestCase {
         if app.tabBars.firstMatch.exists {
             // By position, so that it also works in Simplified Chinese.
             app.tabBars.buttons.element(boundBy: 1).tap()
+            // A list pushed on the Library tab (RD09): a second tap on the
+            // selected tab returns to its root.
+            if !button(AccessibilityID.addMenu).waitForExistence(timeout: 3) {
+                app.tabBars.buttons.element(boundBy: 1).tap()
+            }
             waitFor(button(AccessibilityID.addMenu))
         } else {
             openSidebarIfNeeded()
@@ -277,7 +288,7 @@ class NewsPawUITestCase: XCTestCase {
     /// Opens Add source from wherever it is offered on this structure.
     func openAddSource() {
         if app.tabBars.firstMatch.exists {
-            app.tabBars.buttons.element(boundBy: 1).tap()
+            showCategoryList()
             waitFor(button(AccessibilityID.addMenu)).tap()
             waitFor(button(AccessibilityID.addSourceButton)).tap()
         } else {
@@ -388,11 +399,48 @@ class NewsPawUITestCase: XCTestCase {
         ["Shown", "已展开"].contains(disclosure.value as? String ?? "")
     }
 
-    /// Opens Source settings from the source's row.
+    /// Opens Source settings from the source's row: a web page's row opens
+    /// them; a feed's row opens its article list, whose toolbar menu has
+    /// Source Settings (RD09 criterion 19).
     func openSourceSettings(_ name: String, in category: String) {
         expand(category)
         waitFor(sourceRow(name)).tap()
-        waitFor(app.textFields[AccessibilityID.nameField])
+        let field = app.textFields[AccessibilityID.nameField]
+        let menu = button(AccessibilityID.listMenu)
+        let either = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in field.exists || menu.exists }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [either], timeout: timeout), .completed, "neither the settings nor the list opened")
+        if !field.exists {
+            openListSettings(source: true)
+        }
+        waitFor(field)
+    }
+
+    /// Opens Category Settings or Source Settings from the shown list's
+    /// toolbar menu.
+    func openListSettings(source: Bool) {
+        waitFor(button(AccessibilityID.listMenu)).tap()
+        let labels = source ? ["Source Settings", "来源设置"] : ["Category Settings", "分类设置"]
+        waitFor(app.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch).tap()
+    }
+
+    // MARK: - Articles (RD09)
+
+    func articleRow(_ title: String) -> XCUIElement {
+        element(AccessibilityID.articleRow(title))
+    }
+
+    /// The article rows shown, top to bottom.
+    func articleRowsShown() -> [XCUIElement] {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", AccessibilityID.articleRowPrefix))
+            .allElementsBoundByIndex
+            .filter { $0.exists && !$0.frame.isEmpty }
+            .sorted { $0.frame.minY < $1.frame.minY }
+    }
+
+    /// Whether a row's label says it is unread (its first part).
+    func isUnread(_ row: XCUIElement) -> Bool {
+        row.label.hasPrefix("Unread, ") || row.label.hasPrefix("未读, ")
     }
 
     func screenshot(_ name: String) {

@@ -107,10 +107,46 @@ enum AccessibilityID {
     static let starredEmpty = "empty.starred"
     static let categoryEmpty = "empty.category"
     static let noArticleSelected = "empty.reading"
-    /// RD09 deletes this identifier with the interim state.
-    static let interimUnread = "interim.unread"
+    static let sourceEmpty = "empty.source"
     static let aboutRow = "settings.about"
     static let versionValue = "about.version"
+
+    // Article lists (RD09)
+    static let articleRowPrefix = "article.row."
+    static let articleFilter = "list.filter"
+    static let markAllReadButton = "list.markAllRead"
+    static let listMenu = "list.menu"
+    static let couldNotLoad = "list.couldNotLoad"
+    static let showAllButton = "list.showAll"
+
+    /// A list row, named by the title it shows.
+    static func articleRow(_ title: String) -> String {
+        articleRowPrefix + title
+    }
+
+    // Reading screen (RD09, interim until RD11)
+    static let readingTitle = "reading.title"
+    static let readingByline = "reading.byline"
+    static let readingExcerpt = "reading.excerpt"
+    static let readingInterimNote = "reading.interim"
+    static let openOriginalButton = "reading.openOriginal"
+    static let readingStarButton = "reading.star"
+    static let readingShareButton = "reading.share"
+    static let readingReadButton = "reading.read"
+    static let articleUnavailable = "reading.unavailable"
+
+    // Today (RD09)
+    static let todayDate = "today.date"
+    static let todayCategoryRowPrefix = "today.category."
+
+    static func todayCategoryRow(_ name: String) -> String {
+        todayCategoryRowPrefix + name
+    }
+
+    // Settings → Data (RD09)
+    static let dataRow = "settings.data"
+    static let cacheSize = "data.cacheSize"
+    static let clearCacheButton = "data.clearCache"
 
     // Refresh
     static let todayStatus = "today.status"

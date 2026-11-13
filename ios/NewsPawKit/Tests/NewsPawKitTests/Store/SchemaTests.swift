@@ -227,16 +227,17 @@ struct SchemaTests {
             var indexes: [String: [String]] = [:]
             for index in try Row.fetchAll(db, sql: "PRAGMA index_list(article)") where (index["origin"] as String) == "c" {
                 let name: String = index["name"]
-                indexes[name] = try Row.fetchAll(db, sql: "PRAGMA index_info(\(name))").map { $0["name"] }
+                indexes[name] = try Row.fetchAll(db, sql: "PRAGMA index_info(\(name))").map { ($0["name"] as String?) ?? "<expression>" }
             }
             return (migrations, columns, indexes)
         }
-        #expect(migrations == ["v1", "v2", "v3"])
+        #expect(migrations == ["v1", "v2", "v3", "v4"])
         #expect(columns == Self.expectedColumns["article"]! + [ColumnInfo("content_html", "TEXT", notNull: false)])
-        #expect(indexes == ["article_url": ["url"]])
+        // v4 adds the order index (RD09).
+        #expect(indexes == ["article_url": ["url"], "article_order": ["<expression>", "first_seen_at"]])
     }
 
-    @Test("the version-1 fixture migrates to v2 and v3 with its rows intact")
+    @Test("the version-1 fixture migrates to v2, v3 and v4 with its rows intact")
     func fixtureMigratesToVersion2() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -247,7 +248,7 @@ struct SchemaTests {
         let library = try await LibraryStore(directory: directory).openNormal()
 
         let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
-        #expect(after.appliedMigrations == ["v1", "v2", "v3"])
+        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4"])
         #expect(after.rows["setting"] == [])
         for table in ["category", "source", "article_body", "seen"] {
             #expect(after.rows[table] == before.rows[table], "rows of \(table)")
@@ -274,7 +275,7 @@ struct SchemaTests {
         #expect(columns == [ColumnInfo("key", "TEXT", notNull: true, pk: 1), ColumnInfo("value", "TEXT", notNull: true)])
     }
 
-    @Test("a v2 database with rows in every table migrates to v3 and keeps every row")
+    @Test("a v2 database with rows in every table migrates to v3 and v4 and keeps every row")
     func version2DatabaseMigratesToVersion3() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -301,7 +302,7 @@ struct SchemaTests {
         let library = try await LibraryStore(directory: directory).openNormal()
 
         let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
-        #expect(after.appliedMigrations == ["v1", "v2", "v3"])
+        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4"])
         for table in ["category", "source", "article", "article_body", "seen"] {
             #expect(after.rows[table] == before.rows[table], "rows of \(table)")
         }
@@ -318,11 +319,79 @@ struct SchemaTests {
             try db.execute(sql: "CREATE TABLE test_after_v3 (note TEXT)")
         }
         let before = try await buildDatabase(in: directory, migrator: newer)
-        #expect(before.appliedMigrations == ["test_after_v3", "v1", "v2", "v3"])
+        #expect(before.appliedMigrations == ["test_after_v3", "v1", "v2", "v3", "v4"])
 
         try await expectRefusal(in: directory, migrator: Schema.migrator)
 
         #expect(try await snapshot(in: directory, migrator: newer) == before)
+    }
+
+    // MARK: - RD09 criterion 2: migration v4
+
+    @Test("a v3 database with rows migrates to v4, keeps every row and gains the order index")
+    func version3DatabaseMigratesToVersion4() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var upToVersion3 = DatabaseMigrator()
+        Schema.registerV1(in: &upToVersion3)
+        Schema.registerV2(in: &upToVersion3)
+        Schema.registerV3(in: &upToVersion3)
+        let clock = TestClock()
+        let before: DatabaseSnapshot
+        do {
+            let store = LibraryStore(directory: directory, now: clock.now)
+            let library = try await store.open(.normal, migrator: upToVersion3, create: true)
+            let world = try await library.createCategory(name: "World", icon: .globe)
+            try await Sample.fill(library, category: world.id, prefix: "v3", at: clock.now())
+            try await library.pool.write { db in
+                try db.execute(sql: "UPDATE article SET content_html = '<p>kept</p>'")
+            }
+            try await library.setLastRefreshAt(clock.now())
+            before = try await library.pool.read { try DatabaseSnapshot.read($0) }
+        }
+        #expect(before.appliedMigrations == ["v1", "v2", "v3"])
+        #expect(!before.schema.contains { $0[1] == "article_order" })
+        for table in ["category", "source", "article", "article_body", "seen", "setting"] {
+            #expect(before.rows[table]?.isEmpty == false, "\(table) has rows")
+        }
+
+        let library = try await LibraryStore(directory: directory).openNormal()
+
+        let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
+        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4"])
+        for table in ["category", "source", "article", "article_body", "seen", "setting"] {
+            #expect(after.rows[table] == before.rows[table], "rows of \(table)")
+        }
+        #expect(after.integrity == ["ok"])
+        // The only schema change is the order index.
+        let added = after.schema.filter { !before.schema.contains($0) }
+        #expect(added == [["index", "article_order", "article",
+                           "CREATE INDEX article_order ON article(COALESCE(published_at, first_seen_at), first_seen_at)"]])
+        #expect(before.schema.allSatisfy { after.schema.contains($0) })
+        #expect(try await library.articleRows(.library, filter: .all).count == 4)
+    }
+
+    @Test("the all-unread page query, first page and later pages, walks the order index")
+    func allUnreadPageQueryUsesOrderIndex() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = try await LibraryStore(directory: directory).openNormal()
+        var firstPage: [String] = []
+        var noArguments: [(any DatabaseValueConvertible)?] = []
+        Library.appendListConditions(.library, filter: .unread, to: &firstPage, arguments: &noArguments)
+        let laterPage = firstPage + ["(\(Library.shownAtSQL), article.first_seen_at, article.rowid) < (?, ?, ?)"]
+        for (name, conditions, arguments) in [
+            ("first page", firstPage, [200] as StatementArguments),
+            ("later page", laterPage, ["2026-11-13 00:00:00.000", "2026-11-13 00:00:00.000", 5, 200] as StatementArguments),
+        ] {
+            let plan = try await library.pool.read { db in
+                try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + Library.articleRowsSQL(where: conditions), arguments: arguments)
+                    .map { $0["detail"] as String }
+            }
+            print("RD09 query plan, all unread, \(name): \(plan)")
+            #expect(plan.contains { $0.contains("article_order") }, "\(name): \(plan)")
+            #expect(!plan.contains { $0.contains("TEMP B-TREE") }, "\(name) sorts: \(plan)")
+        }
     }
 
     @Test("the recorded refresh time round-trips through setting")

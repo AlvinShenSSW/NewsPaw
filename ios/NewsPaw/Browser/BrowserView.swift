@@ -161,28 +161,69 @@ struct BrowserView: View {
 }
 
 /// Hosts the session's one web view. A container switch makes a new host
-/// before the old one is taken down; the web view moves to the newest host,
-/// keeping its page and history (measured: SwiftUI's `WebView` traps when a
-/// second view is made for a page still bound to the first).
+/// before the old one is taken down, and a host leaving the screen can
+/// still be updated with a newer session; the web view therefore moves to
+/// whichever host is in a window and laid out last, keeping its page and
+/// history (measured: SwiftUI's `WebView` traps when a second view is made
+/// for a page still bound to the first).
 private struct WebViewHost: UIViewRepresentable {
     let session: BrowserSession
 
-    func makeUIView(context: Context) -> UIView {
-        let container = UIView()
-        container.backgroundColor = .clear
-        return container
+    func makeUIView(context: Context) -> WebViewContainer {
+        WebViewContainer()
     }
 
-    func updateUIView(_ container: UIView, context: Context) {
-        let webView = session.webView
+    func updateUIView(_ container: WebViewContainer, context: Context) {
+        container.webView = session.webView
+    }
+}
+
+/// The view a web view is hosted in; it takes its web view back whenever
+/// it is in a window and lays out, and hands it to another host of it when
+/// it leaves the window.
+final class WebViewContainer: UIView {
+    /// Every container made, so that one leaving the window can hand its
+    /// web view over.
+    private static let all = NSHashTable<WebViewContainer>.weakObjects()
+
+    var webView: WKWebView? {
+        didSet { attach() }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        Self.all.add(self)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used")
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil, let webView, webView.superview === self {
+            Self.all.allObjects.first { $0 !== self && $0.window != nil && $0.webView === webView }?.attach()
+        } else {
+            attach()
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        attach()
+    }
+
+    private func attach() {
         // The web view of a session that has ended.
-        for view in container.subviews where view !== webView {
+        for view in subviews where view !== webView {
             view.removeFromSuperview()
         }
-        guard webView.superview !== container else { return }
+        guard window != nil, let webView, webView.superview !== self else { return }
         webView.removeFromSuperview()
-        webView.frame = container.bounds
+        webView.frame = bounds
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        container.addSubview(webView)
+        addSubview(webView)
     }
 }

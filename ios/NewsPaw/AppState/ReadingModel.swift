@@ -135,7 +135,7 @@ final class ReadingModel {
                 let page = try await library.articleRows(scope, filter: filter)
                 model.replace(with: page, pageSize: Library.articlePageSize)
             } catch {
-                model.readDidFail()
+                model.readDidFail(.firstPage)
             }
         }
     }
@@ -155,15 +155,16 @@ final class ReadingModel {
                 let page = try await library.articleRows(model.kind.scope, filter: model.filter, after: last.position)
                 model.append(page, pageSize: Library.articlePageSize)
             } catch {
-                model.readDidFail()
+                model.readDidFail(.nextPage)
             }
         }
     }
 
-    /// "Try Again" after a failed read: the first page when nothing is
-    /// shown, else the next one.
+    /// "Try Again" after a failed read: the read that failed again.
     func retry(_ model: ArticleListModel) {
-        if model.rows.isEmpty {
+        let failed = model.failedRead
+        model.clearFailure()
+        if model.rows.isEmpty || failed == .firstPage {
             reload(model)
         } else {
             loadNextPage(model)

@@ -25,9 +25,18 @@ final class ArticleListModel {
     private(set) var state = LoadState.notLoaded
     /// Whether the last page read was full, so that another may follow.
     private(set) var hasMore = false
-    /// Whether the last read failed while rows were shown: the list then
-    /// ends with "Could not load" and "Try Again" (failure table).
-    private(set) var readFailed = false
+    /// Which read failed while rows were shown: the list then ends with
+    /// "Could not load" and "Try Again" (failure table).
+    enum FailedRead {
+        case firstPage
+        case nextPage
+    }
+
+    private(set) var failedRead: FailedRead?
+
+    var readFailed: Bool {
+        failedRead != nil
+    }
 
     /// The rows on screen, from their appearing and disappearing.
     @ObservationIgnored private var visible: Set<UUID> = []
@@ -77,7 +86,7 @@ final class ArticleListModel {
         rows = page
         hasMore = page.count == pageSize
         state = .loaded
-        readFailed = false
+        failedRead = nil
     }
 
     /// A later page continues it; a row already listed is not repeated.
@@ -85,16 +94,21 @@ final class ArticleListModel {
         let listed = Set(rows.map(\.id))
         rows += page.filter { !listed.contains($0.id) }
         hasMore = page.count == pageSize
-        readFailed = false
+        failedRead = nil
     }
 
     /// A read failed: the rows already shown stay.
-    func readDidFail() {
+    func readDidFail(_ read: FailedRead) {
         if rows.isEmpty, state != .loaded {
             state = .failed
         } else {
-            readFailed = true
+            failedRead = read
         }
+    }
+
+    /// "Try Again" was chosen: the failure is cleared before the read.
+    func clearFailure() {
+        failedRead = nil
     }
 
     /// Applies a stored or optimistic state to the row of `id`, where it

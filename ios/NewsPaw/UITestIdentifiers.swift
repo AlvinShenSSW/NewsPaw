@@ -133,7 +133,8 @@ enum UITestLaunchKey {
     static let slowNextSave = "NEWSPAW_UITEST_SLOW_NEXT_SAVE"
     /// "1" makes the next source save fail.
     static let failNextSourceSave = "NEWSPAW_UITEST_FAIL_NEXT_SOURCE_SAVE"
-    /// A whole number of days added to the app's clock.
+    /// A whole number of days added to the app's clock; honoured only with
+    /// `libraryDirectory`.
     static let clockOffsetDays = "NEWSPAW_UITEST_CLOCK_OFFSET_DAYS"
 }
 #endif

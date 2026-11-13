@@ -66,8 +66,13 @@ public final class Refresher {
     /// category or source run records nothing.
     ///
     /// - Returns: each target's result.
-    /// - Throws: a `LibraryError` when the targets cannot be read; nothing
-    ///   is collected or recorded then.
+    /// - Throws: a `LibraryError` when the targets cannot be read, and
+    ///   `CancellationError` when the calling task is cancelled before they
+    ///   are read; nothing is collected or recorded then. A caller cancelled
+    ///   after the targets were read still waits for and gets the results
+    ///   (the collections are not the caller's tasks), but the recorded time
+    ///   may then go unwritten, because the write is made in the cancelled
+    ///   task and is abandoned; the next entry refreshes again.
     @discardableResult
     public func refresh(_ scope: RefreshScope) async throws -> [UUID: SourceResult] {
         let generation = generation

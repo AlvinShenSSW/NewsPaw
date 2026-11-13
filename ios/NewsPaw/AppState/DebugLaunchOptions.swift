@@ -17,7 +17,8 @@ struct DebugLaunchOptions {
     let failNextSourceSave: Bool
     /// Seconds added to the clock of the library and of Today's status line,
     /// from a whole number of days: it makes a refresh due and ages
-    /// articles.
+    /// articles. Applied only together with `libraryDirectory`, like the
+    /// fixture transport; without it the clock is `Date()`.
     let clockOffset: TimeInterval
 
     init(environment: [String: String]) {

@@ -54,7 +54,9 @@ final class AppModel {
         let cacheRoot = options.libraryDirectory.map { $0.appending(path: "Images", directoryHint: .isDirectory) }
             ?? LibraryStore.defaultCacheRoot()
         let defaults = options.libraryDirectory.flatMap { UserDefaults(suiteName: $0.lastPathComponent) } ?? .standard
-        let offset = options.clockOffset
+        // The clock offset, like the fixture transport, applies only under a
+        // UI-test library directory.
+        let offset = options.libraryDirectory != nil ? options.clockOffset : 0
         let now: @Sendable () -> Date = { Date().addingTimeInterval(offset) }
         #else
         let directory = LibraryStore.defaultDirectory()

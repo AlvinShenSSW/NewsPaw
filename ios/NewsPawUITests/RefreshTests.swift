@@ -14,16 +14,18 @@ final class RefreshTests: NewsPawUITestCase {
 
     // MARK: - Criterion 9: the status line
 
-    /// No line without a feed-like source. A pull refreshes the whole
-    /// library: the line goes from about a day ago to "Updated just now". The status line shows "Updating…" while a collection is in
-    /// flight, then an "Updated" line.
+    /// On every device: Today has no status line without a feed-like source
+    /// (none at first, none with a web page only), and a pull refreshes the
+    /// whole library, so the line goes from about a day ago to "Updated
+    /// just now"; how long the pull gesture kept the app busy is printed
+    /// (the `.refreshable` assumption of RD06). On iPad only: during a
+    /// refresh started from the category's menu the line reads
+    /// "Updating…", then an "Updated" line again.
     ///
-    /// The harness waits for the app to be idle after a gesture, and the
-    /// system's refresh indicator keeps it busy until the refresh action
-    /// returns, so "Updating…" cannot be read during a pull of the 3-second
-    /// slow source; how long the pull kept the app busy is recorded instead
-    /// (the `.refreshable` assumption of RD06), and on iPad "Updating…" is
-    /// read during a refresh started from the category's menu.
+    /// "Updating…" is not read during the pull itself: the harness waits for
+    /// the app to be idle after a gesture, and the system's refresh
+    /// indicator keeps it busy until the refresh action returns, by which
+    /// time the 3-second slow source has been collected.
     func testPullRefreshesAndTheLineShowsUpdating() {
         launchAtFullWidth()
         showToday()

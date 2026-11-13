@@ -1,14 +1,18 @@
 import NewsPawKit
 import SwiftUI
 
-/// The reading pane beside a list: the article open on that list, or "No
-/// article selected".
+/// The reading pane beside a list: the article open on that list, its
+/// page in the browser with Close (RD10), or "No article selected".
 struct ReadingPane: View {
     let list: ArticleListKind
     @Environment(NavigationModel.self) private var navigation
 
     var body: some View {
-        if let id = navigation.openArticle(on: list) {
+        if navigation.pageIsOpen(on: list) {
+            BrowserPane(stack: BrowserStack(list)) {
+                navigation.closePage(on: list)
+            }
+        } else if let id = navigation.openArticle(on: list) {
             ReadingView(articleID: id, list: list, isPushed: false)
         } else {
             ReadingPlaceholderView()
@@ -28,9 +32,9 @@ struct ReadingPlaceholderView: View {
 /// The reading screen until RD11 lays out the body (RD09 decision 9): the
 /// header of ux S4 (title; source · author · time), the excerpt as plain
 /// text, one sentence that the full layout is not available yet, and "Open
-/// Original Page" when the article has a link, which hands the link to the
-/// system until RD10 brings the embedded browser. Its bar has star, share
-/// and mark unread.
+/// Original Page" when the article has a link, which opens it in the
+/// embedded browser above the article (RD10). Its bar has star, share and
+/// mark unread.
 struct ReadingView: View {
     let articleID: UUID
     let list: ArticleListKind
@@ -40,7 +44,7 @@ struct ReadingView: View {
     /// carries them.
     let isPushed: Bool
     @Environment(ReadingModel.self) private var reading
-    @Environment(\.openURL) private var openURL
+    @Environment(NavigationModel.self) private var navigation
 
     var body: some View {
         content
@@ -105,7 +109,7 @@ struct ReadingView: View {
                     .accessibilityIdentifier(AccessibilityID.readingInterimNote)
                 if let url = row.linkURL {
                     Button {
-                        openURL(url)
+                        navigation.openPage(url, on: list)
                     } label: {
                         Text("Open Original Page")
                             .frame(minHeight: Theme.minimumTapTarget)

@@ -61,10 +61,10 @@ final class RefreshTests: NewsPawUITestCase {
         XCTAssertFalse(element(AccessibilityID.failedSourcesButton).exists)
 
         // "Updating…" while the slow source is collected, then "Updated":
-        // on iPad only. It is started from the collapsed category's menu (a
-        // row's activity indicator would keep the harness waiting until the
-        // collection ended), with Today the destination, which the status
-        // line keeps behind the slide-over. On the iPhone the category list
+        // on iPad only. It is started from the category's menu, the category
+        // collapsed so that no source row is needed, with Today the
+        // destination, which the status line keeps behind the slide-over. On
+        // the iPhone the category list
         // is another tab, and switching tabs costs the harness about 2 s of
         // waiting (measured), so the 3-second collection has ended before
         // Today can be read there.

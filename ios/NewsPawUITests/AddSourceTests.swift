@@ -20,7 +20,7 @@ final class AddSourceTests: NewsPawUITestCase {
     func testAddAFeedByAddress() {
         launchAtFullWidth()
         createCategory("News")
-        assertDestinations(interim: nil)
+        assertDestinations(articles: nil)
 
         openAddSource()
         detect(Fixture.feed)
@@ -35,7 +35,7 @@ final class AddSourceTests: NewsPawUITestCase {
         showCategoryList()
         let row = waitFor(sourceRow("Fixture Feed"))
         XCTAssertEqual(row.value as? String, "3 unread")
-        assertDestinations(interim: "3 unread articles — article lists are not available in this version yet.")
+        assertDestinations(articles: ["Fixture story one", "Fixture story two", "Fixture story three"])
     }
 
     /// Criterion 3: a page with two feeds; both rows with their second
@@ -77,7 +77,7 @@ final class AddSourceTests: NewsPawUITestCase {
         showCategoryList()
         XCTAssertEqual(waitFor(sourceRow("One Feed Site")).value as? String, "Web page")
         // A web page holds no unread articles.
-        assertDestinations(interim: nil)
+        assertDestinations(articles: nil)
     }
 
     /// Criterion 4: no feed found, both ways out.
@@ -419,19 +419,35 @@ final class AddSourceTests: NewsPawUITestCase {
     // MARK: - Helpers
 
     /// Today, All Unread and the category "News" say what they said after
-    /// RD03, or, with `interim`, that sentence.
-    private func assertDestinations(interim: String?, file: StaticString = #filePath, line: UInt = #line) {
+    /// RD03 (their empty states), or, with `articles`, show them: Today's
+    /// row for "News" with its count, and the articles' rows in the lists
+    /// (RD09 replaced the interim sentence).
+    private func assertDestinations(articles: [String]?, file: StaticString = #filePath, line: UInt = #line) {
         func check(_ empty: String) {
-            if let interim {
-                XCTAssertEqual(waitFor(element(AccessibilityID.interimUnread), file: file, line: line).label, interim, file: file, line: line)
+            if let articles {
+                for title in articles {
+                    waitFor(element(AccessibilityID.articleRow(title)), file: file, line: line)
+                }
+                XCTAssertFalse(element(empty).exists, file: file, line: line)
             } else {
                 waitFor(element(empty), file: file, line: line)
-                XCTAssertFalse(element(AccessibilityID.interimUnread).exists, file: file, line: line)
+                XCTAssertFalse(app.descendants(matching: .any)
+                    .matching(NSPredicate(format: "identifier BEGINSWITH %@", AccessibilityID.articleRowPrefix)).firstMatch.exists,
+                    file: file, line: line)
+            }
+        }
+        func checkToday() {
+            if let articles {
+                let row = waitFor(element(AccessibilityID.todayCategoryRow("News")), file: file, line: line)
+                XCTAssertEqual(row.value as? String, "\(articles.count) unread", file: file, line: line)
+                XCTAssertFalse(element(AccessibilityID.todayEmpty).exists, file: file, line: line)
+            } else {
+                waitFor(element(AccessibilityID.todayEmpty), file: file, line: line)
             }
         }
         if app.tabBars.firstMatch.exists {
             app.tabBars.buttons["Today"].tap()
-            check(AccessibilityID.todayEmpty)
+            checkToday()
             app.tabBars.buttons["Library"].tap()
             waitFor(element(AccessibilityID.allUnreadRow)).tap()
             check(AccessibilityID.allUnreadEmpty)
@@ -442,7 +458,7 @@ final class AddSourceTests: NewsPawUITestCase {
         } else {
             openSidebarIfNeeded()
             element(AccessibilityID.todayRow).tap()
-            check(AccessibilityID.todayEmpty)
+            checkToday()
             openSidebarIfNeeded()
             element(AccessibilityID.allUnreadRow).tap()
             check(AccessibilityID.allUnreadEmpty)

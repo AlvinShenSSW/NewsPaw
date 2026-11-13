@@ -370,7 +370,7 @@ final class RefreshTests: NewsPawUITestCase {
 
     /// Drags Today's content down far enough to start a refresh.
     private func pullToRefresh() {
-        let anchor = [element(AccessibilityID.todayStatus), element(AccessibilityID.todayEmpty), element(AccessibilityID.interimUnread)]
+        let anchor = [element(AccessibilityID.todayStatus), element(AccessibilityID.todayEmpty), element(AccessibilityID.todayDate)]
             .first(where: \.exists) ?? app.scrollViews.firstMatch
         // 350 pt was enough on the iPhone but not on the iPads (measured).
         let start = anchor.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))

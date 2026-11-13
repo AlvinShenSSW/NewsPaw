@@ -116,8 +116,6 @@ enum AccessibilityID {
     static let todayStatus = "today.status"
     static let failedSourcesButton = "today.failedSources"
     static let refreshRow = "settings.refresh"
-    static let refreshIntervalPicker = "refresh.interval"
-    static let retentionPicker = "refresh.retention"
 }
 
 #if DEBUG

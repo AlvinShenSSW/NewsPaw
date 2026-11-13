@@ -39,7 +39,7 @@ final class RefreshTests: NewsPawUITestCase {
         XCTAssertFalse(element(AccessibilityID.todayStatus).exists, "no status line with a web page only")
         addSource(Fixture.slow, to: "World")
         openRefreshSettings()
-        choose("Manual Only", in: AccessibilityID.refreshIntervalPicker)
+        choose("Manual Only")
 
         // A day later by the app's clock, with no entry refresh.
         app.terminate()
@@ -150,15 +150,14 @@ final class RefreshTests: NewsPawUITestCase {
     func testSettingsSurviveRelaunch() {
         launchAtFullWidth()
         openRefreshSettings()
-        XCTAssertTrue(button(AccessibilityID.refreshIntervalPicker).label.contains("Every 30 Minutes"), button(AccessibilityID.refreshIntervalPicker).label)
-        XCTAssertTrue(button(AccessibilityID.retentionPicker).label.contains("30 Days"), button(AccessibilityID.retentionPicker).label)
-        choose("Every Hour", in: AccessibilityID.refreshIntervalPicker)
-        choose("90 Days", in: AccessibilityID.retentionPicker)
+        XCTAssertEqual(selectedOptions(), ["Every 30 Minutes", "30 Days"])
+        choose("Every Hour")
+        choose("90 Days")
+        XCTAssertEqual(selectedOptions(), ["Every Hour", "90 Days"])
         relaunch()
         rotate(.portrait)
         openRefreshSettings()
-        XCTAssertTrue(button(AccessibilityID.refreshIntervalPicker).label.contains("Every Hour"), button(AccessibilityID.refreshIntervalPicker).label)
-        XCTAssertTrue(button(AccessibilityID.retentionPicker).label.contains("90 Days"), button(AccessibilityID.retentionPicker).label)
+        XCTAssertEqual(selectedOptions(), ["Every Hour", "90 Days"])
     }
 
     /// "Manual Only": a relaunch with the clock a day ahead does not
@@ -166,7 +165,7 @@ final class RefreshTests: NewsPawUITestCase {
     func testManualOnlyDoesNotRefreshOnEntry() {
         launchAtFullWidth()
         openRefreshSettings()
-        choose("Manual Only", in: AccessibilityID.refreshIntervalPicker)
+        choose("Manual Only")
         // Back to Settings: in the panes the back button has taken the
         // sidebar button's place.
         goBack()
@@ -339,11 +338,15 @@ final class RefreshTests: NewsPawUITestCase {
         // row is one swipe away.
         collapse("World")
         openRefreshSettings()
-        for picker in [AccessibilityID.refreshIntervalPicker, AccessibilityID.retentionPicker] {
-            let row = scrollTo(button(picker))
-            XCTAssertLessThanOrEqual(row.frame.maxX, window.maxX + 0.5, "\(picker) \(row.frame)")
-            XCTAssertGreaterThan(row.frame.height, 60, "\(picker) grows")
+        // Every option is a row of its own that grows with its text (a menu
+        // picker cut its value to "Every…inutes" at this size); the
+        // screenshot shows the whole labels.
+        for option in Self.intervalOptions + Self.retentionOptions {
+            let row = scrollTo(app.buttons[option].firstMatch)
+            XCTAssertLessThanOrEqual(row.frame.maxX, window.maxX + 0.5, "\(option) \(row.frame)")
+            XCTAssertGreaterThan(row.frame.height, 60, "\(option) grows")
         }
+        screenshot("largest-text-refresh-options")
         let footer = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Counted from when an article was first seen.'")).firstMatch
         scrollTo(footer)
         XCTAssertLessThanOrEqual(footer.frame.maxX, window.maxX + 0.5)
@@ -383,15 +386,25 @@ final class RefreshTests: NewsPawUITestCase {
             waitForAbsence(element(AccessibilityID.slideOverPanel))
         }
         waitFor(element(AccessibilityID.refreshRow)).tap()
-        waitFor(button(AccessibilityID.refreshIntervalPicker))
+        waitFor(app.buttons["Manual Only"].firstMatch)
     }
 
-    /// Chooses `option` in a menu picker.
-    private func choose(_ option: String, in picker: String) {
-        waitFor(button(picker)).tap()
-        waitFor(app.buttons[option].firstMatch).tap()
-        let chosen = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", option), object: button(picker))
-        XCTAssertEqual(XCTWaiter.wait(for: [chosen], timeout: timeout), .completed, "\(picker): \(button(picker).label)")
+    private static let intervalOptions = ["Every 15 Minutes", "Every 30 Minutes", "Every Hour", "Manual Only"]
+    private static let retentionOptions = ["7 Days", "30 Days", "90 Days", "Forever"]
+
+    /// The selected option of each inline picker of Settings → Refresh.
+    private func selectedOptions() -> [String] {
+        [Self.intervalOptions, Self.retentionOptions].map { options in
+            options.filter { app.buttons[$0].firstMatch.isSelected }.joined(separator: ", ")
+        }
+    }
+
+    /// Chooses `option`, a row of an inline picker.
+    private func choose(_ option: String) {
+        let row = scrollTo(app.buttons[option].firstMatch)
+        row.tap()
+        let chosen = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: row)
+        XCTAssertEqual(XCTWaiter.wait(for: [chosen], timeout: timeout), .completed, "\(option) was not selected")
     }
 
     private func openMenu(ofCategory name: String) {

@@ -41,7 +41,10 @@ struct SettingsDestination: View {
 }
 
 /// Settings → Refresh (ux S8; RD06): the interval and how long articles are
-/// kept. Background refresh arrives with RD24.
+/// kept, each an inline picker whose options are rows, so that at the
+/// largest text size every option wraps instead of being cut (a menu
+/// picker's value is truncated there, measured). Background refresh arrives
+/// with RD24.
 struct RefreshSettingsView: View {
     @Environment(RefreshModel.self) private var refresh
 
@@ -55,7 +58,11 @@ struct RefreshSettingsView: View {
                     Text("Every Hour").tag(RefreshInterval.sixtyMinutes)
                     Text("Manual Only").tag(RefreshInterval.manualOnly)
                 }
-                .accessibilityIdentifier(AccessibilityID.refreshIntervalPicker)
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } header: {
+                Text("Refresh Interval")
+                    .foregroundStyle(Theme.secondaryText)
             } footer: {
                 Text("When you open the app and this long has passed since the last refresh, the library is refreshed. Pull down on Today to refresh at any time.")
                     .foregroundStyle(Theme.secondaryText)
@@ -68,7 +75,11 @@ struct RefreshSettingsView: View {
                     Text("90 Days").tag(Retention.ninetyDays)
                     Text("Forever").tag(Retention.forever)
                 }
-                .accessibilityIdentifier(AccessibilityID.retentionPicker)
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } header: {
+                Text("Keep Articles")
+                    .foregroundStyle(Theme.secondaryText)
             } footer: {
                 Text("Counted from when an article was first seen. Starred articles are always kept. A change takes effect the next time you open the app.")
                     .foregroundStyle(Theme.secondaryText)

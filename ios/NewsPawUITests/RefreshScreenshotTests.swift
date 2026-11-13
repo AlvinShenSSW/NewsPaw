@@ -123,7 +123,7 @@ final class RefreshScreenshotTests: NewsPawUITestCase {
         }
         capture("settings")
         waitFor(element(AccessibilityID.refreshRow)).tap()
-        waitFor(button(AccessibilityID.refreshIntervalPicker))
+        waitForAbsence(element(AccessibilityID.refreshRow))
         capture("settings-refresh")
         if variant == "largest-text" {
             app.swipeUp()

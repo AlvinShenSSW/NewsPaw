@@ -328,6 +328,10 @@ final class ArticleListTests: ArticleTestCase {
         waitFor(sourceRow("Plain Page")).tap()
         waitFor(button(AccessibilityID.browserMoreMenu))
         XCTAssertFalse(app.textFields[AccessibilityID.nameField].exists, "a web page's row opens the browser, not its settings")
+        if usesTabs {
+            // Back to the Library root, where the tab bar shows again.
+            goBack()
+        }
 
         openSourceList("Articles Feed", in: "World")
         waitFor(articleRow("Image story"))

@@ -87,6 +87,20 @@ class BrowserTestCase: ArticleTestCase {
         waitForAbsence(moreMenu)
     }
 
+    /// In the tab structure, back out of a pushed browser (and the article
+    /// under it) until the tab bar shows again, so that the shared helpers,
+    /// which read the structure from the tab bar, find it. Nothing on the
+    /// panes.
+    func leaveBrowser() {
+        guard usesTabs else { return }
+        var backs = 0
+        while !app.tabBars.firstMatch.exists, backs < 3 {
+            goBack()
+            backs += 1
+        }
+        waitFor(app.tabBars.firstMatch)
+    }
+
     // MARK: - Pages
 
     /// Taps a link of the shown page, scrolling the page until it can.

@@ -43,6 +43,7 @@ final class BrowserTests: BrowserTestCase {
         waitForPage(Page.home)
 
         // The row's menu still has Source Settings.
+        leaveBrowser()
         expand("World")
         waitFor(sourceRow(Page.sourceName)).press(forDuration: 1.2)
         waitFor(app.buttons["Source Settings"]).tap()

@@ -45,6 +45,7 @@ final class BrowserScreenshotTests: BrowserTestCase {
         openWebPageSource(in: world)
         sleep(1)
         capture("web-page-source")
+        leaveBrowser()
 
         // An article's page: pushed on the article (tabs), in the reading
         // pane (panes).
@@ -56,6 +57,7 @@ final class BrowserScreenshotTests: BrowserTestCase {
         capture("article-page")
 
         guard variant == "default" else { return }
+        leaveBrowser()
         openWebPageSource(in: world)
         tapLink("Slow page")
         if element(AccessibilityID.browserProgress).waitForExistence(timeout: 2) {

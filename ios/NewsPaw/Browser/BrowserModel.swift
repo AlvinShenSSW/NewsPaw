@@ -386,7 +386,9 @@ final class BrowserSession: NSObject {
         provisional = nil
         pendingURL = nil
         let ns = error as NSError
-        let refused = ns.domain == WKErrorDomain && ns.code == 102
+        // "Frame load interrupted", reported in WebKit's own domain (measured:
+        // `WebKitErrorDomain`, not `WKErrorDomain`).
+        let refused = ns.domain == "WebKitErrorDomain" && ns.code == 102
         let replaced = ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
         guard !refused, !replaced else { return }
         let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL).map(map.toShown)

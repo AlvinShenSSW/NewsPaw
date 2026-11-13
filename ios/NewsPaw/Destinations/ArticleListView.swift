@@ -288,10 +288,12 @@ private struct ArticleRowButton: View {
 struct ArticleShortcuts: View {
     let list: ArticleListKind
     @Environment(ReadingModel.self) private var reading
-    @Environment(NavigationModel.self) private var navigation
 
     var body: some View {
-        let enabled = navigation.sheet == nil && reading.pendingMarkAll == nil && !navigation.isSlideOverOpen
+        // Whether a key may act is asked when it is pressed, not observed
+        // here: re-rendering these buttons while the slide-over closes and a
+        // sheet opens kept the sheet from appearing (measured on the iPad
+        // mini).
         VStack {
             shortcut("Next Article", "j") {
                 Task { await reading.openNext(on: list) }
@@ -309,7 +311,6 @@ struct ArticleShortcuts: View {
                 Task { await reading.refresh(list) }
             }
         }
-        .disabled(!enabled)
         .opacity(0)
         .frame(width: 0, height: 0)
         .accessibilityHidden(true)
@@ -318,7 +319,11 @@ struct ArticleShortcuts: View {
     /// A button for `key` alone, hidden from VoiceOver; its title names the
     /// command in the system's list of shortcuts.
     private func shortcut(_ title: LocalizedStringKey, _ key: KeyEquivalent, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
+        Button(title) {
+            if reading.keysMayAct {
+                action()
+            }
+        }
             .keyboardShortcut(key, modifiers: [])
             .accessibilityHidden(true)
     }

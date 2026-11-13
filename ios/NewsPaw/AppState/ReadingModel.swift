@@ -311,6 +311,12 @@ final class ReadingModel {
 
     // MARK: - Keyboard (decision 15)
 
+    /// Whether a shortcut key may act now: not while a sheet, the
+    /// slide-over or the "Mark All as Read" question is open.
+    var keysMayAct: Bool {
+        navigation.sheet == nil && pendingMarkAll == nil && !navigation.isSlideOverOpen
+    }
+
     /// `J`: the next article of the list. With nothing open, or the open
     /// article no longer in the snapshot, the first row; at the last loaded
     /// row, the first row of the next page.

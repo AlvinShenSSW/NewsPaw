@@ -65,10 +65,13 @@ public actor ThumbnailLoader {
         guard await acquireSlot() else { return nil }
         defer { releaseSlot() }
         guard !Task.isCancelled else { return nil }
-        // Another request for the same address may have stored it meanwhile.
+        // Another request for the same address may have stored it meanwhile,
+        // or failed: a failed address is not asked again by those that
+        // waited for a slot behind it.
         if let cached = await cache.data(for: key) {
             return cached
         }
+        guard !failed.contains(address) else { return nil }
         let response: TransportResponse
         do {
             response = try await transport.fetch(TransportRequest(url: url))

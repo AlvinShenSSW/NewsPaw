@@ -44,6 +44,14 @@ final class ReadingModel {
     /// The last queued list read or state change; each waits for the one
     /// before it, so a read begun before a change cannot land after it.
     @ObservationIgnored private var lastOperation: Task<Void, Never>?
+    /// How many saves of each article's read state or star are queued or
+    /// running: an earlier save does not show its state over a later one's.
+    @ObservationIgnored private var queuedSaves: [SavedField: Int] = [:]
+
+    private struct SavedField: Hashable {
+        var article: UUID
+        var isStar: Bool
+    }
 
     @ObservationIgnored private let navigation: NavigationModel
     @ObservationIgnored private let sources: SourceModel
@@ -184,6 +192,21 @@ final class ReadingModel {
         navigation.openArticle(row.id, on: kind)
         if !row.isRead {
             setRead(row.id, true)
+        } else {
+            // Nothing is saved for a row already read, so nothing else would
+            // find that its article is gone since the list was read
+            // (retention, a deleted source).
+            let id = row.id
+            let library = library
+            enqueue {
+                do {
+                    _ = try await library.article(id)
+                } catch LibraryError.unknownArticle {
+                    self.articleVanished(id)
+                } catch {
+                    // Shown from its row: it may be readable at the next look.
+                }
+            }
         }
     }
 
@@ -221,17 +244,24 @@ final class ReadingModel {
         _ id: UUID, read: Bool? = nil, starred: Bool? = nil, _ operation: @escaping @Sendable (Library) async throws -> Void
     ) {
         apply(id, read: read, starred: starred)
+        let field = SavedField(article: id, isStar: starred != nil)
+        queuedSaves[field, default: 0] += 1
         let library = library
         enqueue {
             do {
                 try await operation(library)
                 // A list read queued before the change may have landed after
-                // the optimistic update with the old state; the saved state
-                // is shown again.
-                self.apply(id, read: read, starred: starred)
+                // the optimistic update with the old state, so the saved
+                // state is shown again; not over a later change of the same
+                // state, which is shown already and whose own save follows.
+                if self.saveEnded(field) {
+                    self.apply(id, read: read, starred: starred)
+                }
             } catch LibraryError.unknownArticle {
+                self.saveEnded(field)
                 self.articleVanished(id)
             } catch {
+                self.saveEnded(field)
                 if let stored = try? await library.article(id) {
                     self.apply(id, read: stored.isRead, starred: stored.isStarred)
                 } else {
@@ -241,6 +271,14 @@ final class ReadingModel {
             }
             await self.sources.reload()
         }
+    }
+
+    /// Counts one save of `field` as ended; whether none is queued after it.
+    @discardableResult
+    private func saveEnded(_ field: SavedField) -> Bool {
+        let left = queuedSaves[field, default: 1] - 1
+        queuedSaves[field] = left > 0 ? left : nil
+        return left <= 0
     }
 
     private func apply(_ id: UUID, read: Bool?, starred: Bool?) {

@@ -137,6 +137,28 @@ struct ThumbnailLoaderTests {
         #expect(refused.received.isEmpty)
     }
 
+    @Test("requests that waited for a slot behind a failing request for the same address do not ask for it again")
+    func waitersDoNotRepeatAFailedAddress() async throws {
+        let (root, cache) = try makeCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let go = Signal()
+        let transport = CountingTransport { _ in
+            await go.wait()
+            throw TransportFailure.unreachable
+        }
+        let loader = ThumbnailLoader(transport: transport, cache: cache, limit: 1)
+        let address = "https://images.example.invalid/shared.png"
+        let tasks = (0..<12).map { _ in Task { await loader.thumbnail(for: address) } }
+        try await waitUntil { transport.inFlight == 1 }
+        // Let every other request reach the queue.
+        try await Task.sleep(for: .milliseconds(200))
+        go.fire()
+        for task in tasks {
+            #expect(await task.value == nil)
+        }
+        #expect(transport.received.count == 1)
+    }
+
     @Test("an image declaring more than 40 million pixels is refused and cached as nothing; one just under is reduced")
     func declaredPixelBound() async throws {
         let (root, cache) = try makeCache()

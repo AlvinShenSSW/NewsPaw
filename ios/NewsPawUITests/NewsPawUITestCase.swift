@@ -28,7 +28,7 @@ class NewsPawUITestCase: XCTestCase {
     @discardableResult
     func launch(
         syntheticSources: Int? = nil, failNextSave: Bool = false, slowNextSave: Int? = nil, failNextSourceSave: Bool = false,
-        arguments: [String] = []
+        clockOffsetDays: Int? = nil, arguments: [String] = []
     ) -> XCUIApplication {
         app = XCUIApplication()
         app.launchArguments = arguments
@@ -44,6 +44,9 @@ class NewsPawUITestCase: XCTestCase {
         }
         if failNextSourceSave {
             app.launchEnvironment[UITestLaunchKey.failNextSourceSave] = "1"
+        }
+        if let clockOffsetDays {
+            app.launchEnvironment[UITestLaunchKey.clockOffsetDays] = String(clockOffsetDays)
         }
         app.launch()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: timeout))

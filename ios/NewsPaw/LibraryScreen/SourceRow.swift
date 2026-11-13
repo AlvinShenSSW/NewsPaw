@@ -5,16 +5,23 @@ import SwiftUI
 /// for a web page; the name; the unread count of a feed-like source, a
 /// pause mark when paused, a warning mark and the status sentence when
 /// failing. State is carried by a glyph and a VoiceOver value, never by
-/// colour or dimming alone. A tap opens Source settings; the menu offers
-/// Source settings, Pause or Resume, and Delete.
+/// colour or dimming alone. While the source is being collected an
+/// activity indicator takes the place of the count or mark (RD06). A tap
+/// opens Source settings; the menu offers Refresh (a feed that is not
+/// paused), Source settings, Pause or Resume, and Delete.
 struct SourceRow: View {
     let source: SourceSummary
     let presentSheet: (() -> Void) -> Void
     @Environment(SourceModel.self) private var sources
+    @Environment(RefreshModel.self) private var refresh
     @ScaledMetric private var tileSize = 28.0
 
     private var isFailing: Bool {
         if case .failing = source.status { true } else { false }
+    }
+
+    private var isUpdating: Bool {
+        refresh.engine.collecting.contains(source.id)
     }
 
     var body: some View {
@@ -49,6 +56,11 @@ struct SourceRow: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier(AccessibilityID.sourceRow(source.name))
         .contextMenu {
+            if source.kind == .feed, !source.paused {
+                Button("Refresh", systemImage: "arrow.clockwise") {
+                    Task { await refresh.refresh(.source(source.id)) }
+                }
+            }
             Button("Source Settings", systemImage: "gearshape") {
                 presentSheet { sources.beginSettings(source.id) }
             }
@@ -92,7 +104,10 @@ struct SourceRow: View {
 
     @ViewBuilder
     private var trailing: some View {
-        if source.paused {
+        if isUpdating {
+            ProgressView()
+                .controlSize(.small)
+        } else if source.paused {
             Image(systemName: "pause.circle")
                 .foregroundStyle(Theme.secondaryText)
         } else if isFailing {
@@ -108,6 +123,9 @@ struct SourceRow: View {
     private var accessibilityValue: Text {
         if !source.isFeedLike {
             return Text("Web page")
+        }
+        if isUpdating {
+            return Text("Updating")
         }
         if source.paused {
             return Text("Paused")

@@ -13,6 +13,7 @@ enum Schema {
         var migrator = DatabaseMigrator()
         registerV1(in: &migrator)
         registerV2(in: &migrator)
+        registerV3(in: &migrator)
         return migrator
     }
 
@@ -89,6 +90,19 @@ enum Schema {
             try db.execute(sql: """
                 ALTER TABLE article ADD COLUMN content_html TEXT;
                 CREATE INDEX article_url ON article(url);
+                """)
+        }
+    }
+
+    /// `v3`: the partition's own settings and state (spec section 4; RD06),
+    /// one value per key. RD06 stores `last_refresh_at` here.
+    static func registerV3(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v3") { db in
+            try db.execute(sql: """
+                CREATE TABLE setting (
+                    key TEXT NOT NULL PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
                 """)
         }
     }

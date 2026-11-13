@@ -10,6 +10,7 @@ import SQLite3
 /// library's file is created only by an explicit call (spec N02, N09).
 public actor LibraryStore {
     private let directory: URL
+    private let cacheRoot: URL
     private let now: @Sendable () -> Date
     /// The library of each partition, or the open in flight for it. Looking
     /// up and storing an entry happen without a suspension in between, so two
@@ -19,15 +20,26 @@ public actor LibraryStore {
     /// - Parameters:
     ///   - directory: where the database files live; created when a library
     ///     is first created.
-    ///   - now: the clock for every `updated_at`; tests inject their own.
-    public init(directory: URL, now: @escaping @Sendable () -> Date = { Date() }) {
+    ///   - cacheRoot: where the libraries' image caches live, each in its own
+    ///     directory below it; nothing is created there until an image is
+    ///     stored.
+    ///   - now: the clock of every library; tests inject their own.
+    public init(
+        directory: URL, cacheRoot: URL = LibraryStore.defaultCacheRoot(), now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.directory = directory
+        self.cacheRoot = cacheRoot
         self.now = now
     }
 
     /// `Application Support/Libraries/` inside the app's container.
     public static func defaultDirectory() -> URL {
         URL.applicationSupportDirectory.appending(path: "Libraries", directoryHint: .isDirectory)
+    }
+
+    /// `Images/` in the app's caches directory.
+    public static func defaultCacheRoot() -> URL {
+        URL.cachesDirectory.appending(path: "Images", directoryHint: .isDirectory)
     }
 
     /// Opens the normal library, creating its directory and file when they do
@@ -74,10 +86,11 @@ public actor LibraryStore {
             throw LibraryError.missing
         }
         let directory = directory
+        let cache = cacheDirectory(for: partition)
         let now = now
         let opening = Task.detached {
             try Self.makeLibrary(
-                partition: partition, directory: directory, url: url,
+                partition: partition, directory: directory, url: url, cacheDirectory: cache,
                 migrator: migrator, create: create, now: now
             )
         }
@@ -102,12 +115,19 @@ public actor LibraryStore {
         return directory.appending(path: name, directoryHint: .notDirectory)
     }
 
+    /// The one place that turns a partition into an image-cache directory:
+    /// `<cache root>/<partition>/`, so the two caches never share one.
+    nonisolated func cacheDirectory(for partition: Partition) -> URL {
+        cacheRoot.appending(path: partition.rawValue, directoryHint: .isDirectory)
+    }
+
     /// Opens a pool on the file, refuses a database written by a newer
     /// schema before running any migration, then migrates.
     private static func makeLibrary(
         partition: Partition,
         directory: URL,
         url: URL,
+        cacheDirectory: URL,
         migrator: DatabaseMigrator,
         create: Bool,
         now: @escaping @Sendable () -> Date
@@ -127,7 +147,7 @@ public actor LibraryStore {
                 throw LibraryError.newerSchema
             }
             try migrator.migrate(pool)
-            return Library(partition: partition, pool: pool, now: now)
+            return Library(partition: partition, pool: pool, cacheDirectory: cacheDirectory, now: now)
         } catch {
             throw LibraryError.wrapping(error)
         }

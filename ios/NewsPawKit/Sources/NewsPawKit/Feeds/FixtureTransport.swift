@@ -39,6 +39,10 @@ public final class FixtureTransport: Transport {
         public static let sequence = "https://sequence.example.invalid/rss.xml"
         /// The suggested BBC World feed, answered with a synthetic feed.
         public static let suggested = "https://feeds.bbci.co.uk/news/world/rss.xml"
+        /// A feed whose every answer holds one item with an identifier and
+        /// a link that no earlier answer had, in this process or another, so
+        /// that each request shows as one more unread article (RD06).
+        public static let counting = "https://counting.example.invalid/rss.xml"
     }
 
     private let sequenceRequests = Mutex(0)
@@ -94,6 +98,9 @@ public final class FixtureTransport: Transport {
             return answer(Self.rss(title: "Sequence Feed", items: ["Sequence story \(number)"]), type: rss)
         case Address.suggested:
             return answer(Self.rss(title: "BBC News (fixture)", items: ["Fixture world story"]), type: rss)
+        case Address.counting:
+            // The identifier and the link are built from the item's text.
+            return answer(Self.rss(title: "Counting Feed", items: ["Counting story \(UUID().uuidString)"]), type: rss)
         default:
             throw TransportFailure.unreachable
         }

@@ -68,7 +68,7 @@ A three-column split view: sidebar → article list → reading screen.
 
 ### S1 Today
 
-- Large title "Today" with the date. Under it, one status line: "Updated 5 min ago" or "Updating…", and when sources failed, "3 sources failed" as a link to their status.
+- Large title "Today" with the date. Under it, one status line: "Updated 5 min ago" or "Updating…", and when sources failed, "3 sources failed" as a link to their status. The link shows the category list with the failing sources' categories expanded: the Library tab's root on iPhone, the sidebar on iPad.
 - One card per category that has overviews on:
   - category icon and name, unread count;
   - the overview text (up to six lines, then "More");
@@ -88,7 +88,7 @@ A three-column split view: sidebar → article list → reading screen.
 ### S2 Library
 
 - "All Unread" row with the total.
-- Categories in the owner's order: icon, name, unread count, disclosure chevron. Expanded, a category lists its sources: site icon, name, unread count. A web-page source shows a globe and no count. A paused source is dimmed; a failing source shows a warning mark.
+- Categories in the owner's order: icon, name, unread count, disclosure chevron. Expanded, a category lists its sources: site icon, name, unread count. A web-page source shows a globe and no count. A paused source is dimmed; a failing source shows a warning mark. A source being refreshed shows an activity indicator in place of its count or mark.
 - "+" in the navigation bar: Add source, New category, Import.
 - Edit mode: reorder and delete categories, move sources between categories. A source is moved from Source settings (its Category row), not by dragging in edit mode.
 - Long press on a category: Refresh, Mark all as read, Category settings. On a source: Refresh, Source settings, Pause, Delete.

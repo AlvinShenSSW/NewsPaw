@@ -12,10 +12,11 @@ struct RootView: View {
             Theme.background.ignoresSafeArea()
         case .failed(let failure):
             LibraryFailureView(failure: failure)
-        case .ready(let categories, let sources):
+        case .ready(let categories, let sources, let refresh):
             ShellView()
                 .environment(categories)
                 .environment(sources)
+                .environment(refresh)
                 .environment(model.navigation)
         }
     }

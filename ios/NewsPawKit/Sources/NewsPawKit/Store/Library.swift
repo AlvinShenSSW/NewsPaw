@@ -13,12 +13,17 @@ public final class Library: Sendable {
     /// never selects rows.
     public let partition: Partition
 
+    /// This library's image cache: the only way to reach it. Its directory
+    /// is created by its first store, not by opening the library.
+    public let imageCache: ImageCache
+
     let pool: DatabasePool
     let now: @Sendable () -> Date
 
-    init(partition: Partition, pool: DatabasePool, now: @escaping @Sendable () -> Date) {
+    init(partition: Partition, pool: DatabasePool, cacheDirectory: URL, now: @escaping @Sendable () -> Date) {
         self.partition = partition
         self.pool = pool
+        self.imageCache = ImageCache(directory: cacheDirectory)
         self.now = now
     }
 

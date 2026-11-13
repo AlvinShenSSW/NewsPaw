@@ -16,6 +16,7 @@ enum LibraryRoute: Hashable {
 }
 
 enum SettingsRoute: Hashable {
+    case refresh
     case about
 }
 
@@ -120,10 +121,16 @@ final class NavigationModel {
     }
 
     /// Closes the sheet and, in the same state change, shows the category
-    /// list where it is: the Library tab at its root in the tab structure;
-    /// the sidebar pane from 1100 pt; the slide-over, opened, below 1100 pt.
+    /// list where it is.
     func closeSheetAndShowCategoryList() {
         sheet = nil
+        showCategoryList()
+    }
+
+    /// Shows the category list where it is: the Library tab at its root in
+    /// the tab structure; the sidebar pane from 1100 pt; the slide-over,
+    /// opened, below 1100 pt.
+    func showCategoryList() {
         guard let layout else { return }
         if layout.structure == .tabs {
             tab = .library

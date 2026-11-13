@@ -9,6 +9,7 @@ struct PaneContainer: View {
     @Environment(NavigationModel.self) private var navigation
     @Environment(CategoryModel.self) private var categories
     @Environment(SourceModel.self) private var sources
+    @Environment(RefreshModel.self) private var refresh
 
     var body: some View {
         HStack(spacing: 0) {
@@ -28,6 +29,7 @@ struct PaneContainer: View {
                 .environment(navigation)
                 .environment(categories)
                 .environment(sources)
+                .environment(refresh)
         }
     }
 
@@ -58,8 +60,8 @@ struct PaneContainer: View {
                 SettingsView()
                     .toolbar { sidebarButton }
                     .paneRoot(inlineTitle: layout.sidebarIsPane)
-                    .navigationDestination(for: SettingsRoute.self) { _ in
-                        AboutView().paneRoot(inlineTitle: layout.sidebarIsPane)
+                    .navigationDestination(for: SettingsRoute.self) { route in
+                        SettingsDestination(route: route).paneRoot(inlineTitle: layout.sidebarIsPane)
                     }
             }
             .paneIdentifier(AccessibilityID.fullPane)

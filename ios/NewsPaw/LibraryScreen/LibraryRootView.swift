@@ -4,6 +4,7 @@ import SwiftUI
 struct LibraryRootView: View {
     @Environment(CategoryModel.self) private var categories
     @Environment(SourceModel.self) private var sources
+    @Environment(RefreshModel.self) private var refresh
     @State private var editMode = EditMode.inactive
 
     var body: some View {
@@ -25,6 +26,9 @@ struct LibraryRootView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
+        .refreshable {
+            await refresh.refresh(.library)
+        }
         .stackBackground(Theme.groupedBackground)
         .navigationTitle("Library")
         .toolbar {

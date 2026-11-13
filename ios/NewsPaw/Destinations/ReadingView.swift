@@ -9,7 +9,7 @@ struct ReadingPane: View {
 
     var body: some View {
         if let id = navigation.openArticle(on: list) {
-            ReadingView(articleID: id, list: list, providesShortcuts: false)
+            ReadingView(articleID: id, list: list, isPushed: false)
         } else {
             ReadingPlaceholderView()
         }
@@ -34,23 +34,28 @@ struct ReadingPlaceholderView: View {
 struct ReadingView: View {
     let articleID: UUID
     let list: ArticleListKind
-    /// Whether this screen carries the list's keyboard shortcuts: pushed in
-    /// the tab structure, where the list is not on screen; not in the
-    /// reading pane, beside the list that carries them.
-    let providesShortcuts: Bool
+    /// Whether the screen is pushed on its list (tab structure). Then it
+    /// carries the list's keyboard shortcuts, since the list is not on
+    /// screen, and hides the tab bar; in the reading pane the list beside it
+    /// carries them.
+    let isPushed: Bool
     @Environment(ReadingModel.self) private var reading
     @Environment(\.openURL) private var openURL
 
     var body: some View {
         content
             .background {
-                if providesShortcuts {
+                if isPushed {
                     ArticleShortcuts(list: list)
                 }
             }
             .onAppear {
                 reading.loadArticle(articleID)
             }
+            // Pushed in the tab structure, the tab bar would cover the
+            // reading screen's bottom bar (measured on iPhone), so it is
+            // hidden while the article is open.
+            .toolbar(isPushed ? .hidden : .automatic, for: .tabBar)
             .stackBackground(Theme.background)
             .navigationBarTitleDisplayMode(.inline)
     }

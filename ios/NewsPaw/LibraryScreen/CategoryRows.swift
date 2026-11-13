@@ -57,8 +57,12 @@ struct CategoryRows: View {
                             }
                         }
                         if sources.unreadCount(in: summary.id) > 0 {
+                            // Asked from the root: an alert asked for from a
+                            // context menu inside the slide-over's cover is not
+                            // presented (measured), so the slide-over closes
+                            // first, as for a sheet.
                             Button("Mark All as Read", systemImage: "checkmark.circle") {
-                                reading.askMarkAllRead(.category(summary.id))
+                                presentSheet { reading.askMarkAllRead(.category(summary.id)) }
                             }
                         }
                         Button("Category Settings", systemImage: "gearshape") {
@@ -114,23 +118,18 @@ struct CategoryRows: View {
         case .tagged:
             HStack(spacing: 0) {
                 disclosure
-                HStack {
-                    label
-                    Spacer(minLength: Theme.Spacing.small)
-                    if unread > 0 {
-                        Text(unread, format: .number)
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.secondaryText)
-                            .accessibilityHidden(true)
-                    }
+                label
+                    .frame(maxWidth: .infinity, minHeight: Theme.minimumTapTarget, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .accessibilityValue(Text("\(unread) unread"))
+                    .accessibilityIdentifier(AccessibilityID.categoryRow(summary.category.name))
+                if unread > 0 {
+                    Text(unread, format: .number)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
+                        .padding(.leading, Theme.Spacing.small)
+                        .accessibilityHidden(true)
                 }
-                .frame(maxWidth: .infinity, minHeight: Theme.minimumTapTarget, alignment: .leading)
-                .contentShape(Rectangle())
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text(verbatim: summary.category.name))
-                .accessibilityValue(Text("\(unread) unread"))
-                .accessibilityAddTraits(.isButton)
-                .accessibilityIdentifier(AccessibilityID.categoryRow(summary.category.name))
             }
             .tag(SidebarItem.category(summary.id))
         case .navigating:

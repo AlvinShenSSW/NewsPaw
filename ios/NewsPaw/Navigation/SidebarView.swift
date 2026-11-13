@@ -28,19 +28,17 @@ struct SidebarView: View {
                     .accessibilityIdentifier(AccessibilityID.todayRow)
                 HStack {
                     Label("All Unread", systemImage: "tray")
-                    Spacer(minLength: Theme.Spacing.small)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityValue(Text("\(sources.totalUnread) unread"))
+                        .accessibilityIdentifier(AccessibilityID.allUnreadRow)
                     if sources.totalUnread > 0 {
                         Text(sources.totalUnread, format: .number)
                             .font(.subheadline)
                             .foregroundStyle(Theme.secondaryText)
+                            .accessibilityHidden(true)
                     }
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text("All Unread"))
-                .accessibilityValue(Text("\(sources.totalUnread) unread"))
-                .accessibilityAddTraits(.isButton)
                 .tag(SidebarItem.allUnread)
-                .accessibilityIdentifier(AccessibilityID.allUnreadRow)
                 Label("Starred", systemImage: "star")
                     .tag(SidebarItem.starred)
                     .accessibilityIdentifier(AccessibilityID.starredRow)

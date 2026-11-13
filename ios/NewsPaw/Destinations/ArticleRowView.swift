@@ -54,6 +54,8 @@ struct ArticleRowView: View {
     @Environment(ReadingModel.self) private var reading
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var thumbnail: UIImage?
+    /// Puts the dot level with the first line of the title at every size.
+    @ScaledMetric(relativeTo: .headline) private var dotOffset = 7.0
 
     /// The thumbnail's side, in points.
     static let thumbnailSide = 72.0
@@ -63,8 +65,7 @@ struct ArticleRowView: View {
             Circle()
                 .fill(row.isRead ? Color.clear : Theme.accent)
                 .frame(width: 8, height: 8)
-                // Level with the first line of the title.
-                .padding(.top, 7)
+                .padding(.top, dotOffset)
             let layout = typeSize.isAccessibilitySize
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Spacing.small))
                 : AnyLayout(HStackLayout(alignment: .top, spacing: Theme.Spacing.medium))

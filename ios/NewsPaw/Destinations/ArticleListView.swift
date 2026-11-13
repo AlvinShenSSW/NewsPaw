@@ -176,28 +176,36 @@ private struct ArticleListContent: View {
                 .accessibilityIdentifier(AccessibilityID.markAllReadButton)
             }
         }
-        ToolbarItem(placement: .topBarTrailing) {
-            Menu("More", systemImage: "ellipsis.circle") {
-                if sources.hasRefreshTarget(for: kind) {
-                    Button("Refresh", systemImage: "arrow.clockwise") {
-                        Task { await reading.refresh(kind) }
-                    }
-                }
-                switch kind {
-                case .category(let id):
-                    Button("Category Settings", systemImage: "gearshape") {
-                        categories.beginSettings(id)
-                    }
-                case .source(let id):
-                    Button("Source Settings", systemImage: "gearshape") {
-                        sources.beginSettings(id)
-                    }
-                case .allUnread, .starred:
-                    EmptyView()
+        if sources.hasRefreshTarget(for: kind) || kind.hasFilter {
+            ToolbarItem(placement: .topBarTrailing) {
+                listMenu
+            }
+        }
+    }
+
+    /// Refresh, when the scope has something to collect, and the category's
+    /// or source's settings.
+    private var listMenu: some View {
+        Menu("More", systemImage: "ellipsis.circle") {
+            if sources.hasRefreshTarget(for: kind) {
+                Button("Refresh", systemImage: "arrow.clockwise") {
+                    Task { await reading.refresh(kind) }
                 }
             }
-            .accessibilityIdentifier(AccessibilityID.listMenu)
+            switch kind {
+            case .category(let id):
+                Button("Category Settings", systemImage: "gearshape") {
+                    categories.beginSettings(id)
+                }
+            case .source(let id):
+                Button("Source Settings", systemImage: "gearshape") {
+                    sources.beginSettings(id)
+                }
+            case .allUnread, .starred:
+                EmptyView()
+            }
         }
+        .accessibilityIdentifier(AccessibilityID.listMenu)
     }
 }
 
@@ -275,7 +283,8 @@ private struct ArticleRowButton: View {
 /// The keyboard shortcuts of a list and of the reading screen opened from it
 /// (decision 15), as hidden buttons that call the same model functions as
 /// the swipes and taps. None acts while a sheet, the slide-over or the "Mark
-/// All as Read" question is open.
+/// All as Read" question is open. The arrow keys are left out: measured on
+/// the iPad simulators, a down-arrow shortcut did not open the next article.
 struct ArticleShortcuts: View {
     let list: ArticleListKind
     @Environment(ReadingModel.self) private var reading
@@ -284,41 +293,33 @@ struct ArticleShortcuts: View {
     var body: some View {
         let enabled = navigation.sheet == nil && reading.pendingMarkAll == nil && !navigation.isSlideOverOpen
         VStack {
-            Button("Next Article") {
+            shortcut("Next Article", "j") {
                 Task { await reading.openNext(on: list) }
             }
-            .keyboardShortcut("j", modifiers: [])
-            Button("Previous Article") {
+            shortcut("Previous Article", "k") {
                 reading.openPrevious(on: list)
             }
-            .keyboardShortcut("k", modifiers: [])
-            // The arrows do what J and K do: measured, the list does not
-            // scroll by them itself, so nothing of the system's is taken
-            // over.
-            Button("Next Article") {
-                Task { await reading.openNext(on: list) }
-            }
-            .keyboardShortcut(.downArrow, modifiers: [])
-            Button("Previous Article") {
-                reading.openPrevious(on: list)
-            }
-            .keyboardShortcut(.upArrow, modifiers: [])
-            Button("Star or Unstar") {
+            shortcut("Star or Unstar", "s") {
                 reading.toggleStarOfOpenArticle(on: list)
             }
-            .keyboardShortcut("s", modifiers: [])
-            Button("Mark as Read or Unread") {
+            shortcut("Mark as Read or Unread", "u") {
                 reading.toggleReadOfOpenArticle(on: list)
             }
-            .keyboardShortcut("u", modifiers: [])
-            Button("Refresh") {
+            shortcut("Refresh", "r") {
                 Task { await reading.refresh(list) }
             }
-            .keyboardShortcut("r", modifiers: [])
         }
         .disabled(!enabled)
         .opacity(0)
         .frame(width: 0, height: 0)
         .accessibilityHidden(true)
+    }
+
+    /// A button for `key` alone, hidden from VoiceOver; its title names the
+    /// command in the system's list of shortcuts.
+    private func shortcut(_ title: LocalizedStringKey, _ key: KeyEquivalent, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .keyboardShortcut(key, modifiers: [])
+            .accessibilityHidden(true)
     }
 }

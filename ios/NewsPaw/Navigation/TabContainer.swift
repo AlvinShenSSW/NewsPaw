@@ -21,7 +21,7 @@ struct TabContainer: View {
                             if let list = route.list {
                                 ArticleListView(kind: list)
                             } else if case .article(let id) = route {
-                                ReadingView(articleID: id, list: navigation.libraryList ?? .allUnread, providesShortcuts: true)
+                                ReadingView(articleID: id, list: navigation.libraryList ?? .allUnread, isPushed: true)
                             }
                         }
                 }
@@ -31,7 +31,7 @@ struct TabContainer: View {
                     ArticleListView(kind: .starred)
                         .navigationDestination(for: LibraryRoute.self) { route in
                             if case .article(let id) = route {
-                                ReadingView(articleID: id, list: .starred, providesShortcuts: true)
+                                ReadingView(articleID: id, list: .starred, isPushed: true)
                             }
                         }
                 }

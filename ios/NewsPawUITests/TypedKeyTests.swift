@@ -1,7 +1,7 @@
 import XCTest
 
-/// RD09 criterion 16: the keyboard shortcuts, by `typeKey`, on the iPad
-/// simulators.
+/// RD09 criterion 16 and RD10 criterion 13: the keyboard shortcuts, by
+/// `typeKey`, on the iPad simulators.
 ///
 /// It runs last on purpose (classes run in name order): `typeKey` attaches
 /// a hardware keyboard to the simulator until the simulator restarts, and
@@ -9,7 +9,40 @@ import XCTest
 /// text field lasts 60 seconds (measured on this branch and on main before
 /// RD09, so it is the harness, not the app). Restart the iPad simulators
 /// before running the suite again.
-final class TypedKeyTests: ArticleTestCase {
+final class TypedKeyTests: BrowserTestCase {
+    /// RD10 criterion 13: with the browser shown over a list, `J` opens no
+    /// article, and `j` typed into a page's text field arrives in the field.
+    func testBrowserKeepsTheKeys() throws {
+        try XCTSkipUnless(isPad, "a hardware keyboard on iPad")
+        launch()
+        rotate(.landscapeLeft)
+        requireFullWidth()
+        createCategory("World")
+        addSource(Fixture.articles, to: "World")
+        openCategoryList("World")
+        openArticle("Plain story")
+        waitFor(button(AccessibilityID.openOriginalButton)).tap()
+        waitForPage("Original of plain-story")
+        XCTAssertTrue(element(AccessibilityID.listPane).exists, "the list is beside the browser")
+
+        app.typeKey("j", modifierFlags: [])
+        sleep(1)
+        XCTAssertTrue(barText("Original of plain-story").exists, "J changed what the browser shows: \(barTexts())")
+        XCTAssertTrue(isUnread(articleRow("Linkless story")), "J opened the next article")
+        XCTAssertTrue(isUnread(articleRow("Image story")), "J opened the first article")
+
+        tapLink("Form page")
+        waitForPage("Form Page")
+        app.webViews.textFields.firstMatch.tap()
+        sleep(1)
+        app.typeKey("j", modifierFlags: [])
+        let typed = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            self.barTexts().contains { $0.lowercased() == "typed: j" }
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [typed], timeout: timeout), .completed, "j did not reach the field: \(barTexts())")
+        XCTAssertTrue(isUnread(articleRow("Linkless story")), "j opened the next article")
+    }
+
     /// Each key does what decision 15 says; with a sheet open none does
     /// anything. iPad simulators, by `typeKey`.
     func testKeyboardShortcuts() throws {

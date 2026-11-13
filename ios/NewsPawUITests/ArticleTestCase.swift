@@ -161,9 +161,10 @@ class ArticleTestCase: NewsPawUITestCase {
         print("RD09 \(name): \(text)")
     }
 
-    /// A button of the open context menu or toolbar menu.
+    /// A button of the open context menu or toolbar menu, not a list's own
+    /// toolbar button of the same name ("Mark All as Read").
     func menuButton(_ label: String) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
+        app.buttons.matching(NSPredicate(format: "label == %@ AND NOT (identifier BEGINSWITH 'list.')", label)).firstMatch
     }
 
     /// Swipes a row from its leading or trailing edge and taps the action

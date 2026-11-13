@@ -172,11 +172,10 @@ final class ArticleListTests: ArticleTestCase {
         waitForValue(element(AccessibilityID.categoryRow("World")), "0 unread")
         waitForValue(element(AccessibilityID.allUnreadRow), "3 unread")
 
-        // From the category's menu in Library (the slide-over closes first).
+        // From the category's menu in Library.
         waitFor(element(AccessibilityID.categoryRow("Tech"))).press(forDuration: 1.2)
         waitFor(menuButton("Mark All as Read")).tap()
         waitFor(app.alerts["Mark 3 articles as read?"]).buttons["Mark as Read"].tap()
-        showCategoryList()
         waitForValue(element(AccessibilityID.categoryRow("Tech")), "0 unread")
         waitForValue(element(AccessibilityID.allUnreadRow), "0 unread")
         openCategoryList("Tech")

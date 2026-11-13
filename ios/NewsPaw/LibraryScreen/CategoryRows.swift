@@ -57,12 +57,8 @@ struct CategoryRows: View {
                             }
                         }
                         if sources.unreadCount(in: summary.id) > 0 {
-                            // Asked from the root: an alert asked for from a
-                            // context menu inside the slide-over's cover is not
-                            // presented (measured), so the slide-over closes
-                            // first, as for a sheet.
                             Button("Mark All as Read", systemImage: "checkmark.circle") {
-                                presentSheet { reading.askMarkAllRead(.category(summary.id)) }
+                                reading.askMarkAllRead(.category(summary.id))
                             }
                         }
                         Button("Category Settings", systemImage: "gearshape") {

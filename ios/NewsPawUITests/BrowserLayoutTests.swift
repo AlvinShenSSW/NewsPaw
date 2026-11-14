@@ -41,11 +41,12 @@ final class BrowserLayoutTests: BrowserTestCase {
         forwardButton.tap()
         waitForPage("Long Page")
         assertTapTarget(moreMenu, "More", activated: { self.menuButton("Reload").exists }) {
-            // A tap on the page outside the menu closes it.
-            self.app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
+            // Closed by choosing Reload: on iPhone the first tap after a
+            // menu closed by a tap outside it is lost (measured: whichever
+            // edge came second failed, in either order).
+            self.menuButton("Reload").tap()
             self.waitForAbsence(self.menuButton("Reload"))
-            // The menu's glass shape is still turning back into the button.
-            sleep(1)
+            self.waitForPage("Long Page")
         }
         let end = app.webViews.staticTexts["End of the long page"]
         let barTop = [backButton, forwardButton, moreMenu].map(\.frame.minY).min() ?? window.maxY

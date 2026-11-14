@@ -178,6 +178,7 @@ enum AccessibilityID {
     static let removeModelButton = "slot.removeModel"
     static let removeBackupFirst = "slot.removeBackupFirst"
     static let modelListPrefix = "modelList."
+    static let modelListCancelButton = "slot.modelListCancel"
 
     /// A preset's row in the form's service picker.
     static func presetOption(_ rawValue: String) -> String {

@@ -1,7 +1,9 @@
 import XCTest
 
 /// RD13 criterion 16: Settings, Models & Translation, the primary and the
-/// backup model's forms (scrolled through) and the loaded model list.
+/// backup model's forms (scrolled through), the loaded model list, the
+/// lines of a form that cannot be saved, the two questions and Models &
+/// Translation without a model.
 /// Written when run with `TEST_RUNNER_NEWSPAW_SCREENSHOT_DIR` set (and,
 /// optionally, `TEST_RUNNER_NEWSPAW_SCREENSHOT_VARIANT` = `zh` or
 /// `largest-text`; dark appearance is set on the simulator with `xcrun
@@ -81,12 +83,46 @@ final class ModelScreenshotTests: ModelSettingsTestCase {
         loadList.tap()
         waitFor(button(AccessibilityID.modelListRow(Fixture.models[0])))
         capture("model-list")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        button(AccessibilityID.modelListCancelButton).tap()
         waitForAbsence(button(AccessibilityID.modelListRow(Fixture.models[0])))
         button(AccessibilityID.cancelButton).tap()
         waitFor(element(AccessibilityID.primaryModelRow))
 
         openForm(backup: true)
         captureForm("backup")
+
+        // The lines of a form that cannot be saved: an address that is
+        // refused, "Key needed" once the address names another host, and a
+        // key that is refused.
+        replaceText(of: AccessibilityID.modelAddressField, with: "http://example.invalid/v1")
+        reveal(element(AccessibilityID.modelAddressProblem))
+        capture("address-problem")
+        reveal(element(AccessibilityID.keyNeeded))
+        capture("key-needed")
+        typeKey("clé")
+        reveal(element(AccessibilityID.keyProblem))
+        capture("key-problem")
+        // The questions: discarding the changes, removing a model. Each is
+        // a popover with one button.
+        let confirm = app.popovers.buttons.firstMatch
+        button(AccessibilityID.cancelButton).tap()
+        waitFor(confirm)
+        capture("discard-question")
+        confirm.tap()
+        waitFor(element(AccessibilityID.primaryModelRow))
+        for backup in [true, false] {
+            openForm(backup: backup)
+            reveal(button(AccessibilityID.removeModelButton)).tap()
+            waitFor(confirm)
+            if backup {
+                capture("remove-question")
+            }
+            confirm.tap()
+            waitForAbsence(button(AccessibilityID.saveButton))
+            waitFor(element(AccessibilityID.primaryModelRow))
+        }
+        // No model: "Not set up", and the backup waiting for a primary.
+        waitFor(element(AccessibilityID.backupNeedsPrimary))
+        capture("models-empty")
     }
 }

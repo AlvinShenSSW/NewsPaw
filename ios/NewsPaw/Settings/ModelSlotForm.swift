@@ -125,7 +125,12 @@ struct ModelSlotForm: View {
     private var modelSection: some View {
         @Bindable var models = models
         return Section {
+            // iOS takes the text field before a secure field for a user
+            // name, and offers saved passwords above the keyboard. With a
+            // content type of its own the field is not one (see the key
+            // field).
             TextField("Model Name", text: $models.draftModel)
+                .textContentType(.oneTimeCode)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.done)
@@ -221,7 +226,8 @@ struct ModelSlotForm: View {
                 // that prompt holds every touch meanwhile (seen as an
                 // unseen `_SFAppPasswordSavingViewController` in the iOS 27
                 // simulator after Replace and Save). A one-time code is
-                // never offered for saving.
+                // never offered for saving, and no saved password is
+                // offered for it.
                 SecureField("Key", text: $models.draftKey)
                     .textContentType(.oneTimeCode)
                     .textInputAutocapitalization(.never)
@@ -392,6 +398,7 @@ struct ModelListSheet: View {
                         models.isShowingModelList = false
                     }
                     .keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier(AccessibilityID.modelListCancelButton)
                 }
             }
         }

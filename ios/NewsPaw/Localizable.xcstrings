@@ -280,6 +280,17 @@
         }
       }
     },
+    "Back" : {
+      "comment" : "The embedded browser's bottom-bar button that returns to the page before (RD10).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "后退"
+          }
+        }
+      }
+    },
     "Body" : {
       "comment" : "Picker in Source settings: how an article's body is obtained.",
       "localizations" : {
@@ -412,6 +423,17 @@
         }
       }
     },
+    "Close" : {
+      "comment" : "Button of the embedded browser in the iPad reading pane: closes the page and shows the article again.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        }
+      }
+    },
     "Close Sidebar" : {
       "comment" : "Accessibility label of the icon-only button that closes the slide-over sidebar on iPad.",
       "localizations" : {
@@ -474,6 +496,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法载入"
+          }
+        }
+      }
+    },
+    "Could not open this page" : {
+      "comment" : "Title of the embedded browser's failure state, shown in place of a page that could not be loaded.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法打开这个页面"
           }
         }
       }
@@ -753,6 +786,17 @@
         }
       }
     },
+    "Forward" : {
+      "comment" : "The embedded browser's bottom-bar button that goes to the next page after Back (RD10).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前进"
+          }
+        }
+      }
+    },
     "Found %lld feeds on this page" : {
       "comment" : "Add source: how many feeds the page declares.",
       "localizations" : {
@@ -1021,6 +1065,17 @@
         }
       }
     },
+    "Loading" : {
+      "comment" : "Accessibility label of the embedded browser's progress line while a page loads.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在载入"
+          }
+        }
+      }
+    },
     "Looking for a feed…" : {
       "comment" : "Progress line while Add source looks up an address.",
       "localizations" : {
@@ -1243,6 +1298,17 @@
         }
       }
     },
+    "No app on this device can open this link." : {
+      "comment" : "Alert after Open when the system has no app for the link's scheme.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台设备上没有能打开这个链接的应用。"
+          }
+        }
+      }
+    },
     "No article selected" : {
       "comment" : "Shown in the reading pane on iPad when no article is open.",
       "localizations" : {
@@ -1364,6 +1430,17 @@
         }
       }
     },
+    "Open" : {
+      "comment" : "Button of the other-app question: hands the link to the system.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开"
+          }
+        }
+      }
+    },
     "Open Original Page" : {
       "comment" : "Button of the reading screen: opens the article's page (in Safari until the embedded browser arrives).",
       "localizations" : {
@@ -1382,6 +1459,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在浏览器中打开"
+          }
+        }
+      }
+    },
+    "Open in Safari" : {
+      "comment" : "Opens the shown page, a failed page or a refused file's address in Safari, outside the app.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Safari 中打开"
+          }
+        }
+      }
+    },
+    "Open this link in another app?" : {
+      "comment" : "Title of the question when a page's link uses a scheme of another app (mailto:, tel:, an app's own).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要在其他应用中打开这个链接吗？"
           }
         }
       }
@@ -1474,6 +1573,17 @@
         }
       }
     },
+    "Reload" : {
+      "comment" : "Menu item of the embedded browser's More menu: loads the shown page again.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新载入"
+          }
+        }
+      }
+    },
     "Resume" : {
       "comment" : "Context-menu item of a paused source.",
       "localizations" : {
@@ -1503,6 +1613,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存"
+          }
+        }
+      }
+    },
+    "Save This Page as a Source" : {
+      "comment" : "Menu item of the embedded browser's More menu: opens Add source with the shown address.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将此页面存为来源"
           }
         }
       }
@@ -1795,6 +1916,17 @@
         }
       }
     },
+    "The page stopped working." : {
+      "comment" : "Reason shown in the embedded browser's failure state when the page's web content process ended.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "页面停止运行了。"
+          }
+        }
+      }
+    },
     "This address is already in “%@” as “%@”." : {
       "comment" : "Add source outcome. The first %@ is the category's name, the second the source's name.",
       "localizations" : {
@@ -1909,6 +2041,17 @@
         }
       }
     },
+    "This is a “%@” link." : {
+      "comment" : "Message of the other-app question. %@ is the link's scheme, as in mailto (not translated).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这是一个“%@”链接。"
+          }
+        }
+      }
+    },
     "This is not a web address." : {
       "comment" : "Message under the address field.",
       "localizations" : {
@@ -1916,6 +2059,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这不是一个网址。"
+          }
+        }
+      }
+    },
+    "This link is a file. NewsPaw does not download files." : {
+      "comment" : "Alert when a page's link is a file, an attachment or a download link; nothing is saved.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个链接是一个文件。NewsPaw 不下载文件。"
           }
         }
       }

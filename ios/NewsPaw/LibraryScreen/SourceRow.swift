@@ -7,10 +7,10 @@ import SwiftUI
 /// failing. State is carried by a glyph and a VoiceOver value, never by
 /// colour or dimming alone. While the source is being collected an
 /// activity indicator takes the place of the count or mark (RD06). A tap on
-/// a feed-like source opens its article list (RD09 decision 11): pushed in
-/// Library, selected like a category in the sidebar; a web page's opens its
-/// settings until RD10. The menu offers Refresh (a feed that is not paused),
-/// Source settings, Pause or Resume, and Delete.
+/// a feed-like source opens its article list (RD09 decision 11), a tap on a
+/// web page the embedded browser at its address (RD10): pushed in Library,
+/// selected like a category in the sidebar. The menu offers Refresh (a feed
+/// that is not paused), Source settings, Pause or Resume, and Delete.
 struct SourceRow: View {
     let source: SourceSummary
     let rowContent: CategoryRows.RowContent
@@ -30,7 +30,7 @@ struct SourceRow: View {
     }
 
     var body: some View {
-        if source.isFeedLike, rowContent == .tagged {
+        if rowContent == .tagged {
             // Selected through the sidebar's selection, like a category.
             decorated(content)
                 .tag(SidebarItem.source(source.id))
@@ -47,12 +47,8 @@ struct SourceRow: View {
     }
 
     private func open() {
-        if source.isFeedLike {
-            guard editMode?.wrappedValue.isEditing != true else { return }
-            navigation.push(.source(source.id))
-        } else {
-            presentSheet { sources.beginSettings(source.id) }
-        }
+        guard editMode?.wrappedValue.isEditing != true else { return }
+        navigation.push(.source(source.id))
     }
 
     private var content: some View {

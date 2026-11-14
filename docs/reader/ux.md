@@ -118,6 +118,8 @@ A three-column split view: sidebar → article list → reading screen.
 ### S5 Embedded browser
 
 - Used for web-page sources, "Open original page", and links inside articles.
+- On iPad a web-page source fills the content area as one pane, and an article's original page takes the reading pane, with Close returning to the article.
+- A link to another app (`mailto:`, `tel:`, an app's own scheme) asks before it leaves the app, and a link to a file is not downloaded: the browser says so and offers Open in Safari.
 - Top: page title and domain, progress line. Bottom bar: back, forward, Translate, reader mode, and a "more" menu with Reload, Share, Open in Safari, Save this page as a source, Copy link, and — for a web-page source — the switch "Always translate this source".
 - **Translate** is one tap and works on any page (N06). The page's text is replaced in place; layout, images and links stay as they are.
   - While it works, a slim status line under the top bar reads "Translating…" and the text on screen changes as each batch arrives. The button shows as active.

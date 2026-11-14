@@ -18,6 +18,7 @@ struct RootView: View {
                 .environment(sources)
                 .environment(refresh)
                 .environment(reading)
+                .environment(model.modelSettings)
                 .environment(model.navigation)
         }
     }

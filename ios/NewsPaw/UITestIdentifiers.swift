@@ -152,6 +152,42 @@ enum AccessibilityID {
     static let todayStatus = "today.status"
     static let failedSourcesButton = "today.failedSources"
     static let refreshRow = "settings.refresh"
+
+    // Models & Translation (RD13)
+    static let modelsRow = "settings.models"
+    static let primaryModelRow = "models.primary"
+    static let backupModelRow = "models.backup"
+    static let backupNeedsPrimary = "models.backupNeedsPrimary"
+    static let backupIntro = "slot.backupIntro"
+    static let modelAddressField = "slot.address"
+    static let modelAddressProblem = "slot.addressProblem"
+    static let modelNameField = "slot.model"
+    static let modelNameProblem = "slot.modelProblem"
+    static let loadListButton = "slot.loadList"
+    static let loadListLine = "slot.loadListLine"
+    static let keyField = "slot.key"
+    static let keyProblem = "slot.keyProblem"
+    static let storedKey = "slot.storedKey"
+    static let keyNeeded = "slot.keyNeeded"
+    static let replaceKeyButton = "slot.replaceKey"
+    static let removeKeyButton = "slot.removeKey"
+    static let cancelReplaceKeyButton = "slot.cancelReplaceKey"
+    static let testButton = "slot.test"
+    static let testLine = "slot.testLine"
+    static let testSentence = "slot.testSentence"
+    static let removeModelButton = "slot.removeModel"
+    static let removeBackupFirst = "slot.removeBackupFirst"
+    static let modelListPrefix = "modelList."
+
+    /// A preset's row in the form's service picker.
+    static func presetOption(_ rawValue: String) -> String {
+        "slot.preset." + rawValue
+    }
+
+    /// A model of the loaded list.
+    static func modelListRow(_ name: String) -> String {
+        modelListPrefix + name
+    }
 }
 
 #if DEBUG

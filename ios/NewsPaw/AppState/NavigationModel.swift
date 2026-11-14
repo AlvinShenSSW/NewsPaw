@@ -86,6 +86,10 @@ enum ArticleListKind: Hashable {
 }
 
 enum SettingsRoute: Hashable {
+    /// Models & Translation (ux S8; RD13).
+    case models
+    /// The form of one model slot (ux S9), pushed on Models & Translation.
+    case modelSlot(ModelRole)
     case refresh
     case data
     case about
@@ -152,7 +156,9 @@ final class NavigationModel {
     private(set) var currentTab: AppTab = .today
     var libraryPath: [LibraryRoute] = []
     var starredPath: [LibraryRoute] = []
-    var settingsPath: [SettingsRoute] = []
+    var settingsPath: [SettingsRoute] = [] {
+        didSet { onSettingsPathChanged?(settingsPath) }
+    }
     /// Whether the slide-over sidebar is open (panes below 1100 pt only).
     private(set) var isSlideOverOpen = false
     /// The sheet presented from the root.
@@ -164,6 +170,10 @@ final class NavigationModel {
     /// sidebar selection changes to it, or its tab is selected while it is
     /// the top of that tab's stack. Set by the app model.
     @ObservationIgnored var onListEntered: (@MainActor (ArticleListKind) -> Void)?
+    /// Called with the Settings path each time it changes, before the views
+    /// it shows are drawn, so that a model form is set up when it is pushed
+    /// and closed when it is popped by any means. Set by the app model.
+    @ObservationIgnored var onSettingsPathChanged: (@MainActor ([SettingsRoute]) -> Void)?
 
     /// The tab, as the tab bar reads and selects it. Selecting a tab whose
     /// stack has a list at its top enters that list.

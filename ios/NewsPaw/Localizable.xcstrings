@@ -115,6 +115,17 @@
         }
       }
     },
+    "A key can contain only English letters, digits and symbols, on one line." : {
+      "comment" : "Footer of the key field in the model form when the typed key has a line break, a control or a non-ASCII character.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key 只能包含英文字母、数字和符号，且只能有一行。"
+          }
+        }
+      }
+    },
     "AI" : {
       "comment" : "Group of suggested sources.",
       "localizations" : {
@@ -280,6 +291,17 @@
         }
       }
     },
+    "Backup Model" : {
+      "comment" : "Settings › Models & Translation: the backup model row and the title of its form.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "备用模型"
+          }
+        }
+      }
+    },
     "Body" : {
       "comment" : "Picker in Source settings: how an article's body is obtained.",
       "localizations" : {
@@ -401,6 +423,17 @@
         }
       }
     },
+    "Choosing a service fills in its address." : {
+      "comment" : "Footer of the service picker in the model form.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择服务后会自动填入它的地址。"
+          }
+        }
+      }
+    },
     "Clear Image Cache" : {
       "comment" : "Settings → Data: button that empties the current library's image cache.",
       "localizations" : {
@@ -467,6 +500,17 @@
         }
       }
     },
+    "Could not connect" : {
+      "comment" : "Test result line in the model form (ux S9).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法连接"
+          }
+        }
+      }
+    },
     "Could not load" : {
       "comment" : "Last row of an article list whose page could not be read; followed by Try Again.",
       "localizations" : {
@@ -474,6 +518,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法载入"
+          }
+        }
+      }
+    },
+    "Could not reach the service" : {
+      "comment" : "Sentence under the Test line Could not connect (ux section 4, Network).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接不上模型服务"
           }
         }
       }
@@ -529,6 +584,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "创建"
+          }
+        }
+      }
+    },
+    "Custom" : {
+      "comment" : "Service preset in the model form: an address typed by hand.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自定义"
           }
         }
       }
@@ -595,6 +661,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除“%@”？"
+          }
+        }
+      }
+    },
+    "Discard Changes" : {
+      "comment" : "Button of the question asked when leaving the model form with unsaved changes.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放弃更改"
+          }
+        }
+      }
+    },
+    "Discard your changes?" : {
+      "comment" : "Question asked when leaving the model form with unsaved changes.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要放弃所做的更改吗？"
           }
         }
       }
@@ -799,6 +887,17 @@
         }
       }
     },
+    "Gemini (Compatible)" : {
+      "comment" : "Service preset in the model form: Gemini's OpenAI-compatible endpoint. Gemini is a product name and is not translated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gemini（兼容）"
+          }
+        }
+      }
+    },
     "Globe" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -955,6 +1054,17 @@
         }
       }
     },
+    "Its key is removed from this device." : {
+      "comment" : "Message of the confirmation before removing a model.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它的 Key 会从这台设备上移除。"
+          }
+        }
+      }
+    },
     "Japan" : {
       "comment" : "Group of suggested sources.",
       "localizations" : {
@@ -973,6 +1083,83 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文章保留时间"
+          }
+        }
+      }
+    },
+    "Keep Editing" : {
+      "comment" : "Button of the question asked when leaving the model form with unsaved changes.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "继续编辑"
+          }
+        }
+      }
+    },
+    "Kept in this device's keychain and sent only to this address." : {
+      "comment" : "Footer of the key section in the model form.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存在这台设备的钥匙串中，只会发送到这个地址。"
+          }
+        }
+      }
+    },
+    "Key" : {
+      "comment" : "Header and secure-field label of the model key. Key stays Key in Chinese (ux section 4).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key"
+          }
+        }
+      }
+    },
+    "Key ending in %@" : {
+      "comment" : "VoiceOver label of a stored model key, shown as dots and its last four characters.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尾号为 %@ 的 Key"
+          }
+        }
+      }
+    },
+    "Key needed" : {
+      "comment" : "State of a model with no usable key (spec N10).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要 Key"
+          }
+        }
+      }
+    },
+    "Key rejected" : {
+      "comment" : "Test result line in the model form (ux S9).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key 被拒绝"
+          }
+        }
+      }
+    },
+    "Key saved" : {
+      "comment" : "VoiceOver label of a stored model key shorter than 12 characters, shown as dots only.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保存 Key"
           }
         }
       }
@@ -1017,6 +1204,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "订阅"
+          }
+        }
+      }
+    },
+    "Load List" : {
+      "comment" : "Button in the model form that loads the list of models the service offers.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "载入列表"
+          }
+        }
+      }
+    },
+    "Loading…" : {
+      "comment" : "Line under Load List while the model list is loading.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在载入…"
           }
         }
       }
@@ -1118,6 +1327,61 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "标为未读"
+          }
+        }
+      }
+    },
+    "Model" : {
+      "comment" : "Header of the model-name section in the model form.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型"
+          }
+        }
+      }
+    },
+    "Model Name" : {
+      "comment" : "Placeholder of the model-name field in the model form.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型名称"
+          }
+        }
+      }
+    },
+    "Model not found" : {
+      "comment" : "Test result line in the model form (ux S9).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到模型"
+          }
+        }
+      }
+    },
+    "Models" : {
+      "comment" : "Header of the model rows in Models & Translation, and the title of the loaded model list.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型"
+          }
+        }
+      }
+    },
+    "Models & Translation" : {
+      "comment" : "Settings row and screen title (ux S8).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型与翻译"
           }
         }
       }
@@ -1298,6 +1562,28 @@
         }
       }
     },
+    "Not set up" : {
+      "comment" : "State of a model row that has not been set up.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未设置"
+          }
+        }
+      }
+    },
+    "Not tested" : {
+      "comment" : "Test result line of a model that has never been tested (ux S9).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未测试"
+          }
+        }
+      }
+    },
     "Not updated yet" : {
       "comment" : "Status of a source never updated; on Today, of a library never refreshed.",
       "localizations" : {
@@ -1397,6 +1683,17 @@
         }
       }
     },
+    "Passed" : {
+      "comment" : "Test result line in the model form (ux S9).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通过"
+          }
+        }
+      }
+    },
     "Pause" : {
       "comment" : "Context-menu item of a source.",
       "localizations" : {
@@ -1452,6 +1749,28 @@
         }
       }
     },
+    "Primary Model" : {
+      "comment" : "Settings › Models & Translation: the primary model row and the title of its form.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主模型"
+          }
+        }
+      }
+    },
+    "Quota or rate limit" : {
+      "comment" : "Test result line in the model form (ux S9).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "额度或频率受限"
+          }
+        }
+      }
+    },
     "Refresh" : {
       "comment" : "The Settings row and screen for refreshing; the Refresh action in a category's or source's menu.",
       "localizations" : {
@@ -1470,6 +1789,83 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刷新间隔"
+          }
+        }
+      }
+    },
+    "Remove" : {
+      "comment" : "Button that removes the stored model key.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除"
+          }
+        }
+      }
+    },
+    "Remove Key" : {
+      "comment" : "Confirming button of removing the stored model key.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除 Key"
+          }
+        }
+      }
+    },
+    "Remove Model" : {
+      "comment" : "Button that removes a model, and its confirming button.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除模型"
+          }
+        }
+      }
+    },
+    "Remove the backup model first" : {
+      "comment" : "Footer under the primary model's Remove Model button while a backup model exists.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先移除备用模型"
+          }
+        }
+      }
+    },
+    "Remove the key?" : {
+      "comment" : "Title of the confirmation before removing the stored model key.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要移除 Key 吗？"
+          }
+        }
+      }
+    },
+    "Remove this model?" : {
+      "comment" : "Title of the confirmation before removing a model.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要移除这个模型吗？"
+          }
+        }
+      }
+    },
+    "Replace" : {
+      "comment" : "Button that replaces the stored model key with a new one.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "替换"
           }
         }
       }
@@ -1525,6 +1921,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "现在先保存，翻译和全文阅读可用后生效。"
+          }
+        }
+      }
+    },
+    "Sends one short request with what the form shows. Saving does not test." : {
+      "comment" : "Footer of the Test section in the model form.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用表单中的内容发送一条很短的请求。保存时不会测试。"
+          }
+        }
+      }
+    },
+    "Service" : {
+      "comment" : "Header of the service picker in the model form.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务"
+          }
+        }
+      }
+    },
+    "Set up the primary model first" : {
+      "comment" : "Footer under the disabled backup model row while no primary model exists.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先设置主模型"
           }
         }
       }
@@ -1716,6 +2145,72 @@
         }
       }
     },
+    "Test" : {
+      "comment" : "Button in the model form that sends one short request (ux S9).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测试"
+          }
+        }
+      }
+    },
+    "Testing…" : {
+      "comment" : "Test line while the test request runs.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在测试…"
+          }
+        }
+      }
+    },
+    "The address cannot contain a user name or password." : {
+      "comment" : "Footer of the address field in the model form.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地址不能包含用户名或密码。"
+          }
+        }
+      }
+    },
+    "The address cannot contain “?” or “#”." : {
+      "comment" : "Footer of the address field in the model form.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地址不能包含“?”或“#”。"
+          }
+        }
+      }
+    },
+    "The address must start with https://." : {
+      "comment" : "Footer of the address field in the model form.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地址必须以 https:// 开头。"
+          }
+        }
+      }
+    },
+    "The backup model is used when the primary model fails for network, rate-limit or server reasons." : {
+      "comment" : "First sentence of the backup model's form (ux S9).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当主模型因网络、频率限制或服务器原因失败时，会使用备用模型。"
+          }
+        }
+      }
+    },
     "The categories could not be loaded." : {
       "comment" : "Shown in place of the category list when reading the categories from storage failed.",
       "localizations" : {
@@ -1784,6 +2279,28 @@
         }
       }
     },
+    "The key could not be removed." : {
+      "comment" : "Alert when the keychain refuses to remove a model key.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法移除这个 Key。"
+          }
+        }
+      }
+    },
+    "The key could not be saved." : {
+      "comment" : "Alert when the keychain refuses to store a model key.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保存这个 Key。"
+          }
+        }
+      }
+    },
     "The library file is damaged or is not a NewsPaw library." : {
       "comment" : "Library failure screen: the reason shown when the library file is corrupt or is not a database.",
       "localizations" : {
@@ -1791,6 +2308,61 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "资料库文件已损坏，或不是 NewsPaw 资料库。"
+          }
+        }
+      }
+    },
+    "The model name cannot contain line breaks or control characters." : {
+      "comment" : "Footer of the model-name field in the model form.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型名称不能包含换行或控制字符。"
+          }
+        }
+      }
+    },
+    "The model stays, and needs a key before it can be used again." : {
+      "comment" : "Message of the confirmation before removing the stored model key.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型会保留，需要重新填入 Key 才能再次使用。"
+          }
+        }
+      }
+    },
+    "The service does not have this model" : {
+      "comment" : "Sentence under the Test line Model not found (RD13's addition to ux section 4).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务里没有这个模型"
+          }
+        }
+      }
+    },
+    "The service is limiting requests. Try again later" : {
+      "comment" : "Sentence under the Test line Quota or rate limit (ux section 4).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务暂时限制了请求，请稍后再试"
+          }
+        }
+      }
+    },
+    "The service rejected the key" : {
+      "comment" : "Sentence under the Test line Key rejected (ux section 4).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务拒绝了这个 Key"
           }
         }
       }
@@ -1909,6 +2481,17 @@
         }
       }
     },
+    "This is not a valid address." : {
+      "comment" : "Footer of the address field in the model form.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这不是有效的地址。"
+          }
+        }
+      }
+    },
     "This is not a web address." : {
       "comment" : "Message under the address field.",
       "localizations" : {
@@ -1993,6 +2576,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "换一个地址"
+          }
+        }
+      }
+    },
+    "Type the model's name, or load the list of models the service offers." : {
+      "comment" : "Footer of the model-name section in the model form.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入模型名称，或载入服务提供的模型列表。"
           }
         }
       }

@@ -176,6 +176,18 @@ class ModelSettingsTestCase: NewsPawUITestCase {
         waitFor(element(backup ? AccessibilityID.backupModelRow : AccessibilityID.primaryModelRow)).label
     }
 
+    /// Closes a confirmation dialog without choosing. On iOS 26 and later
+    /// the dialog is a popover on its button, on iPhone as on iPad: its
+    /// cancel button is not drawn, and a tap outside it is "cancel". The
+    /// tap is in the lower half of the window, away from a popover on a
+    /// button of the top bar, and it is not passed on to what is under it.
+    func dismissDialog(file: StaticString = #filePath, line: UInt = #line) {
+        let region = element("PopoverDismissRegion")
+        XCTAssertTrue(region.waitForExistence(timeout: timeout), "the dialog is not a popover", file: file, line: line)
+        region.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)).tap()
+        waitForAbsence(region, file: file, line: line)
+    }
+
     /// A button of a confirmation dialog by its label, not one of the
     /// form's own buttons.
     func dialogButton(_ label: String) -> XCUIElement {

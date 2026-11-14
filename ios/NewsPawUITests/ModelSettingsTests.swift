@@ -84,6 +84,17 @@ final class ModelSettingsTests: ModelSettingsTestCase {
         openForm()
         replaceText(of: AccessibilityID.modelAddressField, with: Fixture.limited)
         reveal(element(AccessibilityID.keyNeeded))
+        // A key typed for the other host stays the form's key when the
+        // address returns to the saved host: the stored key is not shown
+        // over it, and Cancel goes back to the stored key.
+        typeKey("sk-uitest-other-host-key-5t4r")
+        replaceText(of: AccessibilityID.modelAddressField, with: Fixture.passed)
+        XCTAssertTrue(reveal(app.secureTextFields[AccessibilityID.keyField]).exists)
+        XCTAssertFalse(element(AccessibilityID.storedKey).exists, "the stored key is shown while a typed key would be saved")
+        reveal(button(AccessibilityID.cancelReplaceKeyButton)).tap()
+        XCTAssertEqual(reveal(element(AccessibilityID.storedKey)).label, "Key ending in 1a2b")
+        replaceText(of: AccessibilityID.modelAddressField, with: Fixture.limited)
+        reveal(element(AccessibilityID.keyNeeded))
         saveForm()
         XCTAssertTrue(rowLabel().contains("Key needed"), rowLabel())
         openForm()
@@ -203,7 +214,7 @@ final class ModelSettingsTests: ModelSettingsTestCase {
     }
 
     /// Decision 14: leaving with unsaved changes asks before discarding;
-    /// Keep Editing keeps them.
+    /// closing the question keeps them.
     func testUnsavedChangesQuestion() throws {
         launchAtFullWidth()
         openModelSettings()
@@ -214,7 +225,12 @@ final class ModelSettingsTests: ModelSettingsTestCase {
         openForm()
         replaceText(of: AccessibilityID.modelNameField, with: "typed-model")
         button(AccessibilityID.cancelButton).tap()
-        waitFor(dialogButton("Keep Editing")).tap()
+        waitFor(dialogButton("Discard Changes"))
+        // Closing the question without choosing keeps the form and what
+        // was typed.
+        dismissDialog()
+        waitForAbsence(dialogButton("Discard Changes"))
+        XCTAssertTrue(button(AccessibilityID.saveButton).exists)
         XCTAssertEqual(reveal(app.textFields[AccessibilityID.modelNameField]).value as? String, "typed-model")
         button(AccessibilityID.cancelButton).tap()
         waitFor(dialogButton("Discard Changes")).tap()

@@ -37,8 +37,10 @@ struct ModelsView: View {
     private func row(_ role: ModelRole) -> some View {
         NavigationLink(value: SettingsRoute.modelSlot(role)) {
             VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
+                // An explicit colour is not dimmed by `disabled`: the
+                // backup's title is secondary while it cannot be set up.
                 ModelWording.role(role)
-                    .foregroundStyle(Theme.text)
+                    .foregroundStyle(role == .primary || models.hasPrimary ? Theme.text : Theme.secondaryText)
                 if let status = models.statuses[role] {
                     Text(verbatim: status.slot.model)
                         .font(.subheadline)

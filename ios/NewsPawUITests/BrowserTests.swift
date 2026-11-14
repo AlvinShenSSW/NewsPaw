@@ -270,9 +270,10 @@ final class BrowserTests: BrowserTestCase {
         waitForPage("Every post threw")
     }
 
-    /// `window.open('')` has nothing to load and asks nothing: no question
-    /// about a link without a scheme, and the page stays.
-    func testEmptyWindowAsksNothing() {
+    /// `window.open('')` has nothing to load and asks nothing. A direct
+    /// link to a video file, which WebKit plays in a document of its own,
+    /// is not a failure.
+    func testEmptyWindowAndMediaFile() {
         launchAtFullWidth()
         createCategory("World")
         addWebPageSource(to: "World")
@@ -282,6 +283,13 @@ final class BrowserTests: BrowserTestCase {
         XCTAssertFalse(app.alerts.firstMatch.waitForExistence(timeout: 4), "window.open('') raised \(app.alerts.firstMatch.label)")
         XCTAssertTrue(barText(Page.home).exists, "the page stays: \(barTexts())")
         waitForEnabled(backButton, false)
+
+        tapLink("Video link")
+        waitForEnabled(backButton, true)
+        XCTAssertFalse(element(AccessibilityID.browserFailure).waitForExistence(timeout: 8), "a video file showed the failure state")
+        waitFor(barText(Page.host))
+        backButton.tap()
+        waitForPage(Page.home)
     }
 
     // MARK: - Criterion 8: failures

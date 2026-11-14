@@ -106,6 +106,8 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
             redirect(task, to: "\(Self.scheme)://onefeed.example.invalid/arrival")
         case (_, "/arrival"):
             send(task, html: Self.arrival(byBrowser: url.query(percentEncoded: false) == Self.loadedByBrowser))
+        case ("nofeed.example.invalid", "/video.mp4"):
+            send(task, body: String(repeating: "x", count: 2000), type: "video/mp4")
         case ("nofeed.example.invalid", "/dark"):
             let paragraphs = (1...60).map { "<p>Paragraph \($0) of the dark page, with enough words to wrap across the width of the screen.</p>" }
             send(task, html: Self.page("Dark Page", paragraphs.joined(), style: "body { background: #0b0b0f; color: #f2f2f7; }"))
@@ -254,6 +256,7 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         <p><a href="https://onefeed.example.invalid/">Another site</a></p>
         <p><a href="/hosts">Host links</a></p>
         <p><a href="#" onclick="window.open(''); return false;">Empty window link</a></p>
+        <p><a href="/video.mp4">Video link</a></p>
         <p><a href="/dark">Dark page</a></p>
         <p><a href="/form-end">Form at the end</a></p>
         """)

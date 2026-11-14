@@ -423,8 +423,8 @@ final class BrowserSession: NSObject {
     }
 
     /// A failure of the main-frame navigation `navigation`. A navigation the
-    /// browser refused (WebKit's 102) or a newer load replaced (-999) is not
-    /// a failure.
+    /// browser refused (WebKit's 102), one a newer load replaced (-999) and
+    /// a media file WebKit plays itself (204) are not failures.
     private func navigationFailed(_ navigation: WKNavigation?, _ error: any Error) {
         let started = provisional
         // An older navigation ending after a newer one started says nothing
@@ -436,10 +436,13 @@ final class BrowserSession: NSObject {
         readAddress()
         let ns = error as NSError
         // "Frame load interrupted", reported in WebKit's own domain (measured:
-        // `WebKitErrorDomain`, not `WKErrorDomain`).
+        // `WebKitErrorDomain`, not `WKErrorDomain`); and "Plug-in handled
+        // load": a direct link to a video or audio file commits a media
+        // document, which plays it, and then reports this.
         let refused = ns.domain == "WebKitErrorDomain" && ns.code == 102
+        let handled = ns.domain == "WebKitErrorDomain" && ns.code == 204
         let replaced = ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
-        guard !refused, !replaced else { return }
+        guard !refused, !handled, !replaced else { return }
         let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL).map(map.toShown)
         failure = BrowserFailure(kind: .load, url: failing ?? started?.url ?? shownURL, reason: ns.localizedDescription)
     }

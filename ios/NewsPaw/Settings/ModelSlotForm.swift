@@ -215,7 +215,15 @@ struct ModelSlotForm: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier(AccessibilityID.keyNeeded)
                 }
+                // Not a password to the system. Left to itself iOS takes a
+                // filled secure field for one: when the form closes it
+                // offers to save the key in Passwords, which syncs, and
+                // that prompt holds every touch meanwhile (seen as an
+                // unseen `_SFAppPasswordSavingViewController` in the iOS 27
+                // simulator after Replace and Save). A one-time code is
+                // never offered for saving.
                 SecureField("Key", text: $models.draftKey)
+                    .textContentType(.oneTimeCode)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .submitLabel(.done)

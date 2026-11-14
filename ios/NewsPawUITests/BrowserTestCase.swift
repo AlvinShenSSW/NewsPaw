@@ -105,12 +105,25 @@ class BrowserTestCase: ArticleTestCase {
 
     // MARK: - Pages
 
-    /// Taps a link of the shown page, scrolling the page until it can.
+    /// Taps a link of the shown page, scrolling the page until the link is
+    /// between the bars: the page runs behind them, and a tap on a link
+    /// under the floating bottom bar reaches the bar.
     func tapLink(_ label: String, file: StaticString = #filePath, line: UInt = #line) {
         let link = waitFor(app.webViews.links[label], file: file, line: line)
+        let page = app.webViews.firstMatch
         var swipes = 0
-        while !link.isHittable, swipes < 6 {
-            app.webViews.firstMatch.swipeUp()
+        while swipes < 8 {
+            let top = app.navigationBars.allElementsBoundByIndex.map(\.frame.maxY).max() ?? window.minY
+            let bottom = backButton.exists ? backButton.frame.minY - 8 : window.maxY
+            let frame = link.frame
+            if link.isHittable, frame.minY >= top, frame.maxY <= bottom {
+                break
+            }
+            if frame.maxY > bottom {
+                page.swipeUp(velocity: .slow)
+            } else {
+                page.swipeDown(velocity: .slow)
+            }
             swipes += 1
         }
         link.tap()

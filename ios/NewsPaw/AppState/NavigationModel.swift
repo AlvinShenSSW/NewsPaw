@@ -267,9 +267,11 @@ final class NavigationModel {
 
     /// Writes a sidebar choice back to the state. Choosing the row already
     /// selected changes nothing; choosing another list enters it, and a new
-    /// Library list closes the article open on the previous one.
+    /// Library list closes the article open on the previous one. The
+    /// browser on top of the stack the selection leaves closes with it.
     func select(_ item: SidebarItem) {
         guard item != sidebarSelection else { return }
+        closeBrowserOfCurrentStack()
         switch item {
         case .today:
             currentTab = .today
@@ -289,6 +291,28 @@ final class NavigationModel {
         }
         if let list = list(of: item) {
             onListEntered?(list)
+        }
+    }
+
+    /// Removes the browser route on top of the selected tab's stack, which
+    /// ends its page session (RD10 decision 3: a session ends with another
+    /// sidebar selection). A web-page source's path is emptied; an
+    /// article's page is dropped and the article under it stays, so
+    /// Starred shows the article again when it is selected again.
+    private func closeBrowserOfCurrentStack() {
+        switch currentTab {
+        case .library:
+            if case .page = libraryPath.last {
+                libraryPath.removeLast()
+            } else if browserRoute(of: .library) != nil {
+                libraryPath = []
+            }
+        case .starred:
+            if case .page = starredPath.last {
+                starredPath.removeLast()
+            }
+        case .today, .settings:
+            break
         }
     }
 

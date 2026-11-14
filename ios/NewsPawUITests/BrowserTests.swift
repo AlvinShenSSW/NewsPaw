@@ -439,6 +439,77 @@ final class BrowserTests: BrowserTestCase {
         waitForPage(Page.home)
     }
 
+    // MARK: - Decision 3: a session ends with its selection, and asks nothing while hidden
+
+    /// On the panes another sidebar selection ends the session: a page that
+    /// asks for another app whenever it is not on screen raises nothing
+    /// over Today, and selecting the source again starts at its address.
+    /// For an article's page opened from Starred the article stays and is
+    /// shown without its page.
+    func testAnotherSelectionEndsTheSession() throws {
+        try XCTSkipUnless(isPad, "the sidebar on iPad")
+        launchAtFullWidth()
+        createCategory("World")
+        addWebPageSource(to: "World")
+        addSource(Fixture.articles, to: "World")
+        openWebPageSource(in: "World")
+        tapLink("Hidden asker")
+        waitForPage("Hidden Asker")
+        showToday()
+        XCTAssertFalse(app.alerts.firstMatch.waitForExistence(timeout: 8), "a page that is not on screen raised \(app.alerts.firstMatch.label)")
+        openWebPageSource(in: "World")
+        waitForEnabled(backButton, false)
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+
+        openCategoryList("World")
+        swipeAction(on: waitFor(articleRow("Plain story")), leading: false, "Star")
+        waitForLabel(articleRow("Plain story"), containing: "Starred")
+        openStarred()
+        openArticle("Plain story")
+        waitFor(button(AccessibilityID.openOriginalButton)).tap()
+        waitForPage("Original of plain-story")
+        tapLink("Hidden asker")
+        waitForPage("Hidden Asker")
+        showToday()
+        XCTAssertFalse(app.alerts.firstMatch.waitForExistence(timeout: 8), "a page that is not on screen raised \(app.alerts.firstMatch.label)")
+        openStarred()
+        waitForLabel(element(AccessibilityID.readingTitle), containing: "Plain story")
+        XCTAssertFalse(moreMenu.exists, "the article is shown without its page")
+    }
+
+    /// In the tab structure a stack stays alive behind another tab, and its
+    /// session with it: "Show in Library" moves from the browser pushed in
+    /// Starred to the Library tab. The page left behind, which asks for
+    /// another app whenever it is not on screen, raises nothing over
+    /// Library, and is still there when Starred is selected again.
+    func testHiddenSessionAsksNothing() throws {
+        try XCTSkipIf(isPad, "\"Show in Library\" changes the tab in the tab structure; iPhone")
+        launch()
+        createCategory("World")
+        addSource(Fixture.articles, to: "World")
+        openCategoryList("World")
+        swipeAction(on: waitFor(articleRow("Plain story")), leading: false, "Star")
+        waitForLabel(articleRow("Plain story"), containing: "Starred")
+        openStarred()
+        openArticle("Plain story")
+        waitFor(button(AccessibilityID.openOriginalButton)).tap()
+        waitForPage("Original of plain-story")
+        tapLink("Hidden asker")
+        waitForPage("Hidden Asker")
+
+        chooseInMore("Save This Page as a Source")
+        detect(Fixture.articles)
+        scrollTo(element(AccessibilityID.duplicateMessage))
+        scrollTo(button(AccessibilityID.showInLibraryButton)).tap()
+        waitFor(button(AccessibilityID.addMenu))
+        XCTAssertFalse(app.alerts.firstMatch.waitForExistence(timeout: 8), "a page behind another tab raised \(app.alerts.firstMatch.label)")
+
+        app.tabBars.buttons.element(boundBy: 2).tap()
+        waitForPage("Hidden Asker")
+        waitForEnabled(backButton, true)
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+    }
+
     // MARK: - Criterion 14: the list under the browser is a snapshot
 
     /// In the tab structure a refresh that ends while the browser is pushed

@@ -111,6 +111,15 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         case ("nofeed.example.invalid", "/dark"):
             let paragraphs = (1...60).map { "<p>Paragraph \($0) of the dark page, with enough words to wrap across the width of the screen.</p>" }
             send(task, html: Self.page("Dark Page", paragraphs.joined(), style: "body { background: #0b0b0f; color: #f2f2f7; }"))
+        case (_, "/hidden-asker"):
+            send(task, html: Self.page("Hidden Asker", """
+                <p>A page that asks for another app whenever it is not on screen.</p>
+                <script>
+                function ask() { if (document.hidden) { location.href = 'newspaw-unknown-scheme://hidden'; } }
+                document.addEventListener('visibilitychange', ask);
+                setInterval(ask, 1500);
+                </script>
+                """))
         case ("nofeed.example.invalid", "/long"):
             let paragraphs = (1...60).map { "<p>Paragraph \($0) of the long page, with enough words to wrap across the width of the screen.</p>" }
             send(task, html: Self.page("Long Page", paragraphs.joined() + "<p id=\"end\">End of the long page</p>"))
@@ -154,6 +163,7 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
             send(task, html: Self.page("Original of \(slug)", """
                 <p>The original page of the article \(slug).</p>
                 <p><a href="/form">Form page</a></p>
+                <p><a href="/hidden-asker">Hidden asker</a></p>
                 """))
         default:
             fail(task)
@@ -259,6 +269,7 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         <p><a href="/video.mp4">Video link</a></p>
         <p><a href="/dark">Dark page</a></p>
         <p><a href="/form-end">Form at the end</a></p>
+        <p><a href="/hidden-asker">Hidden asker</a></p>
         """)
 
     /// Posts to a fixed list of message-handler names; the title says

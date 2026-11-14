@@ -143,22 +143,35 @@ final class BrowserModel {
 
     // MARK: - Questions and notices
 
-    /// Whether a question or a notice may be raised now: only while no
-    /// sheet (nor the slide-over's cover) is open and nothing else of the
-    /// browser is shown. One raised otherwise is dropped.
-    private var mayRaise: Bool {
-        navigation.sheet == nil && !navigation.isSlideOverOpen && question == nil && fileNotice == nil && !isShowingNoApp
+    /// Whether `session` may raise a question or a notice now: only while
+    /// its stack is the one on screen, no sheet (nor the slide-over's cover)
+    /// is open and nothing else of the browser is shown. One raised
+    /// otherwise is dropped. In the tab structure a stack, and with it a
+    /// session, stays alive behind another tab; its page must not put a
+    /// question over a screen that is not the browser's.
+    private func mayRaise(from session: BrowserSession) -> Bool {
+        isOnScreen(session) && navigation.sheet == nil && !navigation.isSlideOverOpen
+            && question == nil && fileNotice == nil && !isShowingNoApp
+    }
+
+    /// Whether `session` is the session of the selected tab's stack.
+    private func isOnScreen(_ session: BrowserSession) -> Bool {
+        switch navigation.currentTab {
+        case .library: session === librarySession
+        case .starred: session === starredSession
+        case .today, .settings: false
+        }
     }
 
     /// Another scheme from the main frame or a new-window request: asks.
-    func ask(_ url: URL) {
-        guard mayRaise else { return }
+    func ask(_ url: URL, from session: BrowserSession) {
+        guard mayRaise(from: session) else { return }
         question = BrowserQuestion(url: url)
     }
 
     /// A file, an attachment or a download link: says so.
-    func refuseFile(_ url: URL?) {
-        guard mayRaise else { return }
+    func refuseFile(_ url: URL?, from session: BrowserSession) {
+        guard mayRaise(from: session) else { return }
         fileNotice = BrowserFileNotice(url: url)
     }
 
@@ -414,10 +427,10 @@ final class BrowserSession: NSObject {
         case .cancelSilently:
             return false
         case .ask:
-            model?.ask(url)
+            model?.ask(url, from: self)
             return false
         case .refuseAsFile:
-            model?.refuseFile(url)
+            model?.refuseFile(url, from: self)
             return false
         }
     }
@@ -466,7 +479,7 @@ extension BrowserSession: WKNavigationDelegate {
         case .allow:
             return .allow
         case .refuseAsFile:
-            model?.refuseFile(response.response.url.map(map.toShown))
+            model?.refuseFile(response.response.url.map(map.toShown), from: self)
             return .cancel
         }
     }

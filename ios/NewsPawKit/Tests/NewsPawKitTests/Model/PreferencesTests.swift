@@ -52,4 +52,49 @@ struct PreferencesTests {
             }
         }
     }
+
+    // MARK: - RD18 criterion 8: the adult partition's two device settings
+
+    @Test("the adult partition is off and locks immediately by default")
+    func adultDefaults() throws {
+        try withSuite { defaults in
+            let preferences = Preferences(defaults)
+            #expect(!preferences.adultPartitionIsOn)
+            #expect(preferences.lockTiming == .immediately)
+        }
+    }
+
+    @Test("the adult partition's settings round-trip under their own names")
+    func adultRoundTrip() throws {
+        try withSuite { defaults in
+            let preferences = Preferences(defaults)
+            preferences.adultPartitionIsOn = true
+            #expect(Preferences(defaults).adultPartitionIsOn)
+            #expect(defaults.bool(forKey: "adult_partition_on"))
+            preferences.adultPartitionIsOn = false
+            #expect(!Preferences(defaults).adultPartitionIsOn)
+            for timing in LockTiming.allCases {
+                preferences.lockTiming = timing
+                #expect(Preferences(defaults).lockTiming == timing)
+                #expect(defaults.integer(forKey: "adult_lock_timing") == timing.rawValue)
+            }
+            // They are not the refresh settings.
+            #expect(preferences.refreshInterval == .thirtyMinutes)
+            #expect(preferences.retention == .thirtyDays)
+        }
+    }
+
+    @Test("a stored lock timing outside the set reads as immediately, and a stored value that is no truth value as off")
+    func adultOutsideTheSet() throws {
+        try withSuite { defaults in
+            for value: Any in [45, -1, 61, 3_600, "60", 60.5, true] {
+                defaults.set(value, forKey: "adult_lock_timing")
+                #expect(Preferences(defaults).lockTiming == .immediately, "\(value)")
+            }
+            for value: Any in [1, "1", "true", 2.0, Date()] {
+                defaults.set(value, forKey: "adult_partition_on")
+                #expect(!Preferences(defaults).adultPartitionIsOn, "\(value)")
+            }
+        }
+    }
 }

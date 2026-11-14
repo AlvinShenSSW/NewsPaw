@@ -24,6 +24,13 @@ public protocol KeyStore: Sendable {
     ///
     /// - Throws: `KeyStoreError.refused` for any other failure.
     func remove(_ reference: String) throws
+
+    /// Removes every item of this store's partition, and of no other
+    /// (RD18 decision 9: deleting the adult partition's data). An empty
+    /// store counts as removed.
+    ///
+    /// - Throws: `KeyStoreError.refused` when the store cannot remove them.
+    func removeAll() throws
 }
 
 /// Why a key store failed. It carries the store's status code only.
@@ -75,6 +82,15 @@ final class InMemoryKeyStore: KeyStore {
                 throw KeyStoreError.refused(status: -3)
             }
             state.items[reference] = nil
+        }
+    }
+
+    func removeAll() throws {
+        try state.withLock { state in
+            if state.refuseRemovals {
+                throw KeyStoreError.refused(status: -3)
+            }
+            state.items = [:]
         }
     }
 

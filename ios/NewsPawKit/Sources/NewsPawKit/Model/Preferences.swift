@@ -24,13 +24,19 @@ public enum Retention: Int, Sendable, CaseIterable {
     public static let standard = Retention.thirtyDays
 }
 
-/// The two refresh settings in the system preferences store (spec section
-/// 4: global settings), under the names the configuration file uses. A
-/// stored value outside its set reads as the default. Nothing about a
-/// partition's content is kept here.
-public struct Preferences {
+/// The settings kept in the system preferences store (spec section 4): the
+/// two refresh settings, under the names the configuration file uses, and
+/// the two device settings of the adult partition (RD18), which the
+/// configuration file never carries. A stored value outside its set reads
+/// as the default. Nothing about a partition's content is kept here.
+///
+/// Sendable by hand: its one stored property is a `UserDefaults`, which the
+/// system documents as safe to use from any thread and does not mark so.
+public struct Preferences: @unchecked Sendable {
     static let refreshIntervalKey = "refresh_minutes"
     static let retentionKey = "retention_days"
+    static let adultPartitionIsOnKey = "adult_partition_on"
+    static let lockTimingKey = "adult_lock_timing"
 
     private let defaults: UserDefaults
 
@@ -55,6 +61,32 @@ public struct Preferences {
         }
         nonmutating set {
             defaults.set(newValue.rawValue, forKey: Self.retentionKey)
+        }
+    }
+
+    /// Whether the adult partition is turned on (spec N09): a device
+    /// setting, off until the owner turns it on. Anything stored that is
+    /// not a truth value reads as off.
+    public var adultPartitionIsOn: Bool {
+        get {
+            guard let number = defaults.object(forKey: Self.adultPartitionIsOnKey) as? NSNumber,
+                  CFGetTypeID(number) == CFBooleanGetTypeID()
+            else { return false }
+            return number.boolValue
+        }
+        nonmutating set {
+            defaults.set(newValue, forKey: Self.adultPartitionIsOnKey)
+        }
+    }
+
+    /// When the adult partition locks after the app is left: a device
+    /// setting. Another stored value reads as "immediately".
+    public var lockTiming: LockTiming {
+        get {
+            (defaults.object(forKey: Self.lockTimingKey) as? Int).flatMap(LockTiming.init(rawValue:)) ?? .immediately
+        }
+        nonmutating set {
+            defaults.set(newValue.rawValue, forKey: Self.lockTimingKey)
         }
     }
 }

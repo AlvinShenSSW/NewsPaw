@@ -7,7 +7,9 @@ import SQLite3
 /// guarantee is per store instance: the app creates one store.
 ///
 /// The normal library always exists and is created on first use. The adult
-/// library's file is created only by an explicit call (spec N02, N09).
+/// library's file is created only by an explicit call (spec N02, N09), and
+/// its functions are internal: code outside the package reaches the adult
+/// library only through `AdultGate` (RD18 decision 2).
 public actor LibraryStore {
     private let directory: URL
     private let cacheRoot: URL
@@ -16,6 +18,11 @@ public actor LibraryStore {
     /// up and storing an entry happen without a suspension in between, so two
     /// simultaneous opens share one entry and one pool.
     private var libraries: [Partition: Task<Library, any Error>] = [:]
+    /// The adult library after `releaseAdultLibrary()`: held weakly, so it
+    /// is gone, and its connections closed, once nothing else holds it. An
+    /// open while it still lives gets this same object, so there is never a
+    /// second pool on the file (RD18 decision 4).
+    private weak var releasedAdult: Library?
 
     /// - Parameters:
     ///   - directory: where the database files live; created when a library
@@ -53,7 +60,7 @@ public actor LibraryStore {
         try await open(.normal, migrator: Schema.migrator, create: true)
     }
 
-    // MARK: - Adult partition (internal until RD18 adds authentication)
+    // MARK: - Adult partition (internal: reached through `AdultGate`)
 
     /// Whether the adult library's file exists. Never creates it.
     nonisolated var adultLibraryExists: Bool {
@@ -71,6 +78,88 @@ public actor LibraryStore {
         try await open(.adult, migrator: Schema.migrator, create: false)
     }
 
+    /// Creates the adult library's file when it does not exist (turning the
+    /// partition on): opened once to create it, then released. An existing
+    /// file is not opened, so a damaged one does not stop the partition
+    /// from being turned on, and then deleted.
+    func createAdultLibraryFileIfMissing() async throws {
+        guard !adultLibraryExists, libraries[.adult] == nil else { return }
+        _ = try await createAdultLibrary()
+        await releaseAdultLibrary()
+    }
+
+    /// Lets go of the adult library (locking): the store keeps only a weak
+    /// reference, so the library is gone when nothing else holds it. An
+    /// open in flight is waited for first, so that it cannot outlive the
+    /// release as a second pool.
+    func releaseAdultLibrary() async {
+        while let entry = libraries[.adult] {
+            let library = try? await entry.value
+            // Unchanged across the suspension: this is still the entry.
+            if libraries[.adult] == entry {
+                libraries[.adult] = nil
+                releasedAdult = library ?? releasedAdult
+            }
+        }
+    }
+
+    /// Whether the store holds no adult library and the one it released
+    /// is gone: nothing in the process keeps the file open (RD18 criterion
+    /// 7).
+    var adultLibraryIsReleased: Bool {
+        libraries[.adult] == nil && releasedAdult == nil
+    }
+
+    /// Deletes the adult library's database (RD18 decision 9): closes its
+    /// connections explicitly, so that a reference still held somewhere
+    /// fails on use instead of keeping the file open, forgets the object,
+    /// and removes the file with its `-wal` and `-shm` files. A missing
+    /// file is not a failure, and no library is opened, so this works on a
+    /// damaged file too.
+    ///
+    /// - Throws: `LibraryError.storage` when the connections cannot be
+    ///   closed or a file cannot be removed. What was removed stays removed.
+    func deleteAdultLibraryFiles() async throws {
+        var living = releasedAdult
+        while let entry = libraries[.adult] {
+            let library = try? await entry.value
+            if libraries[.adult] == entry {
+                libraries[.adult] = nil
+                living = library ?? living
+            }
+        }
+        // No suspension from here on: nothing can open the file meanwhile.
+        do {
+            try living?.close()
+        } catch {
+            // Still open: the next open gets this object, not a second pool.
+            releasedAdult = living
+            throw error
+        }
+        releasedAdult = nil
+        let database = fileURL(for: .adult)
+        for suffix in ["", "-wal", "-shm"] {
+            try Self.removeIfPresent(URL(fileURLWithPath: database.path + suffix))
+        }
+    }
+
+    /// Removes the adult image cache's directory; a missing one is not a
+    /// failure. Called last when the partition's data is deleted, so that a
+    /// thumbnail store that was ending cannot recreate it afterwards.
+    nonisolated func deleteAdultImageCache() throws {
+        try Self.removeIfPresent(cacheDirectory(for: .adult))
+    }
+
+    private static func removeIfPresent(_ url: URL) throws {
+        do {
+            try FileManager.default.removeItem(at: url)
+        } catch let error as CocoaError where error.code == .fileNoSuchFile {
+            // Already gone.
+        } catch {
+            throw LibraryError.storage(String(describing: (error as NSError).code))
+        }
+    }
+
     // MARK: - Opening
 
     /// Returns the library already held for `partition`, or opens it with
@@ -78,6 +167,13 @@ public actor LibraryStore {
     func open(_ partition: Partition, migrator: DatabaseMigrator, create: Bool) async throws -> Library {
         if let existing = libraries[partition] {
             return try await existing.value
+        }
+        // A released adult library that still lives is taken back, so that
+        // the file never has two pools.
+        if partition == .adult, let living = releasedAdult {
+            libraries[.adult] = Task { living }
+            releasedAdult = nil
+            return living
         }
         let url = fileURL(for: partition)
         // Checked here rather than in the open itself, so that an open of a

@@ -27,6 +27,19 @@ public final class Library: Sendable {
         self.now = now
     }
 
+    /// Closes the library's connections (RD18 decision 9: before its file
+    /// is deleted). It returns once the reads and the write in flight have
+    /// ended; every later use of this object fails with
+    /// `LibraryError.storage` and touches no file (measured, RD18
+    /// assumption A3).
+    func close() throws {
+        do {
+            try pool.close()
+        } catch {
+            throw LibraryError.wrapping(error)
+        }
+    }
+
     /// Runs `updates` in one write transaction and maps its errors to
     /// `LibraryError`.
     func write<T: Sendable>(_ updates: @Sendable (Database) throws -> T) async throws -> T {

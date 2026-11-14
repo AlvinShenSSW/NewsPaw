@@ -186,6 +186,32 @@ final class BrowserTests: BrowserTestCase {
         waitForPage(Page.home)
     }
 
+    /// A form a page posts to a new window (`method="post"` with
+    /// `target="_blank"`) is shown in the same browser as the page sent it:
+    /// the page that answers says it was asked for by POST, with the field's
+    /// value and the form's content type, not by a GET of the same address.
+    /// Back returns to the form.
+    func testFormPostedToANewWindow() {
+        launchAtFullWidth()
+        createCategory("World")
+        addWebPageSource(to: "World")
+        openWebPageSource(in: "World")
+        tapLink("Post form")
+        waitForPage("Post Form")
+
+        waitFor(app.webViews.buttons["Post to a new window"]).tap()
+        let answered = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            self.barTexts().contains { $0.hasPrefix("POST: ") || $0.hasPrefix("GET: ") }
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [answered], timeout: timeout), .completed, "the form's page was not shown: \(barTexts())")
+        XCTAssertTrue(barText("POST: note=paw+42").exists, "the form was not sent as the page sent it: \(barTexts())")
+        XCTAssertTrue(app.webViews.staticTexts["Content type: application/x-www-form-urlencoded"].exists, "the form's content type was not sent")
+        waitFor(barText(Page.host))
+        waitForEnabled(backButton, true)
+        backButton.tap()
+        waitForPage("Post Form")
+    }
+
     // MARK: - Decisions 5 and 10: another host, and the host shown
 
     /// While another site's slow page is being loaded over a page, the bar

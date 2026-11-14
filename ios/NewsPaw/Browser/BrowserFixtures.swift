@@ -156,6 +156,15 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
                 <p><label for="field">Note</label></p>
                 <p><input id="field" type="text" placeholder="Type here" oninput="document.title = 'Typed: ' + this.value"></p>
                 """))
+        case ("nofeed.example.invalid", "/post-form"):
+            send(task, html: Self.page("Post Form", """
+                <form method="post" action="/posted" target="_blank">
+                <p><label for="note">Note</label> <input id="note" type="text" name="note" value="paw 42"></p>
+                <p><button type="submit">Post to a new window</button></p>
+                </form>
+                """))
+        case ("nofeed.example.invalid", "/posted"):
+            send(task, html: Self.posted(task.request))
         case ("nofeed.example.invalid", "/handlers"):
             send(task, html: Self.handlers)
         case ("example.invalid", let path) where path.hasPrefix("/articles/"):
@@ -238,6 +247,14 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         page(byBrowser ? "Loaded by the Browser" : "Followed by WebKit", "<p>A page of another site.</p>")
     }
 
+    /// The page a form is posted to; its title says how it was asked for:
+    /// the method and the body, as `POST: note=paw+42`, or `GET: no body`.
+    private static func posted(_ request: URLRequest) -> String {
+        let body = request.httpBody.map { String(decoding: $0, as: UTF8.self) } ?? ""
+        let type = request.value(forHTTPHeaderField: "Content-Type") ?? "none"
+        return page("\(request.httpMethod ?? "GET"): \(body.isEmpty ? "no body" : body)", "<p>Content type: \(type)</p>")
+    }
+
     /// Links from this host to the other one, in the fixture scheme, so
     /// that the policy decides what happens to each.
     private static let hosts = page("Host Links", """
@@ -272,6 +289,7 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         <p><a href="/dark">Dark page</a></p>
         <p><a href="/form-end">Form at the end</a></p>
         <p><a href="/hidden-asker">Hidden asker</a></p>
+        <p><a href="/post-form">Post form</a></p>
         <script>document.getElementById('blob').href = URL.createObjectURL(new Blob(['hello'], { type: 'text/plain' }));</script>
         """)
 

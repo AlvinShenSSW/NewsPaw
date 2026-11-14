@@ -347,12 +347,24 @@ final class BrowserSession: NSObject {
 
     // MARK: - Actions
 
-    /// Loads `url` in the page.
-    func load(_ url: URL) {
+    /// Loads `url` in the page. `navigation` is the request of a navigation
+    /// the policy cancelled to load it here. A form a page posts to a new
+    /// window (`method="post"` with `target="_blank"`) is sent as the page
+    /// sent it, with its method, its body and its headers, and never as a
+    /// GET of the same address, which would ask the site for something else
+    /// (measured: the policy is handed the body and its content type, and
+    /// WebKit sends on the request it is given). Any other request is loaded
+    /// by its address alone.
+    func load(_ url: URL, sending navigation: URLRequest? = nil) {
         failure = nil
         starting = .browser
         loadingURL = url
-        webView.load(URLRequest(url: map.toWebKit(url)))
+        var request = URLRequest(url: map.toWebKit(url))
+        if var navigation, let method = navigation.httpMethod, method.uppercased() != "GET" {
+            navigation.url = request.url
+            request = navigation
+        }
+        webView.load(request)
     }
 
     /// Back: from the failure state, the page behind it; else the page
@@ -424,7 +436,7 @@ final class BrowserSession: NSObject {
             return true
         case .loadInPlace:
             // After `.cancel` has been returned.
-            Task { @MainActor in self.load(url) }
+            Task { @MainActor in self.load(url, sending: request) }
             return false
         case .cancelSilently:
             return false

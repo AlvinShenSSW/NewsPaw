@@ -6,6 +6,7 @@ import SwiftUI
 /// translation switches of this screen arrive with RD14.
 struct ModelsView: View {
     @Environment(ModelSettingsModel.self) private var models
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         List {
@@ -31,6 +32,9 @@ struct ModelsView: View {
         .scrollContentBackground(.hidden)
         .stackBackground(Theme.groupedBackground)
         .navigationTitle("Models & Translation")
+        // At the accessibility sizes the large title is cut on iPhone
+        // ("Models & Tra…"); the inline title is not enlarged and fits.
+        .navigationBarTitleDisplayMode(dynamicTypeSize.isAccessibilitySize ? .inline : .automatic)
         .task { await models.reload() }
     }
 

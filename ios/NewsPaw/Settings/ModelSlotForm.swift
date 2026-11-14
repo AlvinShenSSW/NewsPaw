@@ -76,6 +76,11 @@ struct ModelSlotForm: View {
     }
 
     // MARK: - Sections
+    //
+    // The form's text is `Theme.text`, which a button's label takes too:
+    // the labels of the actions are tinted, as in Source Settings, so that
+    // "Test" does not read like the line under it. The removals stay
+    // plain, like "Delete Source".
 
     private var serviceSection: some View {
         Section {
@@ -146,6 +151,7 @@ struct ModelSlotForm: View {
                 models.loadList()
             } label: {
                 Text("Load List")
+                    .foregroundStyle(.tint)
                     .frame(maxWidth: .infinity, minHeight: Theme.minimumTapTarget, alignment: .leading)
                     .contentShape(Rectangle())
             }
@@ -187,6 +193,7 @@ struct ModelSlotForm: View {
                     focus = .key
                 } label: {
                     Text("Replace")
+                        .foregroundStyle(.tint)
                         .frame(maxWidth: .infinity, minHeight: Theme.minimumTapTarget, alignment: .leading)
                         .contentShape(Rectangle())
                 }
@@ -246,6 +253,7 @@ struct ModelSlotForm: View {
                         focus = nil
                     } label: {
                         Text("Cancel")
+                            .foregroundStyle(.tint)
                             .frame(maxWidth: .infinity, minHeight: Theme.minimumTapTarget, alignment: .leading)
                             .contentShape(Rectangle())
                     }
@@ -270,6 +278,7 @@ struct ModelSlotForm: View {
                 models.test()
             } label: {
                 Text("Test")
+                    .foregroundStyle(.tint)
                     .frame(maxWidth: .infinity, minHeight: Theme.minimumTapTarget, alignment: .leading)
                     .contentShape(Rectangle())
             }

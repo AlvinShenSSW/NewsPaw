@@ -30,6 +30,9 @@ struct BrowserScanTests {
         // A `.download` policy written as an implicit member, not a property
         // such as `action.download`.
         #"(^|[^\w)\].?])\.download\b"#,
+        // The same policy written with its type, as in
+        // `WKNavigationResponsePolicy.download`.
+        #"Policy\.download\b"#,
     ]
 
     /// `ios/` in the repository.
@@ -93,7 +96,11 @@ struct BrowserScanTests {
             #expect(interface.contains { line.contains($0) }, "\(line)")
         }
         let download = try Self.downloadPatterns.map { try Regex($0) }
-        for line in ["decisionHandler(.download)", "return .download", "func webView(_ w: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload)"] {
+        for line in [
+            "decisionHandler(.download)", "return .download",
+            "return WKNavigationResponsePolicy.download", "decisionHandler(WKNavigationActionPolicy.download, preferences)",
+            "func webView(_ w: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload)",
+        ] {
             #expect(download.contains { line.contains($0) }, "\(line)")
         }
         for line in ["if action.download {", "download: action.shouldPerformDownload"] {

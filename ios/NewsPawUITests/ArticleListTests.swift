@@ -331,6 +331,7 @@ final class ArticleListTests: ArticleTestCase {
         if usesTabs {
             // Back to the Library root, where the tab bar shows again.
             goBack()
+            waitFor(app.tabBars.firstMatch)
         }
 
         openSourceList("Articles Feed", in: "World")

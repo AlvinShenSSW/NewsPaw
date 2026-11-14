@@ -35,7 +35,8 @@ class BrowserTestCase: ArticleTestCase {
     /// Taps the web-page source's row and waits for the fixture home.
     func openWebPageSource(in category: String) {
         expand(category)
-        waitFor(sourceRow(Page.sourceName)).tap()
+        // Below the fold at the largest text size.
+        scrollTo(sourceRow(Page.sourceName)).tap()
         waitForAbsence(element(AccessibilityID.slideOverPanel))
         waitForPage(Page.home)
     }
@@ -93,8 +94,9 @@ class BrowserTestCase: ArticleTestCase {
     /// panes.
     func leaveBrowser() {
         guard usesTabs else { return }
+        // The tab bar comes back with the pop's animation.
         var backs = 0
-        while !app.tabBars.firstMatch.exists, backs < 3 {
+        while !app.tabBars.firstMatch.waitForExistence(timeout: 3), backs < 3 {
             goBack()
             backs += 1
         }

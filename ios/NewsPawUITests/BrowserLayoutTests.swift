@@ -44,6 +44,8 @@ final class BrowserLayoutTests: BrowserTestCase {
             // A tap on the page outside the menu closes it.
             self.app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
             self.waitForAbsence(self.menuButton("Reload"))
+            // The menu's glass shape is still turning back into the button.
+            sleep(1)
         }
         let end = app.webViews.staticTexts["End of the long page"]
         let barTop = [backButton, forwardButton, moreMenu].map(\.frame.minY).min() ?? window.maxY

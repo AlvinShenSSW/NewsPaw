@@ -58,12 +58,13 @@ class ModelSettingsTestCase: NewsPawUITestCase {
     }
 
     /// Scrolls the form, up and then down, until `element` is on screen;
-    /// rows off screen are not in the hierarchy.
+    /// rows off screen are not in the hierarchy. Eight swipes cross the
+    /// form at the largest text size, where it is six screens long.
     @discardableResult
     func reveal(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
         var swipes = 0
-        while !(element.waitForExistence(timeout: 1) && element.isHittable), swipes < 12 {
-            if swipes < 4 {
+        while !(element.waitForExistence(timeout: 1) && element.isHittable), swipes < 16 {
+            if swipes < 8 {
                 app.swipeUp()
             } else {
                 app.swipeDown()

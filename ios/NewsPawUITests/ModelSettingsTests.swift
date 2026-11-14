@@ -224,6 +224,13 @@ final class ModelSettingsTests: ModelSettingsTestCase {
         waitFor(element(AccessibilityID.primaryModelRow))
         openForm()
         replaceText(of: AccessibilityID.modelNameField, with: "typed-model")
+        // The form has no back button, and a swipe from the leading edge
+        // does not leave it either: only Cancel and Save do.
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        origin.withOffset(CGVector(dx: window.minX + 1, dy: window.midY))
+            .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: window.minX + 320, dy: window.midY)))
+        XCTAssertFalse(element(AccessibilityID.primaryModelRow).waitForExistence(timeout: 2), "a swipe left the form")
+        XCTAssertTrue(button(AccessibilityID.saveButton).exists)
         button(AccessibilityID.cancelButton).tap()
         waitFor(dialogButton("Discard Changes"))
         // Closing the question without choosing keeps the form and what

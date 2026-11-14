@@ -270,6 +270,20 @@ final class BrowserTests: BrowserTestCase {
         waitForPage("Every post threw")
     }
 
+    /// `window.open('')` has nothing to load and asks nothing: no question
+    /// about a link without a scheme, and the page stays.
+    func testEmptyWindowAsksNothing() {
+        launchAtFullWidth()
+        createCategory("World")
+        addWebPageSource(to: "World")
+        openWebPageSource(in: "World")
+
+        tapLink("Empty window link")
+        XCTAssertFalse(app.alerts.firstMatch.waitForExistence(timeout: 4), "window.open('') raised \(app.alerts.firstMatch.label)")
+        XCTAssertTrue(barText(Page.home).exists, "the page stays: \(barTexts())")
+        waitForEnabled(backButton, false)
+    }
+
     // MARK: - Criterion 8: failures
 
     /// A failed address shows the failure state with its host and its two

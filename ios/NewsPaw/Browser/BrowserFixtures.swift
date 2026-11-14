@@ -253,6 +253,7 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         <p><a href="/handlers">Handler probe</a></p>
         <p><a href="https://onefeed.example.invalid/">Another site</a></p>
         <p><a href="/hosts">Host links</a></p>
+        <p><a href="#" onclick="window.open(''); return false;">Empty window link</a></p>
         <p><a href="/dark">Dark page</a></p>
         <p><a href="/form-end">Form at the end</a></p>
         """)

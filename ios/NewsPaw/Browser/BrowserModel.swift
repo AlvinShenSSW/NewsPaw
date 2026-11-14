@@ -381,7 +381,9 @@ final class BrowserSession: NSObject {
     private func decide(
         _ request: URLRequest, kind: BrowserPolicy.NavigationKind, target: BrowserPolicy.TargetFrame, download: Bool
     ) -> Bool {
-        guard let raw = request.url else { return false }
+        // A request without an address or a scheme (`window.open('')`) is
+        // nothing to load and no other app's link: dropped, nothing shown.
+        guard let raw = request.url, let scheme = raw.scheme, !scheme.isEmpty else { return false }
         let url = map.toShown(raw)
         // The same host as the page on screen, where the tap happened. A
         // tapped link that a server redirects to another host, and a second

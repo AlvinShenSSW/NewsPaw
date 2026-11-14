@@ -63,7 +63,7 @@ struct PaneContainer: View {
                     .toolbar { sidebarButton }
                     .paneRoot(inlineTitle: layout.sidebarIsPane)
                     .navigationDestination(for: SettingsRoute.self) { route in
-                        SettingsDestination(route: route).paneRoot(inlineTitle: layout.sidebarIsPane)
+                        SettingsDestination(route: route).paneRoot(inlineTitle: layout.sidebarIsPane, avoidsKeyboard: route.isFormOfTextFields)
                     }
             }
             .paneIdentifier(AccessibilityID.fullPane)
@@ -127,6 +127,16 @@ extension View {
     /// sits in the bar) has to keep that field visible itself, for example
     /// by scrolling it into view, instead of relying on keyboard avoidance.
     ///
+    /// `avoidsKeyboard` is for a pushed screen that is a form of text
+    /// fields (the model form, RD13): it keeps the keyboard safe area, so
+    /// that the system scrolls the field being typed in above the
+    /// keyboard. Without it the keyboard covered the model form's key
+    /// field on iPad. The inset after a rotation was looked for with that
+    /// form on the iPadOS 27 simulator (keyboard shown, hidden, rotated
+    /// both ways, the form pushed again, the Settings stack made again) and
+    /// did not appear; a form scrolls, so such an inset would shorten it,
+    /// not hide a part of it.
+    ///
     /// Title: the large-title row of a stack that is not at the window's
     /// leading edge is laid out at the window's margin clipped to the pane,
     /// so the title touches the separator (RD03 F4; safe-area padding and a
@@ -138,12 +148,12 @@ extension View {
     /// used, because it puts the title at the leading edge and moves the
     /// leading bar item, the sidebar button, to the trailing end (RD03 N1).
     @ViewBuilder
-    func paneRoot(inlineTitle: Bool) -> some View {
+    func paneRoot(inlineTitle: Bool, avoidsKeyboard: Bool = false) -> some View {
         if inlineTitle {
-            ignoresSafeArea(.keyboard)
+            ignoresSafeArea(avoidsKeyboard ? [] : .keyboard)
                 .toolbarTitleDisplayMode(.inlineLarge)
         } else {
-            ignoresSafeArea(.keyboard)
+            ignoresSafeArea(avoidsKeyboard ? [] : .keyboard)
         }
     }
 

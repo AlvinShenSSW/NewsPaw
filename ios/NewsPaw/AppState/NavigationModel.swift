@@ -93,6 +93,12 @@ enum SettingsRoute: Hashable {
     case refresh
     case data
     case about
+
+    /// Whether the route's screen is a form the owner types into, which
+    /// has to stay clear of the keyboard in a pane too (`paneRoot`).
+    var isFormOfTextFields: Bool {
+        if case .modelSlot = self { true } else { false }
+    }
 }
 
 /// The one sheet presented from the root. Two sheets can never be asked for

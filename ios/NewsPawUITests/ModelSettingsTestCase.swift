@@ -103,6 +103,12 @@ class ModelSettingsTestCase: NewsPawUITestCase {
             field.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap()
             taps += 1
         } while XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: focused, object: field)], timeout: 3) != .completed && taps < 3
+        // The field being typed in stays above the keyboard, in a pane
+        // too, where screens otherwise ignore the keyboard.
+        let keyboard = app.keyboards.firstMatch
+        if keyboard.exists {
+            XCTAssertLessThan(field.frame.midY, keyboard.frame.minY, "\(identifier) is under the keyboard")
+        }
         let current = field.value as? String ?? ""
         let placeholder = field.placeholderValue ?? ""
         let existing = current == placeholder || secure ? 0 : current.count
@@ -127,7 +133,9 @@ class ModelSettingsTestCase: NewsPawUITestCase {
         let test = reveal(button(AccessibilityID.testButton), file: file, line: line)
         waitUntilEnabled(test, file: file, line: line)
         test.tap()
-        let label = element(AccessibilityID.testLine)
+        // The line is the row under the button: below the fold when the
+        // button is the last row on screen (the backup's form on iPad).
+        let label = reveal(element(AccessibilityID.testLine), file: file, line: line)
         let shown = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", expected), object: label)
         XCTAssertEqual(XCTWaiter.wait(for: [shown], timeout: timeout), .completed,
                        "Test line: \(label.exists ? label.label : "none")", file: file, line: line)

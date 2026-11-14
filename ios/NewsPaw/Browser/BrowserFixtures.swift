@@ -78,6 +78,9 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
             return
         }
         let id = ObjectIdentifier(task)
+        // A new task can have the identifier of a stopped one that is gone:
+        // it is not stopped.
+        stopped.remove(id)
         let host = url.host(percentEncoded: false)?.lowercased() ?? ""
         let path = url.path(percentEncoded: false)
         switch (host, path) {

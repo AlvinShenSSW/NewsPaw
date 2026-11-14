@@ -53,7 +53,7 @@ Core need: the owner sets up a primary model and, if wanted, a backup; can see w
     - The key field is a secure field. With a usable stored key the form shows "•••• " and the key's last four characters — only the dots when the key is shorter than 12 characters — with "Replace" and "Remove"; the stored key is never put into a field. "Replace" shows an empty secure field with "Cancel", which goes back to the stored key; Save is disabled while that field is empty. "Remove" asks for confirmation, removes the key at once (decision 3's order) and leaves the slot at "Key needed".
     - "Load List" shows the returned model identifiers, sorted, in a searchable list (at most 1,000); picking one fills the model field. A failure shows one line with the wording of decision 10.
     - **The backup can be set up only when a primary exists, and the primary cannot be removed while a backup exists**: the Backup row is disabled with "Set up the primary model first", and the primary's "Remove Model" is disabled with "Remove the backup model first".
-    - Leaving the form with unsaved changes asks before discarding (the pattern of the category and source sheets).
+    - Leaving the form with unsaved changes asks before discarding. As built: the form has Cancel and Save and no back button, Cancel asks when something changed, an edge swipe does not leave it, and in the tab structure the tab bar is hidden while the form is open, so that a second tap on the Settings tab cannot pop it. (The category and source sheets, named here as the pattern in version 2, have no such question; that was this design's mistake.)
 15. **Wording.** The Test line uses ux S9's five labels and "Not tested"; a slot without a usable key says "Key needed" (N10). Under a failed line, the sentence of ux section 4 where it has one: key rejected → "The service rejected the key"; quota or rate limit → "The service is limiting requests. Try again later"; could not connect → "Could not reach the service". Section 4 has no sentence for "Model not found"; this design adds "The service does not have this model" (服务里没有这个模型). Every new string has a Simplified Chinese translation; "Key" stays "Key" in Chinese, as in section 4. The strings check proves only that a translation exists; that the Chinese of the section 4 sentences is section 4's own is checked by reading the catalog against it.
 
 **For the owner** (each is a choice the issue left open; none changes the specification's meaning):
@@ -192,3 +192,10 @@ Version 2 after debate round 1 (one fresh critic; 19 findings; experiments in th
 | C19 "logs" not covered by criterion 3 | Admitted: a source scan; export is RD20's |
 
 After the freeze, by the owner's instruction (2026-11-14, "mimo默认使用token plan"): the MiMo preset's address is the Token Plan one (decision 6, For the owner 8). The China region among the plan's three addresses was confirmed by the owner the same day ("先默认中国区").
+
+After the implementation, recorded by the driver (2026-11-15):
+
+- Decision 14, leaving the form: the wording above replaces "the pattern of the category and source sheets". The hidden tab bar answers the external gate's finding of round 1 (a second tap on the Settings tab discarded the form without the question) and the internal review's R2.
+- The form's key field and model-name field carry the one-time-code content type: left to itself iOS took the typed key for a password and offered to save it in Passwords, which syncs.
+- The two removal questions are alerts; the stored key's dots are shown only while nothing is typed; the form keeps the keyboard safe area in a pane; Models & Translation uses the inline title at accessibility text sizes; Remove key also clears the Test result.
+- On iPad, leaving the form through the sidebar keeps it, with what was typed, until Cancel or Save.

@@ -42,6 +42,11 @@ struct ModelSlotForm: View {
         .navigationTitle(ModelWording.role(role))
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
+        // In the tab structure a second tap on the Settings tab pops the
+        // stack, which would discard the form without the question: the
+        // form is left by Cancel or Save only, so the tab bar is hidden
+        // while it is open (as it is over an open article).
+        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             // Plain bar buttons, as in the other editors.
             ToolbarItem(placement: .topBarLeading) {

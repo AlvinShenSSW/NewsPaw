@@ -221,11 +221,20 @@ final class ModelSettingsTests: ModelSettingsTestCase {
     func testUnsavedChangesQuestion() throws {
         launchAtFullWidth()
         openModelSettings()
+        let hasTabBar = app.tabBars.firstMatch.exists
         openForm()
         // Unchanged: Cancel leaves at once.
         button(AccessibilityID.cancelButton).tap()
         waitFor(element(AccessibilityID.primaryModelRow))
+        if hasTabBar {
+            waitFor(app.tabBars.firstMatch)
+        }
         openForm()
+        // In the tab structure the tab bar is not there while the form is
+        // open: a second tap on Settings would pop the form without the
+        // question.
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertFalse(tabBar.exists && tabBar.isHittable, "the tab bar is over the form")
         replaceText(of: AccessibilityID.modelNameField, with: "typed-model")
         // The form has no back button, and a swipe from the leading edge
         // does not leave it either: only Cancel and Save do.

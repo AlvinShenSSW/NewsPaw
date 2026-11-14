@@ -309,8 +309,11 @@ final class ModelSettingsModel {
                 // A Test of the saved values was kept with the slot.
                 await reload()
             } catch {
+                // No request was made (the key is gone, or the form is no
+                // longer acceptable): show the slot as it is now.
                 if !Task.isCancelled {
                     testState = .idle
+                    await reload()
                 }
             }
         }

@@ -57,9 +57,14 @@ struct ModelSlotForm: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Save") {
+                // The form's text colour reaches the bar too, where it hides
+                // the system's dimming of a disabled button.
+                Button {
                     focus = nil
                     models.save()
+                } label: {
+                    Text("Save")
+                        .opacity(models.canSave ? 1 : 0.35)
                 }
                 .disabled(!models.canSave)
                 .accessibilityIdentifier(AccessibilityID.saveButton)

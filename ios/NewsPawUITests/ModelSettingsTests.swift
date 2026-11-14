@@ -47,7 +47,6 @@ final class ModelSettingsTests: ModelSettingsTestCase {
         openForm()
         let stored = reveal(element(AccessibilityID.storedKey))
         XCTAssertEqual(stored.label, "Key ending in 1a2b")
-        XCTAssertTrue(app.staticTexts["•••• 1a2b"].exists || stored.label.contains("1a2b"))
         XCTAssertFalse(app.secureTextFields[AccessibilityID.keyField].exists)
         XCTAssertFalse(app.debugDescription.contains(Self.key), "the key is in the accessibility tree")
         XCTAssertFalse(app.debugDescription.contains("passed-key"), "part of the key is in the accessibility tree")

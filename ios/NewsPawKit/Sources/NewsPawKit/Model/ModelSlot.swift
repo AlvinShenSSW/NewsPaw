@@ -27,8 +27,8 @@ public enum ModelPreset: String, Sendable, Hashable, CaseIterable, Codable {
     /// The address the preset fills in: the service's OpenAI-compatible
     /// base address, in normal form. Empty for Custom.
     ///
-    /// MiMo's is the Token Plan address, by the owner's instruction of
-    /// 2026-11-14 (it replaces decision 6's ordinary address).
+    /// MiMo's is the Token Plan address of the China region, by the owner's
+    /// instruction of 2026-11-14 (decision 6).
     public var address: String {
         switch self {
         case .openAI: "https://api.openai.com/v1"

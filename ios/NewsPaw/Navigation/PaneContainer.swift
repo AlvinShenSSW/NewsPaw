@@ -57,6 +57,14 @@ struct PaneContainer: View {
                     .paneRoot(inlineTitle: layout.sidebarIsPane)
             }
             .paneIdentifier(AccessibilityID.fullPane)
+        case .source(let id) where navigation.isWebPageSource(id):
+            // A web-page source fills the content area as one pane (RD10).
+            NavigationStack {
+                BrowserPane(stack: .library)
+                    .toolbar { sidebarButton }
+                    .paneRoot(inlineTitle: false)
+            }
+            .paneIdentifier(AccessibilityID.fullPane)
         case .settings:
             NavigationStack(path: $navigation.settingsPath) {
                 SettingsView()

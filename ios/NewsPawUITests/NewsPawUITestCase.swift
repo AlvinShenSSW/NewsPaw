@@ -399,19 +399,25 @@ class NewsPawUITestCase: XCTestCase {
         ["Shown", "已展开"].contains(disclosure.value as? String ?? "")
     }
 
-    /// Opens Source settings from the source's row: a web page's row opens
-    /// them; a feed's row opens its article list, whose toolbar menu has
-    /// Source Settings (RD09 criterion 19).
+    /// Opens Source settings from the source's row: a feed's row opens its
+    /// article list, whose toolbar menu has Source Settings (RD09 criterion
+    /// 19); a web page's row opens the browser, whose More menu has them
+    /// (RD10).
     func openSourceSettings(_ name: String, in category: String) {
         expand(category)
         waitFor(sourceRow(name)).tap()
         let field = app.textFields[AccessibilityID.nameField]
         let menu = button(AccessibilityID.listMenu)
-        let either = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in field.exists || menu.exists }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [either], timeout: timeout), .completed, "neither the settings nor the list opened")
-        if !field.exists {
-            openListSettings(source: true)
+        let more = button(AccessibilityID.browserMoreMenu)
+        let either = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in menu.exists || more.exists }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [either], timeout: timeout), .completed, "neither the list nor the browser opened")
+        if more.exists {
+            more.tap()
+        } else {
+            menu.tap()
         }
+        let labels = ["Source Settings", "来源设置"]
+        waitFor(app.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch).tap()
         waitFor(field)
     }
 

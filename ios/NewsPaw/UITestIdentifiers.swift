@@ -135,6 +135,18 @@ enum AccessibilityID {
     static let readingReadButton = "reading.read"
     static let articleUnavailable = "reading.unavailable"
 
+    // Embedded browser (RD10)
+    static let browser = "browser"
+    static let browserProgress = "browser.progress"
+    static let browserBackButton = "browser.back"
+    static let browserForwardButton = "browser.forward"
+    static let browserMoreMenu = "browser.more"
+    static let browserCloseButton = "browser.close"
+    static let browserFailure = "browser.failure"
+    static let browserFailureReason = "browser.failureReason"
+    static let browserTryAgainButton = "browser.tryAgain"
+    static let browserFailureSafariButton = "browser.failureSafari"
+
     // Today (RD09)
     static let todayDate = "today.date"
     static let todayCategoryRowPrefix = "today.category."

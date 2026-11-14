@@ -313,9 +313,9 @@ final class ArticleListTests: ArticleTestCase {
 
     // MARK: - Criterion 10: navigation
 
-    /// A feed's row opens its list, a web page's row its settings; deleting
-    /// the source from its list's Source Settings returns to the category
-    /// list.
+    /// A feed's row opens its list, a web page's row the browser (RD10);
+    /// deleting the source from its list's Source Settings returns to the
+    /// category list.
     func testSourceTapsAndDeletingFromTheList() {
         launchAtFullWidth()
         createCategory("World")
@@ -326,9 +326,13 @@ final class ArticleListTests: ArticleTestCase {
         chooseCategoryAndSave("World")
         expand("World")
         waitFor(sourceRow("Plain Page")).tap()
-        waitFor(app.textFields[AccessibilityID.nameField])
-        button(AccessibilityID.cancelButton).tap()
-        waitForAbsence(app.textFields[AccessibilityID.nameField])
+        waitFor(button(AccessibilityID.browserMoreMenu))
+        XCTAssertFalse(app.textFields[AccessibilityID.nameField].exists, "a web page's row opens the browser, not its settings")
+        if usesTabs {
+            // Back to the Library root, where the tab bar shows again.
+            goBack()
+            waitFor(app.tabBars.firstMatch)
+        }
 
         openSourceList("Articles Feed", in: "World")
         waitFor(articleRow("Image story"))

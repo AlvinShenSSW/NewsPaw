@@ -186,14 +186,19 @@ final class SourceModel {
 
     // MARK: - Add source
 
-    /// Opens Add source. The category open in Library is chosen, else the
-    /// last one used this session.
-    func beginAddSource() {
+    /// Opens Add source, with `address` in its field when given (the
+    /// browser's "Save This Page as a Source"). The category open in Library
+    /// is chosen, else the last one used this session.
+    func beginAddSource(address: String? = nil) {
         addSource?.cancel()
-        addSource = AddSourceModel(
+        let model = AddSourceModel(
             sources: self, categories: categories,
             preferredCategory: navigation.openCategory ?? lastUsedCategory
         )
+        if let address {
+            model.addressText = address
+        }
+        addSource = model
         navigation.sheet = .addSource
     }
 

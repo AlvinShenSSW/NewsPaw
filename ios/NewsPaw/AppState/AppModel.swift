@@ -1,6 +1,7 @@
 import Foundation
 import NewsPawKit
 import SwiftUI
+import WebKit
 
 /// Why the library could not be opened, as the failure screen tells it.
 enum LibraryFailure: Equatable {
@@ -25,7 +26,7 @@ enum LibraryFailure: Equatable {
 final class AppModel {
     enum Status {
         case loading
-        case ready(CategoryModel, SourceModel, RefreshModel, ReadingModel)
+        case ready(CategoryModel, SourceModel, RefreshModel, ReadingModel, BrowserModel)
         case failed(LibraryFailure)
     }
 
@@ -89,12 +90,29 @@ final class AppModel {
             let reading = ReadingModel(
                 library: library, transport: transport, navigation: navigation, sources: sources, refresh: refresh
             )
+            // The embedded browser: the system's default website data store
+            // for the normal library; under a UI-test library directory a
+            // non-persistent one and the fixture pages.
+            #if DEBUG
+            let browser = if options.libraryDirectory != nil {
+                BrowserModel(
+                    dataStore: .nonPersistent(), navigation: navigation, sources: sources,
+                    addressMap: BrowserFixtures.map, schemeHandlers: [BrowserFixtures.scheme: BrowserFixtures()]
+                )
+            } else {
+                BrowserModel(dataStore: .default(), navigation: navigation, sources: sources)
+            }
+            #else
+            let browser = BrowserModel(dataStore: .default(), navigation: navigation, sources: sources)
+            #endif
             categories.onReload = { [weak sources] in await sources?.reload() }
             categories.sourcesOf = { [weak sources] id in Set(sources?.sources(in: id).map(\.id) ?? []) }
             refresh.onListsChanged = { [weak sources] in await sources?.reload() }
             refresh.onStorageError = { [weak sources] in sources?.isShowingSaveError = true }
             refresh.onRunEnded = { [weak reading] in reading?.runEnded() }
             navigation.onListEntered = { [weak reading] list in reading?.entered(list) }
+            navigation.isWebPageSource = { [weak sources] id in sources?.summary(id)?.kind == .webpage }
+            navigation.onStacksChanged = { [weak browser] in browser?.stacksChanged() }
             let modelSettings = ModelSettingsModel(
                 models: LibraryModels(library: library, keys: keyStore, http: modelHTTP), navigation: navigation
             )
@@ -111,7 +129,7 @@ final class AppModel {
             await categories.reload()
             await refresh.load()
             await modelSettings.reload()
-            status = .ready(categories, sources, refresh, reading)
+            status = .ready(categories, sources, refresh, reading, browser)
             // The launch is the first entry (RD06 decision 3).
             Task { await refresh.entered() }
         } catch is CancellationError {
@@ -131,7 +149,7 @@ final class AppModel {
             wasInBackground = true
         case .active where wasInBackground:
             wasInBackground = false
-            if case .ready(_, _, let refresh, _) = status {
+            if case .ready(_, _, let refresh, _, _) = status {
                 Task { await refresh.entered() }
             }
         default:

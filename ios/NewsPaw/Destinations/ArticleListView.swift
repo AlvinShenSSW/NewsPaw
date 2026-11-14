@@ -216,7 +216,7 @@ private struct ArticleRowButton: View {
     let kind: ArticleListKind
     let model: ArticleListModel
     @Environment(ReadingModel.self) private var reading
-    @Environment(\.openURL) private var openURL
+    @Environment(NavigationModel.self) private var navigation
 
     var body: some View {
         Button {
@@ -245,8 +245,12 @@ private struct ArticleRowButton: View {
         }
         .contextMenu {
             if let url = row.linkURL {
+                // The article is opened first (and so marked read), then its
+                // page above it: closing the browser returns to the article
+                // (RD10 decision 2).
                 Button("Open in Browser", systemImage: "safari") {
-                    openURL(url)
+                    reading.open(row, on: kind)
+                    navigation.openPage(url, on: kind)
                 }
                 ShareLink(item: url) {
                     Label("Share", systemImage: "square.and.arrow.up")
@@ -285,11 +289,20 @@ private struct ArticleRowButton: View {
 /// the swipes and taps. None acts while a sheet, the slide-over or the "Mark
 /// All as Read" question is open. The arrow keys are left out: measured on
 /// the iPad simulators, a down-arrow shortcut did not open the next article.
+/// While the browser shows the article's page the buttons are absent, so a
+/// letter typed into the page reaches it (RD10 decision 9).
 struct ArticleShortcuts: View {
     let list: ArticleListKind
     @Environment(ReadingModel.self) private var reading
+    @Environment(NavigationModel.self) private var navigation
 
     var body: some View {
+        if !navigation.pageIsOpen(on: list) {
+            buttons
+        }
+    }
+
+    private var buttons: some View {
         // Whether a key may act is asked when it is pressed, not observed
         // here: re-rendering these buttons while the slide-over closes and a
         // sheet opens kept the sheet from appearing (measured on the iPad

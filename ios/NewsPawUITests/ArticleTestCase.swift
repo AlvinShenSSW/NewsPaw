@@ -168,15 +168,25 @@ class ArticleTestCase: NewsPawUITestCase {
     }
 
     /// Swipes a row from its leading or trailing edge and taps the action
-    /// `label` if the swipe revealed it rather than running it.
+    /// `label` if the swipe revealed it rather than running it. A tab-bar
+    /// button of the same label is never it: in Simplified Chinese the
+    /// "Star" action and the Starred tab are both "收藏".
     func swipeAction(on row: XCUIElement, leading: Bool, _ label: String) {
         if leading {
             row.swipeRight()
         } else {
             row.swipeLeft()
         }
-        let action = app.buttons.matching(NSPredicate(format: "label == %@ AND NOT (identifier BEGINSWITH 'article.row.')", label)).firstMatch
-        if action.waitForExistence(timeout: 2), action.isHittable {
+        let candidates = app.buttons.matching(NSPredicate(format: "label == %@ AND NOT (identifier BEGINSWITH 'article.row.')", label))
+        let tabBar = app.tabBars.firstMatch
+        func revealed() -> XCUIElement? {
+            let barFrame = tabBar.exists ? tabBar.frame : .null
+            return candidates.allElementsBoundByIndex.first { action in
+                action.exists && action.isHittable && !barFrame.contains(CGPoint(x: action.frame.midX, y: action.frame.midY))
+            }
+        }
+        let found = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in revealed() != nil }, object: nil)
+        if XCTWaiter.wait(for: [found], timeout: 2) == .completed, let action = revealed() {
             action.tap()
         }
     }

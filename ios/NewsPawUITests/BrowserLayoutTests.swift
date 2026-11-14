@@ -7,8 +7,9 @@ final class BrowserLayoutTests: BrowserTestCase {
 
     /// The bars are present, their buttons have labels and a tap target of
     /// at least 44 × 44 pt, the title and the host are not clipped at the
-    /// largest text size, and the end of a long page scrolls clear of the
-    /// bottom bar. Bar buttons are the system's: iOS 26 draws them as 36 pt
+    /// largest text size, the page starts below the top bar (so the title
+    /// and the host are never drawn on a page), and the end of a long page
+    /// scrolls clear of the bottom bar. Bar buttons are the system's: iOS 26 draws them as 36 pt
     /// glass shapes with a larger touch region, so their target is measured
     /// as in RD03 and RD09, by tapping the edges of a 44 × 44 pt square
     /// centred on each.
@@ -72,6 +73,46 @@ final class BrowserLayoutTests: BrowserTestCase {
         }
     }
 
+    /// The web view keeps its frame when the software keyboard appears,
+    /// and WebKit keeps a page's focused field above the keyboard: a field
+    /// at the end of a long page is shown above the keyboard and takes what
+    /// is typed. (Resized by a keyboard, the web view broke the Paste button
+    /// of a sheet above it on iPad; that case is
+    /// `BrowserTests.testSaveAsSourceAndCopyLink`.) Skipped on a simulator
+    /// that shows no software keyboard, or only the bar it shows while a
+    /// hardware keyboard is attached, where nothing would be measured.
+    func testKeyboardLeavesThePageItsFrame() throws {
+        launchAtFullWidth()
+        createCategory("World")
+        addWebPageSource(to: "World")
+        openWebPageSource(in: "World")
+        tapLink("Form at the end")
+        waitForPage("Form at the End")
+        let page = app.webViews.firstMatch
+        let field = app.webViews.textFields.firstMatch
+        var swipes = 0
+        while !(field.exists && field.isHittable && field.frame.maxY < backButton.frame.minY - 8), swipes < 12 {
+            page.swipeUp(velocity: .slow)
+            swipes += 1
+        }
+        let frame = page.frame
+        waitFor(field).tap()
+        let keyboard = app.keyboards.firstMatch
+        try XCTSkipUnless(keyboard.waitForExistence(timeout: 5), "no software keyboard: a hardware keyboard is attached to this simulator")
+        // The keyboard has risen and the page has moved its field.
+        sleep(2)
+        record("keyboard", "web view \(frame) -> \(page.frame); keyboard \(keyboard.frame); field \(field.frame)")
+        try XCTSkipUnless(keyboard.frame.height >= 150, "only a keyboard bar is shown (\(keyboard.frame)): a hardware keyboard is attached to this simulator")
+        XCTAssertEqual(page.frame, frame, "the keyboard resized the web view")
+        XCTAssertLessThanOrEqual(field.frame.maxY, keyboard.frame.minY, "the field \(field.frame) is behind the keyboard \(keyboard.frame)")
+        XCTAssertTrue(field.isHittable, "the field is not shown")
+        field.typeText("j")
+        let typed = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            self.barTexts().contains { $0.lowercased() == "typed: j" }
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [typed], timeout: timeout), .completed, "j did not reach the field: \(barTexts())")
+    }
+
     private func checkBars(title: String, _ note: String, file: StaticString = #filePath, line: UInt = #line) {
         for control in [backButton, forwardButton, moreMenu] {
             waitFor(control, file: file, line: line)
@@ -93,6 +134,12 @@ final class BrowserLayoutTests: BrowserTestCase {
         }
         XCTAssertGreaterThanOrEqual(hostText.frame.minY, titleText.frame.maxY - 1, "\(note): the host is under the title", file: file, line: line)
         XCTAssertTrue(hostText.isHittable, "\(note): the host is shown", file: file, line: line)
+        // The page is below the top bar, not behind it.
+        let page = waitFor(app.webViews.firstMatch, file: file, line: line).frame
+        XCTAssertGreaterThanOrEqual(page.minY, bar.frame.maxY - 0.5, "\(note): the page \(page) runs under the top bar \(bar.frame)", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(page.minY, hostText.frame.maxY, "\(note): the page \(page) runs under the host \(hostText.frame)", file: file, line: line)
+        // And it still runs to the window's bottom edge, behind the bottom bar.
+        XCTAssertGreaterThanOrEqual(page.maxY, backButton.frame.maxY, "\(note): the page \(page) ends above the bottom bar", file: file, line: line)
     }
 
     /// Taps the edges of a 44 × 44 pt square centred on `control`, along

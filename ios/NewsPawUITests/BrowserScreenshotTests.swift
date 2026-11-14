@@ -45,6 +45,20 @@ final class BrowserScreenshotTests: BrowserTestCase {
         openWebPageSource(in: world)
         sleep(1)
         capture("web-page-source")
+        // A light and a dark page, each long enough to run behind the
+        // bottom bar: the bars over either, in either appearance.
+        tapLink("Long page")
+        waitForPage("Long Page")
+        sleep(1)
+        capture("light-page")
+        backButton.tap()
+        waitForPage(Page.home)
+        tapLink("Dark page")
+        waitForPage("Dark Page")
+        sleep(1)
+        capture("dark-page")
+        backButton.tap()
+        waitForPage(Page.home)
         leaveBrowser()
 
         // An article's page: pushed on the article (tabs), in the reading

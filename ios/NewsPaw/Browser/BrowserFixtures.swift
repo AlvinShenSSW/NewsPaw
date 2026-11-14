@@ -106,6 +106,9 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
             redirect(task, to: "\(Self.scheme)://onefeed.example.invalid/arrival")
         case (_, "/arrival"):
             send(task, html: Self.arrival(byBrowser: url.query(percentEncoded: false) == Self.loadedByBrowser))
+        case ("nofeed.example.invalid", "/dark"):
+            let paragraphs = (1...60).map { "<p>Paragraph \($0) of the dark page, with enough words to wrap across the width of the screen.</p>" }
+            send(task, html: Self.page("Dark Page", paragraphs.joined(), style: "body { background: #0b0b0f; color: #f2f2f7; }"))
         case ("nofeed.example.invalid", "/long"):
             let paragraphs = (1...60).map { "<p>Paragraph \($0) of the long page, with enough words to wrap across the width of the screen.</p>" }
             send(task, html: Self.page("Long Page", paragraphs.joined() + "<p id=\"end\">End of the long page</p>"))
@@ -132,6 +135,13 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
             send(task, html: Self.page("One Feed Site", "<p>Another site, which declares a feed.</p>"))
         case (_, "/form"):
             send(task, html: Self.page("Form Page", """
+                <p><label for="field">Note</label></p>
+                <p><input id="field" type="text" placeholder="Type here" oninput="document.title = 'Typed: ' + this.value"></p>
+                """))
+        case ("nofeed.example.invalid", "/form-end"):
+            send(task, html: Self.page("Form at the End", """
+                <p>A long page with its field at the end.</p>
+                <div style="height: 1700px"></div>
                 <p><label for="field">Note</label></p>
                 <p><input id="field" type="text" placeholder="Type here" oninput="document.title = 'Typed: ' + this.value"></p>
                 """))
@@ -199,12 +209,12 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
 
     // MARK: - Pages
 
-    private static func page(_ title: String, _ body: String) -> String {
+    private static func page(_ title: String, _ body: String, style: String = "") -> String {
         """
         <!DOCTYPE html>
         <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
         <title>\(title)</title>
-        <style>body { font: -apple-system-body; margin: 16px; } p { margin: 12px 0; } a { display: inline-block; padding: 8px 0; }</style>
+        <style>body { font: -apple-system-body; margin: 16px; } p { margin: 12px 0; } a { display: inline-block; padding: 8px 0; } \(style)</style>
         </head><body><h1>\(title)</h1>\(body)</body></html>
         """
     }
@@ -243,6 +253,8 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         <p><a href="/handlers">Handler probe</a></p>
         <p><a href="https://onefeed.example.invalid/">Another site</a></p>
         <p><a href="/hosts">Host links</a></p>
+        <p><a href="/dark">Dark page</a></p>
+        <p><a href="/form-end">Form at the end</a></p>
         """)
 
     /// Posts to a fixed list of message-handler names; the title says

@@ -34,10 +34,22 @@ struct BrowserView: View {
 
     var body: some View {
         WebViewHost(session: session)
-            // The page runs behind the bars; the web view keeps its content
-            // clear of them, so the end of a page scrolls above the bottom
-            // bar.
-            .ignoresSafeArea(.container, edges: .vertical)
+            // The page runs behind the bottom bar only; the web view keeps
+            // its content clear of it, so the end of a page scrolls above
+            // the bar. It stays out from under the top bar: the title and
+            // the host follow the app's appearance and are drawn on the
+            // app's own background, never on a page's, where a light page
+            // in dark appearance (or a dark page in light) would hide them.
+            //
+            // Every region is ignored at the bottom, the keyboard's too: the
+            // web view keeps its frame when a keyboard appears, and WebKit
+            // itself keeps a page's focused field above the keyboard
+            // (measured). With the container's region alone the web view is
+            // resized by a keyboard, also by the keyboard of a sheet above
+            // it, and then the Paste button of Add source did nothing on
+            // iPad (measured; the same frame change under the page running
+            // behind both bars did not have that effect).
+            .ignoresSafeArea(.all, edges: .bottom)
             .overlay {
                 if let failure = session.failure {
                     failureView(failure)

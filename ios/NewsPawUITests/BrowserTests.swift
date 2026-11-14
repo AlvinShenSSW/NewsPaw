@@ -98,6 +98,36 @@ final class BrowserTests: BrowserTestCase {
         waitForUnread(articleRow("Image story"), false)
     }
 
+    /// The Starred stack has its own browser: "Open Original Page" on an
+    /// article opened from Starred shows the page (pushed on the article in
+    /// the tab structure, in the reading pane beside Starred on the panes),
+    /// and leaving it returns to the article, still in Starred.
+    func testStarredArticlePageOpensAndCloses() {
+        launchAtFullWidth()
+        createCategory("World")
+        addSource(Fixture.articles, to: "World")
+        openCategoryList("World")
+        swipeAction(on: waitFor(articleRow("Plain story")), leading: false, "Star")
+        waitForLabel(articleRow("Plain story"), containing: "Starred")
+        openStarred()
+        openArticle("Plain story")
+        waitFor(button(AccessibilityID.openOriginalButton)).tap()
+        waitForPage("Original of plain-story")
+        waitFor(barText("example.invalid"))
+        if usesTabs {
+            XCTAssertTrue(app.buttons.matching(identifier: "BackButton").firstMatch.exists, "pushed on the article")
+        } else {
+            XCTAssertTrue(element(AccessibilityID.readingPane).frame.contains(app.webViews.firstMatch.frame.insetBy(dx: 1, dy: 1)),
+                          "the page takes the reading pane")
+            XCTAssertTrue(articleRow("Plain story").exists, "Starred stays beside it")
+        }
+        closeBrowser()
+        waitForLabel(element(AccessibilityID.readingTitle), containing: "Plain story")
+        backToList()
+        waitFor(articleRow("Plain story"))
+        XCTAssertFalse(articleRow("Image story").exists, "the list is Starred")
+    }
+
     // MARK: - Criteria 3 and 4: history, reload, progress, new windows
 
     /// A link enables Back; Back and Forward move between the two pages;
@@ -414,38 +444,68 @@ final class BrowserTests: BrowserTestCase {
 
     // MARK: - Criterion 11: the session survives the crossings
 
-    /// With a second page shown after a link, crossing 700 pt both ways and
-    /// rotating across 1100 pt keep the page, with Back still enabled.
+    /// With a page shown after a link, crossing 700 pt both ways and
+    /// rotating across 1100 pt keep the same page, not a reload of it: the
+    /// page shows the count of its loads. Once for a web-page source (one
+    /// pane or pushed) and once for an article's page (the reading pane or
+    /// pushed on the article).
     func testSessionSurvivesTheCrossings() throws {
         try XCTSkipUnless(isPad, "window widths on iPad")
         launchAtFullWidth()
         createCategory("World")
         addWebPageSource(to: "World")
+        addSource(Fixture.articles, to: "World")
         openWebPageSource(in: "World")
-        tapLink("Second page")
-        waitForPage("Second Page")
+        tapLink("Load counter")
+        waitForPage("Loads 1")
+        crossBothWays(keeping: "Loads 1")
+        backButton.tap()
+        waitForPage(Page.home)
 
+        openCategoryList("World")
+        openArticle("Plain story")
+        waitFor(button(AccessibilityID.openOriginalButton)).tap()
+        waitForPage("Original of plain-story")
+        tapLink("Load counter")
+        waitForPage("Loads 2")
+        XCTAssertTrue(element(AccessibilityID.readingPane).frame.contains(app.webViews.firstMatch.frame.insetBy(dx: 1, dy: 1)),
+                      "the page is in the reading pane")
+        crossBothWays(keeping: "Loads 2") {
+            XCTAssertTrue(self.app.buttons.matching(identifier: "BackButton").firstMatch.exists, "pushed on the article")
+        }
+        XCTAssertTrue(element(AccessibilityID.readingPane).frame.contains(app.webViews.firstMatch.frame.insetBy(dx: 1, dy: 1)),
+                      "the page is in the reading pane again")
+        backButton.tap()
+        waitForPage("Original of plain-story")
+    }
+
+    /// Crosses 700 pt down and up, then 1100 pt up and down. After each
+    /// crossing the page titled `title` is still shown, was not loaded
+    /// again (its title would count one more load) and Back is enabled.
+    private func crossBothWays(keeping title: String, whilePushed: () -> Void = {}) {
+        func kept(_ note: String, file: StaticString = #filePath, line: UInt = #line) {
+            waitForPage(title, file: file, line: line)
+            // A reload would have answered by now.
+            sleep(2)
+            XCTAssertTrue(barText(title).exists, "\(note): the page was loaded again, \(barTexts())", file: file, line: line)
+            waitForEnabled(backButton, true, file: file, line: line)
+        }
         cross700(below: true)
         XCTAssertTrue(usesTabs)
-        waitForPage("Second Page")
-        waitForEnabled(backButton, true)
+        kept("below 700 pt")
+        whilePushed()
         cross700(below: false)
         XCTAssertFalse(usesTabs)
-        waitForPage("Second Page")
-        waitForEnabled(backButton, true)
+        kept("back above 700 pt")
 
         requireFullWidth()
         rotate(.landscapeLeft)
         requireFullWidth()
         waitFor(element(AccessibilityID.sidebarPane))
-        waitForPage("Second Page")
-        waitForEnabled(backButton, true)
+        kept("at 1100 pt and wider")
         rotate(.portrait)
         waitForAbsence(element(AccessibilityID.sidebarPane))
-        waitForPage("Second Page")
-        waitForEnabled(backButton, true)
-        backButton.tap()
-        waitForPage(Page.home)
+        kept("back below 1100 pt")
     }
 
     // MARK: - Decision 3: a session ends with its selection, and asks nothing while hidden

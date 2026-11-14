@@ -82,7 +82,7 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
             send(task, html: Self.home)
         case ("nofeed.example.invalid", "/second"):
             send(task, html: Self.page("Second Page", "<p>The second page.</p><p><a href=\"/\">Home</a></p>"))
-        case ("nofeed.example.invalid", "/count"):
+        case (_, "/count"):
             loads += 1
             send(task, html: Self.page("Loads \(loads)", """
                 <p>This page was loaded \(loads) times.</p>
@@ -163,6 +163,7 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
             send(task, html: Self.page("Original of \(slug)", """
                 <p>The original page of the article \(slug).</p>
                 <p><a href="/form">Form page</a></p>
+                <p><a href="/count">Load counter</a></p>
                 <p><a href="/hidden-asker">Hidden asker</a></p>
                 """))
         default:

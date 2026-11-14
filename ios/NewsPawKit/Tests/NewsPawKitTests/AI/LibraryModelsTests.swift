@@ -334,6 +334,10 @@ struct LibraryModelsTests {
 
     // MARK: - Partitions (decision 12)
 
+    // Exit tests do not exist on iOS, where the package's tests are also
+    // built and run (on a simulator); the precondition is the same code on
+    // both, so the Mac run covers it.
+    #if os(macOS)
     @Test("a key store of another partition is refused")
     func otherPartitionRefused() async throws {
         // `precondition` cannot be caught in-process; the exit test runs it
@@ -356,6 +360,7 @@ struct LibraryModelsTests {
             try? FileManager.default.removeItem(at: directory)
         }
     }
+    #endif
 
     @Test("two libraries keep their own slots, keys and usage rows")
     func twoLibraries() async throws {

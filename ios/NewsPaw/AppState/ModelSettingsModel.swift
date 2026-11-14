@@ -149,14 +149,16 @@ final class ModelSettingsModel {
         request = nil
         editingRole = nil
         draftKey = ""
+        isReplacingKey = false
         testState = .idle
         listState = .idle
         isShowingModelList = false
     }
 
-    /// Leaves the form by popping its route.
-    private func leaveForm() {
-        guard let role = editingRole else { return }
+    /// Leaves the form of `role` by popping its route. A form left already
+    /// (the tab tapped again while a save ran) is not popped twice, and
+    /// another model's form opened since stays.
+    private func leaveForm(_ role: ModelRole) {
         navigation.settingsPath.removeAll { $0 == .modelSlot(role) }
     }
 
@@ -186,14 +188,29 @@ final class ModelSettingsModel {
         draftKey.isEmpty ? nil : SecretKey.validate(draftKey)
     }
 
-    /// The stored key's last four characters when it is usable: present,
-    /// not being replaced, and the form's address keeps the saved address's
-    /// origin (decision 3). `.some(nil)` is a short key: only the dots.
-    var usableStoredKey: String?? {
-        guard !isReplacingKey, let saved, case .present(let lastFour) = saved.key,
-              ModelAddress.sameOrigin(saved.slot.baseURL, draftAddress)
+    /// The stored key's last four characters while the form's address
+    /// keeps the saved address's origin (decision 3). `.some(nil)` is a
+    /// short key: only the dots.
+    private var storedKeyForThisOrigin: String?? {
+        guard let saved, case .present(let lastFour) = saved.key, ModelAddress.sameOrigin(saved.slot.baseURL, draftAddress)
         else { return nil }
         return .some(lastFour)
+    }
+
+    /// The stored key's last four characters when it is the key the form
+    /// uses: usable for this origin, not being replaced, and no key typed.
+    /// A key typed while the address named another origin stays the form's
+    /// key when the address returns, so what is shown is what is used.
+    var usableStoredKey: String?? {
+        guard !isReplacingKey, draftKey.isEmpty else { return nil }
+        return storedKeyForThisOrigin
+    }
+
+    /// Whether the key section offers "Cancel", which goes back to the
+    /// stored key: after Replace, or while a typed key stands in for a
+    /// stored key that is usable again.
+    var canCancelReplacingKey: Bool {
+        isReplacingKey || (storedKeyForThisOrigin != nil && !draftKey.isEmpty)
     }
 
     /// "Key needed": a saved slot with no usable key and nothing typed.
@@ -206,7 +223,7 @@ final class ModelSettingsModel {
     }
 
     private var hasUsableKey: Bool {
-        validTypedKey != nil || (usableStoredKey != nil && draftKey.isEmpty)
+        validTypedKey != nil || usableStoredKey != nil
     }
 
     private var typedKeyIsRefused: Bool {
@@ -242,7 +259,7 @@ final class ModelSettingsModel {
         if let key = validTypedKey {
             return TestedForm(address: address, model: model, key: .typed(key))
         }
-        if usableStoredKey != nil, draftKey.isEmpty {
+        if usableStoredKey != nil {
             return TestedForm(address: address, model: model, key: .stored)
         }
         return nil
@@ -280,11 +297,21 @@ final class ModelSettingsModel {
             defer { isBusy = false }
             do {
                 let outcome = try await models.test(draft)
+                // The form was left meanwhile: its result is not shown on
+                // whichever form is open now. One kept with the slot just
+                // before still reaches its row, from a task of its own (a
+                // cancelled task cannot read the library).
+                guard !Task.isCancelled else {
+                    Task { await reload() }
+                    return
+                }
                 testState = .finished(outcome, form)
                 // A Test of the saved values was kept with the slot.
                 await reload()
             } catch {
-                testState = .idle
+                if !Task.isCancelled {
+                    testState = .idle
+                }
             }
         }
     }
@@ -298,14 +325,18 @@ final class ModelSettingsModel {
             defer { isBusy = false }
             do {
                 let list = try await models.listModels(draft)
+                guard !Task.isCancelled else { return }
                 listState = .loaded(list)
                 isShowingModelList = true
-            } catch let failure as ModelFailure {
-                listState = .failed(TestOutcome(failure))
-            } catch is CancellationError {
-                listState = .idle
             } catch {
-                listState = .failed(.couldNotConnect)
+                // The form was left meanwhile: nothing is shown on
+                // whichever form is open now.
+                guard !Task.isCancelled else { return }
+                if let failure = error as? ModelFailure {
+                    listState = .failed(TestOutcome(failure))
+                } else {
+                    listState = .failed(.couldNotConnect)
+                }
             }
         }
     }
@@ -339,8 +370,12 @@ final class ModelSettingsModel {
             defer { isBusy = false }
             do {
                 try await models.removeKey(role)
-            } catch {
+            } catch ModelSettingsError.keyNotRemoved {
                 alert = .keyNotRemoved
+            } catch {
+                // The key is gone and its row could not be written: the
+                // model reads "Key needed" either way.
+                alert = .saveFailed
             }
             await reload()
         }
@@ -348,6 +383,7 @@ final class ModelSettingsModel {
 
     func save() {
         guard canSave, let draft else { return }
+        let role = draft.role
         var tested: TestOutcome?
         if case .finished(let outcome, let form) = testState, form == currentForm {
             tested = outcome
@@ -359,7 +395,7 @@ final class ModelSettingsModel {
             do {
                 try await models.save(draft, testedOutcome: tested)
                 await reload()
-                leaveForm()
+                leaveForm(role)
             } catch ModelSettingsError.keyNotSaved {
                 alert = .keyNotSaved
             } catch {
@@ -379,7 +415,7 @@ final class ModelSettingsModel {
             do {
                 try await models.removeSlot(role)
                 await reload()
-                leaveForm()
+                leaveForm(role)
             } catch ModelSettingsError.keyNotRemoved {
                 alert = .keyNotRemoved
             } catch {
@@ -391,15 +427,18 @@ final class ModelSettingsModel {
 
     /// Cancel: asks before discarding unsaved changes.
     func cancel() {
+        guard let role = editingRole else { return }
         if isDirty {
             isAskingToDiscard = true
         } else {
-            leaveForm()
+            leaveForm(role)
         }
     }
 
     func discard() {
         isAskingToDiscard = false
-        leaveForm()
+        if let role = editingRole {
+            leaveForm(role)
+        }
     }
 }

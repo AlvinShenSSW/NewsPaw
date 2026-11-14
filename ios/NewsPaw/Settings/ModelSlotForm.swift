@@ -234,7 +234,7 @@ struct ModelSlotForm: View {
                 if case .failure(let problem)? = models.typedKey, let text = ModelWording.keyProblem(problem) {
                     problemLabel(text, identifier: AccessibilityID.keyProblem)
                 }
-                if models.isReplacingKey {
+                if models.canCancelReplacingKey {
                     Button {
                         models.cancelReplacingKey()
                         focus = nil

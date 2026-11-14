@@ -138,13 +138,27 @@ public enum BrowserPolicy {
 }
 
 /// The address the browser shows (RD10 decision 10): the failed address
-/// while the failure state is shown; the address being loaded until a page
-/// commits; otherwise the page's own address. The top bar's host, "Try
-/// Again", "Open in Safari", Share, Copy Link and "Save This Page as a
-/// Source" all use it.
+/// while the failure state is shown; otherwise the address of the page on
+/// screen, with its same-document changes, also while another page is being
+/// loaded over it; the address being loaded only while no page has committed
+/// yet. The top bar's host, "Try Again", "Open in Safari", Share, Copy Link
+/// and "Save This Page as a Source" all use it, so the bar never names a
+/// site whose page is not the one shown.
 public enum BrowserAddress {
     public static func shown(failed: URL?, loading: URL?, committed: URL?) -> URL? {
-        failed ?? loading ?? committed
+        failed ?? committed ?? loading
+    }
+
+    /// The address whose host a tapped link's host is compared with (RD10
+    /// decision 5): the address of the page on screen, where the tap
+    /// happened, and never the address being loaded. WebKit names the
+    /// address being loaded as its own from the moment a load is asked for;
+    /// compared with that, a link the server redirects to another host, and
+    /// a second tap while a load to another host is pending, would count as
+    /// links to the same host and be left to the system, which may hand
+    /// them to an installed app. With no page on screen no host is the same.
+    public static func tapped(committed: URL?, loading: URL?) -> URL? {
+        committed
     }
 
     /// The host to show for an address: its host, or the whole address when

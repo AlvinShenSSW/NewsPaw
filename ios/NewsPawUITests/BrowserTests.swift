@@ -156,6 +156,72 @@ final class BrowserTests: BrowserTestCase {
         waitForPage(Page.home)
     }
 
+    // MARK: - Decisions 5 and 10: another host, and the host shown
+
+    /// While another site's slow page is being loaded over a page, the bar
+    /// keeps that page's title and host until the new page commits. A link
+    /// tapped while a load to another host is pending, and a tapped link of
+    /// this host that its server redirects to another host, are loaded by
+    /// the browser itself: the arrival page says whether the browser loaded
+    /// it or WebKit followed a navigation to it.
+    func testAnotherHostIsLoadedByTheBrowserAndShownOnceCommitted() {
+        launchAtFullWidth()
+        createCategory("World")
+        addWebPageSource(to: "World")
+        openWebPageSource(in: "World")
+        tapLink("Host links")
+        waitForPage("Host Links")
+
+        // A page's script starts the load: WebKit names the new address at
+        // once, the bar does not.
+        tapLink("Script to a slow site")
+        waitFor(element(AccessibilityID.browserProgress))
+        assertBars(title: "Host Links", host: Page.host, not: Page.otherHost, "while a script's load is pending")
+        waitForPage("Slow Site")
+        waitFor(barText(Page.otherHost))
+        waitForAbsence(element(AccessibilityID.browserProgress))
+        backButton.tap()
+        waitForPage("Host Links")
+        waitFor(barText(Page.host))
+
+        // The browser's own load of a tapped link to another host is
+        // pending: the bar still names this page, and a second link to that
+        // host is still a link to another host.
+        tapLink("Slow site")
+        waitFor(element(AccessibilityID.browserProgress))
+        assertBars(title: "Host Links", host: Page.host, not: Page.otherHost, "while the browser's load is pending")
+        tapLink("Arrival page")
+        waitForArrival("a second tap while a load to that host was pending")
+        waitFor(barText(Page.otherHost))
+        backButton.tap()
+        waitForPage("Host Links")
+
+        // A link of this host that redirects to the other one.
+        tapLink("Redirecting link")
+        waitForArrival("a tapped link redirected to another host")
+        waitFor(barText(Page.otherHost))
+        backButton.tap()
+        waitForPage("Host Links")
+        waitFor(barText(Page.host))
+    }
+
+    private func assertBars(title: String, host: String, not other: String, _ note: String, file: StaticString = #filePath, line: UInt = #line) {
+        let texts = barTexts()
+        XCTAssertTrue(texts.contains(title), "\(note), the bar's title is not the page's: \(texts)", file: file, line: line)
+        XCTAssertTrue(texts.contains(host), "\(note), the bar's host is not the page's: \(texts)", file: file, line: line)
+        XCTAssertFalse(texts.contains(other), "\(note), the bar names a site whose page is not shown: \(texts)", file: file, line: line)
+    }
+
+    /// Waits for the other site's arrival page and fails unless the browser
+    /// loaded it itself.
+    private func waitForArrival(_ note: String, file: StaticString = #filePath, line: UInt = #line) {
+        let arrived = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            self.barText("Loaded by the Browser").exists || self.barText("Followed by WebKit").exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [arrived], timeout: timeout), .completed, "\(note): no arrival page, \(barTexts())", file: file, line: line)
+        XCTAssertTrue(barText("Loaded by the Browser").exists, "\(note): WebKit followed it, \(barTexts())", file: file, line: line)
+    }
+
     // MARK: - Criteria 5, 6 and 7: other schemes, files, no interface
 
     /// `mailto:` and an unknown scheme ask and load nothing; Cancel leaves

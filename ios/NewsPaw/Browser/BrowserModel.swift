@@ -188,12 +188,13 @@ final class BrowserSession: NSObject {
     @ObservationIgnored let webView: WKWebView
 
     private(set) var title = ""
-    /// The page's address as WebKit reports it: the address being loaded
-    /// from the start of a navigation, the committed page's otherwise.
+    /// The address of the page on screen: where it committed, and its
+    /// same-document changes since (an anchor, `history.pushState`), which
+    /// never commit.
     private(set) var pageURL: URL?
-    /// An address the browser decided to load whose navigation has not
-    /// started yet.
-    private(set) var pendingURL: URL?
+    /// The address being loaded, from the moment a navigation is asked for
+    /// until its page commits or it fails.
+    private(set) var loadingURL: URL?
     private(set) var failure: BrowserFailure?
     private(set) var isLoading = false
     private(set) var progress = 0.0
@@ -205,6 +206,23 @@ final class BrowserSession: NSObject {
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     /// The main-frame navigation in progress and the address it started at.
     @ObservationIgnored private var provisional: (navigation: WKNavigation, url: URL?)?
+    /// Who asked for a main-frame navigation.
+    private enum Asker {
+        /// The browser: a load, Back, Forward or Reload.
+        case browser
+        /// A page, with the policy's leave.
+        case page
+    }
+
+    /// Who asked for the main-frame navigation that has not started yet,
+    /// if one was asked for. WebKit's address is that navigation's already.
+    @ObservationIgnored private var starting: Asker?
+    /// Where the page on screen committed. The policy compares a tapped
+    /// link's host with this address, never with WebKit's current one,
+    /// which already names the page being loaded while the old page is
+    /// still the one tapped on. A same-document change cannot change the
+    /// host, so the address at the commit is enough.
+    @ObservationIgnored private var committedURL: URL?
 
     init(route: LibraryRoute, sourceID: UUID?, model: BrowserModel, configuration: WKWebViewConfiguration) {
         self.route = route
@@ -227,19 +245,14 @@ final class BrowserSession: NSObject {
             webView.observe(\.title, options: [.initial, .new]) { [weak self] webView, _ in
                 MainActor.assumeIsolated { self?.title = webView.title ?? "" }
             },
-            // WebKit reports the address being loaded from the start of a
-            // navigation, the committed one again when it fails, and a
-            // same-document change (an anchor) that never commits: each
-            // replaces an address the browser was still waiting for.
-            webView.observe(\.url, options: [.initial, .new]) { [weak self] webView, _ in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.pageURL = webView.url.map(self.map.toShown)
-                    self.pendingURL = nil
-                }
+            webView.observe(\.url, options: [.initial, .new]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.readAddress() }
             },
             webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] webView, _ in
-                MainActor.assumeIsolated { self?.isLoading = webView.isLoading }
+                MainActor.assumeIsolated {
+                    self?.isLoading = webView.isLoading
+                    self?.readAddress()
+                }
             },
             webView.observe(\.estimatedProgress, options: [.initial, .new]) { [weak self] webView, _ in
                 MainActor.assumeIsolated { self?.progress = webView.estimatedProgress }
@@ -253,6 +266,27 @@ final class BrowserSession: NSObject {
         ]
     }
 
+    /// Sorts WebKit's one address into the page's own and the one being
+    /// loaded. WebKit reports the address being loaded from the moment a
+    /// navigation is asked for, the page's own again when that navigation
+    /// fails, and a same-document change (an anchor, `history.pushState`)
+    /// that never commits. While WebKit is not loading, its address is the
+    /// page's own; while it is, the address belongs to the navigation that
+    /// was asked for or has started, and otherwise to the page, which is
+    /// then still loading its parts.
+    private func readAddress() {
+        let url = webView.url.map(map.toShown)
+        if !webView.isLoading {
+            starting = nil
+            loadingURL = nil
+            pageURL = url
+        } else if starting != nil || provisional != nil || pageURL == nil {
+            loadingURL = url
+        } else {
+            pageURL = url
+        }
+    }
+
     /// The session's route left its stack: the page stops and lets go of
     /// the app.
     func end() {
@@ -264,10 +298,11 @@ final class BrowserSession: NSObject {
 
     // MARK: - What the bars show (decision 10)
 
-    /// The address shown: the failed one while the failure state is shown,
-    /// the one being loaded until a page commits, else the page's own.
+    /// The address shown: the failed one while the failure state is shown;
+    /// else the address of the page on screen, also while another page is
+    /// loaded over it; the one being loaded only until a first page commits.
     var shownURL: URL? {
-        BrowserAddress.shown(failed: failure?.url, loading: pendingURL, committed: pageURL)
+        BrowserAddress.shown(failed: failure?.url, loading: loadingURL, committed: pageURL)
     }
 
     /// The host under the title, always shown.
@@ -297,10 +332,11 @@ final class BrowserSession: NSObject {
 
     // MARK: - Actions
 
-    /// Loads `url` in the page; it becomes the shown address at once.
+    /// Loads `url` in the page.
     func load(_ url: URL) {
         failure = nil
-        pendingURL = url
+        starting = .browser
+        loadingURL = url
         webView.load(URLRequest(url: map.toWebKit(url)))
     }
 
@@ -312,11 +348,13 @@ final class BrowserSession: NSObject {
             return
         }
         failure = nil
+        starting = .browser
         webView.goBack()
     }
 
     func goForward() {
         failure = nil
+        starting = .browser
         webView.goForward()
     }
 
@@ -325,6 +363,7 @@ final class BrowserSession: NSObject {
         if failure != nil {
             tryAgain()
         } else {
+            starting = .browser
             webView.reload()
         }
     }
@@ -344,9 +383,14 @@ final class BrowserSession: NSObject {
     ) -> Bool {
         guard let raw = request.url else { return false }
         let url = map.toShown(raw)
+        // The same host as the page on screen, where the tap happened. A
+        // tapped link that a server redirects to another host, and a second
+        // tap while a load to another host is pending, are therefore both
+        // "another host" and loaded by the browser itself.
+        let page = BrowserAddress.tapped(committed: committedURL, loading: loadingURL)
         let action = BrowserPolicy.Action(
             scheme: BrowserPolicy.SchemeClass(url), kind: kind, target: target,
-            sameHost: BrowserPolicy.sameHost(url, shownURL), download: download
+            sameHost: BrowserPolicy.sameHost(url, page), download: download
         )
         var decision = BrowserPolicy.decide(action)
         // Under the fixtures, a navigation that would reach a real host is
@@ -357,7 +401,8 @@ final class BrowserSession: NSObject {
         switch decision {
         case .follow, .allowSilently:
             if target == .main {
-                pendingURL = url
+                starting = starting ?? .page
+                loadingURL = url
             }
             return true
         case .loadInPlace:
@@ -384,7 +429,9 @@ final class BrowserSession: NSObject {
         // about the page shown.
         guard started == nil || started?.navigation === navigation else { return }
         provisional = nil
-        pendingURL = nil
+        // WebKit's address is the page's own again, unless a newer load was
+        // already asked for.
+        readAddress()
         let ns = error as NSError
         // "Frame load interrupted", reported in WebKit's own domain (measured:
         // `WebKitErrorDomain`, not `WKErrorDomain`).
@@ -420,17 +467,33 @@ extension BrowserSession: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        provisional = (navigation, webView.url.map(map.toShown))
-        pendingURL = nil
+        let url = webView.url.map(map.toShown)
+        provisional = (navigation, url)
+        starting = nil
+        loadingURL = url
         failure = nil
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        if provisional?.navigation === navigation {
+        let started = provisional?.navigation === navigation ? provisional : nil
+        if started != nil {
             provisional = nil
         }
-        pendingURL = nil
         failure = nil
+        if starting == .browser {
+            // The browser asked for another page after this one started:
+            // WebKit's address is that request's already, and this page's
+            // own is not known for certain. No host counts as its host, so
+            // every link tapped on it is loaded by the browser itself.
+            committedURL = nil
+            pageURL = started?.url ?? pageURL
+        } else {
+            let url = webView.url.map(map.toShown)
+            committedURL = url
+            pageURL = url
+            loadingURL = nil
+            starting = nil
+        }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
@@ -442,11 +505,11 @@ extension BrowserSession: WKNavigationDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        let url = shownURL
         provisional = nil
-        pendingURL = nil
-        failure = BrowserFailure(
-            kind: .processEnded, url: shownURL, reason: String(localized: "The page stopped working.")
-        )
+        starting = nil
+        loadingURL = nil
+        failure = BrowserFailure(kind: .processEnded, url: url, reason: String(localized: "The page stopped working."))
     }
 }
 

@@ -144,14 +144,40 @@ struct BrowserPolicyTests {
         #expect(!BrowserPolicy.sameHost(URL(string: "about:blank"), URL(string: "about:blank")))
     }
 
+    @Test("decision 5: a tapped link's host is compared with the page on screen, not with the address being loaded")
+    func tappedLinkHost() {
+        let page = URL(string: "https://page.example.invalid/list")
+        let loading = URL(string: "https://other.example.invalid/slow")
+        let link = URL(string: "https://other.example.invalid/next")
+        func decision(_ target: URL?, committed: URL?, loading: URL?) -> BrowserPolicy.ActionDecision {
+            let sameHost = BrowserPolicy.sameHost(target, BrowserAddress.tapped(committed: committed, loading: loading))
+            return BrowserPolicy.decide(Action(scheme: .web, kind: .linkActivated, target: .main, sameHost: sameHost, download: false))
+        }
+        // A second tap while a load to the link's host is pending, and the
+        // hop of a tapped link that a server redirected to another host
+        // (WebKit's address is the hop's target by then): another host.
+        #expect(decision(link, committed: page, loading: loading) == .loadInPlace)
+        #expect(decision(loading, committed: page, loading: loading) == .loadInPlace)
+        // A link of the page's own host is followed, whatever is loading.
+        #expect(decision(URL(string: "https://page.example.invalid/next"), committed: page, loading: loading) == .follow)
+        #expect(decision(URL(string: "https://page.example.invalid/next"), committed: page, loading: nil) == .follow)
+        // No page on screen: no host is the same.
+        #expect(decision(link, committed: nil, loading: loading) == .loadInPlace)
+    }
+
     @Test("decision 10: the shown address")
     func shownAddress() {
         let failed = URL(string: "https://failed.example.invalid/")
         let loading = URL(string: "https://loading.example.invalid/")
         let committed = URL(string: "https://committed.example.invalid/")
+        // The failure state shows the failed address.
         #expect(BrowserAddress.shown(failed: failed, loading: loading, committed: committed) == failed)
-        #expect(BrowserAddress.shown(failed: nil, loading: loading, committed: committed) == loading)
+        #expect(BrowserAddress.shown(failed: failed, loading: nil, committed: committed) == failed)
+        // A page on screen keeps its address while another is loaded over it.
+        #expect(BrowserAddress.shown(failed: nil, loading: loading, committed: committed) == committed)
         #expect(BrowserAddress.shown(failed: nil, loading: nil, committed: committed) == committed)
+        // Nothing has committed yet: the address being loaded.
+        #expect(BrowserAddress.shown(failed: nil, loading: loading, committed: nil) == loading)
         #expect(BrowserAddress.shown(failed: nil, loading: nil, committed: nil) == nil)
         #expect(BrowserAddress.host(of: committed) == "committed.example.invalid")
         #expect(BrowserAddress.host(of: URL(string: "about:blank")) == "about:blank")

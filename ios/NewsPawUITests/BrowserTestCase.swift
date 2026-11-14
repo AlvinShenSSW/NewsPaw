@@ -8,6 +8,8 @@ class BrowserTestCase: ArticleTestCase {
     enum Page {
         static let home = "Fixture Home"
         static let host = "nofeed.example.invalid"
+        /// The fixture table's other site.
+        static let otherHost = "onefeed.example.invalid"
         static let homeAddress = "https://nofeed.example.invalid/"
         static let secondAddress = "https://nofeed.example.invalid/second"
         static let missingAddress = "https://nofeed.example.invalid/missing"

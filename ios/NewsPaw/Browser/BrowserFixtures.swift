@@ -5,10 +5,12 @@ import WebKit
 /// The embedded browser's pages under the UI tests (RD10 "Fixtures"): a
 /// scheme handler that serves a fixed table for one fixture scheme, made
 /// only in a debug build and only under a UI-test library directory. Every
-/// address outside the table fails without a request. Pages use relative
-/// links and load nothing from another host; the one absolute link leads
-/// to a page of the table on another host, which Add source detects through
-/// the fixture transport.
+/// address outside the table fails without a request. Pages load nothing
+/// from another host. Their links are relative, but for the links to the
+/// table's other host: one `https` link, which Add source detects through
+/// the fixture transport, and links in the fixture scheme itself, which the
+/// policy alone decides (an `https` link is always loaded by the browser
+/// under the fixtures, whatever the policy says).
 ///
 /// No page is answered as an attachment: WebKit hands a scheme handler's
 /// response to the response policy without its headers (measured), so a
@@ -20,6 +22,11 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
     static let scheme = "newspaw-fixture"
     /// How long the slow page takes to answer.
     static let slowAnswer: TimeInterval = 3
+    /// How long the other site's slow page takes: long enough for a UI test
+    /// to read the bars and tap a second link while it is pending.
+    static let slowSiteAnswer: TimeInterval = 8
+    /// The query that marks an arrival page as loaded by the browser itself.
+    static let loadedByBrowser = "by=browser"
 
     /// The addresses of the table, as the browser shows them.
     enum Address {
@@ -31,7 +38,15 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         BrowserAddressMap(
             toWebKit: { url in
                 guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return url }
-                return replacingScheme(of: url, with: Self.scheme)
+                let mapped = replacingScheme(of: url, with: Self.scheme)
+                // Only the browser's own loads pass here, never a navigation
+                // WebKit follows: the arrival page is marked, so that it can
+                // say which of the two brought it.
+                guard mapped.path(percentEncoded: false) == "/arrival", mapped.query(percentEncoded: false) == nil,
+                      var components = URLComponents(url: mapped, resolvingAgainstBaseURL: false)
+                else { return mapped }
+                components.query = Self.loadedByBrowser
+                return components.url ?? mapped
             },
             toShown: { url in
                 guard url.scheme?.lowercased() == Self.scheme else { return url }
@@ -80,6 +95,17 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
                 guard let self, !self.stopped.contains(id) else { return }
                 self.send(task, html: Self.page("Slow Page", "<p>This page answered slowly.</p>"))
             }
+        case ("onefeed.example.invalid", "/slow"):
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.slowSiteAnswer) { [weak self] in
+                guard let self, !self.stopped.contains(id) else { return }
+                self.send(task, html: Self.page("Slow Site", "<p>Another site, which answered slowly.</p>"))
+            }
+        case ("nofeed.example.invalid", "/hosts"):
+            send(task, html: Self.hosts)
+        case ("nofeed.example.invalid", "/redirect"):
+            redirect(task, to: "\(Self.scheme)://onefeed.example.invalid/arrival")
+        case (_, "/arrival"):
+            send(task, html: Self.arrival(byBrowser: url.query(percentEncoded: false) == Self.loadedByBrowser))
         case ("nofeed.example.invalid", "/long"):
             let paragraphs = (1...60).map { "<p>Paragraph \($0) of the long page, with enough words to wrap across the width of the screen.</p>" }
             send(task, html: Self.page("Long Page", paragraphs.joined() + "<p id=\"end\">End of the long page</p>"))
@@ -132,8 +158,30 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         send(task, body: html, type: "text/html; charset=utf-8")
     }
 
-    private func send(_ task: any WKURLSchemeTask, body: String, type: String) {
-        guard !stopped.contains(ObjectIdentifier(task)), let url = task.request.url else { return }
+    /// Answers as a server that redirects to `address`, and then with the
+    /// arrival page as WebKit gets it when it follows the redirect. WebKit
+    /// asks the policy about the redirect first and stops the task when the
+    /// policy refuses, so that page is shown only if the redirect was
+    /// followed. A scheme task has no public way to answer a redirect; this
+    /// uses the task's own `_didPerformRedirection:newRequest:` (measured:
+    /// the policy is asked again, as for a server's redirect), which exists
+    /// here in debug builds only. Without it the address fails.
+    private func redirect(_ task: any WKURLSchemeTask, to address: String) {
+        let selector = NSSelectorFromString("_didPerformRedirection:newRequest:")
+        let object = task as AnyObject
+        guard !stopped.contains(ObjectIdentifier(task)), let from = task.request.url, let target = URL(string: address),
+              object.responds(to: selector),
+              let response = HTTPURLResponse(url: from, statusCode: 302, httpVersion: "HTTP/1.1", headerFields: ["Location": address])
+        else {
+            fail(task)
+            return
+        }
+        _ = object.perform(selector, with: response, with: URLRequest(url: target))
+        send(task, body: Self.arrival(byBrowser: false), type: "text/html; charset=utf-8", url: target)
+    }
+
+    private func send(_ task: any WKURLSchemeTask, body: String, type: String, url: URL? = nil) {
+        guard !stopped.contains(ObjectIdentifier(task)), let url = url ?? task.request.url else { return }
         let fields = ["Content-Type": type]
         guard let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: fields) else { return }
         task.didReceive(response)
@@ -161,6 +209,21 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         """
     }
 
+    /// The other site's arrival page; its title says whether the browser
+    /// loaded it itself or WebKit followed a navigation to it.
+    private static func arrival(byBrowser: Bool) -> String {
+        page(byBrowser ? "Loaded by the Browser" : "Followed by WebKit", "<p>A page of another site.</p>")
+    }
+
+    /// Links from this host to the other one, in the fixture scheme, so
+    /// that the policy decides what happens to each.
+    private static let hosts = page("Host Links", """
+        <p><a href="#" onclick="location.href = '\(scheme)://onefeed.example.invalid/slow'; return false;">Script to a slow site</a></p>
+        <p><a href="\(scheme)://onefeed.example.invalid/slow">Slow site</a></p>
+        <p><a href="\(scheme)://onefeed.example.invalid/arrival">Arrival page</a></p>
+        <p><a href="/redirect">Redirecting link</a></p>
+        """)
+
     private static let home = page("Fixture Home", """
         <p>A page served to the embedded browser under the UI tests.</p>
         <p><a href="/second">Second page</a></p>
@@ -179,6 +242,7 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         <p><a href="/form">Form page</a></p>
         <p><a href="/handlers">Handler probe</a></p>
         <p><a href="https://onefeed.example.invalid/">Another site</a></p>
+        <p><a href="/hosts">Host links</a></p>
         """)
 
     /// Posts to a fixed list of message-handler names; the title says

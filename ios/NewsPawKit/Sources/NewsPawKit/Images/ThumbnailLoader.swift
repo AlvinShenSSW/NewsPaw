@@ -103,8 +103,9 @@ public actor ThumbnailLoader {
     /// pixels on its longer side, drawn onto white and encoded as JPEG; `nil`
     /// when ImageIO does not take it as an image or it declares more than
     /// `maximumDeclaredPixels` pixels (read from its header, before any
-    /// decoding).
-    static func reduced(_ data: Data) -> Data? {
+    /// decoding). An image smaller than the bound keeps its size. Also the
+    /// reduction of a body image, with its own bound (RD11).
+    static func reduced(_ data: Data, maximumPixelSize: Int = ThumbnailLoader.maximumPixelSize) -> Data? {
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
               CGImageSourceGetCount(source) > 0,
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],

@@ -2,11 +2,15 @@ import NewsPawKit
 import SwiftUI
 
 /// Settings (ux S8). Each later issue adds its own row, in the order of
-/// the ux table: Refresh, Data, then About.
+/// the ux table: Models & Translation, Refresh, Data, then About.
 struct SettingsView: View {
     var body: some View {
         List {
             Section {
+                NavigationLink(value: SettingsRoute.models) {
+                    Label("Models & Translation", systemImage: "translate")
+                }
+                .accessibilityIdentifier(AccessibilityID.modelsRow)
                 NavigationLink(value: SettingsRoute.refresh) {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
@@ -38,6 +42,8 @@ struct SettingsDestination: View {
 
     var body: some View {
         switch route {
+        case .models: ModelsView()
+        case .modelSlot(let role): ModelSlotForm(role: role)
         case .refresh: RefreshSettingsView()
         case .data: DataSettingsView()
         case .about: AboutView()

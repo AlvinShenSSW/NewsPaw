@@ -21,24 +21,30 @@ enum LibraryFailure: Equatable {
     }
 }
 
-/// The app's startup state and its one library: the normal one.
+/// The app's startup state and the workspace on screen (RD18 decision 3):
+/// the normal library's, kept for the life of the app.
 @MainActor @Observable
 final class AppModel {
     enum Status {
         case loading
-        case ready(CategoryModel, SourceModel, RefreshModel, ReadingModel, BrowserModel)
+        /// The normal library is open and `shown` is set.
+        case ready
         case failed(LibraryFailure)
     }
 
     private(set) var status = Status.loading
-    let navigation = NavigationModel()
-    /// The model slots of the normal library; set before `status` is ready.
-    private(set) var modelSettings: ModelSettingsModel?
+    /// The normal library's workspace; set before `status` is ready.
+    private(set) var normal: Workspace?
     /// The app's one store; it gives out one library per partition.
     private var store: LibraryStore?
     /// Whether the scene has been in the background since it was last
     /// active: the next `active` is an entry.
     private var wasInBackground = false
+
+    /// The workspace on screen.
+    var shown: Workspace? {
+        normal
+    }
 
     /// Opens the normal library, creating it on first launch. A failure is
     /// shown and left as it is: the file is never deleted, reset or replaced.
@@ -81,57 +87,40 @@ final class AppModel {
             let store = LibraryStore(directory: directory, cacheRoot: cacheRoot, now: now)
             self.store = store
             let library = try await store.openNormal()
-            let categories = CategoryModel(library: library, navigation: navigation)
-            let refresh = RefreshModel(library: library, transport: transport, preferences: Preferences(defaults), now: now)
-            let sources = SourceModel(
-                library: library, transport: transport, candidateLimit: candidateLimit,
-                navigation: navigation, categories: categories, refresh: refresh
-            )
-            let reading = ReadingModel(
-                library: library, transport: transport, navigation: navigation, sources: sources, refresh: refresh
+            let parts = WorkspaceParts(
+                transport: transport, candidateLimit: candidateLimit, now: now,
+                refreshSettings: RefreshSettings(Preferences(defaults)),
+                models: LibraryModels(library: library, keys: keyStore, http: modelHTTP)
             )
             // The embedded browser: the system's default website data store
             // for the normal library; under a UI-test library directory a
             // non-persistent one and the fixture pages.
             #if DEBUG
             let browser = if options.libraryDirectory != nil {
-                BrowserModel(
-                    dataStore: .nonPersistent(), navigation: navigation, sources: sources,
-                    addressMap: BrowserFixtures.map, schemeHandlers: [BrowserFixtures.scheme: BrowserFixtures()]
+                BrowserSetup(
+                    dataStore: .nonPersistent(), addressMap: BrowserFixtures.map,
+                    schemeHandlers: [BrowserFixtures.scheme: BrowserFixtures()]
                 )
             } else {
-                BrowserModel(dataStore: .default(), navigation: navigation, sources: sources)
+                BrowserSetup(dataStore: .default())
             }
             #else
-            let browser = BrowserModel(dataStore: .default(), navigation: navigation, sources: sources)
+            let browser = BrowserSetup(dataStore: .default())
             #endif
-            categories.onReload = { [weak sources] in await sources?.reload() }
-            categories.sourcesOf = { [weak sources] id in Set(sources?.sources(in: id).map(\.id) ?? []) }
-            refresh.onListsChanged = { [weak sources] in await sources?.reload() }
-            refresh.onStorageError = { [weak sources] in sources?.isShowingSaveError = true }
-            refresh.onRunEnded = { [weak reading] in reading?.runEnded() }
-            navigation.onListEntered = { [weak reading] list in reading?.entered(list) }
-            navigation.isWebPageSource = { [weak sources] id in sources?.summary(id)?.kind == .webpage }
-            navigation.onStacksChanged = { [weak browser] in browser?.stacksChanged() }
-            let modelSettings = ModelSettingsModel(
-                models: LibraryModels(library: library, keys: keyStore, http: modelHTTP), navigation: navigation
-            )
-            navigation.onSettingsPathChanged = { [weak modelSettings] path in modelSettings?.settingsPathChanged(path) }
-            self.modelSettings = modelSettings
+            let workspace = Workspace(library: library, parts: parts, browser: browser)
             #if DEBUG
             if let count = options.syntheticSources {
                 try await library.insertSyntheticSourcesForUITests(count: count)
             }
-            categories.failNextSave = options.failNextSave
-            categories.slowNextSave = options.slowNextSave
-            sources.failNextSave = options.failNextSourceSave
+            workspace.categories.failNextSave = options.failNextSave
+            workspace.categories.slowNextSave = options.slowNextSave
+            workspace.sources.failNextSave = options.failNextSourceSave
             #endif
-            await categories.reload()
-            await refresh.load()
-            await modelSettings.reload()
-            status = .ready(categories, sources, refresh, reading, browser)
+            await workspace.load()
+            normal = workspace
+            status = .ready
             // The launch is the first entry (RD06 decision 3).
-            Task { await refresh.entered() }
+            Task { await workspace.refresh.entered() }
         } catch is CancellationError {
             return
         } catch {
@@ -149,7 +138,7 @@ final class AppModel {
             wasInBackground = true
         case .active where wasInBackground:
             wasInBackground = false
-            if case .ready(_, _, let refresh, _, _) = status {
+            if let refresh = shown?.refresh {
                 Task { await refresh.entered() }
             }
         default:

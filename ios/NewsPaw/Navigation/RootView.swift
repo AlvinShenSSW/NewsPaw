@@ -2,7 +2,8 @@ import NewsPawKit
 import SwiftUI
 import UIKit
 
-/// The library failure screen, or the app once its library is open.
+/// The library failure screen, or the app once its library is open: the
+/// shell on the workspace shown, and on nothing else (RD18 decision 3).
 struct RootView: View {
     @Environment(AppModel.self) private var model
 
@@ -12,15 +13,20 @@ struct RootView: View {
             Theme.background.ignoresSafeArea()
         case .failed(let failure):
             LibraryFailureView(failure: failure)
-        case .ready(let categories, let sources, let refresh, let reading, let browser):
-            ShellView()
-                .environment(categories)
-                .environment(sources)
-                .environment(refresh)
-                .environment(reading)
-                .environment(browser)
-                .environment(model.modelSettings)
-                .environment(model.navigation)
+        case .ready:
+            if let workspace = model.shown {
+                ShellView()
+                    .environment(workspace.categories)
+                    .environment(workspace.sources)
+                    .environment(workspace.refresh)
+                    .environment(workspace.reading)
+                    .environment(workspace.browser)
+                    .environment(workspace.modelSettings)
+                    .environment(workspace.navigation)
+                    // Another workspace is another shell: no sheet, alert,
+                    // menu, pushed screen or view state survives the change.
+                    .id(workspace.id)
+            }
         }
     }
 }

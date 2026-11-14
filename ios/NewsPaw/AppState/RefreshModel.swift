@@ -11,11 +11,15 @@ import UIKit
 final class RefreshModel {
     /// Every collection of the library goes through it.
     let engine: Refresher
+    /// The two settings, shared with every workspace (RD18 decision 3) and
+    /// read at each use.
     var interval: RefreshInterval {
-        didSet { preferences.refreshInterval = interval }
+        get { settings.interval }
+        set { settings.interval = newValue }
     }
     var retention: Retention {
-        didSet { preferences.retention = retention }
+        get { settings.retention }
+        set { settings.retention = newValue }
     }
     /// The end of the last counted whole-library refresh.
     private(set) var lastRefreshAt: Date?
@@ -31,19 +35,17 @@ final class RefreshModel {
     @ObservationIgnored var onRunEnded: (@MainActor () -> Void)?
 
     @ObservationIgnored private let library: Library
-    @ObservationIgnored private let preferences: Preferences
+    @ObservationIgnored private let settings: RefreshSettings
     @ObservationIgnored private var runs = 0
     @ObservationIgnored private var backgroundTask = UIBackgroundTaskIdentifier.invalid
     @ObservationIgnored private var reloading = false
     @ObservationIgnored private var reloadAgain = false
 
-    init(library: Library, transport: any Transport, preferences: Preferences, now: @escaping @Sendable () -> Date) {
+    init(library: Library, transport: any Transport, settings: RefreshSettings, now: @escaping @Sendable () -> Date) {
         self.library = library
-        self.preferences = preferences
+        self.settings = settings
         self.now = now
         engine = Refresher(library: library, transport: transport)
-        interval = preferences.refreshInterval
-        retention = preferences.retention
         engine.onCollectionEnded = { [weak self] _ in
             Task { await self?.reloadLists() }
         }

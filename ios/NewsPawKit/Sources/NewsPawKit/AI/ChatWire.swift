@@ -194,7 +194,7 @@ enum ChatWire {
     /// whose first element is one: the service's own error, as opposed to a
     /// web server's page for an address that does not exist.
     static func hasErrorMember(_ body: Data) -> Bool {
-        guard let value = try? JSONSerialization.jsonObject(with: body) else { return false }
+        guard let value = json(body) else { return false }
         if let object = value as? [String: Any] {
             return object["error"] != nil
         }
@@ -204,9 +204,21 @@ enum ChatWire {
         return false
     }
 
+    /// The JSON value of `data`, or `nil` when it is not JSON or is past the
+    /// limits collection applies to a JSON feed before the system parser
+    /// sees it (`JSONFeedReader.exceedsLimits`): that parser recurses once
+    /// per level of nesting, and a few hundred levels — under 3 KB — end
+    /// the process on a concurrency thread's stack. A service's answer and,
+    /// through an article's text, a model's reply are untrusted, so every
+    /// answer and every reply's content is read through here.
+    static func json(_ data: Data) -> Any? {
+        guard !JSONFeedReader.exceedsLimits(data) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data)
+    }
+
     /// A chat completion with a message, or `nil` when the body is not one.
     static func decodeCompletion(_ body: Data) -> Completion? {
-        guard let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
+        guard let object = json(body) as? [String: Any],
               let choices = object["choices"] as? [Any],
               let choice = choices.first as? [String: Any],
               let message = choice["message"] as? [String: Any]
@@ -262,7 +274,7 @@ enum ChatWire {
             guard trimmed.hasSuffix("```") else { return nil }
             text = String(trimmed.dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        guard let value = try? JSONSerialization.jsonObject(with: Data(text.utf8)) else { return nil }
+        guard let value = json(Data(text.utf8)) else { return nil }
         if let object = value as? [String: Any] {
             return strings(object["texts"])
         }
@@ -283,7 +295,7 @@ enum ChatWire {
     /// …}]}`), sorted, without repeats, at most `maximumListLength`; `nil`
     /// when the body is not such a list.
     static func decodeModelList(_ body: Data) -> [String]? {
-        guard let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
+        guard let object = json(body) as? [String: Any],
               let data = object["data"] as? [Any]
         else { return nil }
         var identifiers = Set<String>()

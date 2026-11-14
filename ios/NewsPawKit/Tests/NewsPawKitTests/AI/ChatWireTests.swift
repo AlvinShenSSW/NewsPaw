@@ -89,6 +89,25 @@ struct ChatWireTests {
         #expect(read(content) == .failure(.malformed))
     }
 
+    @Test("nesting deep enough to end the process in the system parser is refused before it", arguments: ["[", "{\"a\":"])
+    func deepNesting(opener: String) async {
+        // About 480 levels overflow a concurrency thread's stack (RD04).
+        let nested = String(repeating: opener, count: 2_000)
+        let content = Data(nested.utf8)
+        // Run where the app runs it: on a concurrency thread.
+        await Task.detached {
+            #expect(ChatWire.json(content) == nil)
+            #expect(ChatWire.texts(in: nested) == nil)
+            #expect(ChatWire.interpret(ChatWire.Completion(content: nested, finishReason: "stop")) == .failure(.malformed))
+            let answer = ModelHTTPResponse(status: 200, headers: [:], body: content)
+            #expect(ChatWire.classifyChat(answer) == .failure(.unreachable))
+            #expect(ChatWire.classifyList(answer) == .failure(.unreachable))
+            #expect(ChatWire.failure(status: 404, body: content) == .unreachable)
+            // The limit leaves room for a real answer.
+            #expect(ChatWire.texts(in: #"{"texts": ["a", "b"]}"#) == ["a", "b"])
+        }.value
+    }
+
     @Test("missing content is malformed")
     func missingContent() {
         #expect(read(nil) == .failure(.malformed))

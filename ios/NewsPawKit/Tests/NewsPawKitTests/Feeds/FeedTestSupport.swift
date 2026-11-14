@@ -289,6 +289,8 @@ final class LoopbackServer: @unchecked Sendable {
         /// Header fields with lowercased names; repeated fields joined.
         var headers: [String: String]
         var head: String
+        /// The body, read up to its announced `Content-Length`.
+        var body = Data()
     }
 
     struct Reply: Sendable {
@@ -369,7 +371,15 @@ final class LoopbackServer: @unchecked Sendable {
             }
             if let end = buffer.range(of: Data("\r\n\r\n".utf8)) {
                 let head = String(decoding: buffer[..<end.lowerBound], as: UTF8.self)
-                self.answer(head, on: connection)
+                // A request with a body is answered once its announced
+                // length has arrived.
+                let length = Self.contentLength(head)
+                let received = buffer.count - end.upperBound
+                if received < length, !isComplete, error == nil {
+                    self.receive(on: connection, buffer: buffer)
+                    return
+                }
+                self.answer(head, body: Data(buffer[end.upperBound...].prefix(length)), on: connection)
             } else if isComplete || error != nil || buffer.count > 65_536 {
                 connection.cancel()
             } else {
@@ -378,7 +388,17 @@ final class LoopbackServer: @unchecked Sendable {
         }
     }
 
-    private func answer(_ head: String, on connection: NWConnection) {
+    private static func contentLength(_ head: String) -> Int {
+        for line in head.components(separatedBy: "\r\n").dropFirst() {
+            let parts = line.split(separator: ":", maxSplits: 1)
+            if parts.count == 2, parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "content-length" {
+                return Int(parts[1].trimmingCharacters(in: .whitespaces)) ?? 0
+            }
+        }
+        return 0
+    }
+
+    private func answer(_ head: String, body: Data, on connection: NWConnection) {
         let lines = head.components(separatedBy: "\r\n")
         let requestLine = lines.first?.split(separator: " ").map(String.init) ?? []
         var headers: [String: String] = [:]
@@ -389,7 +409,7 @@ final class LoopbackServer: @unchecked Sendable {
             headers[name] = headers[name].map { "\($0), \(value)" } ?? value
         }
         let request = Request(
-            method: requestLine.first ?? "", path: requestLine.count > 1 ? requestLine[1] : "/", headers: headers, head: head
+            method: requestLine.first ?? "", path: requestLine.count > 1 ? requestLine[1] : "/", headers: headers, head: head, body: body
         )
         log.withLock { $0.append(request) }
         let reply = handler(request, base)

@@ -71,7 +71,19 @@ class ModelSettingsTestCase: NewsPawUITestCase {
             }
             swipes += 1
         }
-        return waitFor(element, file: file, line: line)
+        waitFor(element, file: file, line: line)
+        // A row that stopped under the floating tab bar, or under the top
+        // bar, counts as hittable, but a tap at its centre goes to the bar:
+        // drag the form until the row's centre is between the bars.
+        let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : window.minY
+        let bottom = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : window.maxY
+        let centre = element.frame.midY
+        if centre > bottom - 8 || centre < top + 8 {
+            let distance = centre > bottom - 8 ? bottom - centre - 80 : top - centre + 80
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: distance)), withVelocity: .slow, thenHoldForDuration: 0.3)
+        }
+        return element
     }
 
     /// Opens the form of the primary or the backup model.
@@ -197,8 +209,8 @@ class ModelSettingsTestCase: NewsPawUITestCase {
         waitForAbsence(region, file: file, line: line)
     }
 
-    /// A button of a confirmation dialog by its label, not one of the
-    /// form's own buttons.
+    /// A button of a question (the discard popover, a removal alert) by
+    /// its label, not one of the form's own buttons.
     func dialogButton(_ label: String) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label == %@ AND NOT (identifier BEGINSWITH 'slot.') AND NOT (identifier BEGINSWITH 'editor.')", label)).firstMatch
     }

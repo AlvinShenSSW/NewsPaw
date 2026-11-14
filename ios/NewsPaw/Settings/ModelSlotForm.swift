@@ -208,7 +208,10 @@ struct ModelSlotForm: View {
                 }
                 .disabled(models.isBusy)
                 .accessibilityIdentifier(AccessibilityID.removeKeyButton)
-                .confirmationDialog("Remove the key?", isPresented: $models.isConfirmingKeyRemoval, titleVisibility: .visible) {
+                // An alert, like the Mark All as Read question: as a popover
+                // on its row the question was a narrow column at the largest
+                // text sizes, its words broken and its message cut.
+                .alert("Remove the key?", isPresented: $models.isConfirmingKeyRemoval) {
                     Button("Remove Key", role: .destructive) {
                         models.removeKey()
                     }
@@ -320,7 +323,7 @@ struct ModelSlotForm: View {
             }
             .disabled(blocked || models.isBusy)
             .accessibilityIdentifier(AccessibilityID.removeModelButton)
-            .confirmationDialog("Remove this model?", isPresented: $models.isConfirmingSlotRemoval, titleVisibility: .visible) {
+            .alert("Remove this model?", isPresented: $models.isConfirmingSlotRemoval) {
                 Button("Remove Model", role: .destructive) {
                     models.removeSlot()
                 }

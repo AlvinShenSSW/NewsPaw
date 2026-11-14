@@ -200,6 +200,10 @@ final class ModelSettingsTests: ModelSettingsTestCase {
         openForm()
         XCTAssertEqual(reveal(element(AccessibilityID.storedKey)).label, "Key ending in 7q6w")
 
+        // Remove asks first; Cancel keeps the key.
+        reveal(button(AccessibilityID.removeKeyButton)).tap()
+        waitFor(app.alerts.buttons["Cancel"]).tap()
+        XCTAssertEqual(reveal(element(AccessibilityID.storedKey)).label, "Key ending in 7q6w")
         // Remove the key: the model stays, at "Key needed".
         reveal(button(AccessibilityID.removeKeyButton)).tap()
         waitFor(dialogButton("Remove Key")).tap()

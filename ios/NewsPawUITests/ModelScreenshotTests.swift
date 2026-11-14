@@ -102,22 +102,23 @@ final class ModelScreenshotTests: ModelSettingsTestCase {
         typeKey("clé")
         reveal(element(AccessibilityID.keyProblem))
         capture("key-problem")
-        // The questions: discarding the changes, removing a model. Each is
-        // a popover with one button.
-        let confirm = app.popovers.buttons.firstMatch
+        // The questions: discarding the changes (a popover with one
+        // button) and removing a model (an alert).
+        let discard = app.popovers.buttons.firstMatch
         button(AccessibilityID.cancelButton).tap()
-        waitFor(confirm)
+        waitFor(discard)
         capture("discard-question")
-        confirm.tap()
+        discard.tap()
         waitFor(element(AccessibilityID.primaryModelRow))
+        let remove = app.alerts.buttons[variant == "zh" ? "移除模型" : "Remove Model"]
         for backup in [true, false] {
             openForm(backup: backup)
             reveal(button(AccessibilityID.removeModelButton)).tap()
-            waitFor(confirm)
+            waitFor(remove)
             if backup {
                 capture("remove-question")
             }
-            confirm.tap()
+            remove.tap()
             waitForAbsence(button(AccessibilityID.saveButton))
             waitFor(element(AccessibilityID.primaryModelRow))
         }

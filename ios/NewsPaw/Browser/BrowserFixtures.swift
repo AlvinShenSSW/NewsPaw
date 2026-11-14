@@ -267,9 +267,11 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         <p><a href="/hosts">Host links</a></p>
         <p><a href="#" onclick="window.open(''); return false;">Empty window link</a></p>
         <p><a href="/video.mp4">Video link</a></p>
+        <p><a id="blob" href="#" download="hello.txt">Blob download link</a></p>
         <p><a href="/dark">Dark page</a></p>
         <p><a href="/form-end">Form at the end</a></p>
         <p><a href="/hidden-asker">Hidden asker</a></p>
+        <script>document.getElementById('blob').href = URL.createObjectURL(new Blob(['hello'], { type: 'text/plain' }));</script>
         """)
 
     /// Posts to a fixed list of message-handler names; the title says

@@ -28,8 +28,8 @@ struct BrowserQuestion: Identifiable {
     }
 }
 
-/// A file the browser refused (decision 5): its address, which Open in
-/// Safari opens.
+/// A file the browser refused (decision 5): its address when Safari can
+/// open it, which Open in Safari then does.
 struct BrowserFileNotice: Identifiable {
     let url: URL?
     let id = UUID()
@@ -169,10 +169,12 @@ final class BrowserModel {
         question = BrowserQuestion(url: url)
     }
 
-    /// A file, an attachment or a download link: says so.
+    /// A file, an attachment or a download link: says so. Open in Safari is
+    /// offered only for an `http` or `https` address: Safari opens nothing
+    /// for a `blob:` or `data:` address, which belongs to the page.
     func refuseFile(_ url: URL?, from session: BrowserSession) {
         guard mayRaise(from: session) else { return }
-        fileNotice = BrowserFileNotice(url: url)
+        fileNotice = BrowserFileNotice(url: BrowserPolicy.SchemeClass(url) == .web ? url : nil)
     }
 
     /// "Open": hands the link to the system; says so when no app opens it.

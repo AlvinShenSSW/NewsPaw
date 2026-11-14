@@ -270,10 +270,11 @@ final class BrowserTests: BrowserTestCase {
         waitForPage("Every post threw")
     }
 
-    /// `window.open('')` has nothing to load and asks nothing. A direct
-    /// link to a video file, which WebKit plays in a document of its own,
-    /// is not a failure.
-    func testEmptyWindowAndMediaFile() {
+    /// `window.open('')` has nothing to load and asks nothing. A file link
+    /// whose address Safari cannot open (a `blob:` address) shows the file
+    /// notice without Open in Safari. A direct link to a video file, which
+    /// WebKit plays in a document of its own, is not a failure.
+    func testEmptyWindowBlobFileAndMediaFile() {
         launchAtFullWidth()
         createCategory("World")
         addWebPageSource(to: "World")
@@ -282,6 +283,14 @@ final class BrowserTests: BrowserTestCase {
         tapLink("Empty window link")
         XCTAssertFalse(app.alerts.firstMatch.waitForExistence(timeout: 4), "window.open('') raised \(app.alerts.firstMatch.label)")
         XCTAssertTrue(barText(Page.home).exists, "the page stays: \(barTexts())")
+        waitForEnabled(backButton, false)
+
+        tapLink("Blob download link")
+        let notice = waitFor(alert(Wording.fileNotice))
+        XCTAssertTrue(notice.buttons["OK"].exists)
+        XCTAssertFalse(notice.buttons["Open in Safari"].exists, "Safari cannot open a blob: address")
+        answer(Wording.fileNotice, "OK")
+        waitForPage(Page.home)
         waitForEnabled(backButton, false)
 
         tapLink("Video link")

@@ -96,6 +96,100 @@ struct FixtureTransportTests {
         #expect(none.title == "Plain Page" && none.candidates.isEmpty)
     }
 
+    @Test("the reading feed's bodies convert as the UI tests expect: every block kind, an excerpt, a hostile body, cut bodies, pictures, an empty body")
+    func readingFeed() async throws {
+        let transport = FixtureTransport()
+        guard case .feed(let fetched) = try await fetch(transport, FixtureTransport.Address.reading) else {
+            Issue.record("not a feed")
+            return
+        }
+        let items = fetched.feed.items
+        #expect(items.map(\.title) == [
+            "Every block", "Short note", "Hostile story", "Cut story", "Cut linkless story", "Picture story",
+            "Hundred pictures", "Empty body", "Line heights",
+        ])
+        func body(_ title: String) throws -> ArticleBlocks {
+            let item = try #require(items.first { $0.title == title })
+            return ArticleBlocks.make(html: item.contentHTML ?? "", baseURL: item.url.flatMap(URL.init(string:)))
+        }
+        func kinds(_ blocks: [ArticleBlock]) -> Set<String> {
+            Set(blocks.map { block in
+                switch block.kind {
+                case .paragraph: "paragraph"
+                case .heading: "heading"
+                case .image: "image"
+                case .code: "code"
+                case .rule: "rule"
+                }
+            })
+        }
+
+        let every = try body("Every block")
+        #expect(kinds(every.blocks) == ["paragraph", "heading", "image", "code", "rule"])
+        #expect(ArticleBlocks.isFullText(every.blocks))
+        #expect(!every.isCut)
+        #expect(every.blocks.contains { $0.quoteDepth == 2 })
+        #expect(every.blocks.contains { $0.listDepth == 2 && $0.marker == .bullet })
+        #expect(every.blocks.contains { $0.marker == .number(3) })
+        #expect(every.blocks.contains { $0.isCaption })
+        let links = every.blocks.flatMap { block -> [URL] in
+            if case .paragraph(let runs) = block.kind { runs.compactMap(\.link) } else { [] }
+        }
+        #expect(links.map(\.absoluteString) == ["https://example.invalid/articles/linked-page"])
+        #expect(every.blocks.contains { ArticleBlocks.containsKana($0.plainText ?? "") })
+
+        let short = try body("Short note")
+        #expect(short.blocks.count == 1)
+        #expect(!ArticleBlocks.isFullText(short.blocks))
+
+        let hostile = try body("Hostile story")
+        let text = hostile.blocks.compactMap(\.plainText).joined(separator: "|")
+        #expect(text == "Before the links.|A script link and a data link and a safe link.|After the links.")
+        let images = hostile.blocks.compactMap { block -> ArticleImage? in
+            if case .image(let image) = block.kind { image } else { nil }
+        }
+        #expect(images.map(\.url.absoluteString) == [FixtureTransport.Address.readingImages + "photo.png"])
+
+        for title in ["Cut story", "Cut linkless story"] {
+            let cut = try body(title)
+            #expect(cut.isCut, "\(title)")
+            #expect(cut.blocks.count == ArticleBlocks.maximumBlocks)
+            #expect(ArticleBlocks.isFullText(cut.blocks))
+        }
+        #expect(try #require(items.first { $0.title == "Cut linkless story" }).url == nil)
+
+        let pictures = try body("Picture story")
+        #expect(pictures.blocks.filter { if case .image = $0.kind { true } else { false } }.count == 6)
+        #expect(try body("Hundred pictures").blocks.filter { if case .image = $0.kind { true } else { false } }.count == 100)
+
+        let empty = try #require(items.first { $0.title == "Empty body" })
+        #expect(try body("Empty body").blocks.isEmpty)
+        #expect(empty.excerpt == "Only the feed's summary is left of this one.")
+
+        #expect(try body("Line heights").blocks.count == 6)
+    }
+
+    @Test("the reading feed's images: sizes as named, one that fails once per transport, one that is no image, the rest unreachable")
+    func readingImages() async throws {
+        let transport = FixtureTransport()
+        func image(_ name: String) async throws -> TransportResponse {
+            try await transport.fetch(TransportRequest(url: try #require(URL(string: FixtureTransport.Address.readingImages + name))))
+        }
+        func size(_ data: Data) -> [Int] {
+            BodyImageLoader.pixelSize(of: data).map { [$0.width, $0.height] } ?? []
+        }
+        #expect(size(try await image("photo.png").body) == [600, 400])
+        #expect(size(try await image("small.png").body) == [60, 40])
+        #expect(size(try await image("pixel.png").body) == [1, 1])
+        #expect(size(try await image("big/7.png").body) == [2_400, 1_600])
+        #expect(ThumbnailLoader.reduced(try await image("vector.svg").body) == nil)
+        await #expect(throws: TransportFailure.unreachable) { try await image("flaky.png") }
+        #expect(size(try await image("flaky.png").body) == [600, 400])
+        #expect(size(try await image("flaky.png").body) == [600, 400])
+        await #expect(throws: TransportFailure.unreachable) { try await image("missing.png") }
+        await #expect(throws: TransportFailure.unreachable) { try await image("tracker.png") }
+    }
+
     @Test("the sequenced address answers a feed, then fails, then answers again")
     func sequence() async throws {
         let transport = FixtureTransport()

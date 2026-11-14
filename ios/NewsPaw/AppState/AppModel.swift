@@ -31,6 +31,8 @@ final class AppModel {
 
     private(set) var status = Status.loading
     let navigation = NavigationModel()
+    /// The model slots of the normal library; set before `status` is ready.
+    private(set) var modelSettings: ModelSettingsModel?
     /// The app's one store; it gives out one library per partition.
     private var store: LibraryStore?
     /// Whether the scene has been in the background since it was last
@@ -58,6 +60,12 @@ final class AppModel {
         // UI-test library directory.
         let offset = options.libraryDirectory != nil ? options.clockOffset : 0
         let now: @Sendable () -> Date = { Date().addingTimeInterval(offset) }
+        // Under a UI-test library directory: keys under a keychain service
+        // named after the directory, never the owner's, and the model
+        // fixture, which reaches no real service.
+        let keyStore = options.libraryDirectory.map { KeychainKeyStore(partition: .normal, uiTestSuffix: $0.lastPathComponent) }
+            ?? KeychainKeyStore(partition: .normal)
+        let modelHTTP: any ModelHTTP = options.libraryDirectory != nil ? FixtureModelHTTP() : URLSessionModelHTTP()
         #else
         let directory = LibraryStore.defaultDirectory()
         let transport: any Transport = URLSessionTransport()
@@ -65,6 +73,8 @@ final class AppModel {
         let cacheRoot = LibraryStore.defaultCacheRoot()
         let defaults = UserDefaults.standard
         let now: @Sendable () -> Date = { Date() }
+        let keyStore = KeychainKeyStore(partition: .normal)
+        let modelHTTP: any ModelHTTP = URLSessionModelHTTP()
         #endif
         do {
             let store = LibraryStore(directory: directory, cacheRoot: cacheRoot, now: now)
@@ -85,6 +95,11 @@ final class AppModel {
             refresh.onStorageError = { [weak sources] in sources?.isShowingSaveError = true }
             refresh.onRunEnded = { [weak reading] in reading?.runEnded() }
             navigation.onListEntered = { [weak reading] list in reading?.entered(list) }
+            let modelSettings = ModelSettingsModel(
+                models: LibraryModels(library: library, keys: keyStore, http: modelHTTP), navigation: navigation
+            )
+            navigation.onSettingsPathChanged = { [weak modelSettings] path in modelSettings?.settingsPathChanged(path) }
+            self.modelSettings = modelSettings
             #if DEBUG
             if let count = options.syntheticSources {
                 try await library.insertSyntheticSourcesForUITests(count: count)
@@ -95,6 +110,7 @@ final class AppModel {
             #endif
             await categories.reload()
             await refresh.load()
+            await modelSettings.reload()
             status = .ready(categories, sources, refresh, reading)
             // The launch is the first entry (RD06 decision 3).
             Task { await refresh.entered() }

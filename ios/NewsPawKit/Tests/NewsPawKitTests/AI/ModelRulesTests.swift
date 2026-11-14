@@ -166,10 +166,13 @@ struct ModelRulesTests {
 
     // MARK: - Criterion 5: the flag's only `true` is inside `#if DEBUG`
 
-    @Test("the loopback flag's only true is inside #if DEBUG, and no source passes true for it")
+    @Test("the loopback flag's only true is inside #if DEBUG, and no source of the package or the app passes true for it")
     func loopbackFlagOnlyInDebug() throws {
-        let files = swiftSources(in: packageSourcesDirectory)
-        #expect(files.count > 20, "found \(files.count) package sources")
+        let packageFiles = swiftSources(in: packageSourcesDirectory)
+        #expect(packageFiles.count > 20, "found \(packageFiles.count) package sources")
+        let appFiles = swiftSources(in: appSourcesDirectory)
+        #expect(appFiles.contains { $0.lastPathComponent == "ModelSettingsModel.swift" }, "found \(appFiles.count) app sources")
+        let files = packageFiles + appFiles
         var definitions: [String] = []
         var literalTrue: [String] = []
         for file in files {

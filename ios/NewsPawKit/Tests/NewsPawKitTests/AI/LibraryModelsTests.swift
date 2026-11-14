@@ -337,11 +337,23 @@ struct LibraryModelsTests {
     @Test("a key store of another partition is refused")
     func otherPartitionRefused() async throws {
         // `precondition` cannot be caught in-process; the exit test runs it
-        // in a child process.
+        // in a child process. An error thrown there would end the child
+        // with a failure too, so the set-up's errors end it with success:
+        // only the precondition makes this pass.
         await #expect(processExitsWith: .failure) {
-            let directory = try makeTemporaryDirectory()
-            let library = try await LibraryStore(directory: directory, cacheRoot: directory).openNormal()
+            guard let directory = try? makeTemporaryDirectory(),
+                  let library = try? await LibraryStore(directory: directory, cacheRoot: directory).openNormal()
+            else { exit(EXIT_SUCCESS) }
             _ = LibraryModels(library: library, keys: InMemoryKeyStore(partition: .adult), http: StubModelHTTP.answering(500))
+            try? FileManager.default.removeItem(at: directory)
+        }
+        // The same set-up with the library's own partition ends normally.
+        await #expect(processExitsWith: .success) {
+            guard let directory = try? makeTemporaryDirectory(),
+                  let library = try? await LibraryStore(directory: directory, cacheRoot: directory).openNormal()
+            else { exit(EXIT_FAILURE) }
+            _ = LibraryModels(library: library, keys: InMemoryKeyStore(partition: .normal), http: StubModelHTTP.answering(500))
+            try? FileManager.default.removeItem(at: directory)
         }
     }
 

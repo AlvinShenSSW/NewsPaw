@@ -22,6 +22,16 @@ struct ModelHTTPLoopbackTests {
         LoopbackServer.Reply(headers: ["Content-Type: application/json"], body: completionBody(#"{"texts":["Hallo"]}"#))
     }
 
+    @Test("the session has no cookie, credential or cache storage, and a TLS 1.2 floor")
+    func sessionConfiguration() {
+        let configuration = URLSessionModelHTTP.configuration()
+        #expect(configuration.tlsMinimumSupportedProtocolVersion == .TLSv12)
+        #expect(configuration.httpCookieStorage == nil)
+        #expect(configuration.httpShouldSetCookies == false)
+        #expect(configuration.urlCredentialStorage == nil)
+        #expect(configuration.urlCache == nil)
+    }
+
     @Test("criterion 10: the chat request on the wire has one Authorization header, the JSON headers, the body and no cookie")
     func headersOnTheWire() async throws {
         let server = try LoopbackServer { _, _ in Self.completion() }

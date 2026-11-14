@@ -37,6 +37,12 @@ public final class URLSessionModelHTTP: ModelHTTP {
     init(maximumBytes: Int, maximumErrorBytes: Int) {
         self.maximumBytes = maximumBytes
         self.maximumErrorBytes = maximumErrorBytes
+        session = URLSession(configuration: Self.configuration())
+    }
+
+    /// The session's configuration: ephemeral, with no cookies, no
+    /// credential storage and no cache, and TLS 1.2 at least.
+    static func configuration() -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
@@ -45,7 +51,7 @@ public final class URLSessionModelHTTP: ModelHTTP {
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.tlsMinimumSupportedProtocolVersion = .TLSv12
-        session = URLSession(configuration: configuration)
+        return configuration
     }
 
     deinit {

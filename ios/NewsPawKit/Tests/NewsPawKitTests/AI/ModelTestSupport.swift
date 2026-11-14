@@ -150,6 +150,15 @@ var packageSourcesDirectory: URL {
         .appending(path: "Sources/NewsPawKit")
 }
 
+/// `ios/NewsPaw` in the repository: the app's sources.
+var appSourcesDirectory: URL {
+    packageSourcesDirectory
+        .deletingLastPathComponent() // Sources
+        .deletingLastPathComponent() // NewsPawKit
+        .deletingLastPathComponent() // ios
+        .appending(path: "NewsPaw")
+}
+
 func swiftSources(in directory: URL) -> [URL] {
     let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil)
     return (enumerator?.allObjects as? [URL] ?? []).filter { $0.pathExtension == "swift" }.sorted { $0.path < $1.path }

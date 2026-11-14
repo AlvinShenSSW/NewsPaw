@@ -68,6 +68,9 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
     private var stopped = Set<ObjectIdentifier>()
     private var loads = 0
     private var flakyFailed = false
+    /// The addresses under `/posted-once-` that have failed their first
+    /// request.
+    private var failedOnce = Set<String>()
 
     func webView(_ webView: WKWebView, start task: any WKURLSchemeTask) {
         guard let url = task.request.url else {
@@ -162,9 +165,25 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
                 <p><label for="note">Note</label> <input id="note" type="text" name="note" value="paw 42"></p>
                 <p><button type="submit">Post to a new window</button></p>
                 </form>
+                <form method="post" action="/posted-once-window" target="_blank">
+                <input type="hidden" name="note" value="paw 43">
+                <p><button type="submit">Fail once in a new window</button></p>
+                </form>
+                <form method="post" action="/posted-once-here">
+                <input type="hidden" name="note" value="paw 44">
+                <p><button type="submit">Fail once in this window</button></p>
+                </form>
                 """))
         case ("nofeed.example.invalid", "/posted"):
             send(task, html: Self.posted(task.request))
+        case ("nofeed.example.invalid", let path) where path.hasPrefix("/posted-once-"):
+            // Fails its first request, whatever it asks, and answers the
+            // ones after it.
+            if failedOnce.insert(path).inserted {
+                fail(task)
+            } else {
+                send(task, html: Self.posted(task.request))
+            }
         case ("nofeed.example.invalid", "/handlers"):
             send(task, html: Self.handlers)
         case ("example.invalid", let path) where path.hasPrefix("/articles/"):

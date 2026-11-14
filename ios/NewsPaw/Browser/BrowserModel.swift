@@ -50,6 +50,9 @@ struct BrowserFailure: Equatable {
     let url: URL?
     /// The system's reason, in one line.
     let reason: String
+    /// The request that failed, when it was a form post: Try Again sends it
+    /// again as it was. Nothing for a GET, which is loaded by its address.
+    let request: URLRequest?
 }
 
 /// The embedded browser of the app (spec N12; RD10): the live session of the
@@ -238,6 +241,12 @@ final class BrowserSession: NSObject {
     /// still the one tapped on. A same-document change cannot change the
     /// host, so the address at the commit is enough.
     @ObservationIgnored private var committedURL: URL?
+    /// The request of the main-frame navigation asked for or in progress,
+    /// when it is a form post (any method but GET); nothing for a GET. It
+    /// goes into the failure if that navigation fails, and is dropped when
+    /// its page commits or another main-frame navigation is let through, so
+    /// that a later failure never sends an older form again.
+    @ObservationIgnored private var formRequest: URLRequest?
 
     init(route: LibraryRoute, sourceID: UUID?, model: BrowserModel, configuration: WKWebViewConfiguration) {
         self.route = route
@@ -348,23 +357,30 @@ final class BrowserSession: NSObject {
     // MARK: - Actions
 
     /// Loads `url` in the page. `navigation` is the request of a navigation
-    /// the policy cancelled to load it here. A form a page posts to a new
-    /// window (`method="post"` with `target="_blank"`) is sent as the page
-    /// sent it, with its method, its body and its headers, and never as a
-    /// GET of the same address, which would ask the site for something else
-    /// (measured: the policy is handed the body and its content type, and
-    /// WebKit sends on the request it is given). Any other request is loaded
-    /// by its address alone.
+    /// the policy cancelled to load it here, or of one that failed and is
+    /// tried again. A form post (`method="post"` with `target="_blank"`, or
+    /// a form post that failed) is sent as the page sent it, with its
+    /// method, its body and its headers, and never as a GET of the same
+    /// address, which would ask the site for something else (measured: the
+    /// policy is handed the body and its content type, and WebKit sends on
+    /// the request it is given). Any other request is loaded by its address
+    /// alone.
     func load(_ url: URL, sending navigation: URLRequest? = nil) {
         failure = nil
         starting = .browser
         loadingURL = url
         var request = URLRequest(url: map.toWebKit(url))
-        if var navigation, let method = navigation.httpMethod, method.uppercased() != "GET" {
+        if var navigation, Self.isFormPost(navigation) {
             navigation.url = request.url
             request = navigation
         }
         webView.load(request)
+    }
+
+    /// Whether `request` asks for more than a page by its address: any
+    /// method but GET.
+    private static func isFormPost(_ request: URLRequest) -> Bool {
+        (request.httpMethod ?? "GET").uppercased() != "GET"
     }
 
     /// Back: from the failure state, the page behind it; else the page
@@ -395,10 +411,12 @@ final class BrowserSession: NSObject {
         }
     }
 
-    /// "Try Again": loads the failed address.
+    /// "Try Again": loads the failed address; a form post that failed is
+    /// sent again as it was. The owner has just asked for it, so nothing is
+    /// asked first.
     func tryAgain() {
         guard let url = failure?.url ?? shownURL else { return }
-        load(url)
+        load(url, sending: failure?.request)
     }
 
     // MARK: - Policy
@@ -432,6 +450,7 @@ final class BrowserSession: NSObject {
             if target == .main {
                 starting = starting ?? .page
                 loadingURL = url
+                formRequest = Self.isFormPost(request) ? request : nil
             }
             return true
         case .loadInPlace:
@@ -471,7 +490,11 @@ final class BrowserSession: NSObject {
         let replaced = ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
         guard !refused, !handled, !replaced else { return }
         let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL).map(map.toShown)
-        failure = BrowserFailure(kind: .load, url: failing ?? started?.url ?? shownURL, reason: ns.localizedDescription)
+        // A form post that failed goes with its failure, for Try Again.
+        failure = BrowserFailure(
+            kind: .load, url: failing ?? started?.url ?? shownURL, reason: ns.localizedDescription, request: formRequest
+        )
+        formRequest = nil
     }
 }
 
@@ -525,6 +548,9 @@ extension BrowserSession: WKNavigationDelegate {
             pageURL = url
             loadingURL = nil
             starting = nil
+            // The page is shown: its request is not kept. (In the branch
+            // above the kept request is the newer navigation's.)
+            formRequest = nil
         }
     }
 
@@ -541,7 +567,8 @@ extension BrowserSession: WKNavigationDelegate {
         provisional = nil
         starting = nil
         loadingURL = nil
-        failure = BrowserFailure(kind: .processEnded, url: url, reason: String(localized: "The page stopped working."))
+        formRequest = nil
+        failure = BrowserFailure(kind: .processEnded, url: url, reason: String(localized: "The page stopped working."), request: nil)
     }
 }
 

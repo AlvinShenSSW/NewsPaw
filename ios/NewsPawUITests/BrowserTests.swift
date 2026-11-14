@@ -200,16 +200,57 @@ final class BrowserTests: BrowserTestCase {
         waitForPage("Post Form")
 
         waitFor(app.webViews.buttons["Post to a new window"]).tap()
-        let answered = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
-            self.barTexts().contains { $0.hasPrefix("POST: ") || $0.hasPrefix("GET: ") }
-        }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [answered], timeout: timeout), .completed, "the form's page was not shown: \(barTexts())")
-        XCTAssertTrue(barText("POST: note=paw+42").exists, "the form was not sent as the page sent it: \(barTexts())")
-        XCTAssertTrue(app.webViews.staticTexts["Content type: application/x-www-form-urlencoded"].exists, "the form's content type was not sent")
+        waitForPosted("note=paw+42", "the form")
         waitFor(barText(Page.host))
         waitForEnabled(backButton, true)
         backButton.tap()
         waitForPage("Post Form")
+    }
+
+    /// A form post that fails shows the failure state, and Try Again, like
+    /// Reload in that state, sends the same request again, with its method,
+    /// its body and its content type, not a GET of the address: for a form
+    /// posted to a new window, which the browser loads itself, and for one
+    /// posted in the same window, which WebKit follows. Each address fails
+    /// its first request and answers the next.
+    func testTryAgainSendsAFailedFormPostAgain() {
+        launchAtFullWidth()
+        createCategory("World")
+        addWebPageSource(to: "World")
+        openWebPageSource(in: "World")
+        tapLink("Post form")
+        waitForPage("Post Form")
+        let failure = element(AccessibilityID.browserFailure)
+
+        waitFor(app.webViews.buttons["Fail once in a new window"]).tap()
+        waitFor(failure)
+        waitFor(barText(Page.host))
+        waitFor(button(AccessibilityID.browserTryAgainButton)).tap()
+        waitForPosted("note=paw+43", "Try Again after a form posted to a new window failed")
+        waitForAbsence(failure)
+        backButton.tap()
+        waitForPage("Post Form")
+
+        waitFor(app.webViews.buttons["Fail once in this window"]).tap()
+        waitFor(failure)
+        waitFor(barText(Page.host))
+        chooseInMore("Reload")
+        waitForPosted("note=paw+44", "Reload after a form posted in the same window failed")
+        waitForAbsence(failure)
+        backButton.tap()
+        waitForPage("Post Form")
+    }
+
+    /// Waits for the page a fixture form is posted to and fails unless it
+    /// was asked for by POST with `body` and the form's content type.
+    private func waitForPosted(_ body: String, _ note: String, file: StaticString = #filePath, line: UInt = #line) {
+        let answered = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            self.barTexts().contains { $0.hasPrefix("POST: ") || $0.hasPrefix("GET: ") }
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [answered], timeout: timeout), .completed, "\(note): the form's page was not shown, \(barTexts())", file: file, line: line)
+        XCTAssertTrue(barText("POST: \(body)").exists, "\(note): not sent as the page sent it, \(barTexts())", file: file, line: line)
+        XCTAssertTrue(app.webViews.staticTexts["Content type: application/x-www-form-urlencoded"].exists,
+                      "\(note): the form's content type was not sent", file: file, line: line)
     }
 
     // MARK: - Decisions 5 and 10: another host, and the host shown

@@ -39,10 +39,11 @@ public enum LibraryError: Error, Sendable, Equatable {
     case storage(String)
 
     /// Maps an error thrown while opening or using a library. A
-    /// `LibraryError` and a `CancellationError` pass through unchanged.
+    /// `LibraryError`, a `ModelSettingsError` and a `CancellationError` pass
+    /// through unchanged.
     static func wrapping(_ error: any Error) -> any Error {
         switch error {
-        case is LibraryError, is CancellationError:
+        case is LibraryError, is ModelSettingsError, is CancellationError:
             return error
         case let error as DatabaseError:
             switch error.resultCode {

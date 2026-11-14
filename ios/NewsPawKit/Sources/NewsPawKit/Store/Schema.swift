@@ -5,7 +5,8 @@ import GRDB
 /// Migrations are append-only: a migration is never edited after it has been
 /// merged, and each keeps its name for good. Adding a value to one of the
 /// closed sets stored as text (`kind`, `overview`, `auto_translate`,
-/// `body_mode`, `origin`) also ships with a migration, even an empty one, so
+/// `body_mode`, `origin`, and from `v5` `role`, `preset`, `test_outcome`,
+/// `purpose`, `outcome`) also ships with a migration, even an empty one, so
 /// that an older build refuses the database as newer.
 enum Schema {
     /// The migrator the app opens libraries with.
@@ -15,6 +16,7 @@ enum Schema {
         registerV2(in: &migrator)
         registerV3(in: &migrator)
         registerV4(in: &migrator)
+        registerV5(in: &migrator)
         return migrator
     }
 
@@ -117,6 +119,38 @@ enum Schema {
         migrator.registerMigration("v4") { db in
             try db.execute(sql: """
                 CREATE INDEX article_order ON article(COALESCE(published_at, first_seen_at), first_seen_at);
+                """)
+        }
+    }
+
+    /// `v5`: the model slots and the usage records (spec section 4; RD13
+    /// decision 1). `role` is the slot table's primary key, so a library
+    /// holds at most one primary and one backup. `key_ref` names the
+    /// keychain item of the slot's key and may be null; the key itself is
+    /// never stored here. `test_outcome` is the last Test result kept with
+    /// the slot (null: not tested). `usage` is read by time (RD17).
+    static func registerV5(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v5") { db in
+            try db.execute(sql: """
+                CREATE TABLE model_slot (
+                    role TEXT NOT NULL PRIMARY KEY,
+                    preset TEXT NOT NULL,
+                    base_url TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    key_ref TEXT,
+                    test_outcome TEXT,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE usage (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    model TEXT NOT NULL,
+                    purpose TEXT NOT NULL,
+                    input_tokens INTEGER,
+                    output_tokens INTEGER,
+                    outcome TEXT NOT NULL,
+                    at TEXT NOT NULL
+                );
+                CREATE INDEX usage_at ON usage(at);
                 """)
         }
     }

@@ -86,13 +86,55 @@ struct ArticleBlocksLimitsTests {
         // Characters as the reader sees them: a flag is one, of two scalars
         // and eight bytes, and is not cut in two.
         let flags = ArticleBlocks.make(html: String(repeating: "🇯🇵", count: 20_001), baseURL: base).blocks
-        #expect(texts(flags).map(\.count) == [20_000, 1])
+        #expect(texts(flags).map(\.count) == [10_000, 10_000, 1], "the byte bound comes first: 8 bytes a flag")
+        let hands = ArticleBlocks.make(html: String(repeating: "👍", count: 20_001), baseURL: base).blocks
+        #expect(texts(hands).map(\.count) == [20_000, 1])
 
         // A heading too.
         let heading = ArticleBlocks.make(html: "<h2>" + String(repeating: "a", count: 20_001) + "</h2>", baseURL: base).blocks
         #expect(heading.map(\.kind) == [
             .heading(level: 2, [InlineRun(String(repeating: "a", count: 20_000))]), .heading(level: 2, [InlineRun("a")]),
         ])
+    }
+
+    @Test("a block holds at most 80,000 bytes of text, whatever its characters are made of")
+    func blockByteLimit() {
+        #expect(ArticleBlocks.maximumBlockBytes == 80_000)
+        // One letter under 600,000 combining marks is a single character
+        // of 1.2 MB.
+        let marked = "a" + String(repeating: "\u{301}", count: 600_000)
+        #expect(marked.count == 1)
+        let pieces = texts(ArticleBlocks.make(html: "<p>" + marked + "</p>", baseURL: base).blocks)
+        #expect(pieces.count == 16)
+        #expect(pieces.allSatisfy { $0.utf8.count <= 80_000 })
+        #expect(pieces.joined() == marked, "nothing is lost, and each piece ends where a scalar ends")
+        #expect(pieces.joined().unicodeScalars.count == 600_001)
+
+        // Across runs the bytes of a piece add up as its characters do.
+        let html = "<p>" + String(repeating: "🇯🇵", count: 9_000) + "<b>" + String(repeating: "🇯🇵", count: 9_000) + "</b></p>"
+        let split = ArticleBlocks.make(html: html, baseURL: base).blocks
+        #expect(split == [
+            ArticleBlock(.paragraph([InlineRun(String(repeating: "🇯🇵", count: 9_000)), InlineRun(String(repeating: "🇯🇵", count: 1_000), isBold: true)])),
+            ArticleBlock(.paragraph([InlineRun(String(repeating: "🇯🇵", count: 8_000), isBold: true)])),
+        ])
+
+        // The byte bound falls inside a three-byte scalar here (a character
+        // of 20,000 enclosing marks): the piece ends before that scalar.
+        let wide = String(repeating: "中", count: 19_999) + String(repeating: "\u{20DD}", count: 20_000)
+        let widePieces = texts(ArticleBlocks.make(html: "<p>" + wide + "</p>", baseURL: base).blocks)
+        #expect(widePieces.map(\.utf8.count) == [79_998, 39_999])
+        #expect(widePieces.joined() == wide)
+
+        // Code too, with and without line ends.
+        let code = texts(ArticleBlocks.make(html: "<pre>y" + String(repeating: "\u{301}", count: 100_000) + "</pre>", baseURL: base).blocks)
+        #expect(code.count == 3)
+        #expect(code.allSatisfy { $0.utf8.count <= 80_000 })
+        #expect(code.joined() == "y" + String(repeating: "\u{301}", count: 100_000))
+        let line = String(repeating: "🇯🇵", count: 100) + "\n"
+        let lines = texts(ArticleBlocks.make(html: "<pre>" + String(repeating: line, count: 150) + "</pre>", baseURL: base).blocks)
+        // 99 lines of 801 bytes fill 79,299 bytes; the 100th would pass
+        // the bound, so the cut is the line end before it.
+        #expect(lines.map(\.utf8.count) == [99 * 801 - 1, 51 * 801 - 1])
     }
 
     @Test("a code block beyond 20,000 characters continues in a further one, cut at a line's end where there is one")
@@ -235,6 +277,15 @@ struct ArticleBlocksBoundedWorkTests {
         Shape(name: "a megabyte of alternative text") {
             "<img src=\"https://img.example/a.png\" alt=\"" + String(repeating: "word ", count: 200_000) + "\">"
         },
+        Shape(name: "one letter under 600,000 combining marks") {
+            "<p>a" + String(repeating: "\u{301}", count: 600_000)
+        },
+        Shape(name: "one letter under 300,000 combining marks in a pre") {
+            "<pre>a" + String(repeating: "\u{301}", count: 300_000)
+        },
+        Shape(name: "a megabyte of marks in an emoji image's alternative text") {
+            "<p>a<img class=\"emoji\" alt=\"a" + String(repeating: "\u{301}", count: 524_288) + "\">b</p>"
+        },
     ]
 
     private static func seconds(_ duration: Duration) -> Double {
@@ -269,8 +320,9 @@ struct ArticleBlocksBoundedWorkTests {
         ))
         #expect(best < .seconds(1), "\(shape.name): \(Self.seconds(best)) s")
         #expect(result.blocks.count <= ArticleBlocks.maximumBlocks)
-        // No block holds more than its limit of characters.
-        #expect(result.blocks.allSatisfy { ($0.plainText?.utf8.count ?? 0) <= ArticleBlocks.maximumBlockCharacters * 4 })
+        // No block holds more than its limit of text.
+        #expect(result.blocks.allSatisfy { ($0.plainText?.utf8.count ?? 0) <= ArticleBlocks.maximumBlockBytes })
+        #expect(result.blocks.allSatisfy { ($0.plainText?.count ?? 0) <= ArticleBlocks.maximumBlockCharacters })
     }
 
     @Test("the time of ordinary paragraphs grows in proportion to their number")

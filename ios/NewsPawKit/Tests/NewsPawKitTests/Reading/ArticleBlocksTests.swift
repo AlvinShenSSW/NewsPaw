@@ -283,6 +283,36 @@ struct ArticleBlocksTests {
             html: "<blockquote><ul><li>a</blockquote><p>b</p>",
             expected: [p("a", quote: 1, list: 1, marker: .bullet), p("b")]
         ),
+        Case(
+            name: "center and address start a block as div does; nav does not",
+            html: "<p>a</p><center>b</center>c<address>d</address>e<nav>f</nav>g",
+            expected: [p("a"), p("b"), p("c"), p("d"), p("efg")]
+        ),
+        Case(
+            name: "an emoji image in a paragraph is its alternative text in the line",
+            html: #"<p>Good news <img draggable="false" role="img" class="emoji" alt="🙂" src="https://s.w.org/images/core/emoji/15.0.3/72x72/1f642.png"> for <b>all<img src="https://s.w.org/a.png" class="wp-smiley" alt="✅" style="height: 1em;"></b> of us</p>"#,
+            expected: [p([run("Good news 🙂 for "), run("all✅", bold: true), run(" of us")])]
+        ),
+        Case(
+            name: "an emoji image alone in a paragraph is a paragraph of its alternative text",
+            html: #"<p><img class="alignnone wp-smiley size-full" alt=" :)&amp; " src="https://blog.example/smilies/icon_smile.gif" width="15" height="15"></p><p>next</p>"#,
+            expected: [p(":)&"), p("next")]
+        ),
+        Case(
+            name: "an emoji image without alternative text is dropped and splits nothing",
+            html: #"<p>a <img class="wp-smiley" src="https://s.w.org/a.png"> b<img class="emoji" alt="" src="https://s.w.org/b.png">c</p>"#,
+            expected: [p("a bc")]
+        ),
+        Case(
+            name: "the emoji classes are whole tokens of the class attribute",
+            html: #"<p>a<img class="emojis" alt="x" src="https://i.example/a.png">b<img class="not-wp-smiley" alt="y" src="https://i.example/b.png"></p>"#,
+            expected: [p("a"), image("https://i.example/a.png", alt: "x"), p("b"), image("https://i.example/b.png", alt: "y")]
+        ),
+        Case(
+            name: "an emoji image in a cell leaves the row a line of text",
+            html: #"<table><tr><td>done <img class="emoji" alt="✅" src="https://s.w.org/a.png"></td><td>b</td></tr></table>"#,
+            expected: [p("done ✅ · b")]
+        ),
     ]
 
     @Test("blocks", arguments: cases)
@@ -294,7 +324,7 @@ struct ArticleBlocksTests {
 
     @Test("the converter's output is named by a version")
     func version() {
-        #expect(ArticleBlocks.version == 1)
+        #expect(ArticleBlocks.version == 2)
     }
 
     @Test("the same HTML gives the same blocks")
@@ -439,6 +469,42 @@ struct ArticleBlocksTests {
             return
         }
         #expect(found.alternativeText?.count == 500)
+
+        // Bounded in bytes too: one letter under thousands of marks is a
+        // single character.
+        let marked = "a" + String(repeating: "\u{301}", count: 5_000) + " tail"
+        guard case .image(let heavy)? = blocks(#"<img src="https://i.example/a.png" alt="\#(marked)">"#).first?.kind,
+              let text = heavy.alternativeText
+        else {
+            Issue.record("no image")
+            return
+        }
+        #expect(text.utf8.count <= 2_000)
+        #expect(text.utf8.count > 1_990)
+        #expect(marked.utf8.starts(with: text.utf8), "cut where a scalar ends")
+        // An emoji image's text is bounded the same way.
+        let inline = blocks(#"<p><img class="emoji" src="https://i.example/a.png" alt="\#(long)"></p>"#)
+        #expect(inline.count == 1)
+        // 500 characters end in a space, which a line's end does not keep.
+        #expect(inline.first?.plainText?.count == 499)
+    }
+
+    @Test("a body that ends inside a dropped element is marked as cut; one whose dropped elements all end is not")
+    func endsInsideDroppedElement() {
+        for name in ["form", "video", "button", "svg", "select", "template", "object", "audio", "canvas", "math", "head"] {
+            let open = ArticleBlocks.make(html: "<p>a</p><\(name)><p>b</p>", baseURL: base)
+            #expect(open.blocks == [p("a")], "\(name)")
+            #expect(open.isCut, "\(name)")
+            let closed = ArticleBlocks.make(html: "<p>a</p><\(name)><p>b</p></\(name)><p>c</p>", baseURL: base)
+            #expect(closed.blocks == [p("a"), p("c")], "\(name)")
+            #expect(!closed.isCut, "\(name)")
+        }
+        // Nested in itself and closed once: still inside.
+        #expect(ArticleBlocks.make(html: "<p>a</p><svg><svg></svg><p>b</p>", baseURL: base).isCut)
+        // Written as empty: nothing is open.
+        #expect(!ArticleBlocks.make(html: "<p>a</p><svg/><form/>", baseURL: base).isCut)
+        // Nothing follows the start tag: the rest is still not known to be whole.
+        #expect(ArticleBlocks.make(html: "<p>a</p><form>", baseURL: base).isCut)
     }
 
     @Test("a tag written as empty by an XML serialiser drops nothing after it")

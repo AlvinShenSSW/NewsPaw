@@ -17,7 +17,8 @@ import Foundation
 public struct ArticleBlocks: Sendable, Hashable {
     public var blocks: [ArticleBlock]
     /// The marker at the end of the list: the input or the number of blocks
-    /// was past its limit, so the list does not hold the whole body.
+    /// was past its limit, or the input ended inside an element that is
+    /// dropped with its content, so the list does not hold the whole body.
     public var isCut: Bool
 
     public init(blocks: [ArticleBlock], isCut: Bool) {
@@ -27,7 +28,7 @@ public struct ArticleBlocks: Sendable, Hashable {
 
     /// Names the converter's output. A change to what `make` gives for the
     /// same HTML raises it; RD15 records it with a translation.
-    public static let version = 1
+    public static let version = 2
 
     /// The part of the HTML that is read, in characters (Unicode scalars,
     /// as SQLite's `substr` counts them).
@@ -35,15 +36,20 @@ public struct ArticleBlocks: Sendable, Hashable {
     public static let maximumBlocks = 3_000
     public static let maximumImages = 300
     /// A paragraph's, heading's or code block's text beyond this continues
-    /// in a further block.
+    /// in a further block: so many characters as a reader counts them, and
+    /// so many bytes of UTF-8, since one such character can be of any size
+    /// (a letter under any number of combining marks).
     public static let maximumBlockCharacters = 20_000
+    public static let maximumBlockBytes = 80_000
     /// The deepest quote and list nesting a block shows.
     public static let maximumDepth = 3
     /// The most list, quote and table contexts kept open; deeper ones are
     /// counted and add no depth.
     static let maximumContexts = 32
-    /// The longest alternative text kept, in characters.
+    /// The longest alternative text kept, in characters and in bytes of
+    /// UTF-8.
     static let maximumAlternativeTextLength = 500
+    static let maximumAlternativeTextBytes = 2_000
 
     /// The plain text a body needs to count as full text, and the lower
     /// figure for text that is mostly Chinese, Japanese or Korean.
@@ -202,7 +208,7 @@ private struct Converter {
         maximumTagLength: .max,
         rawTextElements: ["script", "style", "textarea", "title", "iframe", "noscript"],
         tagsWithAttributes: ["a", "img", "ol"],
-        attributes: ["href", "src", "data-src", "srcset", "alt", "width", "height", "start"],
+        attributes: ["href", "src", "data-src", "srcset", "alt", "width", "height", "start", "class"],
         selfClosingHasNoContent: true
     )
 
@@ -237,6 +243,7 @@ private struct Converter {
             "p": .block(endsHeading: true), "div": .block(endsHeading: false), "section": .block(endsHeading: false),
             "article": .block(endsHeading: false), "header": .block(endsHeading: false),
             "footer": .block(endsHeading: false), "main": .block(endsHeading: false), "aside": .block(endsHeading: false),
+            "center": .block(endsHeading: false), "address": .block(endsHeading: false),
             "dt": .block(endsHeading: true), "dd": .block(endsHeading: true), "summary": .block(endsHeading: true),
             "details": .block(endsHeading: true),
             "h1": .heading(1), "h2": .heading(2), "h3": .heading(3), "h4": .heading(4), "h5": .heading(5), "h6": .heading(6),
@@ -286,7 +293,8 @@ private struct Converter {
     let base: URL?
 
     private(set) var blocks: [ArticleBlock] = []
-    /// The block limit was reached with a block still to come.
+    /// The block limit was reached with a block still to come, or the input
+    /// ended inside a dropped element.
     private(set) var isCut = false
     private var imageCount = 0
 
@@ -399,12 +407,17 @@ private struct Converter {
         return !isCut
     }
 
-    /// The end of the input: what is still open is emitted.
+    /// The end of the input: what is still open is emitted. Inside a
+    /// dropped element that never ended, what was dropped may be the rest
+    /// of the article, so the list is marked as cut.
     mutating func finish() {
         if preDepth > 0 {
             emitCode()
         }
         finishBlock(resetStyles: true)
+        if droppedDepth > 0 {
+            isCut = true
+        }
     }
 
     private mutating func start(_ tag: Tag, _ token: TagScanner.Token) {
@@ -465,6 +478,15 @@ private struct Converter {
                 finishBlock(resetStyles: true)
             }
         case .image:
+            if Self.isEmoji(token.attributes["class"]) {
+                // An emoji written as an image (WordPress does so) is its
+                // alternative text in the line: no block, and no request.
+                if let text = Self.alternativeText(token.attributes["alt"]) {
+                    let bytes = Array(text.utf8)
+                    bytes.withUnsafeBufferPointer { appendText($0) }
+                }
+                break
+            }
             markTableAsContainer()
             // An image splits its paragraph; the styles around it go on.
             finishBlock(resetStyles: false)
@@ -851,9 +873,10 @@ private struct Converter {
     }
 
     /// Emits `runs` as one block, or as several when they hold more than
-    /// `maximumBlockCharacters` characters.
+    /// `maximumBlockCharacters` characters or `maximumBlockBytes` bytes.
     private mutating func emitText(_ runs: [InlineRun]) {
         let limit = ArticleBlocks.maximumBlockCharacters
+        let byteLimit = ArticleBlocks.maximumBlockBytes
         // A character is at least one byte.
         if runs.reduce(0, { $0 + $1.text.utf8.count }) <= limit {
             emit(textKind(runs))
@@ -861,26 +884,34 @@ private struct Converter {
         }
         var piece: [InlineRun] = []
         var room = limit
+        var byteRoom = byteLimit
         for run in runs {
             var rest = Substring(run.text)
             while !rest.isEmpty, !isCut {
                 var part = run
-                if let cut = rest.index(rest.startIndex, offsetBy: room, limitedBy: rest.endIndex), cut != rest.endIndex {
-                    part.text = String(rest[..<cut])
-                    piece.append(part)
-                    emit(textKind(piece))
+                if let cut = Self.pieceEnd(of: rest, characters: room, bytes: byteRoom) {
+                    if cut > rest.startIndex {
+                        part.text = String(rest[..<cut])
+                        piece.append(part)
+                    }
+                    if !piece.isEmpty {
+                        emit(textKind(piece))
+                    }
                     piece.removeAll()
                     room = limit
+                    byteRoom = byteLimit
                     rest = rest[cut...]
                 } else {
                     part.text = String(rest)
                     piece.append(part)
                     room -= rest.count
+                    byteRoom -= rest.utf8.count
                     rest = Substring()
-                    if room == 0 {
+                    if room == 0 || byteRoom == 0 {
                         emit(textKind(piece))
                         piece.removeAll()
                         room = limit
+                        byteRoom = byteLimit
                     }
                 }
             }
@@ -890,10 +921,37 @@ private struct Converter {
         }
     }
 
+    /// Where a piece of `text` ends that may hold `characters` characters
+    /// and `bytes` bytes of UTF-8, whichever is reached first; `nil` when
+    /// all of `text` fits. The character bound ends the piece between two
+    /// characters. The byte bound ends it where a scalar ends, which can be
+    /// inside a character: a character has no largest size. The index is
+    /// the start of `text` only when not even its first scalar fits (the
+    /// piece so far is full).
+    private static func pieceEnd(of text: Substring, characters: Int, bytes: Int) -> String.Index? {
+        let size = text.utf8.count
+        if size <= bytes {
+            // A character is at least one byte.
+            guard size > characters,
+                  let cut = text.index(text.startIndex, offsetBy: characters, limitedBy: text.endIndex), cut != text.endIndex
+            else { return nil }
+            return cut
+        }
+        var byteCut = text.utf8.index(text.utf8.startIndex, offsetBy: bytes)
+        while byteCut > text.startIndex, text.utf8[byteCut] & 0xC0 == 0x80 {
+            byteCut = text.utf8.index(before: byteCut)
+        }
+        let head = text[..<byteCut]
+        if let cut = head.index(head.startIndex, offsetBy: characters, limitedBy: head.endIndex), cut != head.endIndex {
+            return cut
+        }
+        return byteCut
+    }
+
     /// Emits the text of the `pre` that just ended: as written, without the
     /// line break after its start tag and the white space at its end; in
-    /// several blocks when it is longer than `maximumBlockCharacters`, cut
-    /// at a line's end where there is one.
+    /// several blocks when it is longer than `maximumBlockCharacters` or
+    /// `maximumBlockBytes`, cut at a line's end where there is one.
     private mutating func emitCode() {
         preDepth = 0
         var text = String(decoding: preBytes, as: UTF8.self)
@@ -910,7 +968,8 @@ private struct Converter {
         }
         guard rest.contains(where: { !$0.isWhitespace }) else { return }
         let limit = ArticleBlocks.maximumBlockCharacters
-        while !isCut, let cut = rest.index(rest.startIndex, offsetBy: limit, limitedBy: rest.endIndex), cut != rest.endIndex {
+        let byteLimit = ArticleBlocks.maximumBlockBytes
+        while !isCut, let cut = Self.pieceEnd(of: rest, characters: limit, bytes: byteLimit) {
             if let lineEnd = rest[..<cut].lastIndex(of: "\n"), lineEnd > rest.startIndex {
                 emit(.code(String(rest[..<lineEnd])))
                 rest = rest[rest.index(after: lineEnd)...]
@@ -960,16 +1019,34 @@ private struct Converter {
         guard let url = address(attributes["src"]) ?? address(attributes["data-src"])
             ?? address(Self.firstAddress(ofSourceSet: attributes["srcset"]))
         else { return nil }
-        var alternativeText: String?
-        if let raw = attributes["alt"] {
-            let text = HTMLText.collapseWhitespace(FeedDiscovery.decodeReferences(raw))
-            alternativeText = text.isEmpty ? nil : String(text.prefix(ArticleBlocks.maximumAlternativeTextLength))
-        }
+        let alternativeText = Self.alternativeText(attributes["alt"])
         var declaredSize: ArticleImage.DeclaredSize?
         if let width, let height {
             declaredSize = ArticleImage.DeclaredSize(width: width, height: height)
         }
         return ArticleImage(url: url, alternativeText: alternativeText, declaredSize: declaredSize)
+    }
+
+    /// An `alt` attribute as text: references decoded, white space
+    /// collapsed, cut to the alternative text's bounds; `nil` when empty.
+    private static func alternativeText(_ attribute: String?) -> String? {
+        guard let attribute else { return nil }
+        let text = HTMLText.collapseWhitespace(FeedDiscovery.decodeReferences(attribute))
+        guard !text.isEmpty else { return nil }
+        let whole = Substring(text)
+        let end = pieceEnd(
+            of: whole, characters: ArticleBlocks.maximumAlternativeTextLength, bytes: ArticleBlocks.maximumAlternativeTextBytes
+        )
+        return end.map { String(whole[..<$0]) } ?? text
+    }
+
+    /// Whether an `img`'s `class` names it an emoji: the token `wp-smiley`
+    /// or `emoji`, as WordPress and its emoji script write them.
+    private static func isEmoji(_ classAttribute: String?) -> Bool {
+        guard let classAttribute, !classAttribute.isEmpty else { return false }
+        return classAttribute.utf8.split(whereSeparator: { $0 <= 0x20 }).contains { token in
+            token.elementsEqual("wp-smiley".utf8) || token.elementsEqual("emoji".utf8)
+        }
     }
 
     /// A `width` or `height` attribute as pixels: digits, optionally

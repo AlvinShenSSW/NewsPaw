@@ -77,6 +77,10 @@ struct PaneContainer: View {
             .paneIdentifier(AccessibilityID.fullPane)
         case .allUnread, .starred, .category, .source:
             let list = ArticleListKind(selection)
+            // Hidden, the list pane stays in the hierarchy at no width
+            // (RD11 decision 14): its keys still act and it is where it
+            // was when it is shown again.
+            let isListHidden = navigation.isListHidden
             NavigationStack {
                 ArticleListView(kind: list)
                     .toolbar { sidebarButton }
@@ -84,13 +88,43 @@ struct PaneContainer: View {
             }
             .id(selection)
             .frame(width: layout.listPaneWidth)
+            .frame(width: isListHidden ? 0 : layout.listPaneWidth, alignment: .trailing)
+            .clipped()
+            .allowsHitTesting(!isListHidden)
+            .accessibilityHidden(isListHidden)
             .paneIdentifier(AccessibilityID.listPane)
-            PaneSeparator()
+            if !isListHidden {
+                PaneSeparator()
+            }
             NavigationStack {
                 ReadingPane(list: list)
+                    .toolbar { listButtons(for: list) }
                     .paneRoot(inlineTitle: false)
             }
             .paneIdentifier(AccessibilityID.readingPane)
+        }
+    }
+
+    /// In the two-column layout, beside an open article: the button that
+    /// hides the list column and shows it again and, while the list is
+    /// hidden, the sidebar's button, which the list's bar no longer shows.
+    /// Not while the article's page is in the pane: the browser has its own
+    /// bar.
+    @ToolbarContentBuilder
+    private func listButtons(for list: ArticleListKind) -> some ToolbarContent {
+        if navigation.canHideList, !navigation.pageIsOpen(on: list) {
+            if navigation.isListHidden {
+                sidebarButton
+            }
+            ToolbarItem(placement: .topBarLeading) {
+                Button(
+                    navigation.isListHidden ? "Show Article List" : "Hide Article List",
+                    systemImage: navigation.isListHidden ? "rectangle.split.2x1" : "rectangle"
+                ) {
+                    navigation.setListHidden(!navigation.isListHidden)
+                }
+                .accessibilityIdentifier(AccessibilityID.hideListButton)
+            }
         }
     }
 

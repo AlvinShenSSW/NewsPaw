@@ -51,17 +51,14 @@ extension SettingsView {
             Task { await model.openAdultSettings() }
         } label: {
             HStack {
-                Label {
-                    Text("Adult Partition")
-                        .foregroundStyle(Theme.text)
-                } icon: {
-                    Image(systemName: "lock.shield")
-                        .foregroundStyle(.tint)
-                }
+                // Drawn as the links beside it are: the icon in the text
+                // colour, the chevron in the system's.
+                Label("Adult Partition", systemImage: "lock.shield")
+                    .foregroundStyle(Theme.text)
                 Spacer(minLength: Theme.Spacing.small)
                 Image(systemName: "chevron.forward")
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Theme.secondaryText)
+                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
                     .accessibilityHidden(true)
             }
             .contentShape(Rectangle())

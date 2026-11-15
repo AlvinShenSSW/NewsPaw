@@ -35,6 +35,76 @@ final class AdultCoverTests: AdultTestCase {
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: timeout))
     }
 
+    /// The media page's title: `Played <element> <context> <state> <states
+    /// seen>`, the seconds its sound element and its audio context have
+    /// played.
+    private func mediaTitle() -> String {
+        barTexts().first { $0.hasPrefix("Played ") } ?? ""
+    }
+
+    private func played() -> (element: Double, context: Double) {
+        let numbers = mediaTitle().split(separator: " ").dropFirst().prefix(2).compactMap { Double($0) }
+        return numbers.count == 2 ? (numbers[0], numbers[1]) : (-1, -1)
+    }
+
+    private func waitForElementPlaying(beyond seconds: Double, _ note: String, file: StaticString = #filePath, line: UInt = #line) {
+        let playing = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            self.played().element > seconds
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [playing], timeout: timeout), .completed,
+                       "the page's sound element does not play \(note): \(barTexts())", file: file, line: line)
+    }
+
+    /// RD18 decision 13, refined in round 2: while the adult workspace is
+    /// shown and the scene is not active — here Control Centre over the
+    /// app under "After 1 Minute", so that the workspace stays — a page
+    /// that calls `play()` on its paused sound element every 200 ms plays
+    /// nothing; back in the app it may play again. The page's audio
+    /// context, which it resumes as often, is only recorded: WebKit lets
+    /// a page's `resume()` end the suspension (measured).
+    func testAnAdultPageCannotPlayAgainWhileTheAppIsNotActive() {
+        launchAtFullWidth(authentication: ["passed", "passed"])
+        turnOnAdult()
+        chooseTiming("After 1 Minute")
+        enterAdult()
+        createCategory("Velvet")
+        addSource(Fixture.articles, to: "Velvet")
+        openCategoryList("Velvet")
+        openArticle("Plain story")
+        waitFor(button(AccessibilityID.openOriginalButton)).tap()
+        waitForPage("Original of plain-story")
+        tapLink("Media page")
+        waitForPage("Media Page")
+        waitFor(app.webViews.buttons["Play"]).tap()
+        waitForElementPlaying(beyond: 0.5, "after Play")
+
+        let before = played()
+        let asked = Date()
+        showControlCentre()
+        XCTAssertTrue(cover.waitForExistence(timeout: 3), "no cover while the adult partition is inactive")
+        // The title can be read beneath the cover.
+        for second in 1...8 {
+            Thread.sleep(forTimeInterval: 1)
+            print("RD18 media beneath the cover, \(second) s: \(mediaTitle())")
+        }
+        hideControlCentre()
+        let after = played()
+        let elapsed = Date().timeIntervalSince(asked)
+        let line = "before \(before), after \(after), \(String(format: "%.1f", elapsed)) s between the readings"
+        print("RD18 media: \(line)")
+        record("RD18 media", line)
+
+        // About eight of the seconds between the two readings were spent
+        // away; an element that played again meanwhile played nearly all
+        // of them.
+        XCTAssertGreaterThanOrEqual(after.element, 0, "no reading after the return: \(barTexts())")
+        XCTAssertLessThan(after.element - before.element, elapsed - 4, "the sound element played while the app was not active")
+        // Still the adult partition (its library open, nothing locked), and
+        // its page may play again.
+        XCTAssertTrue(report.contains("pool=open"), "the partition locked: \(report)")
+        waitForElementPlaying(beyond: after.element + 1, "after the return")
+    }
+
     func testTheCoverHidesTheAdultPartitionInTheAppSwitcher() {
         launchAtFullWidth(authentication: ["passed", "passed"])
         turnOnAdult()

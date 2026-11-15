@@ -126,6 +126,8 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
                 setInterval(ask, 1500);
                 </script>
                 """))
+        case (_, "/media"):
+            send(task, html: Self.media)
         case ("nofeed.example.invalid", "/long"):
             let paragraphs = (1...60).map { "<p>Paragraph \($0) of the long page, with enough words to wrap across the width of the screen.</p>" }
             send(task, html: Self.page("Long Page", paragraphs.joined() + "<p id=\"end\">End of the long page</p>"))
@@ -196,6 +198,7 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
                 <p><a href="/form">Form page</a></p>
                 <p><a href="/count">Load counter</a></p>
                 <p><a href="/hidden-asker">Hidden asker</a></p>
+                <p><a href="/media">Media page</a></p>
                 """))
         default:
             fail(task)
@@ -313,6 +316,54 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         <p><a href="/hidden-asker">Hidden asker</a></p>
         <p><a href="/post-form">Post form</a></p>
         <script>document.getElementById('blob').href = URL.createObjectURL(new Blob(['hello'], { type: 'text/plain' }));</script>
+        """)
+
+    /// A page that plays and starts its sound again whenever it stops, as
+    /// a page may (RD18 decision 13): after Play, a silent sound file in an
+    /// audio element and a tone too faint to hear (gain 0.0001) in an audio
+    /// context. Every 200 ms it calls `play()` on the element when it is
+    /// paused and `resume()` on the context when it is not running, and its
+    /// title reports how many seconds each has played, the context's state
+    /// and the states it has passed through:
+    /// `Played <element> <context> <state> <states>`.
+    private static let media = page("Media Page", """
+        <p>A page that plays silence and starts it again whenever it stops.</p>
+        <p><button type="button" onclick="start()">Play</button></p>
+        <script>
+        var context = null, audio = null, last = 0, played = 0, seen = [];
+        function silence(seconds) {
+            var rate = 8000, samples = rate * seconds, bytes = new ArrayBuffer(44 + samples * 2), view = new DataView(bytes);
+            function text(offset, value) { for (var i = 0; i < value.length; i++) { view.setUint8(offset + i, value.charCodeAt(i)); } }
+            text(0, 'RIFF'); view.setUint32(4, 36 + samples * 2, true); text(8, 'WAVE'); text(12, 'fmt ');
+            view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+            view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+            text(36, 'data'); view.setUint32(40, samples * 2, true);
+            return URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+        }
+        function start() {
+            if (audio) { return; }
+            context = new AudioContext();
+            context.onstatechange = function () { seen.push(context.state); };
+            var gain = context.createGain();
+            gain.gain.value = 0.0001;
+            var tone = context.createOscillator();
+            tone.connect(gain);
+            gain.connect(context.destination);
+            tone.start();
+            audio = new Audio(silence(4));
+            audio.loop = true;
+            audio.play();
+        }
+        setInterval(function () {
+            if (!audio) { return; }
+            if (audio.paused) { audio.play().catch(function () {}); }
+            if (context.state !== 'running') { context.resume().catch(function () {}); }
+            var now = audio.currentTime;
+            if (now > last && now - last < 1) { played += now - last; }
+            last = now;
+            document.title = 'Played ' + played.toFixed(1) + ' ' + context.currentTime.toFixed(1) + ' ' + context.state + ' ' + seen.join(',');
+        }, 200);
+        </script>
         """)
 
     /// Posts to a fixed list of message-handler names; the title says

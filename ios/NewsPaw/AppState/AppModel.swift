@@ -342,7 +342,7 @@ final class AppModel {
             // inactive: the cover's rule applies at this moment (decision
             // 12), and the absence the lock rule counts begins here, not at
             // the prompt.
-            cover.show()
+            applyCoverRule()
             restartAbsence()
         }
         // The refresh-on-entry rule of the partition entered.
@@ -542,11 +542,7 @@ final class AppModel {
     private func sceneWillDeactivate() {
         sceneIsActive = false
         absence.willDeactivate(at: now())
-        if let adult {
-            applyCoverRule()
-            // A video must not go on playing over the cover (decision 13).
-            adult.browser.pauseMedia()
-        }
+        applyCoverRule()
     }
 
     private func sceneDidEnterBackground() {
@@ -574,6 +570,9 @@ final class AppModel {
         if locks {
             lockByRule()
         }
+        // The adult workspace is still shown: its pages may play again. One
+        // that the lock dropped stays suspended for good.
+        adult?.browser.allowMedia()
         if wasInBackground {
             wasInBackground = false
             // Every return from the background is an entry (RD06 decision
@@ -654,11 +653,18 @@ final class AppModel {
         }
     }
 
-    /// The cover's one rule (decision 12). It only ever shows the cover
-    /// here; the cover is hidden by `removeCover()` alone.
+    /// The cover's one rule (decision 12), and with it decision 13's for
+    /// media: while the adult workspace is shown and the scene is not
+    /// active, the cover is up and the adult pages' media are paused and
+    /// suspended, so that a page cannot start them again beneath the cover
+    /// (under "After 1 Minute" or "After 5 Minutes" the workspace stays
+    /// alive while the app is away). It only ever shows the cover and
+    /// suspends here; the cover is hidden by `removeCover()` alone, and the
+    /// media are allowed again at did-activate.
     private func applyCoverRule() {
         if CoverRule.isShown(adultIsShown: adult != nil, sceneIsActive: sceneIsActive) {
             cover.show()
+            adult?.browser.suspendMedia()
         }
     }
 

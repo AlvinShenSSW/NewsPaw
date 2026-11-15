@@ -73,6 +73,11 @@ final class BrowserModel {
     /// Whether the workspace of this model was dropped (RD18 decision 4):
     /// from then on it makes no session and no web view.
     private(set) var isStopped = false
+    /// Whether the pages' media playback is suspended: from leaving the
+    /// foreground until the scene is active again, and for good once the
+    /// model is stopped (RD18 decision 13). A session made meanwhile starts
+    /// suspended.
+    @ObservationIgnored private var mediaIsSuspended = false
 
     #if DEBUG
     /// How many sessions the app has made, for the UI tests' report: a
@@ -138,6 +143,9 @@ final class BrowserModel {
             #if DEBUG
             Self.sessionsMade += 1
             #endif
+            if mediaIsSuspended {
+                next?.suspendMedia()
+            }
             next?.load(start)
         }
         if stack == .starred {
@@ -168,25 +176,41 @@ final class BrowserModel {
 
     // MARK: - Leaving and locking (RD18 decisions 4 and 13)
 
-    /// The scene is leaving the foreground: every page's media are paused
-    /// and their full-screen presentations closed, so that a video does not
-    /// go on playing over the cover or in the system's playback controls.
-    func pauseMedia() {
+    /// The scene is not active: every page's media are paused, their
+    /// full-screen presentations closed, and their playback suspended until
+    /// `allowMedia()`, so that a page's script cannot start a media element
+    /// again while the app is not active: it does not play beneath the
+    /// cover or in the system's playback controls.
+    func suspendMedia() {
+        mediaIsSuspended = true
         for session in [librarySession, starredSession].compactMap(\.self) {
-            session.pauseMedia()
+            session.suspendMedia()
         }
     }
 
-    /// The workspace is dropped: every session's media are paused and its
-    /// full-screen presentations closed, as on leaving (UIKit may keep a
-    /// web view alive after this, and it must not go on playing); then
-    /// the session ends, its web view is taken out of the view tree, and
-    /// nothing of the browser stays presented. No session is made after
-    /// this.
+    /// The scene is active again and this model's workspace is still the
+    /// one shown: the pages may play again. What was paused stays paused
+    /// until the page or the owner plays it. A stopped model stays
+    /// suspended.
+    func allowMedia() {
+        guard mediaIsSuspended, !isStopped else { return }
+        mediaIsSuspended = false
+        for session in [librarySession, starredSession].compactMap(\.self) {
+            session.allowMedia()
+        }
+    }
+
+    /// The workspace is dropped: every session's media are paused, its
+    /// full-screen presentations closed and its playback suspended for
+    /// good (UIKit may keep a web view alive after this, and its page must
+    /// not play again); then the session ends, its web view is taken out
+    /// of the view tree, and nothing of the browser stays presented. No
+    /// session is made after this.
     func stop() {
         isStopped = true
+        mediaIsSuspended = true
         for session in [librarySession, starredSession].compactMap(\.self) {
-            session.pauseMedia()
+            session.suspendMedia()
             session.end()
             session.webView.removeFromSuperview()
         }
@@ -373,10 +397,21 @@ final class BrowserSession: NSObject {
         webView.uiDelegate = nil
     }
 
-    /// Pauses the page's media and closes a full-screen presentation of it.
-    func pauseMedia() {
+    /// Pauses the page's media, closes a full-screen presentation of it,
+    /// and suspends its playback until `allowMedia()`: a media element the
+    /// page calls `play()` on meanwhile stays paused. (An audio context the
+    /// page resumes is not held: WebKit lets a page's `resume()` end the
+    /// suspension, measured on the iOS 27.0 simulator; see the RD18
+    /// design's post-implementation record.)
+    func suspendMedia() {
         webView.pauseAllMediaPlayback(completionHandler: nil)
         webView.closeAllMediaPresentations(completionHandler: nil)
+        webView.setAllMediaPlaybackSuspended(true, completionHandler: nil)
+    }
+
+    /// Lets the page play again.
+    func allowMedia() {
+        webView.setAllMediaPlaybackSuspended(false, completionHandler: nil)
     }
 
     // MARK: - What the bars show (decision 10)

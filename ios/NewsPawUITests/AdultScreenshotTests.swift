@@ -150,6 +150,8 @@ final class AdultScreenshotTests: AdultTestCase {
         XCTAssertEqual(field.value as? String, "Velvet")
         XCUIDevice.shared.press(.home)
         Thread.sleep(forTimeInterval: 64)
+        // For finding the moment in the recording.
+        print("RD18 returning at \(Date().timeIntervalSince1970)")
         app.activate()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: timeout))
         Thread.sleep(forTimeInterval: 3)

@@ -107,6 +107,7 @@ private struct ArticleScreen: View {
             .padding(Theme.Spacing.standard)
             .frame(maxWidth: .infinity)
         }
+        .modifier(ReaderPosition(articleID: row.id, reading: reading))
         .articleSwipes(
             layoutDirection: layoutDirection,
             next: { Task { await reading.openNext(on: list) } },
@@ -263,5 +264,42 @@ private struct ArticleScreen: View {
             .disabled(!reading.hasNext(on: list))
             .accessibilityIdentifier(AccessibilityID.readingNextButton)
         }
+    }
+}
+
+/// Keeps the reader's place in an open article (RD11, review round 1).
+///
+/// The reading screen's scroll view reports the block at its top to the
+/// model, and a screen built again for an article that stayed open starts
+/// at the block the model holds: in the reading pane the screen is taken
+/// away while the article's page is in the browser, and a switch between
+/// the tab and the pane structure builds it anew. The position is this
+/// modifier's own state, so that scrolling does not lay the screen out
+/// again.
+private struct ReaderPosition: ViewModifier {
+    let articleID: UUID
+    let reading: ReadingModel
+    @State private var position: ScrollPosition
+
+    init(articleID: UUID, reading: ReadingModel) {
+        self.articleID = articleID
+        self.reading = reading
+        let start = reading.position(of: articleID)
+        _position = State(initialValue: start.map { ScrollPosition(id: $0, anchor: .top) } ?? ScrollPosition(idType: Int.self))
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .scrollPosition($position, anchor: .top)
+            .onChange(of: position.viewID(type: Int.self)) { _, block in
+                reading.readerMoved(to: block, in: articleID)
+            }
+            // At its very top an article shows its header above the first
+            // block; the position of that block would hide it.
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top < 1
+            } action: { _, isAtTop in
+                reading.readerIsAtTop(isAtTop, of: articleID)
+            }
     }
 }

@@ -247,6 +247,73 @@ final class ReadingTests: ReadingTestCase {
         XCTAssertEqual(larger, 48 * 1.5, accuracy: 2.5)
     }
 
+    // MARK: - Review round 1: the reader's place while an article stays open
+
+    /// In the reading pane the article's page takes the article's place;
+    /// when it is closed the article is where it was left, not at its top.
+    /// The same after the window changed from panes to tabs and back.
+    func testPlaceIsKeptWhileTheArticleStaysOpen() throws {
+        try XCTSkipUnless(isPad, "the reading pane and the change of structure are on iPad")
+        launchWithReadingFeed()
+        openArticle("Cut story")
+        waitFor(block("Paragraph 1 of a very long story."))
+        for _ in 0..<4 {
+            dragArticle(by: -readingArea.height * 0.45)
+        }
+        let (label, before) = try XCTUnwrap(blockNearTheMiddle(), "no block on screen")
+        XCTAssertFalse(block("Paragraph 1 of a very long story.").isHittable, "the article is scrolled from its top")
+
+        // The page in the browser, then Close.
+        button(AccessibilityID.readingOriginalBarButton).tap()
+        waitForPage("Original of cut-story")
+        closeBrowser()
+        var after = waitFor(block(label)).frame
+        record("place", "\(label): at y \(before.minY) before the browser, \(after.minY) after it was closed")
+        XCTAssertEqual(after.minY, before.minY, accuracy: 60, "\(label) is where it was, to a block: \(before) → \(after)")
+        XCTAssertFalse(block("Paragraph 1 of a very long story.").isHittable, "the article did not return to its top")
+        capture("place-after-browser")
+
+        // Below 700 pt the article is pushed on its list; back above, it
+        // is in the reading pane again. Each is a screen built anew.
+        resize(below700: true)
+        after = waitFor(block(label)).frame
+        XCTAssertTrue(window.insetBy(dx: 0, dy: 60).intersects(after), "\(label) is on screen in the tab structure: \(after)")
+        XCTAssertFalse(block("Paragraph 1 of a very long story.").isHittable)
+        resize(below700: false)
+        requireFullSize()
+        after = waitFor(block(label)).frame
+        XCTAssertTrue(readingArea.insetBy(dx: 0, dy: 60).intersects(after), "\(label) is on screen in the reading pane again: \(after)")
+        XCTAssertFalse(block("Paragraph 1 of a very long story.").isHittable)
+
+        // At its very top an article comes back with its header.
+        scrollArticleToTop()
+        button(AccessibilityID.readingOriginalBarButton).tap()
+        waitForPage("Original of cut-story")
+        closeBrowser()
+        waitForTitle("Cut story")
+        XCTAssertTrue(readingTitle.isHittable, "an article left at its top shows its title again")
+    }
+
+    /// The text block nearest the middle of the reading area, with its
+    /// frame.
+    private func blockNearTheMiddle() -> (label: String, frame: CGRect)? {
+        let area = readingArea
+        let shown = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", AccessibilityID.readingBlockPrefix
+        )).allElementsBoundByIndex.map { (label: $0.label, frame: $0.frame) }
+        return shown.filter { area.contains($0.frame) }.min { abs($0.frame.midY - area.midY) < abs($1.frame.midY - area.midY) }
+    }
+
+    /// Resizes the window across 700 pt, where the structure changes.
+    private func resize(below700 below: Bool) {
+        var attempts = 0
+        while (below ? window.width >= 700 : window.width < 700), attempts < 10 {
+            resizeWindow(by: below ? -120 : 120)
+            attempts += 1
+        }
+        XCTAssertEqual(window.width < 700, below, "the window could not be resized across 700 pt")
+    }
+
     // MARK: - Criterion 8: line height
 
     /// 1.5 times the size for Latin text and 1.7 for Chinese and Japanese,

@@ -34,6 +34,9 @@ struct BlocksView: View {
                 }
             }
         }
+        // Each block is a place the caller's scroll view can report and
+        // return to, by its index.
+        .scrollTargetLayout()
         .environment(\.openURL, OpenURLAction { url in
             openLink(url)
             return .handled

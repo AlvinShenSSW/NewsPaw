@@ -85,6 +85,19 @@ extension Library {
         }
     }
 
+    /// The first `limit` characters of the feed HTML stored with an
+    /// article, cut in the query, so that a body of any size costs no more
+    /// than its limit to read (RD11 decision 4). `nil` when the article has
+    /// no HTML, or no longer exists.
+    public func contentHTML(ofArticle id: UUID, limit: Int) async throws -> String? {
+        try await read { db in
+            try String.fetchOne(
+                db, sql: "SELECT substr(content_html, 1, ?) FROM article WHERE id = ?",
+                arguments: [max(0, limit), id.databaseKey]
+            )
+        }
+    }
+
     /// Whether an article of a category holds a link; arguments: the link,
     /// the category. It uses the index on `article(url)`.
     static let linkHeldSQL = """

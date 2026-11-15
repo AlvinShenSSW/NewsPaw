@@ -2,7 +2,8 @@ import Foundation
 @testable import NewsPawKit
 import Testing
 
-/// RD06 criterion 8: the two settings in a throwaway preferences suite.
+/// RD06 criterion 8 and RD11 decision 10: the settings in a throwaway
+/// preferences suite.
 @Suite("Preferences")
 struct PreferencesTests {
     private func withSuite(_ body: (UserDefaults) throws -> Void) throws {
@@ -37,6 +38,61 @@ struct PreferencesTests {
             }
             #expect(RefreshInterval.allCases.map(\.rawValue) == [0, 15, 30, 60])
             #expect(Retention.allCases.map(\.rawValue) == [0, 7, 30, 90])
+        }
+    }
+
+    @Test("the reading settings default to the standard size and spacing and the system face")
+    func readingDefaults() throws {
+        try withSuite { defaults in
+            let preferences = Preferences(defaults)
+            #expect(preferences.readingTextSize == .standard)
+            #expect(preferences.readingLineSpacing == .standard)
+            #expect(preferences.readingTypeface == .sansSerif)
+            #expect(ReadingTextSize.standard.factor == 1.0)
+            #expect(ReadingLineSpacing.standard.factor == 1.0)
+        }
+    }
+
+    @Test("every reading setting round-trips under its key; five sizes, three spacings, two faces")
+    func readingRoundTrip() throws {
+        try withSuite { defaults in
+            let preferences = Preferences(defaults)
+            for size in ReadingTextSize.allCases {
+                preferences.readingTextSize = size
+                #expect(Preferences(defaults).readingTextSize == size)
+                #expect(defaults.integer(forKey: "reading_text_size") == size.rawValue)
+            }
+            for spacing in ReadingLineSpacing.allCases {
+                preferences.readingLineSpacing = spacing
+                #expect(Preferences(defaults).readingLineSpacing == spacing)
+                #expect(defaults.integer(forKey: "reading_line_spacing") == spacing.rawValue)
+            }
+            for typeface in ReadingTypeface.allCases {
+                preferences.readingTypeface = typeface
+                #expect(Preferences(defaults).readingTypeface == typeface)
+                #expect(defaults.string(forKey: "reading_typeface") == typeface.rawValue)
+            }
+            #expect(ReadingTextSize.allCases.map(\.factor) == [0.85, 0.92, 1.0, 1.15, 1.3])
+            #expect(ReadingLineSpacing.allCases.map(\.factor) == [0.9, 1.0, 1.15])
+            #expect(ReadingTypeface.allCases.map(\.rawValue) == ["sans", "serif"])
+            // The refresh settings are untouched by them.
+            #expect(preferences.refreshInterval == .thirtyMinutes)
+            #expect(preferences.retention == .thirtyDays)
+        }
+    }
+
+    @Test("a stored reading value outside its set reads as the default")
+    func readingOutsideTheSet() throws {
+        try withSuite { defaults in
+            for value: Any in [0, 6, -1, 1_000, "3", 2.5, "serif "] {
+                defaults.set(value, forKey: "reading_text_size")
+                defaults.set(value, forKey: "reading_line_spacing")
+                defaults.set(value, forKey: "reading_typeface")
+                let preferences = Preferences(defaults)
+                #expect(preferences.readingTextSize == .standard, "\(value)")
+                #expect(preferences.readingLineSpacing == .standard, "\(value)")
+                #expect(preferences.readingTypeface == .sansSerif, "\(value)")
+            }
         }
     }
 

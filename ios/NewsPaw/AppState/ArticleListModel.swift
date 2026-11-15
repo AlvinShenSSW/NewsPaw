@@ -38,10 +38,12 @@ final class ArticleListModel {
         failedRead != nil
     }
 
-    /// How many views of each row are on screen, from their appearing and
-    /// disappearing: counted, so that a new view's row appearing before the
-    /// old view's row disappears (a container switch) keeps it on screen.
-    @ObservationIgnored private var visible: [UUID: Int] = [:]
+    /// How far the list is scrolled from its top, in points: its content
+    /// offset relative to its top inset, as the list's view reports it.
+    @ObservationIgnored private var offsetFromTop = 0.0
+    /// The height of the first row, as its view reports it; a usual row's
+    /// until then.
+    @ObservationIgnored private var firstRowHeight = 60.0
     /// Refreshes started from this list that have not ended.
     @ObservationIgnored var ownRefreshes = 0
     /// Whether a next page is being read.
@@ -52,20 +54,25 @@ final class ArticleListModel {
         self.filter = filter
     }
 
-    /// Whether the list's first row is on screen; an empty list counts as
-    /// at its top.
+    /// Whether the list's first row is on screen (ux S3): the list is
+    /// scrolled from its top by less than that row's height. Taken from the
+    /// scroll position, not from the row's appear and disappear events,
+    /// which SwiftUI sends at distances that differ between devices (RD11
+    /// decision 15). An empty list is at its top.
     var isAtTop: Bool {
-        guard let first = rows.first else { return true }
-        return visible[first.id, default: 0] > 0
+        rows.isEmpty || offsetFromTop < firstRowHeight
     }
 
-    func rowAppeared(_ id: UUID) {
-        visible[id, default: 0] += 1
+    /// The list's view scrolled: its content offset relative to its top
+    /// inset.
+    func scrolled(toOffsetFromTop offset: Double) {
+        offsetFromTop = offset
     }
 
-    func rowDisappeared(_ id: UUID) {
-        let count = visible[id, default: 0] - 1
-        visible[id] = count > 0 ? count : nil
+    func firstRowMeasured(height: Double) {
+        if height > 0 {
+            firstRowHeight = height
+        }
     }
 
     func index(of id: UUID) -> Int? {
@@ -129,6 +136,5 @@ final class ArticleListModel {
     /// The article no longer exists: its row leaves the list.
     func remove(_ id: UUID) {
         rows.removeAll { $0.id == id }
-        visible[id] = nil
     }
 }

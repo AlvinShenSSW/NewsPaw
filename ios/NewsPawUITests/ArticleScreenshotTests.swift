@@ -2,7 +2,7 @@ import XCTest
 
 /// RD09 criterion 20: a list (unread, with a thumbnail row and a row
 /// without; all; empty), Today with rows, Starred, Settings → Data and the
-/// interim reading screen. Written when run with
+/// reading screen of an excerpt. Written when run with
 /// `TEST_RUNNER_NEWSPAW_SCREENSHOT_DIR` set (and, optionally,
 /// `TEST_RUNNER_NEWSPAW_SCREENSHOT_VARIANT` = `zh` or `largest-text`; dark
 /// appearance is set on the simulator with `xcrun simctl ui`). Skipped
@@ -56,7 +56,7 @@ final class ArticleScreenshotTests: ArticleTestCase {
         sleep(2)
         capture("list-unread-thumbnail-and-without")
         openArticle("Plain story")
-        capture("reading-interim")
+        capture("reading-excerpt")
         backToList()
         swipeAction(on: articleRow("Image story"), leading: false, variant == "zh" ? "收藏" : "Star")
         chooseFilter(variant == "zh" ? "全部" : "All")

@@ -30,7 +30,18 @@ class NewsPawUITestCase: XCTestCase {
         syntheticSources: Int? = nil, failNextSave: Bool = false, slowNextSave: Int? = nil, failNextSourceSave: Bool = false,
         clockOffsetDays: Int? = nil, arguments: [String] = []
     ) -> XCUIApplication {
-        app = XCUIApplication()
+        return launch(XCUIApplication(), syntheticSources: syntheticSources, failNextSave: failNextSave, slowNextSave: slowNextSave,
+                      failNextSourceSave: failNextSourceSave, clockOffsetDays: clockOffsetDays, arguments: arguments)
+    }
+
+    /// Launches `application`, which may already carry launch environment
+    /// of its own, on this test's library.
+    @discardableResult
+    func launch(
+        _ application: XCUIApplication, syntheticSources: Int? = nil, failNextSave: Bool = false, slowNextSave: Int? = nil,
+        failNextSourceSave: Bool = false, clockOffsetDays: Int? = nil, arguments: [String] = []
+    ) -> XCUIApplication {
+        app = application
         app.launchArguments = arguments
         app.launchEnvironment[UITestLaunchKey.libraryDirectory] = libraryName
         if let syntheticSources {

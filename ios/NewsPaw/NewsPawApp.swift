@@ -9,7 +9,9 @@ struct NewsPawApp: App {
     init() {
         // Under the UI tests only: around context menus the harness waits up
         // to 60 s for an "animations complete" notification that never comes.
-        if ProcessInfo.processInfo.environment[UITestLaunchKey.libraryDirectory] != nil {
+        // A check made by hand on a transition asks to keep them.
+        let environment = ProcessInfo.processInfo.environment
+        if environment[UITestLaunchKey.libraryDirectory] != nil, environment[UITestLaunchKey.keepAnimations] != "1" {
             UIView.setAnimationsEnabled(false)
         }
     }

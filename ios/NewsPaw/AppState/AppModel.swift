@@ -34,6 +34,9 @@ final class AppModel {
     let navigation = NavigationModel()
     /// The model slots of the normal library; set before `status` is ready.
     private(set) var modelSettings: ModelSettingsModel?
+    /// The reading settings, a device setting shared by every library; set
+    /// before `status` is ready.
+    private(set) var readingSettings: ReadingSettings?
     /// The app's one store; it gives out one library per partition.
     private var store: LibraryStore?
     /// Whether the scene has been in the background since it was last
@@ -118,7 +121,11 @@ final class AppModel {
             )
             navigation.onSettingsPathChanged = { [weak modelSettings] path in modelSettings?.settingsPathChanged(path) }
             self.modelSettings = modelSettings
+            readingSettings = ReadingSettings(preferences: Preferences(defaults))
             #if DEBUG
+            if options.libraryDirectory != nil, let size = options.articlePageSize {
+                reading.pageSize = size
+            }
             if let count = options.syntheticSources {
                 try await library.insertSyntheticSourcesForUITests(count: count)
             }

@@ -2,7 +2,7 @@ import NewsPawKit
 import SwiftUI
 
 /// Settings (ux S8). Each later issue adds its own row, in the order of
-/// the ux table: Models & Translation, Refresh, Data, then About.
+/// the ux table: Models & Translation, Refresh, Reading, Data, then About.
 struct SettingsView: View {
     var body: some View {
         List {
@@ -15,6 +15,10 @@ struct SettingsView: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .accessibilityIdentifier(AccessibilityID.refreshRow)
+                NavigationLink(value: SettingsRoute.reading) {
+                    Label("Reading", systemImage: "textformat.size")
+                }
+                .accessibilityIdentifier(AccessibilityID.readingSettingsRow)
                 NavigationLink(value: SettingsRoute.data) {
                     Label("Data", systemImage: "externaldrive")
                 }
@@ -45,6 +49,7 @@ struct SettingsDestination: View {
         case .models: ModelsView()
         case .modelSlot(let role): ModelSlotForm(role: role)
         case .refresh: RefreshSettingsView()
+        case .reading: ReadingSettingsScreen()
         case .data: DataSettingsView()
         case .about: AboutView()
         }
@@ -140,7 +145,7 @@ struct DataSettingsView: View {
                 Text("Images")
                     .foregroundStyle(Theme.secondaryText)
             } footer: {
-                Text("Thumbnails of the images in article lists. Cleared images are fetched again when they are next shown.")
+                Text("Images of article lists and of articles. Cleared images are fetched again when they are next shown.")
                     .foregroundStyle(Theme.secondaryText)
             }
             .listRowBackground(Theme.surface)

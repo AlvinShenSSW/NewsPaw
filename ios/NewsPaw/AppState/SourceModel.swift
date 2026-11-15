@@ -42,6 +42,10 @@ final class SourceModel {
     /// Raised by every read of the sources, so that a read that ends after
     /// a newer one has started is dropped (RD09).
     private var reloadToken = 0
+    /// Called after the sources were read again: an article open on the
+    /// reading screen may be gone with its source, or with the retention
+    /// clean-up (RD11 decision 15). Set by the reading model.
+    @ObservationIgnored var onReloaded: (@MainActor () -> Void)?
 
     #if DEBUG
     /// Set by the UI tests: the next source save fails before reaching
@@ -174,6 +178,7 @@ final class SourceModel {
             navigation.sheet = nil
         }
         navigation.sourcesChanged(existing: Set(summaries.map(\.id)))
+        onReloaded?()
     }
 
     func toggleExpanded(_ category: UUID) {

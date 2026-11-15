@@ -101,12 +101,6 @@ final class AdultScreenshotTests: AdultTestCase {
         articleRow("Plain story").tap()
         waitFor(element(AccessibilityID.readingTitle))
         capture("adult-article")
-        // The browser's bars, on the article's page.
-        waitFor(button(AccessibilityID.openOriginalButton)).tap()
-        waitFor(moreMenu)
-        Thread.sleep(forTimeInterval: 1)
-        capture("adult-browser")
-        closeBrowser()
         if usesTabs {
             goBack()
         }
@@ -137,6 +131,28 @@ final class AdultScreenshotTests: AdultTestCase {
         waitFor(app.alerts.firstMatch)
         capture("adult-question-turn-off")
         alertButton(["Cancel", "取消"]).tap()
+    }
+
+    /// The browser's bars in the adult partition (assumption A6), written
+    /// under the same conditions as the screens above.
+    func testCaptureAdultBrowser() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let directory = environment["NEWSPAW_SCREENSHOT_DIR"] else {
+            throw XCTSkip("set TEST_RUNNER_NEWSPAW_SCREENSHOT_DIR to capture screenshots")
+        }
+        let variant = environment["NEWSPAW_SCREENSHOT_VARIANT"] ?? "default"
+        let device = (environment["SIMULATOR_DEVICE_NAME"] ?? "device").replacingOccurrences(of: " ", with: "-")
+        launch(authentication: ["passed", "passed"])
+        rotate(.portrait)
+        requireFullWidth()
+        turnOnAdult()
+        enterAdult()
+        createCategory("Velvet")
+        addWebPageSource(to: "Velvet")
+        openWebPageSource(in: "Velvet")
+        Thread.sleep(forTimeInterval: 1)
+        let url = URL(fileURLWithPath: directory).appendingPathComponent("\(device)-\(variant)-adult-browser.png")
+        try? XCUIScreen.main.screenshot().pngRepresentation.write(to: url)
     }
 
     /// The check by hand of criterion 9, as steps: with the app's

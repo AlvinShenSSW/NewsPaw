@@ -318,6 +318,29 @@ Added on 2026-11-15 after the internal review of the pull request (six findings,
 
 Evidence: UI test `testALockWithAStarredPageOpenMakesNoBrowserSession` (the report element gained `sessions=<n>`, the number of browser sessions the app has made; a debug build only) and `testALongLookAtControlCentreLocks`, which drives decision 8's fallback through the app. The refresh model's stopped state, the media pause at a lock and the end of the unlock have no test: what they prevent is a window of a few milliseconds or needs a page that plays, and nothing in the UI tests can produce either.
 
+### Decisions 4, 12 and 13, refined after the external gate: the adult pages' media stay suspended while the app is not active
+
+Added on 2026-11-16 after the external gate's round 1 (finding: a page can start its media again beneath the cover). Pausing once at will-deactivate left a page free to call `play()` again; under "After 1 Minute" or "After 5 Minutes" the adult workspace stays alive beneath the cover, so its page could be heard while the app was not active.
+
+- While the adult workspace is shown and the scene is not active, its pages' media are paused, their full-screen presentations closed, and their playback suspended (`WKWebView.setAllMediaPlaybackSuspended(true)`, iOS 15 and later). This is applied with the cover's rule of decision 12, at the same three moments (will-deactivate, did-enter-background, and the adult workspace becoming shown while the scene is inactive); a session made meanwhile starts suspended.
+- At did-activate, after decision 8's check and any lock it caused, playback is allowed again only when the adult workspace is still the one shown. What was paused stays paused until the page or the owner plays it.
+- A stopped browser model (decision 4) suspends each session before ending it and is never allowed again.
+- The normal partition's browser is unchanged: decision 13's rule is the adult workspace's.
+- **Measured limit (iOS 27.0 simulator, both structures): an audio context is not held.** WebKit's suspension interrupts a running `AudioContext` (its state goes to `interrupted`), but the page's own `resume()` ends that at once and the context runs on beneath the cover, although the header says the suspension "blocks all attempts by the page or the user to resume". A media element's `play()` is blocked as documented. No public WebKit setting stops a context the page resumes: the pause has the same gap, and `WKPreferences.inactiveSchedulingPolicy` applies only to a web view detached from its window and not playing media. What would hold it — ending or unloading the adult pages whenever the app is not active, also for a glance at Control Centre — changes what the owner finds on return and is not built; it is a question for the owner.
+
+Evidence: UI test `AdultCoverTests.testAnAdultPageCannotPlayAgainWhileTheAppIsNotActive` with a debug fixture page (`/media`, linked from the article fixture pages) that plays a sound element and an audio context and starts both again every 200 ms, its title reporting the seconds each has played: under Control Centre for eight seconds the element plays about one second of fifteen, and plays again after the return; the context's seconds are recorded. Device checks: the same with real sound, and what the Lock Screen's playback controls show.
+
+### Decisions 4 and 9, refined after the external gate: a closed library's image cache stores nothing
+
+Added on 2026-11-16 after the external gate's round 1 (finding: a late thumbnail store can recreate the deleted adult image cache). Delete removed the cache directory with `FileManager`, not through the cache's actor, and nothing closed the cache when the library was closed, so a thumbnail store that had passed its last cancellation check could write adult image bytes, and create the directory again, after Delete had reported success.
+
+- Closing the adult library (`LibraryStore.closeAdultLibrary()`: every lock, and Delete's close) also closes its `ImageCache`, through the cache's actor, after the pool is closed. The actor runs one store at a time, so a store that is running ends before the close returns, and every later store writes nothing, creates no directory and returns false. Reads are unchanged.
+- Delete removes the cache directory last, as before, now after that close: a store has either written before the removal or writes nothing.
+- A library whose pool cannot be closed keeps an open cache, as it stays the object the next unlock gets.
+- The normal library is never closed, so its cache is unchanged.
+
+Evidence: package tests `ImageCacheTests.closedCacheStoresNothing`, `AdultLibraryCloseTests.closeClosesTheImageCache`, `AdultGateTests.thumbnailEndingAfterDelete` (a thumbnail whose fetch ends after Delete, with only the loader holding the cache) and `AdultGateTests.deleteWaitsForAStoreInFlight` (a store held inside the cache, by a debug-only hook, when Delete begins).
+
 ### Known limits
 
 - A model object that UIKit keeps after a lock still holds what it had loaded: the category and source summaries, the rows of the lists that were read, the articles that were opened. That is memory of the same process; nothing shows it, and it is not emptied. It goes when UIKit lets go of the trait collection or the menu's source view: after about a minute for a menu, and not within the four minutes measured for an opened article or a swiped row.

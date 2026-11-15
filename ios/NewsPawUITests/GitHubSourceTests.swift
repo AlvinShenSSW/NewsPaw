@@ -21,11 +21,11 @@ final class GitHubSourceTests: NewsPawUITestCase {
     }
 
     private var nameValue: String? {
-        app.textFields[AccessibilityID.nameField].value as? String
+        reveal(app.textFields[AccessibilityID.nameField]).value as? String
     }
 
     private var kindLabel: String {
-        scrollTo(element(AccessibilityID.kindValue)).label
+        reveal(element(AccessibilityID.kindValue)).label
     }
 
     /// Criteria 9 and 12: the address as typed without www., .git or a
@@ -56,19 +56,19 @@ final class GitHubSourceTests: NewsPawUITestCase {
         waitFor(element(AccessibilityID.previewItem))
         screenshot("github-confirm")
 
-        tags.tap()
+        reveal(tags).tap()
         XCTAssertTrue(tags.isSelected)
         XCTAssertEqual(nameValue, "NewsPaw-Fixture/Project · Tags")
         XCTAssertEqual(kindLabel, "GitHub · Tags")
-        commits.tap()
+        reveal(commits).tap()
         XCTAssertEqual(nameValue, "NewsPaw-Fixture/Project · Commits")
         XCTAssertEqual(kindLabel, "GitHub · Commits")
-        page.tap()
+        reveal(page).tap()
         XCTAssertTrue(page.isSelected)
         XCTAssertEqual(nameValue, "NewsPaw-Fixture/Project")
         XCTAssertEqual(kindLabel, "Web page")
         XCTAssertFalse(element(AccessibilityID.previewItem).exists)
-        releases.tap()
+        reveal(releases).tap()
         XCTAssertEqual(nameValue, "NewsPaw-Fixture/Project")
         XCTAssertEqual(previewItemCount(), 3)
 
@@ -77,9 +77,9 @@ final class GitHubSourceTests: NewsPawUITestCase {
         detect("https://github.com/NewsPaw-Fixture/Project/tree/main/docs")
         waitFor(row("project", "releases"))
         XCTAssertEqual(element(AccessibilityID.confirmAddress).label, Fixture.project)
-        button(AccessibilityID.pageItselfChoice).tap()
+        reveal(button(AccessibilityID.pageItselfChoice)).tap()
         XCTAssertEqual(kindLabel, "Web page")
-        chooseCategoryAndSave("News")
+        revealAndSave("News")
         expand("News")
         XCTAssertEqual(waitFor(sourceRow("NewsPaw-Fixture/Project")).value as? String, "Web page")
     }
@@ -97,14 +97,14 @@ final class GitHubSourceTests: NewsPawUITestCase {
         XCTAssertTrue(releases.label.contains("No items yet"), releases.label)
         XCTAssertTrue(row("untagged", "tags").label.contains("No items yet"))
         XCTAssertTrue(row("untagged", "commits").label.contains("Latest item"))
-        XCTAssertTrue(waitFor(app.staticTexts["This feed has no items yet"]).exists)
+        XCTAssertTrue(reveal(app.staticTexts["This feed has no items yet"]).exists)
         XCTAssertFalse(element(AccessibilityID.previewItem).exists)
 
-        row("untagged", "commits").tap()
+        reveal(row("untagged", "commits")).tap()
         XCTAssertEqual(nameValue, "NewsPaw-Fixture/Untagged · Commits")
         XCTAssertEqual(kindLabel, "GitHub · Commits")
         XCTAssertEqual(previewItemCount(), 3)
-        chooseCategoryAndSave("News")
+        revealAndSave("News")
         expand("News")
         let source = waitFor(sourceRow("NewsPaw-Fixture/Untagged · Commits"))
         XCTAssertEqual(source.value as? String, "3 unread")
@@ -122,7 +122,7 @@ final class GitHubSourceTests: NewsPawUITestCase {
         openAddSource()
         detect(Fixture.project)
         XCTAssertTrue(waitFor(row("project", "releases")).isSelected)
-        chooseCategoryAndSave("News")
+        revealAndSave("News")
         expand("News")
         let source = waitFor(sourceRow("NewsPaw-Fixture/Project"))
         waitForValue(source, "4 unread")
@@ -145,7 +145,7 @@ final class GitHubSourceTests: NewsPawUITestCase {
         let save = waitFor(button(AccessibilityID.saveButton))
         XCTAssertFalse(save.isEnabled, "nothing is chosen, so Save is disabled")
         screenshot("github-releases-added")
-        row("project", "commits").tap()
+        reveal(row("project", "commits")).tap()
         XCTAssertTrue(row("project", "commits").isSelected)
         XCTAssertEqual(nameValue, "NewsPaw-Fixture/Project · Commits")
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: save)
@@ -165,7 +165,7 @@ final class GitHubSourceTests: NewsPawUITestCase {
         let tags = waitFor(row("slow", "tags"))
         XCTAssertTrue(tags.label.contains("Could not check in time"), tags.label)
         XCTAssertTrue(row("slow", "releases").isSelected)
-        tags.tap()
+        reveal(tags).tap()
         let usable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'Latest item'"), object: row("slow", "tags"))
         XCTAssertEqual(XCTWaiter.wait(for: [usable], timeout: 15), .completed, "Tags is usable after the second detection")
         XCTAssertEqual(element(AccessibilityID.confirmAddress).label, Fixture.slow)
@@ -178,10 +178,35 @@ final class GitHubSourceTests: NewsPawUITestCase {
 
     // MARK: - Helpers
 
+    /// Brings `target` on screen in the confirm step, whose rows below or
+    /// above the fold are not in the hierarchy (the iPad's sheet is short):
+    /// up with short slow drags, which never start at the top of the form
+    /// and so never pull the sheet down, then down with the shared helper.
+    @discardableResult
+    private func reveal(_ target: XCUIElement, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+        let top = element(AccessibilityID.confirmAddress)
+        var drags = 0
+        while !(target.waitForExistence(timeout: 1) && target.isHittable), !(top.exists && top.isHittable), drags < 6 {
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 220)), withVelocity: .slow, thenHoldForDuration: 0.2)
+            drags += 1
+        }
+        if target.exists, target.isHittable {
+            return target
+        }
+        return scrollTo(target, file: file, line: line)
+    }
+
+    /// Chooses the category, below the fold on the iPad, and saves.
+    private func revealAndSave(_ category: String) {
+        reveal(button(AccessibilityID.categoryChoiceRow))
+        chooseCategoryAndSave(category)
+    }
+
     /// The preview's rows, after one swipe up: rows below the fold are not
     /// in the hierarchy.
     private func previewItemCount() -> Int {
-        waitFor(element(AccessibilityID.previewItem))
+        reveal(element(AccessibilityID.previewItem))
         app.swipeUp()
         return app.descendants(matching: .any).matching(identifier: AccessibilityID.previewItem).count
     }

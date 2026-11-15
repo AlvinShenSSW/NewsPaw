@@ -93,6 +93,9 @@ private struct ArticleScreen: View {
     @Environment(ReadingSettings.self) private var settings
     @Environment(\.layoutDirection) private var layoutDirection
     @State private var isShowingSettings = false
+    /// The title's size: 22 pt at the default Dynamic Type size, scaled
+    /// with it and, as the body is, by the text-size setting.
+    @ScaledMetric(relativeTo: .title2) private var scaledTitleSize = 22.0
 
     /// The column of ux section 5.
     private static let maximumColumnWidth = 680.0
@@ -129,7 +132,7 @@ private struct ArticleScreen: View {
     @ViewBuilder
     private var header: some View {
         Text(verbatim: row.displayTitle)
-            .font(.title2.weight(.bold))
+            .font(.system(size: min(scaledTitleSize * settings.textSize.factor, ReadingMetrics.maximumSize), weight: .bold))
             .foregroundStyle(Theme.text)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)

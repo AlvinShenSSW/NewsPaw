@@ -172,6 +172,7 @@ final class ReadingTests: ReadingTestCase {
         waitFor(block(at: 1))
         let standard: CGFloat = 17 * 1.5
         waitForLatinPitch(standard, "the default size and spacing")
+        let titleHeight = readingTitle.frame.height
 
         openReadingSettings()
         capture("aa")
@@ -225,6 +226,13 @@ final class ReadingTests: ReadingTestCase {
         XCTAssertFalse(button(AccessibilityID.textSizeLargerButton).isEnabled, "the largest step")
         XCTAssertEqual(element(AccessibilityID.textSizeValue).value as? String, "5 / 5")
         waitForLatinPitch(standard * 1.3 * 0.9, "the largest step")
+        // The title follows the step as the body does: one line of 22 pt
+        // at the default step, of 1.3 times that at the largest.
+        let grown = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            abs(self.readingTitle.frame.height / titleHeight - 1.3) < 0.06
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [grown], timeout: timeout), .completed,
+                       "the title is \(readingTitle.frame.height) pt high at the largest step and was \(titleHeight) pt at the default")
         closeReadingSettings()
     }
 

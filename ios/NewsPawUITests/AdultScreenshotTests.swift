@@ -156,16 +156,22 @@ final class AdultScreenshotTests: AdultTestCase {
     }
 
     /// The check by hand of criterion 9, as steps: with the app's
-    /// animations on, "After 1 Minute", and an adult sheet open, the app is
-    /// left for longer than a minute and entered again; the timed lock then
+    /// animations on and something of the adult partition open, the app is
+    /// left and entered again after the lock rule's time; the lock then
     /// swaps the partition under the cover. Run with
-    /// `TEST_RUNNER_NEWSPAW_TRANSITION_CHECK=1` while the simulator's
+    /// `TEST_RUNNER_NEWSPAW_TRANSITION_CHECK` set while the simulator's
     /// screen is recorded (`xcrun simctl io <id> recordVideo`), and look at
-    /// the frames after the return: none may show the sheet or the adult
-    /// list. Skipped otherwise; it asserts only where the app ends up.
+    /// the frames after the return: none may show anything of the adult
+    /// partition. Its values: `1` — "After 1 Minute" with the category's
+    /// settings sheet open, away for 64 seconds; `immediately` — the
+    /// default timing with the sheet open, away for 4 seconds (the lock
+    /// happens in the background); `menu` — "After 1 Minute" with a
+    /// context menu open on the adult category. Skipped otherwise; it
+    /// asserts only where the app ends up.
     func testTimedLockWithAnimationsOn() throws {
-        guard ProcessInfo.processInfo.environment["NEWSPAW_TRANSITION_CHECK"] == "1" else {
-            throw XCTSkip("set TEST_RUNNER_NEWSPAW_TRANSITION_CHECK=1 and record the screen")
+        let variant = ProcessInfo.processInfo.environment["NEWSPAW_TRANSITION_CHECK"] ?? ""
+        guard ["1", "immediately", "menu"].contains(variant) else {
+            throw XCTSkip("set TEST_RUNNER_NEWSPAW_TRANSITION_CHECK and record the screen")
         }
         keepsAnimations = true
         launch(authentication: ["passed", "passed"])
@@ -173,20 +179,29 @@ final class AdultScreenshotTests: AdultTestCase {
         requireFullWidth()
         createCategory("World")
         turnOnAdult()
-        chooseTiming("After 1 Minute")
+        if variant != "immediately" {
+            chooseTiming("After 1 Minute")
+        }
         enterAdult()
         createCategory("Velvet")
-        openCategoryList("Velvet")
-        openListSettings(source: false)
-        let field = waitFor(app.textFields[AccessibilityID.nameField])
-        XCTAssertEqual(field.value as? String, "Velvet")
+        let field = app.textFields[AccessibilityID.nameField]
+        if variant == "menu" {
+            showCategoryList()
+            waitFor(element(AccessibilityID.categoryRow("Velvet"))).press(forDuration: 1.2)
+            waitFor(app.buttons["Category Settings"])
+        } else {
+            openCategoryList("Velvet")
+            openListSettings(source: false)
+            XCTAssertEqual(waitFor(field).value as? String, "Velvet")
+        }
         XCUIDevice.shared.press(.home)
-        Thread.sleep(forTimeInterval: 64)
+        Thread.sleep(forTimeInterval: variant == "immediately" ? 4 : 64)
         // For finding the moment in the recording.
         print("RD18 returning at \(Date().timeIntervalSince1970)")
         app.activate()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: timeout))
         Thread.sleep(forTimeInterval: 3)
+        XCTAssertFalse(app.buttons["Category Settings"].exists, "the adult menu is still shown")
         XCTAssertFalse(field.exists, "the adult sheet is still shown")
         XCTAssertEqual(partitionLabel(), Wording.normal)
         waitForReport(Self.closed, Self.dropped)

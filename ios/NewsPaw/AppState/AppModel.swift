@@ -91,6 +91,13 @@ final class AppModel {
     /// The app's clock.
     @ObservationIgnored private var now: @Sendable () -> Date = { Date() }
     @ObservationIgnored private let cover = CoverWindow()
+    /// The adult workspace was dropped while the cover was shown: the
+    /// cover stays until that swap is on screen (decision 12).
+    @ObservationIgnored private var swapIsUnderCover = false
+    /// The workspace whose shell is in the view hierarchy, as the root
+    /// view reports it.
+    @ObservationIgnored private var appearedShell: Workspace.ID?
+    @ObservationIgnored private var coverRemoval: Task<Void, Never>?
     @ObservationIgnored private var sceneIsActive = false
     /// The scene's absence, as the lock rule counts it.
     @ObservationIgnored private var absence = Absence()
@@ -324,6 +331,7 @@ final class AppModel {
         lastAdultWorkspace = workspace
         lastAdultBrowser = workspace.browser
         #endif
+        swapIsUnderCover = false
         if !sceneIsActive {
             // Shown while the system's prompt still keeps the scene
             // inactive: the cover's rule applies at this moment (decision
@@ -354,8 +362,11 @@ final class AppModel {
         workspace.stop()
         gateState = .locked
         applyTint()
-        // A cover that is shown stays until the scene is active again, so
-        // that the swap is drawn under it (decision 12).
+        // A cover that is shown stays until the scene is active again and
+        // the swap is on screen (decision 12).
+        if cover.isShown {
+            swapIsUnderCover = true
+        }
         let gate = gate
         Task {
             await gate?.lock()
@@ -567,18 +578,70 @@ final class AppModel {
                 Task { await refresh.entered() }
             }
         }
-        // The cover goes one main-loop turn after the check and any swap
-        // it caused, so that no frame of the adult partition is drawn
-        // under a cover that is already gone (decision 12).
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.sceneIsActive else { return }
+        removeCover()
+    }
+
+    /// The root view's shell of a workspace is in the view hierarchy.
+    func shellDidAppear(of workspace: Workspace) {
+        appearedShell = workspace.id
+    }
+
+    /// Hides the cover now that the scene is active (decision 12). While
+    /// the adult workspace is still the one shown, one main-loop turn
+    /// later. After a lock under the cover, only once the swap is on
+    /// screen: SwiftUI draws the other shell a frame or two after the
+    /// change, and UIKit takes a sheet of the dropped shell away about a
+    /// quarter of a second later (measured with animations on, RD18
+    /// criterion 9), so the cover waits until the normal shell has
+    /// appeared and the app's window presents nothing, and then three
+    /// frames more.
+    private func removeCover() {
+        coverRemoval?.cancel()
+        coverRemoval = nil
+        guard cover.isShown else { return }
+        guard swapIsUnderCover else {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.sceneIsActive, !self.swapIsUnderCover else { return }
+                self.cover.hide()
+            }
+            return
+        }
+        coverRemoval = Task { [weak self] in
+            let frame = Duration.milliseconds(17)
+            let deadline = ContinuousClock.now + CoverWindow.longestWait
+            var framesDrawn = 0
+            while framesDrawn < 3 {
+                guard let self, !Task.isCancelled, self.sceneIsActive else { return }
+                if self.swapIsDrawn {
+                    framesDrawn += 1
+                } else if ContinuousClock.now >= deadline {
+                    // Never seen. The cover does not stay for good, and
+                    // what is still presented goes with it.
+                    self.cover.dismissPresentationsOfTheApp()
+                    break
+                } else {
+                    framesDrawn = 0
+                }
+                try? await Task.sleep(for: frame)
+            }
+            guard let self, !Task.isCancelled, self.sceneIsActive else { return }
+            self.swapIsUnderCover = false
             self.cover.hide()
         }
     }
 
+    /// Whether the shell of the workspace shown is in the view hierarchy
+    /// and nothing of another shell is still presented.
+    private var swapIsDrawn: Bool {
+        adult == nil && appearedShell == normal?.id && !cover.appPresentsSomething
+    }
+
     /// The lock rule answered "lock": the adult partition when it is
-    /// shown, else Settings › Adult Partition of the normal partition.
+    /// shown, else Settings › Adult Partition of the normal partition. A
+    /// question of that screen closes with it: it is not answered after
+    /// an absence without a new authentication (decision 10).
     private func lockByRule() {
+        turnOffQuestion = nil
         if adult != nil {
             lock()
         } else {
@@ -587,7 +650,7 @@ final class AppModel {
     }
 
     /// The cover's one rule (decision 12). It only ever shows the cover
-    /// here; the cover is hidden at did-activate alone.
+    /// here; the cover is hidden by `removeCover()` alone.
     private func applyCoverRule() {
         if CoverRule.isShown(adultIsShown: adult != nil, sceneIsActive: sceneIsActive) {
             cover.show()

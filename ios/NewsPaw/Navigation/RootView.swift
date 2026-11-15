@@ -40,6 +40,9 @@ struct RootView: View {
                     .environment(workspace.navigation)
                     // The accent follows the partition (decision 7).
                     .environment(\.accent, Theme.accent(of: workspace.partition))
+                    // The cover waits for the shell of the workspace
+                    // shown (decision 12).
+                    .onAppear { model.shellDidAppear(of: workspace) }
                     // Another workspace is another shell: no sheet, alert,
                     // menu, pushed screen or view state survives the change.
                     .id(workspace.id)

@@ -271,6 +271,29 @@ By the driver's decision of 2026-11-15, in place of "the store then holds the ad
 
 Evidence: package tests of the store and the gate (closed at once although a reference is held; the held reference fails; the next unlock is a new pool); UI tests through the debug element, whose report is now `file=<0|1> pool=<open|closed> library=<held|released> workspace=<none|held|released> browser=<none|held|released>` — `pool=closed` and `workspace=released` are asserted after every lock on every path and on both structures; `library=released` and `browser=released` are asserted on the paths of the table's first row on the panes (iPad), and recorded everywhere else: on the tab structure (iPhone) no path was found on which UIKit lets go of them.
 
+### Assumption A5 as measured, and decision 12 as built: the cover waits for the swap
+
+Criterion 9's check by hand was done as a recorded run on both simulators (iOS 27.0) with the app's animations on: "After 1 Minute", the adult category's settings sheet open, Home, 64 seconds, back. With the design as frozen (the cover hidden one main-loop turn after the swap at did-activate) the recording showed adult content after the cover had gone:
+
+| Simulator | What the frames showed after the cover went | For how long |
+| --- | --- | --- |
+| iPad Pro 11-inch | the adult list's title with the sheet over it, for two frames; then the normal list with the adult sheet ("Category Settings", the name field reading the adult category's name) still over it | about 0.25 s |
+| iPhone 18 Pro Max | the adult sheet, full screen | about 0.3 s |
+
+So assumption A5 does not hold with animations on: SwiftUI draws the other shell a frame or two after the change, and UIKit takes a sheet of the dropped shell away about a quarter of a second after it, without animating it. Under the UI tests, where the app's animations are off, none of this is seen.
+
+What was built, in place of "hidden at did-activate, one main-loop turn after decision 8's check and any swap it caused":
+
+- While the adult workspace is still the one shown, the cover is hidden one main-loop turn after did-activate, as designed.
+- After a lock under the cover — by the rule at did-activate, or earlier in the background — the cover is hidden only once the swap is on screen: the root view has reported that the normal workspace's shell appeared, no window of the app presents a view controller any more, and both have held for three frames. If that has not come after 2 seconds (never seen), whatever the app's windows still present is dismissed without animation and the cover is hidden then, so that the cover cannot stay for good.
+- The table's remedy for A5, "close presentations explicitly before the swap", was not what was built: closing them through SwiftUI is not done in the step of the swap (decision 4 wants one step with no suspension), and the swap's own late frame needs the cover to wait in any case. Every lock with an adult sheet, dialog or menu open happens under the cover: the lock button and the partition switch cannot be reached while one is open.
+- The recorded check was repeated after the change, on both simulators, in three forms: the timed lock with the sheet open; "Immediately" with the sheet open (the lock happens in the background); the timed lock with a context menu open on the adult category. In all six recordings every frame after the return shows the system's picture of the cover, the cover, or the normal partition (`rd18/screenshots/criterion9-transition/`).
+- The check by hand stays the only evidence for this: no automatic test sees frames.
+
+### Decision 10, added: the question of turning off closes with the screen
+
+The questions of turning off are presented at the root so that they outlive the swap (decision 9). A question left open when the app is left was therefore still there after a lock by the rule, in the normal partition, and could be answered — Keep Data Hidden or Delete Data — with no new authentication. The lock rule now closes an open question together with the screen that asked it, in both partitions (UI test `testSettingsScreenOfTheNormalPartitionClosesByTheLockRule`).
+
 ### Known limits
 
 - A model object that UIKit keeps after a lock still holds what it had loaded: the category and source summaries, the rows of the lists that were read, the articles that were opened. That is memory of the same process; nothing shows it, and it is not emptied. It goes when UIKit lets go of the trait collection or the menu's source view: after about a minute for a menu, and not within the four minutes measured for an opened article or a swiped row.

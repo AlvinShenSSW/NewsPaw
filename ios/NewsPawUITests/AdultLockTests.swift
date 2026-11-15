@@ -377,9 +377,11 @@ final class AdultLockTests: AdultTestCase {
 
     /// Settings › Adult Partition opened from the normal partition is
     /// closed by the rule that locks: it stays across a short absence under
-    /// "After 1 Minute" and is closed by one under "Immediately".
+    /// "After 1 Minute" and is closed by one under "Immediately", and so
+    /// is its question of turning off, which is not left to be answered
+    /// without a new authentication.
     func testSettingsScreenOfTheNormalPartitionClosesByTheLockRule() {
-        launchAtFullWidth(authentication: ["passed", "passed"])
+        launchAtFullWidth(authentication: ["passed", "passed", "passed"])
         turnOnAdult()
         chooseTiming("After 1 Minute")
         leaveAndReturn(seconds: 3)
@@ -391,6 +393,18 @@ final class AdultLockTests: AdultTestCase {
         waitFor(adultRow)
         XCTAssertEqual(partitionLabel(), Wording.normal)
         // Opening it again asks again.
+        tapAdultRow()
+        waitFor(turnOffButton).tap()
+        let question = app.alerts.staticTexts[Wording.turnOffQuestion]
+        waitFor(question)
+        leaveAndReturn()
+        waitForAbsence(question)
+        waitForAbsence(turnOffButton)
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        // Nothing was turned off or deleted.
+        waitFor(adultRow)
+        XCTAssertEqual(partitionLabel(), Wording.normal)
+        waitForReport("file=1")
         tapAdultRow()
         waitFor(turnOffButton)
     }

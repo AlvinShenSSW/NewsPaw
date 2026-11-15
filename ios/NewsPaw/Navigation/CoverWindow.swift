@@ -40,6 +40,29 @@ final class CoverWindow {
         window?.isHidden = true
     }
 
+    /// The longest the cover stays after the scene is active again while
+    /// a swap under it is not yet on screen.
+    static let longestWait = Duration.seconds(2)
+
+    /// Whether a window of the app presents a view controller: a sheet, an
+    /// alert, a dialog or a popover.
+    var appPresentsSomething: Bool {
+        appWindows.contains { $0.rootViewController?.presentedViewController != nil }
+    }
+
+    /// Takes away, without animation, whatever the app's windows present.
+    func dismissPresentationsOfTheApp() {
+        UIView.performWithoutAnimation {
+            for window in appWindows {
+                window.rootViewController?.dismiss(animated: false)
+            }
+        }
+    }
+
+    private var appWindows: [UIWindow] {
+        (Self.scene()?.windows ?? []).filter { $0 !== window }
+    }
+
     /// The app has one window scene (ux section 2).
     private static func scene() -> UIWindowScene? {
         UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first

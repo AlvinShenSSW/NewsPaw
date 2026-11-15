@@ -101,6 +101,12 @@ final class AdultScreenshotTests: AdultTestCase {
         articleRow("Plain story").tap()
         waitFor(element(AccessibilityID.readingTitle))
         capture("adult-article")
+        // The browser's bars, on the article's page.
+        waitFor(button(AccessibilityID.openOriginalButton)).tap()
+        waitFor(moreMenu)
+        Thread.sleep(forTimeInterval: 1)
+        capture("adult-browser")
+        closeBrowser()
         if usesTabs {
             goBack()
         }

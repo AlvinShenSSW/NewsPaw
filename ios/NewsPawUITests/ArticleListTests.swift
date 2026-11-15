@@ -489,6 +489,38 @@ final class ArticleListTests: ArticleTestCase {
         record("list-top", "first row \(rowHeight) pt; at its top when scrolled \(rowHeight / 3) pt, not when scrolled \(rowHeight * 2.5) pt")
     }
 
+    /// A list that was scrolled far down, left and entered again starts at
+    /// its top and counts as at its top without a scroll: a refresh it did
+    /// not start reads it again (RD11, review round 1).
+    func testReenteredListIsAtItsTop() {
+        launchAtFullWidth()
+        createCategory("World")
+        addSource(Fixture.longCounting, to: "World")
+        openSourceList("Long Counting Feed", in: "World")
+        waitFor(articleRow("Long story 01"))
+        let anchor = waitFor(articleRow("Long story 05"))
+        let point = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: anchor.frame.midX, dy: window.midY + 150))
+        for _ in 0..<3 {
+            point.press(forDuration: 0.1, thenDragTo: point.withOffset(CGVector(dx: 0, dy: -400)), withVelocity: .slow, thenHoldForDuration: 0.3)
+        }
+        XCTAssertFalse(articleRow("Long story 01").exists && articleRow("Long story 01").isHittable, "the list is scrolled far from its top")
+
+        // Leave it and enter it again: popped and pushed in the tab
+        // structure, another list selected between in the panes.
+        if usesTabs {
+            goBack()
+        } else {
+            openStarred()
+            waitFor(element(AccessibilityID.starredEmpty))
+        }
+        openSourceList("Long Counting Feed", in: "World")
+        XCTAssertTrue(waitFor(articleRow("Long story 01")).isHittable, "the list entered again is at its top")
+        let first = topRowTitle()
+        updateNowFromTheList()
+        let second = waitForNewTopRow(after: first)
+        record("list-re-entered", "top row \(first ?? "none") on entering again, \(second ?? "none") after a refresh the list did not start")
+    }
+
     // MARK: - Helpers
 
     /// The counts of the source "Articles Feed", its category "World", All

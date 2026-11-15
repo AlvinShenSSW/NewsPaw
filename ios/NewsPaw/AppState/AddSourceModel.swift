@@ -178,6 +178,14 @@ final class AddSourceModel {
         case .feed(let candidate):
             choose(.feed(candidate.address))
             path = [.confirm]
+        case .github(let repository):
+            // Releases is chosen only when it can be: Tags has the same
+            // links without the notes, so it is never a silent default
+            // (RD07 decision 6). Otherwise nothing is chosen.
+            if let releases = repository.candidates.first, case .usable = releases.state {
+                choose(.feed(releases.address))
+            }
+            path = [.confirm]
         case .page(let page) where !page.candidates.isEmpty:
             let firstUsable = page.candidates.first { candidate in
                 if case .usable = candidate.state { true } else { false }
@@ -194,10 +202,10 @@ final class AddSourceModel {
     // MARK: - Confirm
 
     /// Whether there is anything to save: a feed, a page with declared feeds,
-    /// or a web page the owner asked for.
+    /// a repository, or a web page the owner asked for.
     var canConfirm: Bool {
         switch detection {
-        case .feed: true
+        case .feed, .github: true
         case .page(let page): !page.candidates.isEmpty || savingAsWebPage
         case .failed(let failure): failure.offersWebPage && savingAsWebPage
         case .invalidAddress, .duplicate, nil: false
@@ -208,15 +216,27 @@ final class AddSourceModel {
     var webPageAddress: String? {
         switch detection {
         case .page(let page): page.address
+        case .github(let repository): repository.address
         case .failed(let failure) where failure.offersWebPage: failure.address
         case .feed, .failed, .invalidAddress, .duplicate, nil: nil
         }
     }
 
-    /// The page's declared feeds, when the choice list shows them.
+    /// The page's declared feeds, or the repository's three, when the
+    /// choice list shows them.
     var declaredCandidates: [DeclaredCandidate] {
-        guard !savingAsWebPage, case .page(let page) = detection else { return [] }
-        return page.candidates
+        guard !savingAsWebPage else { return [] }
+        switch detection {
+        case .page(let page): return page.candidates
+        case .github(let repository): return repository.candidates
+        default: return []
+        }
+    }
+
+    /// The repository's feed chosen, when the detection is a repository.
+    var chosenGitHubFeed: GitHubFeed? {
+        guard case .github(let repository) = detection, case .feed(let address) = choice else { return nil }
+        return repository.candidates.first { $0.address == address }.flatMap(repository.feed(of:))
     }
 
     /// The feed candidate chosen, if the choice is a usable feed.
@@ -225,8 +245,8 @@ final class AddSourceModel {
         switch detection {
         case .feed(let candidate) where candidate.address == address:
             return candidate
-        case .page(let page):
-            for candidate in page.candidates where candidate.address == address {
+        case .page, .github:
+            for candidate in declaredCandidates where candidate.address == address {
                 if case .usable(let feed) = candidate.state {
                     return feed
                 }
@@ -238,11 +258,18 @@ final class AddSourceModel {
     }
 
     /// Chooses a row of the confirm step. A declared feed that could not be
-    /// checked in time runs an ordinary detection on its address instead.
+    /// checked in time runs an ordinary detection on its address instead; a
+    /// repository's feed runs the repository's detection again, with the
+    /// address field unchanged (RD07 decision 7).
     func choose(_ newChoice: Choice) {
         if case .feed(let address) = newChoice,
            declaredCandidates.contains(where: { $0.address == address && $0.state == .notChecked }) {
-            addressText = address
+            if case .github = detection {
+                // The built address is never put in the field: detected on
+                // its own it would be an ordinary feed.
+            } else {
+                addressText = address
+            }
             detect()
             return
         }
@@ -255,6 +282,15 @@ final class AddSourceModel {
     }
 
     private func defaultName(for choice: Choice) -> String {
+        // A repository's: `owner/repo`, with the feed for Tags and Commits,
+        // so two sources of one repository can be told apart (RD07
+        // decision 8).
+        if case .github(let repository) = detection {
+            let name = repository.repository.displayName
+            guard case .feed = choice, let feed = chosenGitHubFeed, feed != .releases else { return name }
+            let feedName = SourceWording.gitHubFeed(feed)
+            return String(localized: "\(name) · \(feedName)", comment: "The suggested name of a GitHub source of Tags or Commits: the repository (owner/name) and the feed's name.")
+        }
         let title: String?
         let address: String?
         switch choice {

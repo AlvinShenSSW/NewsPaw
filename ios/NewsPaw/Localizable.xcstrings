@@ -1,6 +1,17 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ · %@" : {
+      "comment" : "The suggested name of a GitHub source of Tags or Commits: the repository (owner/name) and the feed's name.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
     "%@ · latest item %@" : {
       "comment" : "Second line of a declared feed in Add source: the feed format (RSS, Atom, JSON Feed; not translated) and the relative time of its newest item.",
       "localizations" : {
@@ -474,6 +485,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭边栏"
+          }
+        }
+      }
+    },
+    "Commits" : {
+      "comment" : "One of a GitHub repository's feeds: the commits of its default branch.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提交"
           }
         }
       }
@@ -953,6 +975,17 @@
         }
       }
     },
+    "GitHub · %@" : {
+      "comment" : "The kind of a source in Add source: a GitHub repository, then the chosen feed (Releases, Tags, Commits).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub · %@"
+          }
+        }
+      }
+    },
     "Globe" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -1292,6 +1325,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "较大"
+          }
+        }
+      }
+    },
+    "Latest item %@" : {
+      "comment" : "Second line of a GitHub repository's feed in Add source: the relative time of its newest item, as in \"Latest item 3 days ago\".",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新一条：%@"
           }
         }
       }
@@ -1694,6 +1738,17 @@
         }
       }
     },
+    "No items yet" : {
+      "comment" : "Second line of a GitHub repository's feed in Add source when the feed has no items (a repository with no tag).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有条目"
+          }
+        }
+      }
+    },
     "No starred articles" : {
       "comment" : "Empty state of Starred.",
       "localizations" : {
@@ -2009,6 +2064,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "宽松"
+          }
+        }
+      }
+    },
+    "Releases" : {
+      "comment" : "One of a GitHub repository's feeds: its releases (every tag, with the release notes).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发行版"
           }
         }
       }
@@ -2427,6 +2493,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "推荐来源"
+          }
+        }
+      }
+    },
+    "Tags" : {
+      "comment" : "One of a GitHub repository's feeds: its tags, without notes.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签"
           }
         }
       }

@@ -124,6 +124,10 @@ final class AdultLockTests: AdultTestCase {
         waitFor(button(AccessibilityID.categoryChoiceRow)).tap()
         waitFor(button(AccessibilityID.categoryChoice("World")))
         assertNothingShown(of: names, on: "Add source's category picker \(when)")
+        // Back to the confirm step, then to the address step, which has
+        // Cancel.
+        goBack()
+        waitFor(element(AccessibilityID.confirmAddress))
         goBack()
         waitFor(button(AccessibilityID.cancelButton)).tap()
         waitForAbsence(app.textFields[AccessibilityID.addressField])

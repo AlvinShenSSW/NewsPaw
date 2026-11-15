@@ -196,3 +196,37 @@ Version 2 after debate round 1 (one fresh critic; 15 findings; SwiftSoup 2.14.3 
 | D15 | P3 | `ol start` unbounded; headings over 100 pt at the largest sizes; Korean; no base address; lazy-loaded images | Decisions 2, 3, 8 |
 
 Not re-reviewed after these changes. Not measured by anyone yet: everything in the Assumptions table, and the new converter itself.
+
+## Post-implementation record
+
+Written after the implementation and round 1 of the internal review (pull request #161). The decisions above are left as they were frozen; where this section differs from them, this section is what was built.
+
+### Departures from the design, accepted by the driver
+
+1. **The body image loader is in the package** (`NewsPawKit/Images/BodyImageLoader.swift`), not in the app as the Approach says: criterion 10 asks for a package test of its limits. The app has the view (`Reading/BodyImageView.swift`).
+2. **`BlocksView` takes a fourth input**, the images of the opening (the loader, and what this opening has learnt about each address). Decision 8's "and nothing else" had no place for where images come from; a parameter keeps the view free of any library row.
+3. **The converter reads a tag to its end**; the tag scanner's cap of 8,192 bytes became a parameter and is feed discovery's only. With the cap, the rest of a long attribute (an image written into its own `src`) became the article's text. The work stays linear: a tag that never ends consumes the rest of the input. A tag written as empty by an XML serialiser (`<iframe/>`, `<script/>`) has no content for the converter.
+4. **Code blocks, too, continue in a further block after the limit of a block** (decision 4 names paragraphs), at a line's end where there is one, and **alternative text is bounded**: both for the reason of the paragraph limit, one text view of megabytes.
+5. **The list indent grows with the text size**, from 20 pt per depth up to 32 pt (decision 8: 20 pt), so that a marker has room at the large sizes.
+6. **A hairline around the code box and around an image's place.** The surface colour is the page's colour in light appearance, so a box "on the surface colour" had no edge.
+7. **An image that is not in the cache is asked for after its block has been on screen for 150 ms.** At the first layout the lazy stack made every block twice and each image was requested twice; a block that only passes by makes no request either.
+8. **A reading screen pushed on its list is popped for any open article that no longer exists**, also one found missing when a stale row is tapped (decision 15 names the deleted source and the clean-up).
+9. **The `Line heights` fixture and two debug launch keys** (`NEWSPAW_UITEST_ARTICLE_PAGE_SIZE`, `NEWSPAW_UITEST_KEEP_ANIMATIONS`), honoured only in a debug build under a UI-test library directory: the first so that a UI test reaches the end of the loaded rows in 20 rows, the second for the checks made with animations on.
+
+### Assumption A7
+
+**Does not hold on the iOS 27 simulator**: the Songti SC family is not there without a download. Serif is New York for Latin text there and Chinese stays in the system face; a block with kana falls back to Hiragino Mincho. The code that puts Songti SC behind New York when the system has it has therefore never run, on a simulator or a device. The other assumptions held as measured (A4 with a UIKit swipe recogniser only, not with a SwiftUI drag gesture; A5 as far as a simulator shows).
+
+### Changes of review round 1
+
+- **The reader's place while an article stays open** (non-goal "remembering the scroll position of an article" made precise: it means from one opening to the next). In the reading pane the article's screen is taken away while its page is in the browser, and a change between the tab and the pane structure builds it anew; it then starts at the block that was at the top of the screen, or at the article's top with its header when it was there. The place is kept in memory beside the body (decision 7) and let go with it; nothing is stored, and an article opened again starts at its top.
+- **Decision 2, emoji images.** An `img` whose `class` holds the token `wp-smiley` or `emoji` (WordPress writes every emoji so) is its alternative text in the line it stands in: no image block, no request. Without alternative text it is dropped. `class` joins the attributes read (decision 3), for this and nothing else.
+- **Decision 2, block starts.** `center` and `address` start a block as `div` does. `nav` still does not.
+- **Decision 4, the limits.** A block's text also ends at 80,000 bytes of UTF-8, where a scalar ends: 20,000 characters as a reader counts them do not bound a block, since one character can be of any size (a letter under any number of combining marks). Alternative text: 500 characters and 2,000 bytes. A body that ends inside an element dropped with its content (a `form`, `video` or `svg` that never closes) is marked as cut, and shows the cut line: what was dropped may be the rest of the article.
+- **Decision 6, the version.** These change what the converter gives for the same HTML: `ArticleBlocks.version` is 2. Nothing has recorded version 1.
+- **Decision 8, the title.** The header's title follows the text-size setting as the body does: 22 pt at the default step and the default Dynamic Type size, scaled by both, at most 60 pt. It was fixed at the text style's size, so at the larger steps a body heading was larger than the title.
+- **Decision 9, the stored size of an image.** A stored image has at most 2,048 × 2,048 pixels in all (4,194,304) and at most 8,192 on a side; its shape is kept and it is never enlarged. The bound on the longer side alone (2,048) stored a long picture as a strip no zoom made readable: a screenshot of 1,080 × 6,000 was 369 pixels wide and is now 869 × 4,826. The decoded size in memory has the same bound as before. "Never larger than the image's own size" is, as built, one pixel of the stored image to one point at most; on a 3x screen that is up to three screen pixels to one of the image.
+- **Decision 10, the strings.** The typeface options read "衬线" (Serif) and "无衬线" (Sans Serif) in Simplified Chinese, not "宋体" and "黑体": where the system has no Songti SC (A7), "宋体" named a face the reader did not get. English is unchanged.
+- **Decision 10, "Aa" where the screen is low.** The settings have an ideal size (340 × 580 pt, the popover's size and the sheet's first detent), not a least size: on an iPhone in landscape the least height laid the settings out taller than the screen, with Close above its top edge.
+
+Recorded for the owner, not built: after a clean-up on entry a list keeps the rows of removed articles until it is entered again, and on iPhone Next Article onto such a row drops back to the list; an image with transparency sits on white in dark appearance; the Songti cascade has never run.

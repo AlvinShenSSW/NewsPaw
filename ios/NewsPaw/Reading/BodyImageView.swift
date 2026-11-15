@@ -167,9 +167,9 @@ struct BodyImageView: View {
             case .image(let stored):
                 data = stored
             case .failed:
-            // Known for this opening, also when the image has scrolled
-            // away meanwhile: it is not asked for again until the article
-            // is opened again.
+                // Known for this opening, also when the image has scrolled
+                // away meanwhile: it is not asked for again until the
+                // article is opened again.
                 session.markFailed(url)
                 if !Task.isCancelled {
                     phase = .failed

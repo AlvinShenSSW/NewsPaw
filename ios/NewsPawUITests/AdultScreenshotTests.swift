@@ -166,36 +166,50 @@ final class AdultScreenshotTests: AdultTestCase {
     /// settings sheet open, away for 64 seconds; `immediately` — the
     /// default timing with the sheet open, away for 4 seconds (the lock
     /// happens in the background); `menu` — "After 1 Minute" with a
-    /// context menu open on the adult category. Skipped otherwise; it
-    /// asserts only where the app ends up.
+    /// context menu open on the adult category; `share` — "After 1
+    /// Minute" with the system's share sheet open over the adult
+    /// browser; `plain` and `plain-immediately` — the two timings with
+    /// the adult category's list on screen and nothing open. Skipped
+    /// otherwise; it asserts only where the app ends up.
     func testTimedLockWithAnimationsOn() throws {
         let variant = ProcessInfo.processInfo.environment["NEWSPAW_TRANSITION_CHECK"] ?? ""
-        guard ["1", "immediately", "menu"].contains(variant) else {
+        guard ["1", "immediately", "menu", "share", "plain", "plain-immediately"].contains(variant) else {
             throw XCTSkip("set TEST_RUNNER_NEWSPAW_TRANSITION_CHECK and record the screen")
         }
+        let locksInTheBackground = variant.hasSuffix("immediately")
         keepsAnimations = true
         launch(authentication: ["passed", "passed"])
         rotate(.portrait)
         requireFullWidth()
         createCategory("World")
         turnOnAdult()
-        if variant != "immediately" {
+        if !locksInTheBackground {
             chooseTiming("After 1 Minute")
         }
         enterAdult()
         createCategory("Velvet")
         let field = app.textFields[AccessibilityID.nameField]
-        if variant == "menu" {
+        switch variant {
+        case "menu":
             showCategoryList()
             waitFor(element(AccessibilityID.categoryRow("Velvet"))).press(forDuration: 1.2)
             waitFor(app.buttons["Category Settings"])
-        } else {
+        case "share":
+            addWebPageSource(to: "Velvet")
+            openWebPageSource(in: "Velvet")
+            waitFor(moreMenu).tap()
+            waitFor(app.buttons["Share"]).tap()
+            // The system's sheet is another process's; it is given time.
+            Thread.sleep(forTimeInterval: 3)
+        case "plain", "plain-immediately":
+            openCategoryList("Velvet")
+        default:
             openCategoryList("Velvet")
             openListSettings(source: false)
             XCTAssertEqual(waitFor(field).value as? String, "Velvet")
         }
         XCUIDevice.shared.press(.home)
-        Thread.sleep(forTimeInterval: variant == "immediately" ? 4 : 64)
+        Thread.sleep(forTimeInterval: locksInTheBackground ? 4 : 64)
         // For finding the moment in the recording.
         print("RD18 returning at \(Date().timeIntervalSince1970)")
         app.activate()

@@ -62,16 +62,23 @@ struct TabContainer: View {
 
     /// The partition switch at the leading edge of the bar on the root
     /// screens of Today, Library and Starred (ux section 2), only while the
-    /// adult partition is turned on. A pushed screen has its back button
-    /// there instead.
+    /// adult partition is turned on: the capsule, and in the adult
+    /// partition the lock button as an item of its own. A pushed screen
+    /// has its back button there instead.
     @ToolbarContentBuilder
     private var partitionSwitch: some ToolbarContent {
         if model.showsPartitionSwitch {
             ToolbarItem(placement: .topBarLeading) {
-                PartitionSwitch()
+                PartitionMenu()
             }
             // The capsule draws its own shape.
             .sharedBackgroundVisibility(.hidden)
+            if model.shown?.partition == .adult {
+                ToolbarItem(placement: .topBarLeading) {
+                    PartitionLockButton()
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
         }
     }
 }

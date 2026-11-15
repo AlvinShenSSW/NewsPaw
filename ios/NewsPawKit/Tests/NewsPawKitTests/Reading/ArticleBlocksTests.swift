@@ -416,6 +416,14 @@ struct ArticleBlocksTests {
         ])
     }
 
+    @Test("a web address without a host is no address")
+    func noHost() {
+        let html = #"<p><a href="http:">bare scheme</a> <a href="https:///path">no host</a> <a href="http:/one-slash">one slash</a> <a href="https://example.com">host</a></p><img src="https:///a.png"><img src="http:b.png">"#
+        #expect(blocks(html, base: nil) == [
+            p([run("bare scheme no host one slash "), run("host", link: "https://example.com")]),
+        ])
+    }
+
     @Test("an image's size is read only as two whole pixel counts; alternative text is collapsed and bounded")
     func imageAttributes() {
         #expect(blocks(#"<img src="https://i.example/a.png" width="100%" height="300">"#) == [image("https://i.example/a.png")])

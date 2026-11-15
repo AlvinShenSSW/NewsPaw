@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 @testable import NewsPawKit
 import Testing
 
@@ -112,6 +113,27 @@ struct AdultLibraryCloseTests {
         // The write that was in flight was committed.
         let reopened = try await store.openAdultLibrary()
         #expect(try await reopened.categories().map(\.name) == ["Written"])
+    }
+
+    @Test("a close while an open is in flight waits for it and closes what it opened")
+    func closeWaitsForAnOpenInFlight() async throws {
+        let (store, _, _, root) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        // An open that takes a while: a migration that sleeps.
+        var slow = DatabaseMigrator()
+        Schema.registerV1(in: &slow)
+        slow.registerMigration("slow") { _ in Thread.sleep(forTimeInterval: 0.3) }
+        let migrator = slow
+        let opening = Task { try await store.open(.adult, migrator: migrator, create: true) }
+        try await Task.sleep(for: .milliseconds(100))
+
+        try await store.closeAdultLibrary()
+
+        // The close returned after the open, and closed its pool.
+        #expect(await store.adultLibraryIsClosed)
+        let opened = try await opening.value
+        #expect(opened.isClosed)
+        await #expect(throws: LibraryError.self) { try await opened.categories() }
     }
 
     @Test("a close during an open in flight leaves no open pool behind")

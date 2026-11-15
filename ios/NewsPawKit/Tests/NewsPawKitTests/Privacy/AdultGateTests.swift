@@ -352,6 +352,30 @@ struct AdultGateTests {
         #expect(await fixture.store.adultLibraryObjectIsReleased)
     }
 
+    @Test("an unlock and a lock at the same moment: locked means closed, unlocked means open, in every order")
+    func unlockRacingALock() async throws {
+        for round in 0..<300 {
+            let fixture = try GateFixture([.passed, .passed])
+            defer { fixture.cleanUp() }
+            #expect(await fixture.gate.turnOn(reason: "on") == .turnedOn)
+            let gate = fixture.gate
+            let unlocking = Task { await gate.unlock(reason: "unlock").summary }
+            let locking = Task { await gate.lock() }
+            let result = await unlocking.value
+            await locking.value
+
+            switch await gate.state {
+            case .locked:
+                #expect(await gate.adultLibraryIsClosed, "round \(round): locked with an open pool after \(result)")
+            case .unlocked:
+                #expect(result == "unlocked", "round \(round)")
+                #expect(!(await gate.adultLibraryIsClosed), "round \(round): unlocked with a closed pool")
+            case .off, .unavailable:
+                Issue.record("round \(round): \(await gate.state)")
+            }
+        }
+    }
+
     // MARK: - Criterion 10: authenticating for the settings
 
     @Test("criterion 10: authenticating for the settings unlocks nothing")

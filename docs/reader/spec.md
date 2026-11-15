@@ -83,7 +83,7 @@ Requirements are numbered N01–N13. Later issues freeze their scope against the
 | Kind | Input | Collection | Produces articles |
 | --- | --- | --- | --- |
 | Feed | A feed address, or a site address (feeds declared in the page are discovered) | RSS 2.0 / RSS 1.0 / Atom / JSON Feed | Yes |
-| GitHub repository | The repository address | One of the repository's Atom feeds — Releases (default), Tags or Commits — chosen while adding, in the picker also used when a page declares several feeds. The source stores the chosen feed address. No token | Yes |
+| GitHub repository | The repository address | One of the repository's Atom feeds — Releases (default), Tags or Commits — chosen while adding, in the picker also used when a page declares several feeds. The source stores the chosen feed address. No token. Releases lists every tag, with the release's notes or else the tag's message; Tags is the same list without notes | Yes |
 | Hugging Face account | An organisation or user address | The Hub's public API, listing that account's models by creation time | Yes |
 | Web page | Any address | Not collected. Opened in the embedded browser | No |
 
@@ -358,7 +358,7 @@ Handling of the repository (settled on 2026-11-11; section 11, items 1 and 2):
 - All three of the owner's devices run iOS / iPadOS 27 or later, so nothing will be verified on a device running 26, the stated minimum; 26 is covered by the simulator at most. The iPad mini's screen size in ux.md comes from third-party listings, not from Apple's specification page.
 - In-place page translation has not been tried on the pages the owner follows. Pages that draw their text into images, or that keep rebuilding their content, will translate poorly or not at all. Translating run by run can read less smoothly than a translated article, and a longer translation can overflow a page's fixed-size boxes; the app does not restyle pages.
 - TestFlight internal testing needs no beta review, and builds expire after 90 days: Apple's general rules, not verified on this project's account.
-- GitHub's Atom feeds need no token and are leniently rate-limited: not verified. The old connector used GitHub's REST API, not Atom.
+- GitHub's Atom feeds need no token: measured on 2026-11-15 (RD07), each answered 200 without a credential and 304 to a conditional request. Their rate limit is not known: no answer carried a rate-limit header; a refused request shows as the source's ordinary failure and is tried again at the next refresh.
 - Hugging Face's public API can list an account's models by creation time: not verified. The old connector sorted by last modification.
 - All four of the owner's current model services accept the OpenAI-compatible chat interface and can be asked for JSON output: not verified. The old system called them through the Responses interface, which is no evidence for the chat interface. Each preset is checked against its real service (RD13) before it is called supported.
 - None of the four libraries has been built for this project; open-source.md records that nothing was cloned or built. RD01 builds all four for iOS 26 and runs one representative call of each.

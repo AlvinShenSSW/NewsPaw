@@ -1,8 +1,9 @@
 import XCTest
 
-/// RD09 criteria 4–11 and 17: article lists, read state, stars, the interim
-/// reading screen, Today's rows, navigation and refresh from a list,
-/// against the debug fixture transport only.
+/// RD09 criteria 4–11 and 17: article lists, read state, stars, the reading
+/// screen's header and bars, Today's rows, navigation and refresh from a
+/// list, against the debug fixture transport only. The reading screen's
+/// body is RD11's (`ReadingTests`).
 final class ArticleListTests: ArticleTestCase {
     // MARK: - Criterion 4: a list is a snapshot
 
@@ -182,9 +183,12 @@ final class ArticleListTests: ArticleTestCase {
         XCTAssertEqual(waitFor(element(AccessibilityID.categoryEmpty)).label, "All caught up")
     }
 
-    // MARK: - Criterion 8: the interim reading screen
+    // MARK: - Criterion 8: the reading screen's header, star and read state
 
-    func testInterimReadingScreen() {
+    /// The header, the feed's short text as the body, and the star and the
+    /// read state from the reading screen (Mark as Unread is in the More
+    /// menu since RD11).
+    func testReadingScreenHeaderStarAndReadState() {
         launchAtFullWidth()
         createCategory("World")
         addSource(Fixture.articles, to: "World")
@@ -192,18 +196,24 @@ final class ArticleListTests: ArticleTestCase {
         openArticle("Image story")
         XCTAssertTrue(element(AccessibilityID.readingByline).label.hasPrefix("Articles Feed · Fixture Writer · "),
                       element(AccessibilityID.readingByline).label)
-        XCTAssertEqual(element(AccessibilityID.readingExcerpt).label, "The harbour at dusk, with the lights coming on along the quay.")
-        XCTAssertEqual(element(AccessibilityID.readingInterimNote).label, "The full article layout is not available in this version yet.")
+        XCTAssertEqual(waitFor(element(AccessibilityID.readingBlock(0))).label, "The harbour at dusk, with the lights coming on along the quay.")
+        XCTAssertEqual(waitFor(element(AccessibilityID.readingExcerptNote)).label, "Only an excerpt is available")
         XCTAssertEqual(waitFor(button(AccessibilityID.openOriginalButton)).label, "Open Original Page")
         let star = waitFor(button(AccessibilityID.readingStarButton))
-        let read = waitFor(button(AccessibilityID.readingReadButton))
         XCTAssertTrue(button(AccessibilityID.readingShareButton).exists)
-        XCTAssertEqual(read.label, "Mark as Unread", "opening marked it read")
-        screenshot("reading-interim")
+        screenshot("reading-excerpt")
         star.tap()
         waitForLabel(star, containing: "Unstar")
-        read.tap()
-        waitForLabel(read, containing: "Mark as Read")
+        waitFor(button(AccessibilityID.readingMoreMenu)).tap()
+        // Opening marked it read.
+        waitFor(menuButton("Mark as Unread")).tap()
+        waitFor(button(AccessibilityID.readingMoreMenu)).tap()
+        waitFor(menuButton("Mark as Read"))
+        // Closes the menu without choosing: a tap on the byline, which
+        // does nothing of its own. (A tap on a bar's button would both
+        // close the menu and press the button.)
+        element(AccessibilityID.readingByline).tap()
+        waitForAbsence(menuButton("Mark as Read"))
         backToList()
         let row = articleRow("Image story")
         waitForUnread(row, true)
@@ -212,6 +222,7 @@ final class ArticleListTests: ArticleTestCase {
         openArticle("Linkless story")
         XCTAssertFalse(button(AccessibilityID.openOriginalButton).exists, "no link, no Open Original Page")
         XCTAssertFalse(button(AccessibilityID.readingShareButton).exists)
+        XCTAssertFalse(button(AccessibilityID.readingOriginalBarButton).exists)
         backToList()
         waitForUnread(articleRow("Linkless story"), false)
     }
@@ -441,6 +452,41 @@ final class ArticleListTests: ArticleTestCase {
         let titles = articleRowsShown().prefix(3).map { String($0.identifier.dropFirst(AccessibilityID.articleRowPrefix.count)) }
         XCTAssertEqual(titles.first, fifth)
         XCTAssertEqual(titles.last, fourth, "\(titles)")
+    }
+
+    /// RD11 criterion 15: the list's top is its scroll position. Scrolled by
+    /// less than its first row it is at its top, and a run it did not start
+    /// shows; scrolled just past its first row it is not, and the run does
+    /// not touch it.
+    func testTopOfTheListIsItsScrollPosition() {
+        launchAtFullWidth()
+        createCategory("World")
+        addSource(Fixture.longCounting, to: "World")
+        openSourceList("Long Counting Feed", in: "World")
+        waitFor(articleRow("Long story 01"))
+        let first = topRowTitle()
+        let anchor = waitFor(articleRow("Long story 05"))
+        let point = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: anchor.frame.midX, dy: window.midY + 150))
+        func drag(by distance: CGFloat) {
+            point.press(forDuration: 0.1, thenDragTo: point.withOffset(CGVector(dx: 0, dy: distance)), withVelocity: .slow, thenHoldForDuration: 0.5)
+        }
+
+        // A third of a row: the first row is still on screen.
+        let rowHeight = waitFor(articleRow(first ?? "")).frame.height
+        drag(by: -rowHeight / 3)
+        updateNowFromTheList()
+        let second = waitForNewTopRow(after: first)
+
+        // Two rows and a half: the first row is off screen, though rows
+        // near it are still in the list's hierarchy.
+        drag(by: -rowHeight * 2.5)
+        XCTAssertFalse(articleRow(second ?? "").isHittable, "the first row is off screen")
+        updateNowFromTheList()
+        drag(by: rowHeight * 4)
+        waitFor(articleRow(second ?? ""))
+        sleep(1)
+        XCTAssertEqual(topRowTitle(), second, "no new row while the list is scrolled past its first row")
+        record("list-top", "first row \(rowHeight) pt; at its top when scrolled \(rowHeight / 3) pt, not when scrolled \(rowHeight * 2.5) pt")
     }
 
     // MARK: - Helpers

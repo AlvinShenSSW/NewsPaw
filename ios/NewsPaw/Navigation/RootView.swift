@@ -37,6 +37,7 @@ struct RootView: View {
                     .environment(workspace.reading)
                     .environment(workspace.browser)
                     .environment(workspace.modelSettings)
+                    .environment(workspace.readingSettings)
                     .environment(workspace.navigation)
                     // The accent follows the partition (decision 7).
                     .environment(\.accent, Theme.accent(of: workspace.partition))

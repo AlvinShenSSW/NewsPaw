@@ -3,8 +3,8 @@ import NewsPawKit
 import WebKit
 
 /// What every workspace of the app is built with: the transport, the clock,
-/// the shared refresh settings and the normal library's models. Nothing of
-/// it holds a library's content (RD18 decision 3).
+/// the shared refresh and reading settings and the normal library's models.
+/// Nothing of it holds a library's content (RD18 decision 3).
 @MainActor
 struct WorkspaceParts {
     let transport: any Transport
@@ -12,6 +12,10 @@ struct WorkspaceParts {
     let candidateLimit: Duration
     let now: @Sendable () -> Date
     let refreshSettings: RefreshSettings
+    /// The reading settings (RD11 decision 10): device settings, one object
+    /// for the app, so that a change made in one partition is the other's
+    /// too.
+    let readingSettings: ReadingSettings
     /// The model slots of the normal library: Settings › Models &
     /// Translation is the normal partition's in either partition (ux S8).
     let models: LibraryModels
@@ -44,6 +48,8 @@ final class Workspace: Identifiable {
     let reading: ReadingModel
     let browser: BrowserModel
     let modelSettings: ModelSettingsModel
+    /// The app's one reading settings object, shared by every workspace.
+    let readingSettings: ReadingSettings
 
     init(library: Library, parts: WorkspaceParts, browser setup: BrowserSetup) {
         partition = library.partition
@@ -78,6 +84,7 @@ final class Workspace: Identifiable {
         self.reading = reading
         self.browser = browser
         self.modelSettings = modelSettings
+        readingSettings = parts.readingSettings
     }
 
     /// Reads what the root screens show: the categories (and with them the

@@ -213,8 +213,8 @@ enum HTMLText {
 
     /// Decodes the character reference starting at `start` (a `&`) and
     /// returns the index after it. An `&` that starts no known reference is
-    /// text.
-    private static func decodeReference(_ bytes: [UInt8], from start: Int, output: inout [UInt8]) -> Int {
+    /// text. Also the body converter's decoder (RD11).
+    static func decodeReference(_ bytes: [UInt8], from start: Int, output: inout [UInt8]) -> Int {
         let count = bytes.count
         var index = start + 1
         if index < count, bytes[index] == UInt8(ascii: "#") {

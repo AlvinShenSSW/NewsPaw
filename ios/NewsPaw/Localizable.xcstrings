@@ -512,7 +512,7 @@
       }
     },
     "Close" : {
-      "comment" : "Button of the embedded browser in the iPad reading pane: closes the page and shows the article again.",
+      "comment" : "Button: closes the embedded browser in the iPad reading pane, the image viewer, and the reading settings.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -529,6 +529,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭边栏"
+          }
+        }
+      }
+    },
+    "Compact" : {
+      "comment" : "Reading settings: a line spacing option.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "紧凑"
           }
         }
       }
@@ -1085,6 +1096,17 @@
         }
       }
     },
+    "Hide Article List" : {
+      "comment" : "iPad, two columns: button in the reading pane's navigation bar that hides the list column.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏文章列表"
+          }
+        }
+      }
+    },
     "Icon" : {
       "comment" : "Header of the category icon grid.",
       "localizations" : {
@@ -1107,6 +1129,17 @@
         }
       }
     },
+    "Image" : {
+      "comment" : "Reading screen: what VoiceOver calls an image of an article that has no alternative text.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图片"
+          }
+        }
+      }
+    },
     "Image Cache" : {
       "comment" : "Settings → Data: the row that shows the image cache's size.",
       "localizations" : {
@@ -1118,6 +1151,17 @@
         }
       }
     },
+    "Image not available" : {
+      "comment" : "Reading screen: what VoiceOver calls an image that could not be loaded and has no alternative text.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图片无法显示"
+          }
+        }
+      }
+    },
     "Images" : {
       "comment" : "Settings → Data: section header of the image cache.",
       "localizations" : {
@@ -1125,6 +1169,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "图片"
+          }
+        }
+      }
+    },
+    "Images of article lists and of articles. Cleared images are fetched again when they are next shown." : {
+      "comment" : "Settings → Data: footer of the image cache section.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文章列表和文章中的图片。清除后，下次显示时会重新获取。"
           }
         }
       }
@@ -1340,6 +1395,17 @@
         }
       }
     },
+    "Larger" : {
+      "comment" : "Reading settings: label of the button that makes the reading text one step larger.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "较大"
+          }
+        }
+      }
+    },
     "Leaf" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -1358,6 +1424,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "订阅"
+          }
+        }
+      }
+    },
+    "Line Spacing" : {
+      "comment" : "Reading settings: header of the line spacing options.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "行距"
           }
         }
       }
@@ -1695,7 +1772,7 @@
       }
     },
     "Next Article" : {
-      "comment" : "Keyboard command (J), shown in the iPad shortcut list: opens the next article of the list.",
+      "comment" : "Button of the reading screen's bottom bar, and keyboard command (J) in the iPad shortcut list: opens the next article of the list.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1859,6 +1936,17 @@
         }
       }
     },
+    "Only an excerpt is available" : {
+      "comment" : "Reading screen, under a body that is only an excerpt of the article; followed by Open Original Page.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有摘要"
+          }
+        }
+      }
+    },
     "Only http and https addresses can be added." : {
       "comment" : "Message under the address field.",
       "localizations" : {
@@ -1882,7 +1970,7 @@
       }
     },
     "Open Original Page" : {
-      "comment" : "Button of the reading screen: opens the article's page (in Safari until the embedded browser arrives).",
+      "comment" : "Button of the reading screen, under an excerpt and in the bottom bar: opens the article's page in the embedded browser.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2025,7 +2113,7 @@
       }
     },
     "Previous Article" : {
-      "comment" : "Keyboard command (K), shown in the iPad shortcut list: opens the previous article of the list.",
+      "comment" : "Item of the reading screen's More menu, and keyboard command (K) in the iPad shortcut list: opens the previous article of the list.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2057,6 +2145,28 @@
         }
       }
     },
+    "Reading" : {
+      "comment" : "Settings row and the title of its screen: text size, line spacing, typeface.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "阅读"
+          }
+        }
+      }
+    },
+    "Reading Settings" : {
+      "comment" : "Label of the Aa button in the reading screen's navigation bar, and the title of what it opens.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "阅读设置"
+          }
+        }
+      }
+    },
     "Refresh" : {
       "comment" : "The Settings row and screen for refreshing; the Refresh action in a category's or source's menu.",
       "localizations" : {
@@ -2075,6 +2185,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刷新间隔"
+          }
+        }
+      }
+    },
+    "Relaxed" : {
+      "comment" : "Reading settings: a line spacing option.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "宽松"
           }
         }
       }
@@ -2189,6 +2310,17 @@
         }
       }
     },
+    "Sans Serif" : {
+      "comment" : "Reading settings: a typeface option, the system face.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无衬线"
+          }
+        }
+      }
+    },
     "Save" : {
       "comment" : "Button: saves the category being edited.",
       "localizations" : {
@@ -2240,6 +2372,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "用表单中的内容发送一条很短的请求。保存时不会测试。"
+          }
+        }
+      }
+    },
+    "Serif" : {
+      "comment" : "Reading settings: a typeface option.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "衬线"
           }
         }
       }
@@ -2321,6 +2464,17 @@
         }
       }
     },
+    "Show Article List" : {
+      "comment" : "iPad, two columns: button in the reading pane's navigation bar that shows the list column again.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示文章列表"
+          }
+        }
+      }
+    },
     "Show Sidebar" : {
       "comment" : "Accessibility label of the icon-only button that slides the sidebar over the content on iPad.",
       "localizations" : {
@@ -2350,6 +2504,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已展开"
+          }
+        }
+      }
+    },
+    "Smaller" : {
+      "comment" : "Reading settings: label of the button that makes the reading text one step smaller.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "较小"
           }
         }
       }
@@ -2394,6 +2559,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "闪光"
+          }
+        }
+      }
+    },
+    "Standard" : {
+      "comment" : "Reading settings: a line spacing option, the default.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标准"
           }
         }
       }
@@ -2482,6 +2658,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在测试…"
+          }
+        }
+      }
+    },
+    "Text Size" : {
+      "comment" : "Reading settings: the row with the Smaller and Larger buttons.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "字号"
           }
         }
       }
@@ -2642,17 +2829,6 @@
         }
       }
     },
-    "The full article layout is not available in this version yet." : {
-      "comment" : "Reading screen, under the excerpt, until the full layout arrives (RD11).",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这个版本还不能显示完整的文章排版。"
-          }
-        }
-      }
-    },
     "The key could not be removed." : {
       "comment" : "Alert when the keychain refuses to remove a model key.",
       "localizations" : {
@@ -2719,6 +2895,28 @@
         }
       }
     },
+    "The rest of this article is not shown." : {
+      "comment" : "Reading screen, under a body that was too long to show whole, for an article without a link.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文章的其余部分没有显示。"
+          }
+        }
+      }
+    },
+    "The rest of this article is on the original page." : {
+      "comment" : "Reading screen, under a body that was too long to show whole; followed by Open Original Page.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文章的其余部分请在原网页查看。"
+          }
+        }
+      }
+    },
     "The service does not have this model" : {
       "comment" : "Sentence under the Test line Model not found (RD13's addition to ux section 4).",
       "localizations" : {
@@ -2770,6 +2968,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这个地址太长了。"
+          }
+        }
+      }
+    },
+    "This article could not be shown." : {
+      "comment" : "Reading screen, under the header: the article's body could not be read from the library; followed by Try Again.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法显示这篇文章。"
           }
         }
       }
@@ -2921,17 +3130,6 @@
         }
       }
     },
-    "Thumbnails of the images in article lists. Cleared images are fetched again when they are next shown." : {
-      "comment" : "Settings → Data: footer of the image cache section.",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "文章列表中图片的缩略图。清除后，下次显示时会重新获取。"
-          }
-        }
-      }
-    },
     "Today" : {
       "comment" : "Destination name: the tab and sidebar row for today's overviews (ux section 2).",
       "localizations" : {
@@ -2966,7 +3164,7 @@
       }
     },
     "Try Again" : {
-      "comment" : "Button: repeats what failed (reading the categories, looking up an address, updating a source).",
+      "comment" : "Button: repeats what failed (reading the categories, looking up an address, updating a source, reading an article's body).",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -3027,6 +3225,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "输入模型名称，或载入服务提供的模型列表。"
+          }
+        }
+      }
+    },
+    "Typeface" : {
+      "comment" : "Reading settings: header of the typeface options.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "字体"
           }
         }
       }

@@ -115,6 +115,9 @@ final class AppModel {
     /// The slow-save option, which the adult workspace's first category
     /// save takes too, so that a save can be overrun by a lock.
     @ObservationIgnored private var slowNextSave: Duration?
+    /// The article page size of the UI tests, which every workspace's
+    /// reading model takes.
+    @ObservationIgnored private var articlePageSize: Int?
     @ObservationIgnored private var adultWasShown = false
     @ObservationIgnored private weak var lastAdultWorkspace: Workspace?
     @ObservationIgnored private weak var lastAdultBrowser: BrowserModel?
@@ -202,6 +205,7 @@ final class AppModel {
             let parts = WorkspaceParts(
                 transport: transport, candidateLimit: candidateLimit, now: now,
                 refreshSettings: RefreshSettings(preferences),
+                readingSettings: ReadingSettings(preferences: preferences),
                 models: LibraryModels(library: library, keys: keyStore, http: modelHTTP)
             )
             self.parts = parts
@@ -236,6 +240,12 @@ final class AppModel {
             #endif
             let workspace = Workspace(library: library, parts: parts, browser: browser)
             #if DEBUG
+            if options.libraryDirectory != nil {
+                articlePageSize = options.articlePageSize
+            }
+            if let size = articlePageSize {
+                workspace.reading.pageSize = size
+            }
             if let count = options.syntheticSources {
                 try await library.insertSyntheticSourcesForUITests(count: count)
             }
@@ -291,6 +301,9 @@ final class AppModel {
             let workspace = Workspace(library: library, parts: parts, browser: makeAdultBrowser())
             #if DEBUG
             workspace.categories.slowNextSave = slowNextSave
+            if let size = articlePageSize {
+                workspace.reading.pageSize = size
+            }
             #endif
             await workspace.load()
             // From here to the end of the case nothing suspends before the

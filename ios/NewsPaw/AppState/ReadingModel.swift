@@ -18,22 +18,40 @@ enum OpenArticle {
     case missing
 }
 
+/// The body of an open article, as the reading screen shows it (RD11
+/// decision 7).
+enum ReadingBody {
+    /// Being read and converted.
+    case loading
+    case loaded(ReadingContent)
+    /// It could not be read from the library.
+    case failed
+}
+
 /// The article lists, read state and stars for the app (spec N05; RD09):
 /// the model of each shown list, the filter chosen for each list, the
-/// articles opened, the one thumbnail loader, and the serial queue through
-/// which every list read and state change goes. At app level beside the
-/// category, source and refresh models.
+/// articles opened and their bodies, the thumbnail loader and the body image
+/// loader, and the serial queue through which every list read and state
+/// change goes. At app level beside the category, source and refresh models.
 @MainActor @Observable
 final class ReadingModel {
     /// The articles the reading screen shows, by identifier.
     private(set) var articles: [UUID: OpenArticle] = [:]
+    /// The bodies of the open articles, one per stack at most (RD11
+    /// decision 7). Derived each time an article is opened, never stored.
+    private(set) var bodies: [UUID: ReadingBody] = [:]
     /// "Mark All as Read" waiting for its answer.
     var pendingMarkAll: MarkAllRequest?
 
     /// The thumbnails of list rows: the app's transport and this library's
     /// cache.
     let loader: ThumbnailLoader
+    /// The images of article bodies: the same transport and the same cache.
+    let bodyImages: BodyImageLoader
     let library: Library
+    /// The rows a list page holds: the library's page size. The UI tests
+    /// lower it in a debug build, so that the next page is a few rows away.
+    @ObservationIgnored var pageSize = Library.articlePageSize
 
     /// The model of each list shown: the Library side's current list and
     /// Starred. Created when a view asks for it, so not observed.
@@ -47,6 +65,12 @@ final class ReadingModel {
     /// How many saves of each article's read state or star are queued or
     /// running: an earlier save does not show its state over a later one's.
     @ObservationIgnored private var queuedSaves: [SavedField: Int] = [:]
+    /// The task reading and converting each open article's body.
+    @ObservationIgnored private var bodyTasks: [UUID: Task<Void, Never>] = [:]
+    /// Where the reader stands in each open article (RD11, review round
+    /// 1): the block at the top of its screen, kept in memory beside the
+    /// body and let go with it, never stored.
+    @ObservationIgnored private var positions: [UUID: Int] = [:]
 
     private struct SavedField: Hashable {
         var article: UUID
@@ -63,6 +87,11 @@ final class ReadingModel {
         self.sources = sources
         self.refresh = refresh
         loader = ThumbnailLoader(transport: transport, cache: library.imageCache)
+        bodyImages = BodyImageLoader(transport: transport, cache: library.imageCache)
+        // After the lists are read again an open article may be gone: its
+        // source deleted, or removed by the retention clean-up (RD11
+        // decision 15).
+        sources.onReloaded = { [weak self] in self?.revalidateOpenArticles() }
     }
 
     // MARK: - Lists
@@ -145,8 +174,8 @@ final class ReadingModel {
             let scope = model.kind.scope
             let filter = model.filter
             do {
-                let page = try await library.articleRows(scope, filter: filter)
-                model.replace(with: page, pageSize: Library.articlePageSize)
+                let page = try await library.articleRows(scope, filter: filter, limit: self.pageSize)
+                model.replace(with: page, pageSize: self.pageSize)
             } catch {
                 model.readDidFail(.firstPage)
             }
@@ -165,8 +194,10 @@ final class ReadingModel {
             defer { model.isReadingPage = false }
             guard model.hasMore, let last = model.rows.last else { return }
             do {
-                let page = try await library.articleRows(model.kind.scope, filter: model.filter, after: last.position)
-                model.append(page, pageSize: Library.articlePageSize)
+                let page = try await library.articleRows(
+                    model.kind.scope, filter: model.filter, after: last.position, limit: self.pageSize
+                )
+                model.append(page, pageSize: self.pageSize)
             } catch {
                 model.readDidFail(.nextPage)
             }
@@ -222,6 +253,117 @@ final class ReadingModel {
                 self.articles[id] = .missing
             } catch {
                 // Not shown as missing: it may load at the next look.
+            }
+        }
+    }
+
+    // MARK: - Bodies (RD11 decision 7)
+
+    /// Reads and converts the body of the open article `row`, unless it is
+    /// there already. A task of its own, outside the queue of list reads
+    /// and state changes: the HTML is read cut to the converter's limit and
+    /// converted off the main actor, outside any database read or write. A
+    /// result whose article is no longer open is dropped, and so are the
+    /// bodies of articles that are no longer open.
+    func loadBody(of row: ArticleRow) {
+        let open = navigation.openArticles
+        for id in bodies.keys where !open.contains(id) && id != row.id {
+            dropBody(id)
+        }
+        guard bodies[row.id] == nil else { return }
+        readBody(of: row)
+    }
+
+    /// "Try Again" after a body that could not be read.
+    func retryBody(of row: ArticleRow) {
+        readBody(of: row)
+    }
+
+    /// The reading screen of `id` went away: its body is let go unless the
+    /// article is still open (a container switch shows it again).
+    func readingScreenClosed(_ id: UUID) {
+        if !navigation.openArticles.contains(id) {
+            dropBody(id)
+        }
+    }
+
+    // MARK: - The reader's place in an open article
+
+    /// The block that was at the top of the screen when the reading screen
+    /// of the open article `id` was last on screen; `nil` when the screen
+    /// reported none, and for an article whose body is not held. A reading
+    /// screen built again for an article that stayed open starts there: in
+    /// the reading pane after its page in the browser was closed, and
+    /// after a switch between the tab and the pane structure. A position
+    /// is not remembered from one opening to the next.
+    func position(of id: UUID) -> Int? {
+        positions[id]
+    }
+
+    /// The reading screen of `id` scrolled: `block` is now at its top, or
+    /// the screen reports none.
+    func readerMoved(to block: Int?, in id: UUID) {
+        guard bodies[id] != nil else { return }
+        positions[id] = block
+    }
+
+    private func readBody(of row: ArticleRow) {
+        let id = row.id
+        bodyTasks[id]?.cancel()
+        bodies[id] = .loading
+        let library = library
+        let images = bodyImages
+        let baseURL = row.linkURL
+        let excerpt = row.excerpt
+        bodyTasks[id] = Task {
+            let body: ReadingBody
+            do {
+                // One character more than the converter reads, so that it
+                // knows whether the input was cut.
+                let html = try await library.contentHTML(ofArticle: id, limit: ArticleBlocks.maximumInputCharacters + 1)
+                let converted = await ReadingContent.convert(html: html, excerpt: excerpt, baseURL: baseURL)
+                body = .loaded(ReadingContent(converted, images: images))
+            } catch {
+                body = .failed
+            }
+            // A cancelled task was replaced or dropped: what stands for the
+            // article now is not its to change.
+            guard !Task.isCancelled else { return }
+            guard self.navigation.openArticles.contains(id) else {
+                // Not open at this moment: nothing is kept, so that opening
+                // it again reads it again instead of waiting for a task that
+                // has ended.
+                self.bodies[id] = nil
+                self.bodyTasks[id] = nil
+                self.positions[id] = nil
+                return
+            }
+            self.bodies[id] = body
+            self.bodyTasks[id] = nil
+        }
+    }
+
+    private func dropBody(_ id: UUID) {
+        bodyTasks[id]?.cancel()
+        bodyTasks[id] = nil
+        bodies[id] = nil
+        positions[id] = nil
+    }
+
+    /// Looks each open article up again; one that no longer exists becomes
+    /// "This article is no longer available." (decision 15).
+    private func revalidateOpenArticles() {
+        let library = library
+        for id in navigation.openArticles {
+            guard case .loaded = articles[id] else { continue }
+            enqueue {
+                do {
+                    _ = try await library.article(id)
+                } catch LibraryError.unknownArticle {
+                    self.articleVanished(id)
+                } catch {
+                    // Shown as it is: it may be readable at the next look.
+                }
             }
         }
     }
@@ -296,11 +438,18 @@ final class ReadingModel {
         }
     }
 
+    /// The article no longer exists: it leaves the lists, the reading pane
+    /// says so, and a reading screen pushed on a list (tab structure) is
+    /// popped (RD11 decision 15).
     private func articleVanished(_ id: UUID) {
         for model in lists.values {
             model.remove(id)
         }
         articles[id] = .missing
+        dropBody(id)
+        if navigation.layout?.structure == .tabs {
+            navigation.closeArticle(id)
+        }
     }
 
     // MARK: - Mark all as read
@@ -393,6 +542,24 @@ final class ReadingModel {
         let model = list(kind)
         guard let open = navigation.openArticle(on: kind), let index = model.index(of: open), index > 0 else { return }
         self.open(model.rows[index - 1], on: kind)
+    }
+
+    /// Whether `openNext` would open an article: there is a row after the
+    /// open one, or a further page to read; when the open article is not in
+    /// the snapshot, the first row.
+    func hasNext(on kind: ArticleListKind) -> Bool {
+        let model = list(kind)
+        guard let open = navigation.openArticle(on: kind), let index = model.index(of: open) else {
+            return !model.rows.isEmpty
+        }
+        return index + 1 < model.rows.count || model.hasMore
+    }
+
+    /// Whether `openPrevious` would open an article.
+    func hasPrevious(on kind: ArticleListKind) -> Bool {
+        let model = list(kind)
+        guard let open = navigation.openArticle(on: kind), let index = model.index(of: open) else { return false }
+        return index > 0
     }
 
     /// `S`: stars or unstars the open article; nothing when none is open.

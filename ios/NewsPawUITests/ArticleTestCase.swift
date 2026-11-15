@@ -161,6 +161,28 @@ class ArticleTestCase: NewsPawUITestCase {
         print("RD09 \(name): \(text)")
     }
 
+    /// The bar's icon buttons are the system's 36 pt glass shapes with a
+    /// larger touch region (RD03): the edges of a 44 × 44 pt square centred
+    /// on the control must each activate it.
+    func assertTapTarget(_ control: XCUIElement, _ name: String, activated: @escaping () -> Bool, reset: () -> Void) {
+        let frame = control.frame
+        let half = 21.5
+        var points: [CGVector] = []
+        if frame.height < 44 {
+            points += [CGVector(dx: frame.midX, dy: frame.midY - half), CGVector(dx: frame.midX, dy: frame.midY + half)]
+        }
+        if frame.width < 44 {
+            points += [CGVector(dx: frame.midX - half, dy: frame.midY), CGVector(dx: frame.midX + half, dy: frame.midY)]
+        }
+        record("tap-target-\(name)", "drawn frame \(frame); edge taps \(points.count)")
+        for point in points {
+            app.coordinate(withNormalizedOffset: .zero).withOffset(point).tap()
+            let done = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in activated() }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [done], timeout: 5), .completed, "\(name): a tap at \(point) (drawn \(frame)) did not activate it")
+            reset()
+        }
+    }
+
     /// A button of the open context menu or toolbar menu, not a list's own
     /// toolbar button of the same name ("Mark All as Read").
     func menuButton(_ label: String) -> XCUIElement {

@@ -124,16 +124,74 @@ enum AccessibilityID {
         articleRowPrefix + title
     }
 
-    // Reading screen (RD09, interim until RD11)
+    // Reading screen (RD09, RD11)
     static let readingTitle = "reading.title"
     static let readingByline = "reading.byline"
-    static let readingExcerpt = "reading.excerpt"
-    static let readingInterimNote = "reading.interim"
+    /// "Open Original Page" under an excerpt or a cut body.
     static let openOriginalButton = "reading.openOriginal"
     static let readingStarButton = "reading.star"
     static let readingShareButton = "reading.share"
-    static let readingReadButton = "reading.read"
+    /// "Open Original Page" in the bottom bar.
+    static let readingOriginalBarButton = "reading.bar.openOriginal"
+    static let readingNextButton = "reading.next"
+    static let readingSettingsButton = "reading.settings"
+    static let readingMoreMenu = "reading.more"
     static let articleUnavailable = "reading.unavailable"
+    static let readingExcerptNote = "reading.excerptNote"
+    static let readingCutNote = "reading.cutNote"
+    static let readingBodyFailed = "reading.bodyFailed"
+    static let readingTryAgainButton = "reading.tryAgain"
+    static let hideListButton = "reading.hideList"
+
+    // The body's blocks, by their place in the body (RD11)
+    static let readingBlockPrefix = "reading.block."
+
+    /// The text of a paragraph, a heading or a code block.
+    static func readingBlock(_ index: Int) -> String {
+        readingBlockPrefix + String(index)
+    }
+
+    /// The box a code block scrolls in.
+    static func readingCodeBox(_ index: Int) -> String {
+        "reading.code." + String(index)
+    }
+
+    static func readingMarker(_ index: Int) -> String {
+        "reading.marker." + String(index)
+    }
+
+    /// A body image that has arrived.
+    static func readingImage(_ index: Int) -> String {
+        "reading.image." + String(index)
+    }
+
+    /// The place of a body image that has not arrived yet.
+    static func readingImagePlaceholder(_ index: Int) -> String {
+        "reading.imagePlaceholder." + String(index)
+    }
+
+    /// The place of a body image that failed.
+    static func readingImageFailed(_ index: Int) -> String {
+        "reading.imageFailed." + String(index)
+    }
+
+    static let imageViewerImage = "imageViewer.image"
+    static let imageViewerCloseButton = "imageViewer.close"
+
+    // Reading settings (RD11)
+    static let readingSettingsRow = "settings.reading"
+    static let textSizeSmallerButton = "readingSettings.smaller"
+    static let textSizeLargerButton = "readingSettings.larger"
+    static let textSizeValue = "readingSettings.textSize"
+    static let readingSettingsCloseButton = "readingSettings.close"
+
+    static func lineSpacingOption(_ rawValue: Int) -> String {
+        "readingSettings.lineSpacing." + String(rawValue)
+    }
+
+    static func typefaceOption(_ rawValue: String) -> String {
+        "readingSettings.typeface." + rawValue
+    }
 
     // Embedded browser (RD10)
     static let browser = "browser"
@@ -243,9 +301,13 @@ enum UITestLaunchKey {
     /// "1" turns the adult partition's feature switch off for this launch;
     /// honoured only with `libraryDirectory`.
     static let adultFeatureOff = "NEWSPAW_UITEST_ADULT_FEATURE_OFF"
+    /// A number of rows a list page holds, so that the next page is a few
+    /// rows away; honoured only with `libraryDirectory`.
+    static let articlePageSize = "NEWSPAW_UITEST_ARTICLE_PAGE_SIZE"
     /// "1" leaves the app's animations on under a UI test, for the checks
-    /// that look at a transition (RD18 criterion 9); the harness is slow
-    /// around context menus then.
+    /// that look at a transition (RD11 criterion 9, RD18 criterion 9); the
+    /// harness is slow around context menus then. Honoured only with
+    /// `libraryDirectory`.
     static let keepAnimations = "NEWSPAW_UITEST_KEEP_ANIMATIONS"
 }
 

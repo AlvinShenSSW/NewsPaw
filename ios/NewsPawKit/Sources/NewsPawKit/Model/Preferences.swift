@@ -24,17 +24,64 @@ public enum Retention: Int, Sendable, CaseIterable {
     public static let standard = Retention.thirtyDays
 }
 
+/// The reading screen's text size, on top of the system's text size (spec
+/// N05; RD11 decision 10). The raw values are what is stored.
+public enum ReadingTextSize: Int, Sendable, CaseIterable {
+    case smallest = 1
+    case smaller = 2
+    case standard = 3
+    case larger = 4
+    case largest = 5
+
+    /// What the body's type size is multiplied by.
+    public var factor: Double {
+        switch self {
+        case .smallest: 0.85
+        case .smaller: 0.92
+        case .standard: 1.0
+        case .larger: 1.15
+        case .largest: 1.3
+        }
+    }
+}
+
+/// The reading screen's line spacing. The raw values are what is stored.
+public enum ReadingLineSpacing: Int, Sendable, CaseIterable {
+    case compact = 1
+    case standard = 2
+    case relaxed = 3
+
+    /// What a block's line height is multiplied by.
+    public var factor: Double {
+        switch self {
+        case .compact: 0.9
+        case .standard: 1.0
+        case .relaxed: 1.15
+        }
+    }
+}
+
+/// The reading screen's typeface. The raw values are what is stored.
+public enum ReadingTypeface: String, Sendable, CaseIterable {
+    case sansSerif = "sans"
+    case serif
+}
+
 /// The settings kept in the system preferences store (spec section 4): the
-/// two refresh settings, under the names the configuration file uses, and
-/// the two device settings of the adult partition (RD18), which the
-/// configuration file never carries. A stored value outside its set reads
-/// as the default. Nothing about a partition's content is kept here.
+/// two refresh settings, under the names the configuration file uses; the
+/// three reading settings (RD11) and the two device settings of the adult
+/// partition (RD18), which the configuration file never carries. A stored
+/// value outside its set reads as the default. Nothing about a partition's
+/// content is kept here.
 ///
 /// Sendable by hand: its one stored property is a `UserDefaults`, which the
 /// system documents as safe to use from any thread and does not mark so.
 public struct Preferences: @unchecked Sendable {
     static let refreshIntervalKey = "refresh_minutes"
     static let retentionKey = "retention_days"
+    static let readingTextSizeKey = "reading_text_size"
+    static let readingLineSpacingKey = "reading_line_spacing"
+    static let readingTypefaceKey = "reading_typeface"
     static let adultPartitionIsOnKey = "adult_partition_on"
     static let lockTimingKey = "adult_lock_timing"
 
@@ -61,6 +108,33 @@ public struct Preferences: @unchecked Sendable {
         }
         nonmutating set {
             defaults.set(newValue.rawValue, forKey: Self.retentionKey)
+        }
+    }
+
+    public var readingTextSize: ReadingTextSize {
+        get {
+            (defaults.object(forKey: Self.readingTextSizeKey) as? Int).flatMap(ReadingTextSize.init(rawValue:)) ?? .standard
+        }
+        nonmutating set {
+            defaults.set(newValue.rawValue, forKey: Self.readingTextSizeKey)
+        }
+    }
+
+    public var readingLineSpacing: ReadingLineSpacing {
+        get {
+            (defaults.object(forKey: Self.readingLineSpacingKey) as? Int).flatMap(ReadingLineSpacing.init(rawValue:)) ?? .standard
+        }
+        nonmutating set {
+            defaults.set(newValue.rawValue, forKey: Self.readingLineSpacingKey)
+        }
+    }
+
+    public var readingTypeface: ReadingTypeface {
+        get {
+            (defaults.object(forKey: Self.readingTypefaceKey) as? String).flatMap(ReadingTypeface.init(rawValue:)) ?? .sansSerif
+        }
+        nonmutating set {
+            defaults.set(newValue.rawValue, forKey: Self.readingTypefaceKey)
         }
     }
 

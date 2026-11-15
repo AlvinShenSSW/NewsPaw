@@ -43,6 +43,56 @@ final class TypedKeyTests: BrowserTestCase {
         XCTAssertTrue(isUnread(articleRow("Linkless story")), "j opened the next article")
     }
 
+    /// RD11 criterion 13: with the list column hidden, `J`, `K`, `S`, `U`
+    /// and `R` still act on the list and its open article.
+    func testKeysActWhileTheListIsHidden() throws {
+        try XCTSkipUnless(isPad, "a hardware keyboard on iPad")
+        launch()
+        // Portrait: two columns, the sidebar sliding over.
+        rotate(.portrait)
+        requireFullWidth()
+        createCategory("World")
+        addSource(Fixture.longCounting, to: "World")
+        openSourceList("Long Counting Feed", in: "World")
+        let fresh = topRowTitle()
+        openArticle("Long story 01")
+        let title = element(AccessibilityID.readingTitle)
+        let hide = waitFor(button(AccessibilityID.hideListButton))
+        hide.tap()
+        waitForLabel(hide, containing: "Show Article List")
+        XCTAssertFalse(articleRow("Long story 01").isHittable, "the list is hidden")
+        func expectOpen(_ expected: String, _ note: String) {
+            let shown = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", expected), object: title)
+            XCTAssertEqual(XCTWaiter.wait(for: [shown], timeout: timeout), .completed, "\(note): \(title.exists ? title.label : "nothing open")")
+        }
+        app.typeKey("j", modifierFlags: [])
+        expectOpen("Long story 02", "J with the list hidden")
+        app.typeKey("k", modifierFlags: [])
+        expectOpen("Long story 01", "K with the list hidden")
+        app.typeKey("s", modifierFlags: [])
+        waitForLabel(button(AccessibilityID.readingStarButton), containing: "Unstar")
+        // Opening marked it read; U marks it unread.
+        app.typeKey("u", modifierFlags: [])
+        app.typeKey("r", modifierFlags: [])
+        sleep(2)
+        waitForLabel(hide, containing: "Show Article List")
+
+        // Shown again, the list has what the keys did.
+        hide.tap()
+        waitForLabel(hide, containing: "Hide Article List")
+        let row = waitFor(articleRow("Long story 01"))
+        waitForUnread(row, true)
+        waitForLabel(row, containing: ", Starred")
+        // R read the unread list again: the article J opened and read has
+        // left it, and the feed's new story is at its top.
+        waitForAbsence(articleRow("Long story 02"))
+        let refreshed = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            let top = self.topRowTitle()
+            return top != nil && top != fresh
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [refreshed], timeout: timeout), .completed, "R did not refresh the hidden list")
+    }
+
     /// Each key does what decision 15 says; with a sheet open none does
     /// anything. iPad simulators, by `typeKey`.
     func testKeyboardShortcuts() throws {
@@ -99,7 +149,6 @@ final class TypedKeyTests: BrowserTestCase {
         waitForLabel(button(AccessibilityID.readingStarButton), containing: "Unstar")
         waitForLabel(articleRow("Image story"), containing: ", Starred")
         press("u")
-        waitForLabel(button(AccessibilityID.readingReadButton), containing: "Mark as Read")
         waitForUnread(articleRow("Image story"), true)
         press("u")
         waitForUnread(articleRow("Image story"), false)

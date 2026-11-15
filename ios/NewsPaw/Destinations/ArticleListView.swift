@@ -40,6 +40,14 @@ private struct ArticleListContent: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        // Where the list stands, for "is the first row on screen" (RD11
+        // decision 15): the content offset from the top inset, which is the
+        // bars and the filter control.
+        .onScrollGeometryChange(for: Double.self) { geometry in
+            geometry.contentOffset.y + geometry.contentInsets.top
+        } action: { _, offset in
+            model.scrolled(toOffsetFromTop: offset)
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
             if kind.hasFilter {
                 filterControl
@@ -209,8 +217,9 @@ private struct ArticleListContent: View {
     }
 }
 
-/// A row as a button that opens its article, with the swipes, the menu and
-/// the appearance tracking the snapshot needs.
+/// A row as a button that opens its article, with the swipes and the menu;
+/// the first row reports its height, which says how far the list may be
+/// scrolled with that row still on screen.
 private struct ArticleRowButton: View {
     @Environment(\.accent) private var accent
     let row: ArticleRow
@@ -268,11 +277,10 @@ private struct ArticleRowButton: View {
             }
         }
         .listRowBackground(Theme.background)
-        .onAppear {
-            model.rowAppeared(row.id)
-        }
-        .onDisappear {
-            model.rowDisappeared(row.id)
+        .onGeometryChange(for: Double.self) { $0.size.height } action: { height in
+            if model.rows.first?.id == row.id {
+                model.firstRowMeasured(height: height)
+            }
         }
     }
 

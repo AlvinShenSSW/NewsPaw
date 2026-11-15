@@ -120,9 +120,10 @@ final class AdultPartitionTests: AdultTestCase {
         XCTAssertFalse(element(AccessibilityID.categoryRow("World")).exists)
         waitForReport("file=1", "pool=open", "library=held", "workspace=held")
         // Criterion 18: both controls are at least 44 pt tall.
-        XCTAssertGreaterThanOrEqual(partitionSwitch.frame.height, 44)
-        XCTAssertGreaterThanOrEqual(lockButton.frame.height, 44)
-        XCTAssertGreaterThanOrEqual(lockButton.frame.width, 44)
+        // (The frames are reported as 43.999999999999986 at some scales.)
+        XCTAssertGreaterThanOrEqual(partitionSwitch.frame.height, 43.99)
+        XCTAssertGreaterThanOrEqual(lockButton.frame.height, 43.99)
+        XCTAssertGreaterThanOrEqual(lockButton.frame.width, 43.99)
 
         // The lock button returns to the normal partition, same tab.
         tapLock()
@@ -131,7 +132,8 @@ final class AdultPartitionTests: AdultTestCase {
         waitFor(element(AccessibilityID.categoryRow("World")))
         // Closed; and since no menu was used, no article opened and no row
         // swiped in the adult partition, nothing of it is held either.
-        waitForReport(Self.closed, "library=released", Self.dropped, "browser=released")
+        waitForReport(Self.closed, Self.dropped)
+        expectObjectsReleased("the lock button, nothing else done")
     }
 
     /// The other stand-in order (decision 15): the answer comes only after

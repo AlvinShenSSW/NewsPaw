@@ -147,6 +147,9 @@ final class AdultLockTests: AdultTestCase {
         element(AccessibilityID.primaryModelRow).tap()
         waitFor(app.textFields[AccessibilityID.modelAddressField])
         assertNothingShown(of: names, on: "the model form \(when)")
+        // The form has Cancel in place of the back button, and no tab bar.
+        waitFor(button(AccessibilityID.cancelButton)).tap()
+        waitFor(element(AccessibilityID.primaryModelRow))
         openSettings()
         waitFor(element(AccessibilityID.refreshRow)).tap()
         waitFor(app.buttons["Manual Only"].firstMatch)
@@ -263,7 +266,8 @@ final class AdultLockTests: AdultTestCase {
         XCTAssertFalse(lockButton.exists)
         // Closed; and no menu was used in the adult partition of this
         // launch, so nothing of it is held either.
-        waitForReport(Self.closed, "library=released", Self.dropped, "browser=released")
+        waitForReport(Self.closed, Self.dropped)
+        expectObjectsReleased("the timing rule, nothing else done")
     }
 
     // MARK: - Assumption A5: what is presented goes with the workspace
@@ -345,11 +349,10 @@ final class AdultLockTests: AdultTestCase {
     // MARK: - Criterion 7, without a menu
 
     /// The timing rule locks while the browser is open on an adult web
-    /// page and a sheet is open above it: the library is closed at once,
-    /// and the library object, the workspace, the browser model and with
-    /// it the web view are gone from memory. On the panes nothing here
-    /// uses a menu; on the tab structure the "+" menu does, so UIKit's
-    /// timer may hold the objects for its minute.
+    /// page and a sheet is open above it: the library is closed at once
+    /// and the workspace is gone; on the panes, where nothing here uses a
+    /// menu, the library object, the browser model and with it the web
+    /// view are gone from memory too.
     func testALockWithTheBrowserAndASheetOpenReleasesEverything() {
         launchAtFullWidth(authentication: ["passed", "passed"])
         turnOnAdult()
@@ -369,9 +372,7 @@ final class AdultLockTests: AdultTestCase {
         waitForAbsence(moreMenu)
         waitForPartition(Wording.normal)
         waitForReport(Self.closed, Self.dropped)
-        waitForReport(
-            "library=released", "browser=released", seconds: usesTabs ? Self.releaseAfterAMenu : Self.atOnce
-        )
+        expectObjectsReleased("the timing rule, the browser and a sheet open")
     }
 
     /// Settings › Adult Partition opened from the normal partition is

@@ -40,16 +40,21 @@ class AdultTestCase: BrowserTestCase {
     /// How long that may take: the lock's own step, with the read or the
     /// write in flight.
     static let atOnce: TimeInterval = 10
-    /// How long the objects' release may take after a menu was used in the
-    /// adult partition and nothing else holds them: UIKit keeps the source
-    /// view of the last menu it presented, and through its environment the
-    /// models and the library object, until a timer of its own clears it
-    /// (measured: between 40 and 75 seconds;
-    /// `_UIMenuPresentationSourceSceneComponent`). After an article was
-    /// opened or a row swiped UIKit keeps them for longer than a test can
-    /// wait (trait collections that carry the views' environment); there
-    /// the objects' state is recorded, not asserted.
-    static let releaseAfterAMenu: TimeInterval = 90
+    /// Asserts that the adult library object and the browser model object
+    /// are gone from memory, on the panes; on the tab structure records
+    /// what the report says instead. On the tab structure UIKit kept them
+    /// after every lock that was measured, also after nothing but the
+    /// adult Today screen had been shown (assumption A4), so there is no
+    /// path there on which their release could be asserted.
+    func expectObjectsReleased(within seconds: TimeInterval = AdultTestCase.atOnce, _ note: String,
+                               file: StaticString = #filePath, line: UInt = #line) {
+        if usesTabs {
+            Thread.sleep(forTimeInterval: 2)
+            record("RD18 objects after a lock (\(note))", report)
+        } else {
+            waitForReport("library=released", "browser=released", seconds: seconds, file: file, line: line)
+        }
+    }
 
     /// Waits until the report holds every one of `parts`.
     func waitForReport(_ parts: String..., seconds: TimeInterval = AdultTestCase.atOnce,

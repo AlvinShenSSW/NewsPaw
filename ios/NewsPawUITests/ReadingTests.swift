@@ -238,7 +238,7 @@ final class ReadingTests: ReadingTestCase {
         XCTAssertEqual(standard, 17 * 1.5, accuracy: 1)
         launchReading(arguments: Self.largestText)
         openReadingListUnderAll()
-        scrollTo(articleRow("Line heights"))
+        scrollList(to: "Line heights")
         openArticle("Line heights")
         waitFor(block(at: 1))
         let larger = latinPitch()
@@ -265,7 +265,7 @@ final class ReadingTests: ReadingTestCase {
 
         launchReading(arguments: Self.largestText)
         openReadingListUnderAll()
-        scrollTo(articleRow("Line heights"))
+        scrollList(to: "Line heights")
         openArticle("Line heights")
         // 17 pt body is 48 pt at the largest accessibility size (measured).
         assertLineHeights(bodySize: 48, face: "serif, largest size")

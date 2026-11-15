@@ -72,6 +72,24 @@ class ReadingTestCase: BrowserTestCase {
         super.usesTabs && !element(AccessibilityID.readingPane).exists
     }
 
+    /// Scrolls the article list, in its own pane, until the row of `title`
+    /// can be tapped: at the largest text size the later rows are below the
+    /// fold, and a swipe on the window's middle scrolls the article.
+    @discardableResult
+    func scrollList(to title: String, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+        let row = articleRow(title)
+        let pane = element(AccessibilityID.listPane)
+        let area = pane.exists ? pane.frame : window
+        let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: area.midX, dy: area.midY + 150))
+        var drags = 0
+        while !(row.waitForExistence(timeout: 1) && row.isHittable), drags < 30 {
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -350)), withVelocity: 800, thenHoldForDuration: 0.2)
+            drags += 1
+        }
+        XCTAssertTrue(row.exists && row.isHittable, "the row \(title) was not reached", file: file, line: line)
+        return row
+    }
+
     // MARK: - The open article
 
     var readingTitle: XCUIElement { element(AccessibilityID.readingTitle) }

@@ -55,13 +55,13 @@ final class ReadingScreenshotTests: ReadingTestCase {
         waitForAbsence(element(AccessibilityID.imageViewerImage))
         backToList()
 
-        scrollTo(articleRow("Short note"))
+        scrollList(to: "Short note")
         openArticle("Short note")
         waitFor(element(AccessibilityID.readingExcerptNote))
         capture("07-excerpt")
         backToList()
 
-        scrollTo(articleRow("Picture story"))
+        scrollList(to: "Picture story")
         openArticle("Picture story")
         scrollArticle(to: element(AccessibilityID.readingImageFailed(9)))
         capture("08-pictures-small-and-failed")
@@ -115,6 +115,9 @@ final class ReadingScreenshotTests: ReadingTestCase {
         let box = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'reading.code.'")).firstMatch
         let code = block(containing: "let tide = Tide(turning: .now)")
         scrollArticle(to: code)
+        // Clear of the bottom bar, where the block first shows.
+        dragArticle(by: -180)
+        sleep(1)
         if code.frame.width > box.frame.width {
             let codeX = code.frame.minX
             drag(from: CGPoint(x: box.frame.midX + 100, y: box.frame.midY), by: CGVector(dx: -200, dy: 0), velocity: 1_500)

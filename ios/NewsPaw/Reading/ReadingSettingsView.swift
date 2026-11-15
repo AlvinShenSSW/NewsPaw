@@ -114,6 +114,8 @@ struct ReadingSettingsView: View {
 struct ReadingSettingsPopover: View {
     @Environment(\.dismiss) private var dismiss
 
+    private static let height = 580.0
+
     var body: some View {
         NavigationStack {
             ReadingSettingsView()
@@ -129,8 +131,10 @@ struct ReadingSettingsPopover: View {
                     }
                 }
         }
-        .frame(minWidth: 340, minHeight: 440)
-        .presentationDetents([.medium, .large])
+        // Room for the three sections at the default text size, as a
+        // popover and as a sheet; with larger text the list scrolls.
+        .frame(minWidth: 340, minHeight: Self.height)
+        .presentationDetents([.height(Self.height), .large])
         .tint(Theme.accent)
         .foregroundStyle(Theme.text)
     }

@@ -529,6 +529,26 @@ final class ReadingTests: ReadingTestCase {
         XCTAssertEqual(scrollArticle(to: failed(11)).label, "Image not available", "no alternative text")
         capture("pictures-failed")
 
+        // A long picture (1,080 × 6,000 pixels, lines of text): at the
+        // column's width and as tall as its shape asks; in the viewer it
+        // zooms until the lines are read.
+        let long = scrollArticle(to: image(13), swipes: 40)
+        XCTAssertEqual(long.label, "A long picture")
+        XCTAssertEqual(long.frame.width, min(readingArea.width - 32, 680), accuracy: 1, "\(long.frame)")
+        XCTAssertEqual(long.frame.width / long.frame.height, 1_080.0 / 6_000, accuracy: 0.004, "\(long.frame)")
+        capture("pictures-long")
+        long.tap()
+        let longViewed = waitFor(element(AccessibilityID.imageViewerImage))
+        XCTAssertEqual(longViewed.label, "A long picture")
+        capture("viewer-long")
+        longViewed.pinch(withScale: 6, velocity: 6)
+        sleep(1)
+        capture("viewer-long-zoomed")
+        record("long-picture", "drawn \(long.frame.size) in the body; \(longViewed.frame.size) in the viewer after the pinch, in a window of \(window.size)")
+        XCTAssertGreaterThan(longViewed.frame.height, window.height * 3, "the viewer zooms in: \(longViewed.frame)")
+        button(AccessibilityID.imageViewerCloseButton).tap()
+        waitForAbsence(longViewed)
+
         // The viewer.
         scrollArticleToTop()
         capture("pictures")

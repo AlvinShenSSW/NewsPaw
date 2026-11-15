@@ -83,7 +83,9 @@ final class TypedKeyTests: BrowserTestCase {
         let row = waitFor(articleRow("Long story 01"))
         waitForUnread(row, true)
         waitForLabel(row, containing: ", Starred")
-        waitForUnread(articleRow("Long story 02"), false)
+        // R read the unread list again: the article J opened and read has
+        // left it, and the feed's new story is at its top.
+        waitForAbsence(articleRow("Long story 02"))
         let refreshed = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
             let top = self.topRowTitle()
             return top != nil && top != fresh

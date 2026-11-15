@@ -97,9 +97,11 @@ final class Workspace: Identifiable {
 
     /// The workspace is dropped (RD18 decision 4), before its library is
     /// closed: its refresh run and its source detection are cancelled, a
-    /// running model test is cancelled, and its browser sessions are ended
-    /// with their web views taken out of the view tree. Image loads belong
-    /// to the rows' own tasks and end with the views. A save that is still
+    /// running model test is cancelled, the reading model's body reads and
+    /// conversions are cancelled and it starts no new one and asks for no
+    /// body image, and its browser sessions are ended with their web views
+    /// taken out of the view tree. Image loads belong to the rows' own
+    /// tasks and end with the views. A save that is still
     /// queued is not cancelled: it runs into the closed library, fails,
     /// and says so nowhere, because a stopped model raises no alert. UIKit
     /// may keep the model objects for a while (assumption A4); they do
@@ -108,6 +110,7 @@ final class Workspace: Identifiable {
         categories.stop()
         sources.stop()
         refresh.stop()
+        reading.stop()
         browser.stop()
         // Closes the sheet and every pushed screen; the model form, if one
         // was pushed, cancels its running Test or list with its route.

@@ -71,6 +71,8 @@ final class ReadingModel {
     /// 1): the block at the top of its screen, kept in memory beside the
     /// body and let go with it, never stored.
     @ObservationIgnored private var positions: [UUID: Int] = [:]
+    /// Whether the workspace of this model was dropped (RD18 decision 4).
+    @ObservationIgnored private(set) var isStopped = false
 
     private struct SavedField: Hashable {
         var article: UUID
@@ -266,6 +268,7 @@ final class ReadingModel {
     /// result whose article is no longer open is dropped, and so are the
     /// bodies of articles that are no longer open.
     func loadBody(of row: ArticleRow) {
+        guard !isStopped else { return }
         let open = navigation.openArticles
         for id in bodies.keys where !open.contains(id) && id != row.id {
             dropBody(id)
@@ -276,6 +279,7 @@ final class ReadingModel {
 
     /// "Try Again" after a body that could not be read.
     func retryBody(of row: ArticleRow) {
+        guard !isStopped else { return }
         readBody(of: row)
     }
 
@@ -308,6 +312,7 @@ final class ReadingModel {
     }
 
     private func readBody(of row: ArticleRow) {
+        guard !isStopped else { return }
         let id = row.id
         bodyTasks[id]?.cancel()
         bodies[id] = .loading
@@ -322,7 +327,9 @@ final class ReadingModel {
                 // knows whether the input was cut.
                 let html = try await library.contentHTML(ofArticle: id, limit: ArticleBlocks.maximumInputCharacters + 1)
                 let converted = await ReadingContent.convert(html: html, excerpt: excerpt, baseURL: baseURL)
-                body = .loaded(ReadingContent(converted, images: images))
+                body = .loaded(ReadingContent(converted, images: images) { [weak self] in
+                    self.map { !$0.isStopped } ?? false
+                })
             } catch {
                 body = .failed
             }
@@ -353,6 +360,7 @@ final class ReadingModel {
     /// Looks each open article up again; one that no longer exists becomes
     /// "This article is no longer available." (decision 15).
     private func revalidateOpenArticles() {
+        guard !isStopped else { return }
         let library = library
         for id in navigation.openArticles {
             guard case .loaded = articles[id] else { continue }
@@ -366,6 +374,22 @@ final class ReadingModel {
                 }
             }
         }
+    }
+
+    /// The workspace is dropped (RD18 decision 4, as amended): the body
+    /// reads and conversions in flight are cancelled and their results
+    /// dropped, and from here on no body is read, no body image is asked
+    /// for or read from the cache, the image viewer does not open, and an
+    /// article found gone closes nothing. List reads and state changes that
+    /// are queued run into the closed library and fail, shown nowhere, as
+    /// the source and category models' saves do.
+    func stop() {
+        isStopped = true
+        for task in bodyTasks.values {
+            task.cancel()
+        }
+        bodyTasks = [:]
+        pendingMarkAll = nil
     }
 
     // MARK: - Read state and stars
@@ -447,7 +471,7 @@ final class ReadingModel {
         }
         articles[id] = .missing
         dropBody(id)
-        if navigation.layout?.structure == .tabs {
+        if navigation.layout?.structure == .tabs, !isStopped {
             navigation.closeArticle(id)
         }
     }

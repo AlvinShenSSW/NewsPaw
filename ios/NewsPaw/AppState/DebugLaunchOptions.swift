@@ -20,6 +20,9 @@ struct DebugLaunchOptions {
     /// articles. Applied only together with `libraryDirectory`, like the
     /// fixture transport; without it the clock is `Date()`.
     let clockOffset: TimeInterval
+    /// The rows a list page holds, so that a UI test reaches the next page
+    /// after a few rows. Applied only together with `libraryDirectory`.
+    let articlePageSize: Int?
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -44,6 +47,11 @@ struct DebugLaunchOptions {
             clockOffset = TimeInterval(days) * 86_400
         } else {
             clockOffset = 0
+        }
+        if let text = environment[UITestLaunchKey.articlePageSize], let size = Int(text), size > 0 {
+            articlePageSize = size
+        } else {
+            articlePageSize = nil
         }
     }
 

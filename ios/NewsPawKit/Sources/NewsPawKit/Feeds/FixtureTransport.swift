@@ -59,10 +59,10 @@ public final class FixtureTransport: Transport {
         /// (RD09).
         public static let longCounting = "https://longcounting.example.invalid/rss.xml"
         /// A feed whose items cover what the reading screen lays out (RD11):
-        /// "Every block", "Short note" (an excerpt), "Hostile story", "Cut
-        /// story" and "Cut linkless story" (more blocks than are shown),
-        /// "Picture story", "Hundred pictures", "Empty body" and "Line
-        /// heights".
+        /// "Every block", "Line heights", "Short note" (an excerpt), "Hostile
+        /// story", "Cut story" (more blocks than are shown), "Cut linkless
+        /// story" (more characters than are read, and no link), "Picture
+        /// story", "Hundred pictures" and "Empty body".
         public static let reading = "https://reading.example.invalid/rss.xml"
         /// The images of that feed's bodies, under this address: `photo.png`
         /// (600 × 400), `small.png` (60 × 40), `pixel.png` (1 × 1),
@@ -316,22 +316,25 @@ public final class FixtureTransport: Transport {
 
     private static let readingFeed: String = {
         let manyParagraphs = (1...3_050).map { "<p>Paragraph \($0) of a very long story.</p>" }.joined()
+        // A short text, then a comment that runs past the input limit.
+        let longInput = "<p>The start of a story too long to read whole.</p><!-- "
+            + String(repeating: "x", count: ArticleBlocks.maximumInputCharacters) + " --><p>Never read.</p>"
         let hundredPictures = (1...100).map {
             "<p>Picture \($0) of a hundred.</p><img src=\"\(Address.readingImages)big/\($0).png\" alt=\"Big picture \($0)\" width=\"2400\" height=\"1600\">"
         }.joined() + "<p>After the hundred pictures.</p>"
         let items = [
             readingItem("Every block", slug: "every-block", hoursAgo: 1, body: everyBlockBody),
-            readingItem("Short note", slug: "short-note", hoursAgo: 2, body: "<p>A short note with <b>one bold word</b> and nothing more.</p>"),
-            readingItem("Hostile story", slug: "hostile-story", hoursAgo: 3, body: hostileBody),
-            readingItem("Cut story", slug: "cut-story", hoursAgo: 4, body: manyParagraphs),
-            readingItem("Cut linkless story", slug: nil, hoursAgo: 5, body: manyParagraphs),
-            readingItem("Picture story", slug: "picture-story", hoursAgo: 6, body: pictureBody),
-            readingItem("Hundred pictures", slug: "hundred-pictures", hoursAgo: 7, body: hundredPictures),
+            readingItem("Line heights", slug: "line-heights", hoursAgo: 2, body: lineHeightsBody),
+            readingItem("Short note", slug: "short-note", hoursAgo: 3, body: "<p>A short note with <b>one bold word</b> and nothing more.</p>"),
+            readingItem("Hostile story", slug: "hostile-story", hoursAgo: 4, body: hostileBody),
+            readingItem("Cut story", slug: "cut-story", hoursAgo: 5, body: manyParagraphs),
+            readingItem("Cut linkless story", slug: nil, hoursAgo: 6, body: longInput),
+            readingItem("Picture story", slug: "picture-story", hoursAgo: 7, body: pictureBody),
+            readingItem("Hundred pictures", slug: "hundred-pictures", hoursAgo: 8, body: hundredPictures),
             readingItem(
-                "Empty body", slug: "empty-body", hoursAgo: 8, description: "Only the feed's summary is left of this one.",
+                "Empty body", slug: "empty-body", hoursAgo: 9, description: "Only the feed's summary is left of this one.",
                 body: "<script>document.write('nothing to show')</script>"
             ),
-            readingItem("Line heights", slug: "line-heights", hoursAgo: 9, body: lineHeightsBody),
         ]
         return """
             <?xml version="1.0" encoding="UTF-8"?>

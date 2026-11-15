@@ -20,6 +20,7 @@ struct RootView: View {
                 .environment(reading)
                 .environment(browser)
                 .environment(model.modelSettings)
+                .environment(model.readingSettings)
                 .environment(model.navigation)
         }
     }

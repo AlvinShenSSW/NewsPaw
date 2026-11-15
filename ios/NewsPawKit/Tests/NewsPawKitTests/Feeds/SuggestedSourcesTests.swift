@@ -105,8 +105,8 @@ struct FixtureTransportTests {
         }
         let items = fetched.feed.items
         #expect(items.map(\.title) == [
-            "Every block", "Short note", "Hostile story", "Cut story", "Cut linkless story", "Picture story",
-            "Hundred pictures", "Empty body", "Line heights",
+            "Every block", "Line heights", "Short note", "Hostile story", "Cut story", "Cut linkless story",
+            "Picture story", "Hundred pictures", "Empty body",
         ])
         func body(_ title: String) throws -> ArticleBlocks {
             let item = try #require(items.first { $0.title == title })
@@ -150,12 +150,13 @@ struct FixtureTransportTests {
         }
         #expect(images.map(\.url.absoluteString) == [FixtureTransport.Address.readingImages + "photo.png"])
 
-        for title in ["Cut story", "Cut linkless story"] {
-            let cut = try body(title)
-            #expect(cut.isCut, "\(title)")
-            #expect(cut.blocks.count == ArticleBlocks.maximumBlocks)
-            #expect(ArticleBlocks.isFullText(cut.blocks))
-        }
+        let cut = try body("Cut story")
+        #expect(cut.isCut)
+        #expect(cut.blocks.count == ArticleBlocks.maximumBlocks)
+        #expect(ArticleBlocks.isFullText(cut.blocks))
+        let longInput = try body("Cut linkless story")
+        #expect(longInput.isCut)
+        #expect(longInput.blocks.compactMap(\.plainText) == ["The start of a story too long to read whole."])
         #expect(try #require(items.first { $0.title == "Cut linkless story" }).url == nil)
 
         let pictures = try body("Picture story")

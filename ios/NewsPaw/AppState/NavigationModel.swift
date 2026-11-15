@@ -97,6 +97,8 @@ enum SettingsRoute: Hashable {
     /// The form of one model slot (ux S9), pushed on Models & Translation.
     case modelSlot(ModelRole)
     case refresh
+    /// Reading (ux S8; RD11): text size, line spacing, typeface.
+    case reading
     case data
     case about
 
@@ -156,6 +158,7 @@ final class NavigationModel {
         didSet {
             if libraryPath != oldValue {
                 onStacksChanged?()
+                showListIfNothingIsOpen()
             }
         }
     }
@@ -163,6 +166,7 @@ final class NavigationModel {
         didSet {
             if starredPath != oldValue {
                 onStacksChanged?()
+                showListIfNothingIsOpen()
             }
         }
     }
@@ -175,7 +179,19 @@ final class NavigationModel {
     var sheet: AppSheet?
     /// The window's current layout, set by the shell, so that "Show in
     /// Library" knows where the category list is.
-    var layout: WindowLayout?
+    var layout: WindowLayout? {
+        didSet {
+            if !isTwoColumnLayout {
+                isListHidden = false
+            }
+        }
+    }
+    /// Whether the list column is hidden, so that the open article is read
+    /// at full width (ux section 2; RD11 decision 14). Only in the
+    /// two-column layout and only while an article is open: it is not
+    /// stored, and it resets when the layout leaves two columns, when the
+    /// sidebar selection changes and when no article is open.
+    private(set) var isListHidden = false
     /// Called when a list is entered (decision 3): its route is pushed, the
     /// sidebar selection changes to it, or its tab is selected while it is
     /// the top of that tab's stack. Set by the app model.
@@ -247,6 +263,57 @@ final class NavigationModel {
         stack == .starred ? starredPath : libraryPath
     }
 
+    // MARK: - Hiding the list (RD11 decision 14)
+
+    /// The two-column layout: panes, with the sidebar sliding over.
+    var isTwoColumnLayout: Bool {
+        layout.map { $0.structure == .panes && !$0.sidebarIsPane } ?? false
+    }
+
+    /// The article open on the list the sidebar selection shows.
+    private var articleOpenOnShownList: UUID? {
+        list(of: sidebarSelection).flatMap { openArticle(on: $0) }
+    }
+
+    /// Whether the list column can be hidden now: two columns, with an
+    /// article open beside the list.
+    var canHideList: Bool {
+        isTwoColumnLayout && articleOpenOnShownList != nil
+    }
+
+    /// Hides the list column, or shows it again.
+    func setListHidden(_ hidden: Bool) {
+        isListHidden = hidden && canHideList
+    }
+
+    private func showListIfNothingIsOpen() {
+        if isListHidden, articleOpenOnShownList == nil {
+            isListHidden = false
+        }
+    }
+
+    // MARK: - Open articles
+
+    /// The articles open now: at most one on the Library stack and one on
+    /// the Starred stack.
+    var openArticles: Set<UUID> {
+        Set((libraryPath + starredPath).compactMap { route in
+            if case .article(let id) = route { id } else { nil }
+        })
+    }
+
+    /// Closes the article `id` where it is open, with the page above it:
+    /// the reading screen pushed on a list is popped, the reading pane
+    /// shows no article.
+    func closeArticle(_ id: UUID) {
+        if let index = libraryPath.firstIndex(of: .article(id)) {
+            libraryPath.removeSubrange(index...)
+        }
+        if let index = starredPath.firstIndex(of: .article(id)) {
+            starredPath.removeSubrange(index...)
+        }
+    }
+
     /// The route at the top of `stack` that shows the browser: an article's
     /// page, or a web-page source.
     func browserRoute(of stack: BrowserStack) -> LibraryRoute? {
@@ -287,6 +354,7 @@ final class NavigationModel {
     /// browser on top of the stack the selection leaves closes with it.
     func select(_ item: SidebarItem) {
         guard item != sidebarSelection else { return }
+        isListHidden = false
         closeBrowserOfCurrentStack()
         switch item {
         case .today:

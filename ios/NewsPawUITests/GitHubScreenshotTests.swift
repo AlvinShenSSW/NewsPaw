@@ -43,6 +43,8 @@ final class GitHubScreenshotTests: NewsPawUITestCase {
         goBack()
         detect("https://github.com/NewsPaw-Fixture/Project")
         waitFor(releasesRow("project"))
+        // Below the fold in the iPad's sheet.
+        scrollTo(button(AccessibilityID.categoryChoiceRow))
         chooseCategoryAndSave(category)
 
         openAddSource()

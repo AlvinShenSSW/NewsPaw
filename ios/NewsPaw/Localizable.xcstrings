@@ -2129,7 +2129,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "黑体"
+            "value" : "无衬线"
           }
         }
       }
@@ -2195,7 +2195,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "宋体"
+            "value" : "衬线"
           }
         }
       }

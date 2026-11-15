@@ -536,8 +536,15 @@ final class ReadingTests: ReadingTestCase {
         XCTAssertEqual(long.label, "A long picture")
         XCTAssertEqual(long.frame.width, min(readingArea.width - 32, 680), accuracy: 1, "\(long.frame)")
         XCTAssertEqual(long.frame.width / long.frame.height, 1_080.0 / 6_000, accuracy: 0.004, "\(long.frame)")
+        // It is taller than the screen, and reached when its top comes in
+        // under the bottom bar: brought up until it covers the middle of
+        // the screen, which is where it is tapped.
+        dragArticle(by: -readingArea.height * 0.45)
+        dragArticle(by: -readingArea.height * 0.45)
+        let middle = CGPoint(x: readingArea.midX, y: readingArea.midY)
+        XCTAssertTrue(long.frame.contains(middle), "the picture covers the middle of the screen: \(long.frame)")
         capture("pictures-long")
-        long.tap()
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: middle.x, dy: middle.y)).tap()
         let longViewed = waitFor(element(AccessibilityID.imageViewerImage))
         XCTAssertEqual(longViewed.label, "A long picture")
         capture("viewer-long")

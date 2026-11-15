@@ -131,6 +131,8 @@ struct FixtureTransportTests {
         #expect(every.blocks.contains { $0.quoteDepth == 2 })
         #expect(every.blocks.contains { $0.listDepth == 2 && $0.marker == .bullet })
         #expect(every.blocks.contains { $0.marker == .number(3) })
+        #expect(every.blocks.contains { $0.marker == .number(100) && $0.widestMarkers == [.number(100)] })
+        #expect(every.blocks.contains { $0.marker == .number(9_999) && $0.widestMarkers == [.number(100), .number(9_999)] })
         #expect(every.blocks.contains { $0.isCaption })
         let links = every.blocks.flatMap { block -> [URL] in
             if case .paragraph(let runs) = block.kind { runs.compactMap(\.link) } else { [] }

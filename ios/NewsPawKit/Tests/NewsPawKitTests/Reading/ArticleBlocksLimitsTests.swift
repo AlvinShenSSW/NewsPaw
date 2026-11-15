@@ -289,6 +289,15 @@ struct ArticleBlocksBoundedWorkTests {
         Shape(name: "a megabyte of marks in an emoji image's alternative text") {
             "<p>a<img class=\"emoji\" alt=\"a" + String(repeating: "\u{301}", count: 524_288) + "\">b</p>"
         },
+        Shape(name: "31 open lists around 100,000 short lists of one item") {
+            String(repeating: "<ol><li>", count: 31) + String(repeating: "<ol start=\"9999\"><li>x</li></ol>", count: 100_000)
+        },
+        Shape(name: "31 open lists around 300,000 items") {
+            String(repeating: "<ol><li>", count: 31) + String(repeating: "<li>x</li>", count: 300_000)
+        },
+        Shape(name: "an unclosed frame before 2,000,000 characters") {
+            "<p>a</p><iframe>" + String(repeating: "<p>x</p>", count: 250_000)
+        },
     ]
 
     private static func seconds(_ duration: Duration) -> Double {

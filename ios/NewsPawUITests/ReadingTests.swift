@@ -30,8 +30,9 @@ final class ReadingTests: ReadingTestCase {
         let markers = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH 'reading.marker.'")).allElementsBoundByIndex.map(\.label)
         XCTAssertTrue(markers.contains("•"), "\(markers)")
         XCTAssertTrue(markers.contains("3.") && markers.contains("4."), "\(markers)")
-        // A nested item stands further in than its parent.
-        XCTAssertGreaterThan(block("Sorted on the quay").frame.minX, block("Letters and parcels").frame.minX + 10)
+        // A nested item stands further in than its parent: by the indent
+        // of a level, 20 pt at the default size, where a bullet fits.
+        XCTAssertEqual(block("Sorted on the quay").frame.minX, block("Letters and parcels").frame.minX + 20, accuracy: 0.5)
         // A quote inside a quote too.
         XCTAssertGreaterThan(block("And the boats ride at their moorings.").frame.minX, block("The lights come on along the quay.").frame.minX + 5)
 
@@ -61,6 +62,69 @@ final class ReadingTests: ReadingTestCase {
         closeBrowser()
         waitForTitle("Every block")
         waitFor(block("The harbour at dusk"))
+    }
+
+    // MARK: - Review round 2: list markers at every text size
+
+    /// At the largest text size and the largest step of the reading
+    /// settings, in both faces: every marker stands inside the page's
+    /// leading margin and before its item's text, also numbers of three and
+    /// four digits in a nested list; an item's further block has its text
+    /// at the item's first line's edge, and the items of a list share one.
+    func testListMarkersFitAtTheLargestTextSize() {
+        launchWithReadingFeed()
+        launchReading(arguments: Self.largestText)
+        openReadingListUnderAll()
+        openArticle("Every block")
+        waitFor(block("The harbour at dusk"))
+        openReadingSettings()
+        while button(AccessibilityID.textSizeLargerButton).isEnabled {
+            button(AccessibilityID.textSizeLargerButton).tap()
+        }
+        XCTAssertEqual(element(AccessibilityID.textSizeValue).value as? String, "5 / 5")
+        closeReadingSettings()
+        assertListMarkersFit(face: "system face")
+        scrollArticleToTop()
+        openReadingSettings()
+        chooseReadingOption("Serif")
+        closeReadingSettings()
+        assertListMarkersFit(face: "serif")
+    }
+
+    private func assertListMarkersFit(face: String, file: StaticString = #filePath, line: UInt = #line) {
+        // The page's leading edge is the byline's; a text block's frame
+        // stands around its text by a constant, measured here.
+        let page = waitFor(element(AccessibilityID.readingByline)).frame.minX
+        let inset = page - waitFor(block(containing: "A paragraph with bold words")).frame.minX
+        func marker(_ label: String) -> XCUIElement {
+            app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH 'reading.marker.' AND label == %@", label)).firstMatch
+        }
+        /// The marker `label` of the item whose first block is `text`, now
+        /// on screen: inside the margin, before the text. Returns the
+        /// text's leading edge.
+        @discardableResult
+        func check(_ label: String, before text: String) -> CGFloat {
+            let item = scrollArticle(to: block(text), file: file, line: line)
+            let edge = item.frame.minX + inset
+            let frame = waitFor(marker(label), file: file, line: line).frame
+            record("list-markers", "\(face) | \(label) at \(frame) | text edge \(edge) | page edge \(page)")
+            XCTAssertGreaterThanOrEqual(frame.minX, page - 0.5, "\(face): \(label) stands past the page's leading margin \(page): \(frame)", file: file, line: line)
+            XCTAssertLessThanOrEqual(frame.maxX, edge + 0.5, "\(face): \(label) runs into its text at \(edge): \(frame)", file: file, line: line)
+            XCTAssertGreaterThan(frame.width, 5, "\(face): \(label) is drawn", file: file, line: line)
+            return edge
+        }
+        check("•", before: "Bread from the mainland")
+        let third = check("3.", before: "Third on the list")
+        XCTAssertEqual(check("4.", before: "Fourth on the list"), third, accuracy: 0.5, "\(face): the items of a list share one edge", file: file, line: line)
+        let ninetyNinth = check("99.", before: "Ninety-ninth on the list")
+        let further = scrollArticle(to: block("A second paragraph of the ninety-ninth item"), file: file, line: line).frame.minX + inset
+        XCTAssertEqual(further, ninetyNinth, accuracy: 0.5, "\(face): an item's further block is at its first line's edge", file: file, line: line)
+        let hundredth = check("100.", before: "The hundredth on the list")
+        XCTAssertEqual(hundredth, ninetyNinth, accuracy: 0.5, "\(face): the items of a list share one edge", file: file, line: line)
+        let nested = check("9998.", before: "Nested at 9,998")
+        XCTAssertEqual(check("9999.", before: "Nested at 9,999"), nested, accuracy: 0.5, "\(face): the nested items share one edge", file: file, line: line)
+        XCTAssertGreaterThan(nested, hundredth + 10, "\(face): the nested list stands further in", file: file, line: line)
+        capture("list-markers-\(face == "serif" ? "serif" : "system")")
     }
 
     // MARK: - Criteria 2 and 6: a hostile body, an excerpt, cut bodies

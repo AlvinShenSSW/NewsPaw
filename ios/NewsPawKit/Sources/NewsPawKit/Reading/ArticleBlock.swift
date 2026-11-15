@@ -71,14 +71,26 @@ public struct ArticleBlock: Sendable, Hashable {
     public var listDepth: Int
     /// The marker of its list item, on the item's first block only.
     public var marker: ListMarker?
+    /// For each list the block is laid out in, from the outermost
+    /// (`listDepth` of them): the widest marker that list gives, a bullet or
+    /// its largest number. The reading screen sizes the list's marker
+    /// column for it, so that every item of a list has its text at one edge
+    /// and no marker is wider than its column. Beyond
+    /// `ArticleBlocks.maximumDepth` the last one is the innermost list's.
+    public var widestMarkers: [ListMarker]
     /// Whether the block is text of a `figcaption`.
     public var isCaption: Bool
 
-    public init(_ kind: Kind, quoteDepth: Int = 0, listDepth: Int = 0, marker: ListMarker? = nil, isCaption: Bool = false) {
+    /// `widestMarkers` is a bullet for each list when not given.
+    public init(
+        _ kind: Kind, quoteDepth: Int = 0, listDepth: Int = 0, marker: ListMarker? = nil, widestMarkers: [ListMarker]? = nil,
+        isCaption: Bool = false
+    ) {
         self.kind = kind
         self.quoteDepth = quoteDepth
         self.listDepth = listDepth
         self.marker = marker
+        self.widestMarkers = widestMarkers ?? Array(repeating: .bullet, count: listDepth)
         self.isCaption = isCaption
     }
 

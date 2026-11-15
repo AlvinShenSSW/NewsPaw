@@ -82,10 +82,11 @@ private struct BlockRow: View {
     }
 
     private var row: some View {
-        HStack(alignment: .top, spacing: 0) {
-            if block.listDepth > 0 {
-                marker
-                    .frame(width: metrics.listIndent * Double(block.listDepth), alignment: .trailing)
+        ListRowLayout(columns: (0..<block.listDepth).map { level in
+            metrics.markerColumnWidth(for: block.widestMarkers.indices.contains(level) ? block.widestMarkers[level] : .bullet)
+        }) {
+            ForEach(0..<block.listDepth, id: \.self) { level in
+                markerColumn(isLast: level == block.listDepth - 1)
             }
             content
         }
@@ -101,18 +102,22 @@ private struct BlockRow: View {
         }
     }
 
-    /// The item's marker at the trailing end of the indent, on the first
-    /// line; an empty column for the item's further blocks.
+    /// A list's marker column: the item's marker at its trailing end, on
+    /// the first line, in the innermost list's column; empty otherwise. A
+    /// marker is drawn smaller rather than cut when its column was narrowed
+    /// (`ListRowLayout`).
     @ViewBuilder
-    private var marker: some View {
-        if let marker = block.marker {
+    private func markerColumn(isLast: Bool) -> some View {
+        if isLast, let marker = block.marker {
             Text(verbatim: Self.text(of: marker))
                 .font(metrics.font(size: metrics.bodySize))
                 .lineHeight(.exact(points: metrics.lineHeight(size: metrics.bodySize, isMostlyCJK: false)))
                 .foregroundStyle(Theme.secondaryText)
-                .fixedSize()
-                .padding(.trailing, 6)
+                .lineLimit(1)
+                .minimumScaleFactor(0.1)
                 .accessibilityIdentifier(AccessibilityID.readingMarker(index))
+                .padding(.trailing, ReadingMetrics.markerGap)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         } else {
             Color.clear.frame(height: 0)
         }
@@ -120,7 +125,7 @@ private struct BlockRow: View {
 
     private static func text(of marker: ArticleBlock.ListMarker) -> String {
         switch marker {
-        case .bullet: "•"
+        case .bullet: ReadingMetrics.bullet
         case .number(let number): "\(number)."
         }
     }
@@ -206,5 +211,49 @@ private struct BlockRow: View {
             text.append(part)
         }
         return text
+    }
+}
+
+/// A block in its lists: a marker column for each list it stands in, from
+/// the outermost, then the block, top-aligned. Each column is as wide as it
+/// asks (`ReadingMetrics.markerColumnWidth`), so that the blocks of one list
+/// have their text at one edge. Columns that together would take more than
+/// `maximumShare` of the width — numbers of many digits in nested lists at
+/// the largest text sizes — are narrowed in proportion, and their markers
+/// drawn smaller to fit.
+private struct ListRowLayout: Layout {
+    /// The width each column asks for; one subview per column, then the
+    /// block.
+    let columns: [Double]
+
+    static let maximumShare = 0.5
+
+    private func widths(within width: CGFloat?) -> [Double] {
+        let total = columns.reduce(0, +)
+        guard let width, total > 0, total > width * Self.maximumShare else { return columns }
+        let factor = width * Self.maximumShare / total
+        return columns.map { $0 * factor }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let block = subviews.last else { return .zero }
+        let widths = widths(within: proposal.width)
+        let indent = widths.reduce(0, +)
+        let size = block.sizeThatFits(ProposedViewSize(width: proposal.width.map { max($0 - indent, 0) }, height: nil))
+        var height = size.height
+        for (column, subview) in zip(widths, subviews.dropLast()) {
+            height = max(height, subview.sizeThatFits(ProposedViewSize(width: column, height: nil)).height)
+        }
+        return CGSize(width: proposal.width ?? indent + size.width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let block = subviews.last else { return }
+        var x = bounds.minX
+        for (column, subview) in zip(widths(within: bounds.width), subviews.dropLast()) {
+            subview.place(at: CGPoint(x: x, y: bounds.minY), anchor: .topLeading, proposal: ProposedViewSize(width: column, height: nil))
+            x += column
+        }
+        block.place(at: CGPoint(x: x, y: bounds.minY), anchor: .topLeading, proposal: ProposedViewSize(width: max(bounds.maxX - x, 0), height: nil))
     }
 }

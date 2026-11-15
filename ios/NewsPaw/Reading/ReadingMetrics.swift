@@ -18,13 +18,31 @@ struct ReadingMetrics {
     let bodySize: Double
     let lineSpacing: Double
     let typeface: ReadingTypeface
+    /// The widths of a list marker's parts in the body's face and size: the
+    /// widest digit, the full stop after a number, the bullet.
+    private let digitWidth: Double
+    private let fullStopWidth: Double
+    private let bulletWidth: Double
+
+    /// The space between a list marker and its item's text.
+    static let markerGap = 6.0
 
     @MainActor
     init(scaledBodySize: Double, settings: ReadingSettings) {
         bodySize = min(scaledBodySize * settings.textSize.factor, Self.maximumSize)
         lineSpacing = settings.lineSpacing.factor
         typeface = settings.typeface
+        let font = ReadingFont.uiFont(typeface, size: bodySize)
+        func width(_ text: String) -> Double {
+            (text as NSString).size(withAttributes: [.font: font]).width
+        }
+        digitWidth = (0...9).map { width(String($0)) }.max() ?? 0
+        fullStopWidth = width(".")
+        bulletWidth = width(Self.bullet)
     }
+
+    /// How a bullet marker is written.
+    static let bullet = "•"
 
     /// The space between two blocks.
     var blockSpacing: Double {
@@ -35,6 +53,21 @@ struct ReadingMetrics {
     /// larger text so that a marker has room, up to 32 pt.
     var listIndent: Double {
         20 * min(max(bodySize / 17, 1), 1.6)
+    }
+
+    /// The width of the marker column of a list whose widest marker is
+    /// `widest`: the indent of a level, or, when it is wider, the marker
+    /// with the gap after it. A number is measured as so many of the face's
+    /// widest digit, so the column holds every number of that many digits.
+    func markerColumnWidth(for widest: ArticleBlock.ListMarker) -> Double {
+        let marker: Double
+        switch widest {
+        case .bullet:
+            marker = bulletWidth
+        case .number(let number):
+            marker = Double(String(number).count) * digitWidth + fullStopWidth
+        }
+        return max(listIndent, (marker + Self.markerGap).rounded(.up))
     }
 
     /// The size of a heading of an HTML level: 1 and 2 at 1.3 times the
@@ -77,6 +110,18 @@ enum ReadingFont {
         let descriptor = UIFontDescriptor(fontAttributes: [.family: chineseSerifFamily])
         return !descriptor.matchingFontDescriptors(withMandatoryKeys: [.family]).isEmpty
     }()
+
+    /// The regular face of `typeface` at `size` for Latin text, as UIKit
+    /// has it: what a list marker is measured in.
+    static func uiFont(_ typeface: ReadingTypeface, size: Double) -> UIFont {
+        let system = UIFont.systemFont(ofSize: size)
+        switch typeface {
+        case .sansSerif:
+            return system
+        case .serif:
+            return system.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: size) } ?? system
+        }
+    }
 
     static func font(_ typeface: ReadingTypeface, size: Double, weight: Font.Weight) -> Font {
         switch typeface {

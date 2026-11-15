@@ -271,11 +271,26 @@ private struct Converter {
         var link: URL?
     }
 
+    struct List {
+        var ordered: Bool
+        /// The number of the next item of an ordered list.
+        var next: Int
+        /// The marker of the item whose first block is still to come.
+        var pending: ArticleBlock.ListMarker?
+        /// The number of the list's first item.
+        let first: Int
+        /// The index of the first block emitted inside the list.
+        let firstBlock: Int
+
+        /// The widest marker the list gave: a bullet, or its largest
+        /// number (its first when it numbered no item).
+        var widestMarker: ArticleBlock.ListMarker {
+            ordered ? .number(next > first ? next - 1 : first) : .bullet
+        }
+    }
+
     enum Context {
-        /// `next`: the number of the next item of an ordered list.
-        /// `pending`: the marker of the item whose first block is still to
-        /// come.
-        case list(ordered: Bool, next: Int, pending: ArticleBlock.ListMarker?)
+        case list(List)
         case quote
         /// `isContainer`: a block element stood in one of its cells, so its
         /// rows are no longer lines of text.
@@ -294,6 +309,10 @@ private struct Converter {
     let base: URL?
 
     private(set) var blocks: [ArticleBlock] = []
+    /// For each block, how many lists it was emitted in: which list's
+    /// marker its last column shows when they are more than
+    /// `maximumDepth`.
+    private var blockListCounts: [Int] = []
     /// The block limit was reached with a block still to come, or the input
     /// ended inside a dropped element.
     private(set) var isCut = false
@@ -418,6 +437,11 @@ private struct Converter {
             emitCode()
         }
         finishBlock(resetStyles: true)
+        // The lists left open end here: their blocks learn their widest
+        // markers.
+        while let last = contexts.popLast() {
+            closed(last)
+        }
         if droppedDepth > 0 || insideUnclosedElement {
             isCut = true
         }
@@ -452,7 +476,7 @@ private struct Converter {
                 setPendingMarker(forNewItem: false)
             }
             let first = ordered ? Self.listStart(token.attributes["start"]) : 1
-            push(.list(ordered: ordered, next: first, pending: nil))
+            push(.list(List(ordered: ordered, next: first, pending: nil, first: first, firstBlock: blocks.count)))
         case .quote:
             beginBlockElement()
             headingLevel = nil
@@ -594,11 +618,29 @@ private struct Converter {
         }
         guard open > 0 else { return }
         while let last = contexts.popLast() {
-            count(last, by: -1)
+            closed(last)
             if Self.kind(of: last) == kind {
                 break
             }
         }
+    }
+
+    /// A context taken off the stack. A list's blocks, all emitted while it
+    /// was open, now learn its widest marker, in the column of its level.
+    /// The last column (`maximumDepth`) is shared by every list from that
+    /// level down: there a list sets only the blocks it is the innermost
+    /// list of.
+    private mutating func closed(_ context: Context) {
+        if case .list(let list) = context {
+            let level = listCount
+            let column = min(level, ArticleBlocks.maximumDepth) - 1
+            let widest = list.widestMarker
+            for index in list.firstBlock..<blocks.count
+            where level < ArticleBlocks.maximumDepth || blockListCounts[index] == level {
+                blocks[index].widestMarkers[column] = widest
+            }
+        }
+        count(context, by: -1)
     }
 
     private mutating func count(_ context: Context, by change: Int) {
@@ -626,20 +668,23 @@ private struct Converter {
     /// it owes none. Inside a list beyond the limit nothing changes: its
     /// items are not the kept list's.
     private mutating func setPendingMarker(forNewItem: Bool) {
-        guard overflow == 0, let index = innermostList, case .list(let ordered, let next, _) = contexts[index] else { return }
+        guard overflow == 0, let index = innermostList, case .list(var list) = contexts[index] else { return }
         if !forNewItem {
-            contexts[index] = .list(ordered: ordered, next: next, pending: nil)
-        } else if ordered {
-            contexts[index] = .list(ordered: true, next: next + 1, pending: .number(next))
+            list.pending = nil
+        } else if list.ordered {
+            list.pending = .number(list.next)
+            list.next += 1
         } else {
-            contexts[index] = .list(ordered: false, next: next, pending: .bullet)
+            list.pending = .bullet
         }
+        contexts[index] = .list(list)
     }
 
     /// The marker owed by the innermost list, which then owes none.
     private mutating func takeMarker() -> ArticleBlock.ListMarker? {
-        guard let index = innermostList, case .list(let ordered, let next, let pending?) = contexts[index] else { return nil }
-        contexts[index] = .list(ordered: ordered, next: next, pending: nil)
+        guard let index = innermostList, case .list(var list) = contexts[index], let pending = list.pending else { return nil }
+        list.pending = nil
+        contexts[index] = .list(list)
         return pending
     }
 
@@ -865,10 +910,12 @@ private struct Converter {
             isCut = true
             return
         }
+        // The widest markers are known when the lists close (`closed`).
         blocks.append(ArticleBlock(
             kind, quoteDepth: min(quoteCount, ArticleBlocks.maximumDepth), listDepth: min(listCount, ArticleBlocks.maximumDepth),
             marker: takeMarker(), isCaption: isCaption
         ))
+        blockListCounts.append(listCount)
     }
 
     private func textKind(_ runs: [InlineRun]) -> ArticleBlock.Kind {

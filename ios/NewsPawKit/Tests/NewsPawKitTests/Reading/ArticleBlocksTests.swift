@@ -16,16 +16,20 @@ private func run(_ text: String, bold: Bool = false, italic: Bool = false, code:
     InlineRun(text, isBold: bold, isItalic: italic, isCode: code, link: link.map(url))
 }
 
+/// `widest`: the widest marker of each list the block stands in; bullets
+/// when not given.
 private func p(
-    _ runs: [InlineRun], quote: Int = 0, list: Int = 0, marker: Block.ListMarker? = nil, caption: Bool = false
+    _ runs: [InlineRun], quote: Int = 0, list: Int = 0, marker: Block.ListMarker? = nil, widest: [Block.ListMarker]? = nil,
+    caption: Bool = false
 ) -> Block {
-    Block(.paragraph(runs), quoteDepth: quote, listDepth: list, marker: marker, isCaption: caption)
+    Block(.paragraph(runs), quoteDepth: quote, listDepth: list, marker: marker, widestMarkers: widest, isCaption: caption)
 }
 
 private func p(
-    _ text: String, quote: Int = 0, list: Int = 0, marker: Block.ListMarker? = nil, caption: Bool = false
+    _ text: String, quote: Int = 0, list: Int = 0, marker: Block.ListMarker? = nil, widest: [Block.ListMarker]? = nil,
+    caption: Bool = false
 ) -> Block {
-    p([run(text)], quote: quote, list: list, marker: marker, caption: caption)
+    p([run(text)], quote: quote, list: list, marker: marker, widest: widest, caption: caption)
 }
 
 private func h(_ level: Int, _ text: String, quote: Int = 0, list: Int = 0) -> Block {
@@ -34,19 +38,21 @@ private func h(_ level: Int, _ text: String, quote: Int = 0, list: Int = 0) -> B
 
 private func image(
     _ address: String, alt: String? = nil, size: (Int, Int)? = nil, quote: Int = 0, list: Int = 0,
-    marker: Block.ListMarker? = nil
+    marker: Block.ListMarker? = nil, widest: [Block.ListMarker]? = nil
 ) -> Block {
     Block(
         .image(ArticleImage(
             url: url(address), alternativeText: alt,
             declaredSize: size.map { ArticleImage.DeclaredSize(width: $0.0, height: $0.1) }
         )),
-        quoteDepth: quote, listDepth: list, marker: marker
+        quoteDepth: quote, listDepth: list, marker: marker, widestMarkers: widest
     )
 }
 
-private func code(_ text: String, quote: Int = 0, list: Int = 0, marker: Block.ListMarker? = nil) -> Block {
-    Block(.code(text), quoteDepth: quote, listDepth: list, marker: marker)
+private func code(
+    _ text: String, quote: Int = 0, list: Int = 0, marker: Block.ListMarker? = nil, widest: [Block.ListMarker]? = nil
+) -> Block {
+    Block(.code(text), quoteDepth: quote, listDepth: list, marker: marker, widestMarkers: widest)
 }
 
 private func blocks(_ html: String, base: URL? = base) -> [Block] {
@@ -100,8 +106,9 @@ struct ArticleBlocksTests {
                 p("One", list: 1, marker: .bullet), p("Two", list: 1, marker: .bullet),
                 p("Inner", list: 2, marker: .bullet), p("Second inner", list: 2, marker: .bullet),
                 p("Three", list: 1, marker: .bullet),
-                p("Five", list: 1, marker: .number(5)), p("Six", list: 1, marker: .number(6)),
-                p("First", list: 1, marker: .number(1)),
+                p("Five", list: 1, marker: .number(5), widest: [.number(6)]),
+                p("Six", list: 1, marker: .number(6), widest: [.number(6)]),
+                p("First", list: 1, marker: .number(1), widest: [.number(1)]),
             ]
         ),
         Case(
@@ -113,9 +120,11 @@ struct ArticleBlocksTests {
             name: "ol start is kept between 1 and 9,999",
             html: "<ol start='0'><li>a</li></ol><ol start='-4'><li>b</li></ol><ol start='123456'><li>c</li><li>d</li></ol><ol start='x'><li>e</li></ol>",
             expected: [
-                p("a", list: 1, marker: .number(1)), p("b", list: 1, marker: .number(1)),
-                p("c", list: 1, marker: .number(9_999)), p("d", list: 1, marker: .number(10_000)),
-                p("e", list: 1, marker: .number(1)),
+                p("a", list: 1, marker: .number(1), widest: [.number(1)]),
+                p("b", list: 1, marker: .number(1), widest: [.number(1)]),
+                p("c", list: 1, marker: .number(9_999), widest: [.number(10_000)]),
+                p("d", list: 1, marker: .number(10_000), widest: [.number(10_000)]),
+                p("e", list: 1, marker: .number(1), widest: [.number(1)]),
             ]
         ),
         Case(
@@ -144,8 +153,9 @@ struct ArticleBlocksTests {
             name: "li p is one item; an image or a pre can be an item's first block",
             html: #"<ol><li><p>Item</p></li><li><img src="https://img.example/c.jpg"></li><li><pre>x</pre></li></ol>"#,
             expected: [
-                p("Item", list: 1, marker: .number(1)), image("https://img.example/c.jpg", list: 1, marker: .number(2)),
-                code("x", list: 1, marker: .number(3)),
+                p("Item", list: 1, marker: .number(1), widest: [.number(3)]),
+                image("https://img.example/c.jpg", list: 1, marker: .number(2), widest: [.number(3)]),
+                code("x", list: 1, marker: .number(3), widest: [.number(3)]),
             ]
         ),
         Case(
@@ -334,6 +344,53 @@ struct ArticleBlocksTests {
         }
     }
 
+    // MARK: - The widest marker of each list
+
+    @Test("each block carries the widest marker of every list it stands in, known when the list ends")
+    func widestMarkers() {
+        // A list's widest marker reaches back to its first item and to an
+        // item's further blocks; the outer list's reaches into the nested
+        // one; a bullet list's is a bullet.
+        let html = """
+            <ol start="98"><li><p>98</p><p>98 again</p></li><li>99<ul><li>inner</li></ul><ol start="9998">\
+            <li>a</li><li>b</li></ol>tail</li><li>100</li></ol><p>after</p><ol><li>one</li></ol>
+            """
+        #expect(blocks(html) == [
+            p("98", list: 1, marker: .number(98), widest: [.number(100)]),
+            p("98 again", list: 1, widest: [.number(100)]),
+            p("99", list: 1, marker: .number(99), widest: [.number(100)]),
+            p("inner", list: 2, marker: .bullet, widest: [.number(100), .bullet]),
+            p("a", list: 2, marker: .number(9_998), widest: [.number(100), .number(9_999)]),
+            p("b", list: 2, marker: .number(9_999), widest: [.number(100), .number(9_999)]),
+            p("tail", list: 1, widest: [.number(100)]),
+            p("100", list: 1, marker: .number(100), widest: [.number(100)]),
+            p("after"),
+            p("one", list: 1, marker: .number(1), widest: [.number(1)]),
+        ])
+        // Lists left open end with the body; a list closed by its quote's
+        // end tag ends there.
+        #expect(blocks("<ol start='9'><li>nine<li>ten") == [
+            p("nine", list: 1, marker: .number(9), widest: [.number(10)]),
+            p("ten", list: 1, marker: .number(10), widest: [.number(10)]),
+        ])
+        #expect(blocks("<blockquote><ol start='9'><li>nine<li>ten</blockquote><ol><li>one</li></ol>") == [
+            p("nine", quote: 1, list: 1, marker: .number(9), widest: [.number(10)]),
+            p("ten", quote: 1, list: 1, marker: .number(10), widest: [.number(10)]),
+            p("one", list: 1, marker: .number(1), widest: [.number(1)]),
+        ])
+        // An ordered list that numbered no item: its first number.
+        #expect(blocks("<ol start='12'><p>text</p></ol>") == [p("text", list: 1, widest: [.number(12)])])
+        // Deeper than three lists: the last column is the innermost list's,
+        // and the third list's own blocks keep its own.
+        let deep = "<ul><li><ul><li><ol start='7'><li>third<ol start='500'><li>fourth</li><li>again</li></ol>third tail</li></ol></li></ul></li></ul>"
+        #expect(blocks(deep) == [
+            p("third", list: 3, marker: .number(7), widest: [.bullet, .bullet, .number(7)]),
+            p("fourth", list: 3, marker: .number(500), widest: [.bullet, .bullet, .number(501)]),
+            p("again", list: 3, marker: .number(501), widest: [.bullet, .bullet, .number(501)]),
+            p("third tail", list: 3, widest: [.bullet, .bullet, .number(7)]),
+        ])
+    }
+
     // MARK: - Contexts beyond the limit
 
     @Test("the context stack is capped at 32: deeper lists are counted and add no depth, and their end tags close none")
@@ -350,7 +407,7 @@ struct ArticleBlocksTests {
 
         // Quotes and lists share the stack.
         let mixed = String(repeating: "<blockquote>", count: 20) + String(repeating: "<ol><li>", count: 20) + "x"
-        #expect(blocks(mixed) == [p("x", quote: 3, list: 3, marker: .number(1))])
+        #expect(blocks(mixed) == [p("x", quote: 3, list: 3, marker: .number(1), widest: [.number(1), .number(1), .number(1)])])
     }
 
     // MARK: - Criterion 2: nothing of the article can run or reach out

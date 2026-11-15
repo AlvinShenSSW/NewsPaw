@@ -35,6 +35,8 @@ final class ReadingScreenshotTests: ReadingTestCase {
         capture("01-every-block-headings-paragraph")
         scrollArticle(to: block("Third on the list"))
         capture("02-every-block-lists-quote")
+        scrollArticle(to: block("Nested at 9,999"))
+        capture("02b-every-block-long-numbers")
         let image = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'reading.image.'")).firstMatch
         scrollArticle(to: image)
         scrollArticle(to: block("A caption under the picture"))

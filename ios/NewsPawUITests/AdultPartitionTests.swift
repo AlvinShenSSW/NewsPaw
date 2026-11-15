@@ -129,7 +129,9 @@ final class AdultPartitionTests: AdultTestCase {
         waitForPartition(Wording.normal)
         XCTAssertFalse(lockButton.exists)
         waitFor(element(AccessibilityID.categoryRow("World")))
-        waitForReport("library=released", "workspace=released", "browser=released")
+        // No menu was used in the adult partition: nothing of it is held
+        // once its own tasks have ended.
+        waitForReport("library=released", "workspace=released", "browser=released", seconds: Self.releaseAtOnce)
     }
 
     /// The other stand-in order (decision 15): the answer comes only after

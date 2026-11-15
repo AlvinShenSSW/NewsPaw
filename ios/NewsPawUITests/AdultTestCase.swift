@@ -29,14 +29,35 @@ class AdultTestCase: BrowserTestCase {
         element(DebugAccessibilityID.adultReport).label
     }
 
+    /// How long a release may take after a lock when a menu was used in
+    /// the adult partition shortly before it and nothing else holds: UIKit
+    /// keeps the source view of the last menu it presented, and through
+    /// its environment the models and the library, until a timer of its
+    /// own clears it (measured: between 40 and 75 seconds;
+    /// `_UIMenuPresentationSourceSceneComponent`).
+    static let releaseAfterAMenu: TimeInterval = 90
+    /// How long a release may take when UIKit holds nothing: the tasks
+    /// that were running in the workspace end, and it is gone.
+    static let releaseAtOnce: TimeInterval = 10
+    /// What every lock must leave, whatever was done before it: the
+    /// workspace object itself is gone, so no cycle of the app's own holds
+    /// it. After an article was opened or a row swiped, UIKit keeps trait
+    /// collections that carry the views' environment, and with it the
+    /// models and the library object, for longer than a test can wait
+    /// (measured, RD18 assumption A4); those paths assert this much.
+    static let releasedByTheApp = "workspace=released"
+
     /// Waits until the report holds every one of `parts`.
-    func waitForReport(_ parts: String..., seconds: TimeInterval = 10, file: StaticString = #filePath, line: UInt = #line) {
+    func waitForReport(_ parts: String..., seconds: TimeInterval = AdultTestCase.releaseAfterAMenu,
+                       file: StaticString = #filePath, line: UInt = #line) {
+        let asked = Date()
         let reported = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
             let report = self.report
             return parts.allSatisfy { report.contains($0) }
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [reported], timeout: seconds), .completed,
                        "the report is \"\(report)\", expected \(parts)", file: file, line: line)
+        print("RD18 report \(parts) after \(String(format: "%.1f", Date().timeIntervalSince(asked))) s (line \(line))")
     }
 
     // MARK: - Settings

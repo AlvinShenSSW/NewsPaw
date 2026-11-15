@@ -96,6 +96,9 @@ final class AdultSettingsTests: AdultTestCase {
         waitFor(adultRow)
         XCTAssertFalse(turnOffButton.exists)
         XCTAssertFalse(app.alerts.firstMatch.exists, "a deletion that worked says nothing")
+        // The store has closed and forgotten the library; the workspace is
+        // gone. (The "+" menu of the tab structure may keep the browser
+        // model for UIKit's minute.)
         waitForReport("file=0", "library=released", "workspace=released", "browser=released")
         XCTAssertFalse(switchIsOffered(), "the partition switch is still shown")
         showCategoryList()

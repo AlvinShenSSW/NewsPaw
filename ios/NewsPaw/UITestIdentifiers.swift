@@ -204,11 +204,6 @@ enum AccessibilityID {
     static let lockTimingPicker = "adult.lockTiming"
     static let turnOffAdultButton = "adult.turnOff"
 
-    /// A lock timing's row, by its seconds.
-    static func lockTimingOption(_ seconds: Int) -> String {
-        "adult.lockTiming." + String(seconds)
-    }
-
     /// A preset's row in the form's service picker.
     static func presetOption(_ rawValue: String) -> String {
         "slot.preset." + rawValue

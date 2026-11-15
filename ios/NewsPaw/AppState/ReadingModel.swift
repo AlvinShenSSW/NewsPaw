@@ -68,16 +68,9 @@ final class ReadingModel {
     /// The task reading and converting each open article's body.
     @ObservationIgnored private var bodyTasks: [UUID: Task<Void, Never>] = [:]
     /// Where the reader stands in each open article (RD11, review round
-    /// 1): kept in memory beside the body and let go with it, never stored.
-    @ObservationIgnored private var positions: [UUID: ReadingPosition] = [:]
-
-    /// The reader's place in an open article: the block at the top of the
-    /// screen, and whether the article is at its very top, where its
-    /// header stands above the first block.
-    private struct ReadingPosition {
-        var block: Int?
-        var isAtTop = true
-    }
+    /// 1): the block at the top of its screen, kept in memory beside the
+    /// body and let go with it, never stored.
+    @ObservationIgnored private var positions: [UUID: Int] = [:]
 
     private struct SavedField: Hashable {
         var article: UUID
@@ -297,27 +290,21 @@ final class ReadingModel {
     // MARK: - The reader's place in an open article
 
     /// The block that was at the top of the screen when the reading screen
-    /// of the open article `id` was last on screen; `nil` at the article's
-    /// top, and for an article whose body is not held. A reading screen
-    /// built again for an article that stayed open starts there: in the
-    /// reading pane after its page in the browser was closed, and after a
-    /// switch between the tab and the pane structure. A position is not
-    /// remembered from one opening to the next.
+    /// of the open article `id` was last on screen; `nil` when the screen
+    /// reported none, and for an article whose body is not held. A reading
+    /// screen built again for an article that stayed open starts there: in
+    /// the reading pane after its page in the browser was closed, and
+    /// after a switch between the tab and the pane structure. A position
+    /// is not remembered from one opening to the next.
     func position(of id: UUID) -> Int? {
-        guard let position = positions[id], !position.isAtTop else { return nil }
-        return position.block
+        positions[id]
     }
 
-    /// The reading screen of `id` scrolled: `block` is now at its top.
+    /// The reading screen of `id` scrolled: `block` is now at its top, or
+    /// the screen reports none.
     func readerMoved(to block: Int?, in id: UUID) {
         guard bodies[id] != nil else { return }
-        positions[id, default: ReadingPosition()].block = block
-    }
-
-    /// The reading screen of `id` reached or left the top of its article.
-    func readerIsAtTop(_ isAtTop: Bool, of id: UUID) {
-        guard bodies[id] != nil else { return }
-        positions[id, default: ReadingPosition()].isAtTop = isAtTop
+        positions[id] = block
     }
 
     private func readBody(of row: ArticleRow) {

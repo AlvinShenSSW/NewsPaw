@@ -276,7 +276,9 @@ private struct ArticleScreen: View {
 /// model, and a screen built again for an article that stayed open starts
 /// at the block the model holds: in the reading pane the screen is taken
 /// away while the article's page is in the browser, and a switch between
-/// the tab and the pane structure builds it anew. The position is this
+/// the tab and the pane structure builds it anew. Nothing more is done
+/// for the article's top: an article left with its header on screen comes
+/// back with it (measured, and held by the UI test). The position is this
 /// modifier's own state, so that scrolling does not lay the screen out
 /// again.
 private struct ReaderPosition: ViewModifier {
@@ -296,13 +298,6 @@ private struct ReaderPosition: ViewModifier {
             .scrollPosition($position, anchor: .top)
             .onChange(of: position.viewID(type: Int.self)) { _, block in
                 reading.readerMoved(to: block, in: articleID)
-            }
-            // At its very top an article shows its header above the first
-            // block; the position of that block would hide it.
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y + geometry.contentInsets.top < 1
-            } action: { _, isAtTop in
-                reading.readerIsAtTop(isAtTop, of: articleID)
             }
     }
 }

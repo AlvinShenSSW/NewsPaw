@@ -315,6 +315,11 @@ final class AppModel {
     /// the current tab, in one step and without animation.
     private func show(_ workspace: Workspace) {
         guard let normal else { return }
+        // The unlock has ended: from here on only the timing rule locks.
+        // Left in place until `chooseAdult()` returns, a background event
+        // in its last hop would close the library under a workspace that
+        // a timed setting keeps on screen.
+        unlockAttempt = nil
         cover.prepare()
         withoutAnimation {
             workspace.navigation.showAtRoot(of: normal.navigation.currentTab, layout: normal.navigation.layout)

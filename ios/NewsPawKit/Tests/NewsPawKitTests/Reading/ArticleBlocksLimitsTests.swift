@@ -113,10 +113,13 @@ struct ArticleBlocksLimitsTests {
         // Across runs the bytes of a piece add up as its characters do.
         let html = "<p>" + String(repeating: "🇯🇵", count: 9_000) + "<b>" + String(repeating: "🇯🇵", count: 9_000) + "</b></p>"
         let split = ArticleBlocks.make(html: html, baseURL: base).blocks
-        #expect(split == [
-            ArticleBlock(.paragraph([InlineRun(String(repeating: "🇯🇵", count: 9_000)), InlineRun(String(repeating: "🇯🇵", count: 1_000), isBold: true)])),
-            ArticleBlock(.paragraph([InlineRun(String(repeating: "🇯🇵", count: 8_000), isBold: true)])),
-        ])
+        // The first piece is full at 80,000 bytes: the plain run and 1,000
+        // flags of the bold one. (Counts, not the blocks themselves: a
+        // failure would print 144,000 flags.)
+        let runs: [[InlineRun]] = split.map { if case .paragraph(let runs) = $0.kind { runs } else { [] } }
+        #expect(runs.map { $0.map(\.text.count) } == [[9_000, 1_000], [8_000]])
+        #expect(runs.map { $0.map(\.isBold) } == [[false, true], [true]])
+        #expect(texts(split).joined() == String(repeating: "🇯🇵", count: 18_000))
 
         // The byte bound falls inside a three-byte scalar here (a character
         // of 20,000 enclosing marks): the piece ends before that scalar.

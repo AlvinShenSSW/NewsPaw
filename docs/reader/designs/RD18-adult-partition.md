@@ -287,8 +287,21 @@ What was built, in place of "hidden at did-activate, one main-loop turn after de
 - While the adult workspace is still the one shown, the cover is hidden one main-loop turn after did-activate, as designed.
 - After a lock under the cover — by the rule at did-activate, or earlier in the background — the cover is hidden only once the swap is on screen: the root view has reported that the normal workspace's shell appeared, no window of the app presents a view controller any more, and both have held for three frames. If that has not come after 2 seconds (never seen), whatever the app's windows still present is dismissed without animation and the cover is hidden then, so that the cover cannot stay for good.
 - The table's remedy for A5, "close presentations explicitly before the swap", was not what was built: closing them through SwiftUI is not done in the step of the swap (decision 4 wants one step with no suspension), and the swap's own late frame needs the cover to wait in any case. Every lock with an adult sheet, dialog or menu open happens under the cover: the lock button and the partition switch cannot be reached while one is open.
-- The recorded check was repeated after the change, on both simulators, in three forms: the timed lock with the sheet open; "Immediately" with the sheet open (the lock happens in the background); the timed lock with a context menu open on the adult category. In all six recordings every frame after the return shows the system's picture of the cover, the cover, or the normal partition (`rd18/screenshots/criterion9-transition/`).
-- The check by hand stays the only evidence for this: no automatic test sees frames.
+- The recorded check was repeated after the change, on both simulators, in four forms: the timed lock with the sheet open; "Immediately" with the sheet open (the lock happens in the background); the timed lock with a context menu open on the adult category; the timed lock with the system's share sheet open over the adult browser. In all eight recordings every frame after the return shows the system's picture of the cover, the cover, or the normal partition (`rd18/screenshots/criterion9-transition/`).
+- What the condition counts: the windows of the app's one window scene except the cover's own, and for each whether its root view controller presents a view controller. At the check those windows were the app's window and the system's text-effects window, which presents nothing. The system's authentication prompt is not in the app's process and cannot be asked for under the cover. In every run the wait ended by the condition, never by the bound.
+- What can still be presented when the bound is reached: only something of the dropped adult shell. Entering the adult partition clears the normal workspace's navigation and its shell is not in the view hierarchy while the adult one is shown; after the swap the normal shell is built at the root from that cleared state and nothing is restored; under the cover no touch reaches the app; of the root's own alerts, the question of turning off is closed by the lock rule (below), and no sentence can be up while the adult workspace is shown. The share sheet over the adult browser is the adult shell's, and UIKit removed it with the shell.
+- How long the cover stays after did-activate, measured with a logging copy of the app, animations on, one run each:
+
+  | What was open at the lock | iPhone 18 Pro Max | iPad Pro 11-inch |
+  | --- | --- | --- |
+  | Nothing; the lock happened in the background ("Immediately") | 57 ms | 57 ms |
+  | Nothing; timed lock at the return | 142 ms | 85 ms |
+  | An adult sheet; timed lock | 410 ms (UIKit removed the sheet at 354 ms) | 358 ms (at 305 ms) |
+  | The system's share sheet over the adult browser; timed lock | 768 ms (removed at 710 ms) | 528 ms (at 469 ms) |
+
+  With nothing open the condition already held at the first check; the time is the three checks, with the main thread building the normal shell between them. The owner sees the logo for about a tenth of a second after the system's opening animation ends.
+- The check by hand stays the only evidence for this: the UI tests run with the app's animations off and see no frames, so they cannot show it either way.
+- Device check owed, added to the design's list, and to be listed in the pull request: return after a timed lock with a sheet open, with animations on, on a real iPhone and a real iPad — nothing of the adult partition may be seen once the cover goes.
 
 ### Decision 10, added: the question of turning off closes with the screen
 

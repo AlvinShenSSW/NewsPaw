@@ -828,8 +828,12 @@ struct GitHubDetectionTests {
         #expect(try await rowCounts(fixture.library) == before)
     }
 
-    @Test("cancelled once the three are gone, before the ordinary path: throws, no further request")
-    func cancelledBeforeOrdinaryPath() async throws {
+    /// The cancellation arrives while the last of the three feeds is being
+    /// answered, so detection stops inside that feed's check. The guard
+    /// between the three feeds and the ordinary path (`detect`, after
+    /// `detectRepository` returns nil) is not what this test reaches.
+    @Test("cancelled while the last of three gone feeds is answered: throws, the typed address is not requested")
+    func cancelledWhileTheLastFeedIsAnswered() async throws {
         let fixture = try await SourceFixture.make()
         defer { fixture.remove() }
         let typed = "https://github.com/nobody/missing"

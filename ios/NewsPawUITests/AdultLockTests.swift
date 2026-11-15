@@ -418,9 +418,10 @@ final class AdultLockTests: AdultTestCase {
         showControlCentre()
         Thread.sleep(forTimeInterval: 6)
         hideControlCentre()
+        // The report first: when nothing locks it says so in one line.
+        waitForReport(Self.closed, Self.dropped)
         waitForPartition(Wording.normal)
         XCTAssertFalse(lockButton.exists)
-        waitForReport(Self.closed, Self.dropped)
     }
 
     /// Settings › Adult Partition opened from the normal partition is

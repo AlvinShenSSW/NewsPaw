@@ -180,8 +180,12 @@ final class BrowserModel {
     /// full-screen presentations closed, and their playback suspended until
     /// `allowMedia()`, so that a page's script cannot start a media element
     /// again while the app is not active: it does not play beneath the
-    /// cover or in the system's playback controls.
+    /// cover or in the system's playback controls. Once per absence: the
+    /// scene's notifications can ask twice (will-deactivate, then
+    /// did-enter-background), and WebKit wants suspending and resuming in
+    /// pairs.
     func suspendMedia() {
+        guard !mediaIsSuspended else { return }
         mediaIsSuspended = true
         for session in [librarySession, starredSession].compactMap(\.self) {
             session.suspendMedia()

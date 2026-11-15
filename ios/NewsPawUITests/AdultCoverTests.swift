@@ -59,7 +59,8 @@ final class AdultCoverTests: AdultTestCase {
     /// shown and the scene is not active — here Control Centre over the
     /// app under "After 1 Minute", so that the workspace stays — a page
     /// that calls `play()` on its paused sound element every 200 ms plays
-    /// nothing; back in the app it may play again. The page's audio
+    /// nothing; back in the app it may play again, also after Home and
+    /// back within the minute. The page's audio
     /// context, which it resumes as often, is only recorded: WebKit lets
     /// a page's `resume()` end the suspension (measured).
     func testAnAdultPageCannotPlayAgainWhileTheAppIsNotActive() {
@@ -103,6 +104,13 @@ final class AdultCoverTests: AdultTestCase {
         // its page may play again.
         XCTAssertTrue(report.contains("pool=open"), "the partition locked: \(report)")
         waitForElementPlaying(beyond: after.element + 1, "after the return")
+
+        // Home and back within the minute: will-deactivate and then
+        // did-enter-background suspend once, and one return allows again.
+        let beforeHome = played()
+        leaveAndReturn()
+        XCTAssertTrue(report.contains("pool=open"), "the partition locked: \(report)")
+        waitForElementPlaying(beyond: beforeHome.element + 1, "after Home and back")
     }
 
     func testTheCoverHidesTheAdultPartitionInTheAppSwitcher() {

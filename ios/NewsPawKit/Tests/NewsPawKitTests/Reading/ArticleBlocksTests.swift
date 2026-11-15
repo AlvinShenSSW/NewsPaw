@@ -507,6 +507,42 @@ struct ArticleBlocksTests {
         #expect(ArticleBlocks.make(html: "<p>a</p><form>", baseURL: base).isCut)
     }
 
+    @Test("a body that ends inside a raw-text element or a comment that never closes is cut, the text before kept")
+    func endsInsideRawTextOrComment() {
+        // Every element the scanner reads as raw text for the converter.
+        for name in ["iframe", "script", "style", "noscript", "textarea", "title"] {
+            let open = ArticleBlocks.make(html: "<p>a</p><p>b <\(name)>c</p><p>d</p>", baseURL: base)
+            #expect(open.blocks == [p("a"), p("b")], "\(name)")
+            #expect(open.isCut, "\(name)")
+            // Nothing after the start tag: the rest is still not known to be whole.
+            #expect(ArticleBlocks.make(html: "<p>a</p><\(name)>", baseURL: base).isCut, "\(name)")
+            let closed = ArticleBlocks.make(html: "<p>a</p><p>b <\(name)>c</\(name)></p><p>d</p>", baseURL: base)
+            #expect(closed.blocks == [p("a"), p("b"), p("d")], "\(name)")
+            #expect(!closed.isCut, "\(name)")
+            // The scanner takes an end tag in any letter case and with white
+            // space or a slash before its `>`.
+            for end in ["</\(name.uppercased())>", "</\(name) >", "</\(name)\t\n>", "</\(name)/>"] {
+                let other = ArticleBlocks.make(html: "<p>a <\(name)>c\(end) b</p><p>d</p>", baseURL: base)
+                #expect(other.blocks == [p("a b"), p("d")], "\(end)")
+                #expect(!other.isCut, "\(end)")
+            }
+        }
+        // The reviewer's shape: a full text before an unclosed frame is
+        // full text, and cut.
+        let long = ArticleBlocks.make(html: "<p>\(String(repeating: "a", count: 1_000))</p><iframe src='https://frame.example/x'><p>after</p>", baseURL: base)
+        #expect(ArticleBlocks.isFullText(long.blocks))
+        #expect(long.blocks == [p(String(repeating: "a", count: 1_000))])
+        #expect(long.isCut)
+        // A comment that never closes; and one that does.
+        let comment = ArticleBlocks.make(html: "<p>a</p><p>b <!-- c</p><p>d</p>", baseURL: base)
+        #expect(comment.blocks == [p("a"), p("b")])
+        #expect(comment.isCut)
+        #expect(ArticleBlocks.make(html: "<p>a</p><!--", baseURL: base).isCut)
+        let closedComment = ArticleBlocks.make(html: "<p>a</p><p>b <!-- c --></p><p>d</p><!---->", baseURL: base)
+        #expect(closedComment.blocks == [p("a"), p("b"), p("d")])
+        #expect(!closedComment.isCut)
+    }
+
     @Test("a tag written as empty by an XML serialiser drops nothing after it")
     func selfClosedDroppedElements() {
         let html = #"<p>a</p><iframe src="https://frame.example/x"/><video src="v.mp4"/><script src="x.js"/><svg/><object/><p>b</p>"#

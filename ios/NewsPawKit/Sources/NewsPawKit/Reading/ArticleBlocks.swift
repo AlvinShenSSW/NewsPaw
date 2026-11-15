@@ -18,7 +18,8 @@ public struct ArticleBlocks: Sendable, Hashable {
     public var blocks: [ArticleBlock]
     /// The marker at the end of the list: the input or the number of blocks
     /// was past its limit, or the input ended inside an element that is
-    /// dropped with its content, so the list does not hold the whole body.
+    /// dropped with its content (a raw-text element or a comment among
+    /// them), so the list does not hold the whole body.
     public var isCut: Bool
 
     public init(blocks: [ArticleBlock], isCut: Bool) {
@@ -68,10 +69,10 @@ public struct ArticleBlocks: Sendable, Hashable {
         }
         return bytes.withUnsafeBufferPointer { source in
             var converter = Converter(bytes: bytes, source: source, base: baseURL)
-            TagScanner.scan(source, options: Converter.scanOptions) { token in
+            let end = TagScanner.scan(source, options: Converter.scanOptions) { token in
                 converter.handle(token)
             }
-            converter.finish()
+            converter.finish(insideUnclosedElement: end == .unclosedRawText || end == .unclosedComment)
             return ArticleBlocks(blocks: converter.blocks, isCut: inputWasCut || converter.isCut)
         }
     }
@@ -408,14 +409,16 @@ private struct Converter {
     }
 
     /// The end of the input: what is still open is emitted. Inside a
-    /// dropped element that never ended, what was dropped may be the rest
-    /// of the article, so the list is marked as cut.
-    mutating func finish() {
+    /// dropped element that never ended — one the converter drops, or a
+    /// raw-text element or a comment that ran to the end of the input in
+    /// the scanner (`insideUnclosedElement`) — what was dropped may be the
+    /// rest of the article, so the list is marked as cut.
+    mutating func finish(insideUnclosedElement: Bool) {
         if preDepth > 0 {
             emitCode()
         }
         finishBlock(resetStyles: true)
-        if droppedDepth > 0 {
+        if droppedDepth > 0 || insideUnclosedElement {
             isCut = true
         }
     }

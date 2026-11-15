@@ -112,6 +112,30 @@ struct TagScannerTests {
         #expect(upper == "blockquote")
     }
 
+    @Test("the scan says how it ended: at the input's end, stopped, or inside an unclosed comment or raw-text element")
+    func ends() {
+        func end(_ html: String) -> TagScanner.End {
+            TagScanner.scan(Array(html.utf8), options: Self.options) { _ in true }
+        }
+        #expect(end("<p>a</p>b") == .input)
+        #expect(end("") == .input)
+        #expect(end("a <script>x</script> b") == .input)
+        #expect(end("a <script>x</SCRIPT > b") == .input)
+        #expect(end("a <script>x</script") == .input)
+        #expect(end("a <script>x") == .unclosedRawText)
+        #expect(end("a <script>") == .unclosedRawText)
+        #expect(end("a <title>x</titles>") == .unclosedRawText)
+        #expect(end("a <!-- x --> b") == .input)
+        #expect(end("a <!-- x") == .unclosedComment)
+        #expect(end("a <!--") == .unclosedComment)
+        // A tag left open within the cap is skipped, as before: the input's end.
+        #expect(end("a <p class='x") == .input)
+        let stopped = TagScanner.scan(Array("<p>a</p><p>b</p>".utf8), options: Self.options) { _ in false }
+        #expect(stopped == .stopped)
+        let stoppedAtRaw = TagScanner.scan(Array("<script>x".utf8), options: Self.options) { $0.kind != .rawText }
+        #expect(stoppedAtRaw == .stopped)
+    }
+
     @Test("the scan stops when the handler says so")
     func stops() {
         var seen = 0

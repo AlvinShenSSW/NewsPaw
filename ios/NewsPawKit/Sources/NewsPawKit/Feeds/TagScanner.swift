@@ -14,7 +14,11 @@ import Foundation
 /// - A tag name ends at white space, `/` or `>` and is compared ignoring
 ///   case.
 /// - Comments are passed over. An unclosed comment ends the scan.
-/// - The content of a raw-text element is one token, not scanned for tags.
+/// - The content of a raw-text element is one token, not scanned for tags;
+///   without its end tag it runs to the end of the input.
+/// - The scan says how it ended, so that a caller can tell an unclosed
+///   comment or raw-text element (which hid the rest of the input) from an
+///   input read to its end.
 /// - A `<` that starts no tag is text.
 /// Accepted approximations: a `<!…>` that is not a comment ends at the first
 /// `>`; `<!-->` is a complete comment.
@@ -96,6 +100,20 @@ enum TagScanner {
         var selfClosingHasNoContent = false
     }
 
+    /// How a scan ended.
+    enum End: Equatable {
+        /// At the end of the input.
+        case input
+        /// The handler returned false.
+        case stopped
+        /// Inside a comment that has no end: the rest of the input was in
+        /// it and was handed over as nothing.
+        case unclosedComment
+        /// Inside a raw-text element that has no end tag: its token ran to
+        /// the end of the input.
+        case unclosedRawText
+    }
+
     private static let lessThan = UInt8(ascii: "<")
     private static let greaterThan = UInt8(ascii: ">")
     private static let slash = UInt8(ascii: "/")
@@ -107,14 +125,16 @@ enum TagScanner {
     private static let dash = UInt8(ascii: "-")
 
     /// Scans `bytes` and hands each token to `handle`, in document order,
-    /// until the end or until `handle` returns false.
-    static func scan(_ bytes: [UInt8], options: Options, _ handle: (Token) -> Bool) {
+    /// until the end or until `handle` returns false; returns how it ended.
+    @discardableResult
+    static func scan(_ bytes: [UInt8], options: Options, _ handle: (Token) -> Bool) -> End {
         bytes.withUnsafeBufferPointer { buffer in
             scan(buffer, options: options, handle)
         }
     }
 
-    static func scan(_ bytes: UnsafeBufferPointer<UInt8>, options: Options, _ handle: (Token) -> Bool) {
+    @discardableResult
+    static func scan(_ bytes: UnsafeBufferPointer<UInt8>, options: Options, _ handle: (Token) -> Bool) -> End {
         let count = bytes.count
         /// Where the text not yet handed over starts.
         var textStart = 0
@@ -132,11 +152,11 @@ enum TagScanner {
             guard next < count else { break }
             switch bytes[next] {
             case bang:
-                guard flushText(to: open) else { return }
+                guard flushText(to: open) else { return .stopped }
                 if next + 2 < count, bytes[next + 1] == dash, bytes[next + 2] == dash {
                     // `<!-->` is a complete comment, so the end is looked
                     // for from the first `-`.
-                    guard let end = findCommentEnd(in: bytes, from: next + 1) else { return }
+                    guard let end = findCommentEnd(in: bytes, from: next + 1) else { return .unclosedComment }
                     index = end + 3
                 } else {
                     index = (find(greaterThan, in: bytes, from: next, to: count) ?? count - 1) + 1
@@ -144,7 +164,7 @@ enum TagScanner {
                 textStart = index
                 continue
             case question:
-                guard flushText(to: open) else { return }
+                guard flushText(to: open) else { return .stopped }
                 index = (find(greaterThan, in: bytes, from: next, to: count) ?? count - 1) + 1
                 textStart = index
                 continue
@@ -158,7 +178,7 @@ enum TagScanner {
                 index = next
                 continue
             }
-            guard flushText(to: open) else { return }
+            guard flushText(to: open) else { return .stopped }
             let limit = open + min(count - open, options.maximumTagLength)
             var nameEnd = nameStart
             while nameEnd < limit, !isSpace(bytes[nameEnd]), bytes[nameEnd] != slash, bytes[nameEnd] != greaterThan {
@@ -179,23 +199,22 @@ enum TagScanner {
             index = end
             textStart = index
             if isEndTag {
-                guard handle(Token(kind: .endTag, range: open..<end, name: name)) else { return }
+                guard handle(Token(kind: .endTag, range: open..<end, name: name)) else { return .stopped }
                 continue
             }
             let isSelfClosing = end >= 2 && bytes[end - 2] == slash
             guard handle(Token(kind: .startTag, range: open..<end, name: name, attributes: attributes, isSelfClosing: isSelfClosing))
-            else { return }
+            else { return .stopped }
             if options.rawTextElements.contains(name), !(isSelfClosing && options.selfClosingHasNoContent) {
                 let close = findEndTag(bytes, name: name.bytes, from: index)
-                guard handle(Token(kind: .rawText, range: index..<(close?.start ?? count), name: name)) else { return }
-                index = close?.end ?? count
+                guard handle(Token(kind: .rawText, range: index..<(close?.start ?? count), name: name)) else { return .stopped }
+                guard let close else { return .unclosedRawText }
+                index = close.end
                 textStart = index
-                if let close {
-                    guard handle(Token(kind: .endTag, range: close.start..<close.end, name: name)) else { return }
-                }
+                guard handle(Token(kind: .endTag, range: close.start..<close.end, name: name)) else { return .stopped }
             }
         }
-        _ = flushText(to: count)
+        return flushText(to: count) ? .input : .stopped
     }
 
     /// Reads attributes from `start` to the tag's end, quote-aware. Returns

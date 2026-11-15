@@ -21,9 +21,15 @@ struct BlocksView: View {
 
     var body: some View {
         let metrics = ReadingMetrics(scaledBodySize: scaledBodySize, settings: settings)
-        LazyVStack(alignment: .leading, spacing: metrics.blockSpacing) {
+        // Each block brings the space above it, rather than the stack
+        // putting one between every two: an image that is not drawn then
+        // leaves no gap of its own.
+        LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(blocks.indices, id: \.self) { index in
-                BlockRow(block: blocks[index], index: index, metrics: metrics, images: images) { image in
+                BlockRow(
+                    block: blocks[index], index: index, metrics: metrics, images: images,
+                    spaceAbove: index == 0 ? 0 : metrics.blockSpacing
+                ) { image in
                     viewed = image
                 }
             }
@@ -45,12 +51,34 @@ private struct BlockRow: View {
     let index: Int
     let metrics: ReadingMetrics
     let images: BodyImageSession
+    /// The space between this block and the one before it.
+    let spaceAbove: Double
     let view: (ViewedImage) -> Void
+    /// The block is an image that is not drawn: it takes no room at all.
+    @State private var isUndrawn = false
 
     private static let quoteBarWidth = 3.0
     private static let quoteStep = 12.0
 
     var body: some View {
+        if isUndrawn || isKnownUndrawn {
+            Color.clear
+                .frame(height: 0)
+                .accessibilityHidden(true)
+        } else {
+            row.padding(.top, spaceAbove)
+        }
+    }
+
+    /// An image this opening has already found to be a pixel.
+    private var isKnownUndrawn: Bool {
+        if case .image(let image) = block.kind {
+            return images.undrawn.contains(image.url)
+        }
+        return false
+    }
+
+    private var row: some View {
         HStack(alignment: .top, spacing: 0) {
             if block.listDepth > 0 {
                 marker
@@ -104,7 +132,9 @@ private struct BlockRow: View {
             text(runs, size: metrics.headingSize(level: level), weight: .semibold, isSecondary: block.quoteDepth > 0)
                 .accessibilityAddTraits(.isHeader)
         case .image(let image):
-            BodyImageView(image: image, index: index, session: images, spacing: metrics.blockSpacing, view: view)
+            BodyImageView(image: image, index: index, session: images, view: view) {
+                isUndrawn = true
+            }
         case .code(let code):
             ScrollView(.horizontal) {
                 Text(verbatim: code)

@@ -23,10 +23,10 @@ struct BodyImageView: View {
     let image: ArticleImage
     let index: Int
     let session: BodyImageSession
-    /// The space the stack puts between blocks: an image that is not drawn
-    /// takes it back.
-    let spacing: Double
     let view: (ViewedImage) -> Void
+    /// Called when the image turns out to be under 8 pixels on a side: its
+    /// row then takes no room.
+    let undrawn: () -> Void
 
     @Environment(\.displayScale) private var displayScale
     @State private var phase = Phase.waiting
@@ -37,18 +37,11 @@ struct BodyImageView: View {
         case waiting
         case loaded(UIImage)
         case failed
-        case undrawn
     }
 
     var body: some View {
         Group {
             switch phase {
-            case .undrawn:
-                // Nothing, and not a second gap between its neighbours.
-                Color.clear
-                    .frame(height: 0)
-                    .padding(.top, -spacing)
-                    .accessibilityHidden(true)
             case .loaded(let decoded):
                 Button {
                     open()
@@ -146,7 +139,7 @@ struct BodyImageView: View {
     private func load() async {
         let url = image.url
         if session.undrawn.contains(url) {
-            phase = .undrawn
+            undrawn()
             return
         }
         if session.failed.contains(url) {
@@ -167,7 +160,7 @@ struct BodyImageView: View {
         }
         if min(size.width, size.height) < BodyImageLoader.minimumDrawnSide {
             session.markUndrawn(url)
-            phase = .undrawn
+            undrawn()
             return
         }
         let pixelSize = CGSize(width: size.width, height: size.height)

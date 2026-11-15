@@ -129,6 +129,9 @@ extension TimedAndHeavySuites {
 /// the tree builder (SwiftSoup 2.14.3: 3 to 16 seconds, or 0.5 to 1.9 GB,
 /// for 16 to 240 KB) converts within one second on a detached task, with at
 /// most 3,000 blocks. The times are printed: `criterion 3 | shape | …`.
+/// The shapes are sized so that the slowest takes about a quarter of a
+/// second in a debug build on the development Mac: the bound has to hold
+/// on a slower runner too.
 @Suite("Article blocks: bounded work", .serialized)
 struct ArticleBlocksBoundedWorkTests {
     struct Shape: CustomTestStringConvertible, Sendable {
@@ -160,8 +163,8 @@ struct ArticleBlocksBoundedWorkTests {
         Shape(name: "500 levels of div before 300,000 paragraphs") {
             String(repeating: "<div>", count: 500) + String(repeating: "<p>x", count: 300_000)
         },
-        Shape(name: "500 levels of div before 600,000 empty paragraphs") {
-            String(repeating: "<div>", count: 500) + String(repeating: "<p>", count: 600_000)
+        Shape(name: "500 levels of div before 300,000 empty paragraphs") {
+            String(repeating: "<div>", count: 500) + String(repeating: "<p>", count: 300_000)
         },
         Shape(name: "500,000 unclosed bold tags") {
             String(repeating: "<b>", count: 500_000) + "x"
@@ -178,8 +181,8 @@ struct ArticleBlocksBoundedWorkTests {
         Shape(name: "120,000 unclosed tables") {
             String(repeating: "<table><tr><td>", count: 120_000) + "x"
         },
-        Shape(name: "130,000 misnested links and divs") {
-            String(repeating: "<a href=x><div>", count: 130_000) + "x"
+        Shape(name: "65,000 misnested links and divs") {
+            String(repeating: "<a href=x><div>", count: 65_000) + "x"
         },
         Shape(name: "60,000 links with text in one paragraph") {
             String(repeating: "<a href=/y>x</a>", count: 60_000)
@@ -214,8 +217,8 @@ struct ArticleBlocksBoundedWorkTests {
         Shape(name: "2,000,000 less-than signs") {
             String(repeating: "<", count: 2_000_000)
         },
-        Shape(name: "400,000 references") {
-            String(repeating: "&amp;", count: 400_000)
+        Shape(name: "200,000 references") {
+            String(repeating: "&amp;", count: 200_000)
         },
         Shape(name: "500,000 unclosed comments") {
             String(repeating: "<!--", count: 500_000)

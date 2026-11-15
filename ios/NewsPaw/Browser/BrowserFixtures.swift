@@ -319,8 +319,8 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         """)
 
     /// A page that plays and starts its sound again whenever it stops, as
-    /// a page may (RD18 decision 13): after Play, a silent sound file in an
-    /// audio element and a tone too faint to hear (gain 0.0001) in an audio
+    /// a page may (RD18 decision 13): after Play, two minutes of silence in
+    /// an audio element and a tone too faint to hear (gain 0.0001) in an audio
     /// context. Every 200 ms it calls `play()` on the element when it is
     /// paused and `resume()` on the context when it is not running, and its
     /// title reports how many seconds each has played, the context's state
@@ -330,7 +330,7 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         <p>A page that plays silence and starts it again whenever it stops.</p>
         <p><button type="button" onclick="start()">Play</button></p>
         <script>
-        var context = null, audio = null, last = 0, played = 0, seen = [];
+        var context = null, audio = null, seen = [];
         function silence(seconds) {
             var rate = 8000, samples = rate * seconds, bytes = new ArrayBuffer(44 + samples * 2), view = new DataView(bytes);
             function text(offset, value) { for (var i = 0; i < value.length; i++) { view.setUint8(offset + i, value.charCodeAt(i)); } }
@@ -350,18 +350,14 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
             tone.connect(gain);
             gain.connect(context.destination);
             tone.start();
-            audio = new Audio(silence(4));
-            audio.loop = true;
+            audio = new Audio(silence(120));
             audio.play();
         }
         setInterval(function () {
             if (!audio) { return; }
             if (audio.paused) { audio.play().catch(function () {}); }
             if (context.state !== 'running') { context.resume().catch(function () {}); }
-            var now = audio.currentTime;
-            if (now > last && now - last < 1) { played += now - last; }
-            last = now;
-            document.title = 'Played ' + played.toFixed(1) + ' ' + context.currentTime.toFixed(1) + ' ' + context.state + ' ' + seen.join(',');
+            document.title = 'Played ' + audio.currentTime.toFixed(1) + ' ' + context.currentTime.toFixed(1) + ' ' + context.state + ' ' + seen.join(',');
         }, 200);
         </script>
         """)

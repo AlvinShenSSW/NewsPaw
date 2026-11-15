@@ -13,6 +13,18 @@ public enum SourceKind: String, Sendable, Codable, CaseIterable {
     case webpage
 }
 
+extension SourceKind {
+    /// Whether sources of this kind are collected as feeds: refreshed,
+    /// fetched with validators and stored by the collector (RD07 decision
+    /// 10). A GitHub source stores one of its repository's Atom feeds.
+    public var isCollectedAsFeed: Bool {
+        switch self {
+        case .feed, .github: true
+        case .huggingface, .webpage: false
+        }
+    }
+}
+
 /// Whether a source's titles are translated automatically (spec N03).
 public enum AutoTranslate: String, Sendable, Codable, CaseIterable {
     case inherit

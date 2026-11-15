@@ -26,9 +26,30 @@ struct RefresherTests {
 
         let results = try await Refresher(library: fixture.library, transport: transport).refresh(.library)
 
-        #expect(transport.received.map(\.absoluteString).sorted() == ["one", "three", "two"].map(RefreshFixture.address).sorted())
-        #expect(results.count == 3)
+        // A GitHub source is collected as a feed (RD07 decision 10).
+        #expect(transport.received.map(\.absoluteString).sorted() == ["one", "three", "two", "github"].map(RefreshFixture.address).sorted())
+        #expect(results.count == 4)
         #expect(results.values.allSatisfy { $0 == .outcome(.collected(newArticles: 1, complete: true)) })
+    }
+
+    @Test("a GitHub source is a target of every scope; a paused one is not requested (RD07 criterion 10)")
+    func gitHubTargets() async throws {
+        let fixture = try await RefreshFixture.make()
+        defer { fixture.remove() }
+        let github = try await fixture.addFeed("github", kind: .github)
+        let paused = try await fixture.addFeed("pausedgithub", paused: true, kind: .github)
+        try await fixture.addFeed("hub", kind: .huggingface)
+        #expect(try await fixture.library.refreshTargets(.library) == [github.id])
+        #expect(try await fixture.library.refreshTargets(.category(fixture.categoryID)) == [github.id])
+        #expect(try await fixture.library.refreshTargets(.source(github.id)) == [github.id])
+        #expect(try await fixture.library.refreshTargets(.source(paused.id)).isEmpty)
+        let transport = CountingTransport { CountingTransport.feed($0) }
+        let refresher = Refresher(library: fixture.library, transport: transport)
+        let results = try await refresher.refresh(.library)
+        #expect(results.count == 1)
+        #expect(transport.received.map(\.absoluteString) == [RefreshFixture.address("github")])
+        #expect(try await refresher.refresh(.source(paused.id)).isEmpty)
+        #expect(transport.received.count == 1)
     }
 
     @Test("a category refresh requests only that category's targets; a source refresh only that source; a paused source's refresh nothing")

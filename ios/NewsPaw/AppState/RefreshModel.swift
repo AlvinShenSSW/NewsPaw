@@ -40,6 +40,9 @@ final class RefreshModel {
     @ObservationIgnored private var backgroundTask = UIBackgroundTaskIdentifier.invalid
     @ObservationIgnored private var reloading = false
     @ObservationIgnored private var reloadAgain = false
+    /// Whether the workspace of this model was dropped (RD18 decision 4):
+    /// from then on it starts no run.
+    @ObservationIgnored private var isStopped = false
 
     init(library: Library, transport: any Transport, settings: RefreshSettings, now: @escaping @Sendable () -> Date) {
         self.library = library
@@ -61,10 +64,16 @@ final class RefreshModel {
     /// Entering the app (decision 3): clean up, then refresh the whole
     /// library when a refresh is due. Silent: a failure is tried again at
     /// the next entry.
+    ///
+    /// An entry that a lock overtakes ends at its next step: a dropped
+    /// workspace starts no run.
     func entered() async {
+        guard !isStopped else { return }
         let deleted = (try? await library.cleanUp(keeping: retention)) ?? 0
+        guard !isStopped else { return }
         if deleted > 0 {
             await reloadLists()
+            guard !isStopped else { return }
         }
         guard (try? await library.refreshIsDue(every: interval)) == true else { return }
         await run(.library, ownerStarted: false)
@@ -79,6 +88,7 @@ final class RefreshModel {
     }
 
     private func run(_ scope: RefreshScope, ownerStarted: Bool) async {
+        guard !isStopped else { return }
         beginBackgroundTime()
         defer { endBackgroundTimeIfIdle() }
         var storageFailed = false
@@ -90,7 +100,7 @@ final class RefreshModel {
         } catch {
             storageFailed = true
         }
-        if storageFailed, ownerStarted {
+        if storageFailed, ownerStarted, !isStopped {
             onStorageError?()
         }
         await load()
@@ -99,8 +109,11 @@ final class RefreshModel {
     }
 
     /// The workspace is dropped (RD18 decision 4): the run in flight is
-    /// cancelled. What it has stored stays in the library.
+    /// cancelled, and none is started afterwards — not by an entry that is
+    /// still on its way, and not by Update Now or a pull of a view that
+    /// something keeps. What a run has stored stays in the library.
     func stop() {
+        isStopped = true
         engine.cancelAll()
     }
 

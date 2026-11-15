@@ -375,6 +375,37 @@ final class AdultLockTests: AdultTestCase {
         expectObjectsReleased("the timing rule, the browser and a sheet open")
     }
 
+    // MARK: - A stopped workspace starts nothing
+
+    /// With a starred article's page open in the browser and the Library
+    /// stack not at its root, a lock ends the page's session and makes no
+    /// other: the dropped workspace's stacks are emptied one after the
+    /// other, and the page still on the Starred stack must not get a
+    /// session, a web view and a load again.
+    func testALockWithAStarredPageOpenMakesNoBrowserSession() {
+        launchAtFullWidth(authentication: ["passed", "passed"])
+        turnOnAdult()
+        enterAdult()
+        createCategory("Velvet")
+        addSource(Fixture.articles, to: "Velvet")
+        openCategoryList("Velvet")
+        swipeAction(on: waitFor(articleRow("Plain story")), leading: false, "Star")
+        waitForLabel(articleRow("Plain story"), containing: "Starred")
+        openStarred()
+        openArticle("Plain story")
+        waitFor(button(AccessibilityID.openOriginalButton)).tap()
+        waitForPage("Original of plain-story")
+        // The one session the app has made.
+        waitForReport("pool=open", "browser=held", "sessions=1")
+
+        leaveAndReturn()
+        waitForPartition(Wording.normal)
+        waitForReport(Self.closed, Self.dropped)
+        // The report is read four times a second.
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(report.contains("sessions=1"), "a session was made after the lock: \(report)")
+    }
+
     /// Settings › Adult Partition opened from the normal partition is
     /// closed by the rule that locks: it stays across a short absence under
     /// "After 1 Minute" and is closed by one under "Immediately", and so

@@ -70,6 +70,15 @@ final class BrowserModel {
     var fileNotice: BrowserFileNotice?
     /// Whether "No app on this device can open this link." is shown.
     var isShowingNoApp = false
+    /// Whether the workspace of this model was dropped (RD18 decision 4):
+    /// from then on it makes no session and no web view.
+    private(set) var isStopped = false
+
+    #if DEBUG
+    /// How many sessions the app has made, for the UI tests' report: a
+    /// stopped model must add none.
+    private(set) static var sessionsMade = 0
+    #endif
 
     /// The one store of every session: the system's default persistent
     /// store for the normal library, a non-persistent one under the UI
@@ -107,6 +116,9 @@ final class BrowserModel {
     /// session, started at the route's address; a session whose route left
     /// its stack ends (decision 3).
     func stacksChanged() {
+        // A dropped workspace's stacks are emptied one after the other;
+        // a route still on one of them must not get a session again.
+        guard !isStopped else { return }
         sync(.library)
         sync(.starred)
     }
@@ -123,6 +135,9 @@ final class BrowserModel {
                 sourceID = id
             }
             next = BrowserSession(route: route, sourceID: sourceID, model: self, configuration: configuration())
+            #if DEBUG
+            Self.sessionsMade += 1
+            #endif
             next?.load(start)
         }
         if stack == .starred {
@@ -162,10 +177,16 @@ final class BrowserModel {
         }
     }
 
-    /// The workspace is dropped: every session ends, its web view is taken
-    /// out of the view tree, and nothing of the browser stays presented.
+    /// The workspace is dropped: every session's media are paused and its
+    /// full-screen presentations closed, as on leaving (UIKit may keep a
+    /// web view alive after this, and it must not go on playing); then
+    /// the session ends, its web view is taken out of the view tree, and
+    /// nothing of the browser stays presented. No session is made after
+    /// this.
     func stop() {
+        isStopped = true
         for session in [librarySession, starredSession].compactMap(\.self) {
+            session.pauseMedia()
             session.end()
             session.webView.removeFromSuperview()
         }

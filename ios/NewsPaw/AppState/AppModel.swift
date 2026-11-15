@@ -668,8 +668,9 @@ final class AppModel {
     // MARK: - The UI tests' report (decision 4)
 
     /// Whether the adult library's file exists, whether a pool is open on
-    /// it, and whether the library object, the adult workspace and its
-    /// browser model are gone from memory.
+    /// it, whether the library object, the adult workspace and its browser
+    /// model are gone from memory, and how many browser sessions the app
+    /// has made.
     func adultDebugReport() async -> String {
         guard let gate else { return "" }
         let file = gate.adultLibraryFileExists ? 1 : 0
@@ -678,7 +679,8 @@ final class AppModel {
         func state(_ object: AnyObject?) -> String {
             !adultWasShown ? "none" : object == nil ? "released" : "held"
         }
-        return "file=\(file) pool=\(pool) library=\(library) workspace=\(state(lastAdultWorkspace)) browser=\(state(lastAdultBrowser))"
+        return "file=\(file) pool=\(pool) library=\(library) workspace=\(state(lastAdultWorkspace)) "
+            + "browser=\(state(lastAdultBrowser)) sessions=\(BrowserModel.sessionsMade)"
     }
     #endif
 }

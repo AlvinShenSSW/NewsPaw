@@ -307,6 +307,17 @@ What was built, in place of "hidden at did-activate, one main-loop turn after de
 
 The questions of turning off are presented at the root so that they outlive the swap (decision 9). A question left open when the app is left was therefore still there after a lock by the rule, in the normal partition, and could be answered — Keep Data Hidden or Delete Data — with no new authentication. The lock rule now closes an open question together with the screen that asked it, in both partitions (UI test `testSettingsScreenOfTheNormalPartitionClosesByTheLockRule`).
 
+### Decisions 4, 5 and 13, refined after the internal review: a stopped workspace's models start nothing
+
+Added on 2026-11-15 after the internal review of the pull request (six findings, none above P3). `Workspace.stop()` "stops" in decisions 4 and 13 now means, for each model:
+
+- **The browser model** makes no session and no web view once stopped. Before, a lock with a starred article's page open and the Library stack not at its root made one: `stop()` ended the sessions, and emptying the stacks one after the other then found the page still on the Starred stack and gave it a new session, a new web view on the adult data store and a load, ended a moment later. `stop()` also pauses each page's media and closes its full-screen presentations before ending the session, as leaving the app does (decision 13), so that a lock by the button or by "Normal" stops a page that plays: UIKit may keep the web view alive after the lock.
+- **The refresh model** starts no run once stopped: an entry (clean up, then refresh when due) that a lock overtakes ends at its next step, and Update Now or a pull from a view that something keeps does nothing. Before, only the run in flight was cancelled, and an entry still on its way went on to collect the adult feeds after the lock.
+- **The source model and the category model** needed no change: neither starts a request by itself. A source detection belongs to Add source, which `stop()` cancels and lets go; Update Now goes through the refresh model; a save that is still queued runs into the closed library and fails, shown nowhere.
+- **The unlock ends when the adult workspace is shown** (decision 5): from that moment only the timing rule locks. Before, the unlock was still counted as running for one more hop, and a background event inside it closed the library under a workspace that "After 1 Minute" or "After 5 Minutes" kept on screen.
+
+Evidence: UI test `testALockWithAStarredPageOpenMakesNoBrowserSession` (the report element gained `sessions=<n>`, the number of browser sessions the app has made; a debug build only) and `testALongLookAtControlCentreLocks`, which drives decision 8's fallback through the app. The refresh model's stopped state, the media pause at a lock and the end of the unlock have no test: what they prevent is a window of a few milliseconds or needs a page that plays, and nothing in the UI tests can produce either.
+
 ### Known limits
 
 - A model object that UIKit keeps after a lock still holds what it had loaded: the category and source summaries, the rows of the lists that were read, the articles that were opened. That is memory of the same process; nothing shows it, and it is not emptied. It goes when UIKit lets go of the trait collection or the menu's source view: after about a minute for a menu, and not within the four minutes measured for an opened article or a swiped row.

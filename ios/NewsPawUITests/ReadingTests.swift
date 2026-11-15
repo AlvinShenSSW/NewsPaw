@@ -99,6 +99,7 @@ final class ReadingTests: ReadingTestCase {
         func marker(_ label: String) -> XCUIElement {
             app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH 'reading.marker.' AND label == %@", label)).firstMatch
         }
+        var widths: [String: CGFloat] = [:]
         /// The marker `label` of the item whose first block is `text`, now
         /// on screen: inside the margin, before the text. Returns the
         /// text's leading edge.
@@ -107,6 +108,7 @@ final class ReadingTests: ReadingTestCase {
             let item = scrollArticle(to: block(text), file: file, line: line)
             let edge = item.frame.minX + inset
             let frame = waitFor(marker(label), file: file, line: line).frame
+            widths[label] = frame.width
             record("list-markers", "\(face) | \(label) at \(frame) | text edge \(edge) | page edge \(page)")
             XCTAssertGreaterThanOrEqual(frame.minX, page - 0.5, "\(face): \(label) stands past the page's leading margin \(page): \(frame)", file: file, line: line)
             XCTAssertLessThanOrEqual(frame.maxX, edge + 0.5, "\(face): \(label) runs into its text at \(edge): \(frame)", file: file, line: line)
@@ -121,6 +123,10 @@ final class ReadingTests: ReadingTestCase {
         XCTAssertEqual(further, ninetyNinth, accuracy: 0.5, "\(face): an item's further block is at its first line's edge", file: file, line: line)
         let hundredth = check("100.", before: "The hundredth on the list")
         XCTAssertEqual(hundredth, ninetyNinth, accuracy: 0.5, "\(face): the items of a list share one edge", file: file, line: line)
+        // Where the column has room the marker is drawn at its size, not
+        // made smaller to fit a narrower column: three digits are wider
+        // than two.
+        XCTAssertGreaterThan(widths["100."] ?? 0, (widths["99."] ?? 0) * 1.15, "\(face): 100. is drawn at its size: \(widths)", file: file, line: line)
         let nested = check("9998.", before: "Nested at 9,998")
         XCTAssertEqual(check("9999.", before: "Nested at 9,999"), nested, accuracy: 0.5, "\(face): the nested items share one edge", file: file, line: line)
         XCTAssertGreaterThan(nested, hundredth + 10, "\(face): the nested list stands further in", file: file, line: line)

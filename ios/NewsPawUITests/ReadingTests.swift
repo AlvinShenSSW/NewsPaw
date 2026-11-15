@@ -76,8 +76,15 @@ final class ReadingTests: ReadingTestCase {
         let area = readingArea
         let links = app.links.allElementsBoundByIndex.filter { area.intersects($0.frame) }.map(\.label)
         XCTAssertEqual(links, ["a safe link"], "only the web address is a link")
-        // The words of the script link, at the start of the paragraph.
-        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: paragraph.frame.minX + 40, dy: paragraph.frame.minY + 10)).tap()
+        // The words of the script link, at the start of the paragraph: a
+        // tap on its one line, at the height of the safe link in it. (Not
+        // at the top of the paragraph's frame, which is taller than its
+        // text.)
+        let safe = app.links["a safe link"].frame
+        XCTAssertLessThan(paragraph.frame.height, 70, "the paragraph is one line: \(paragraph.frame)")
+        XCTAssertTrue(paragraph.frame.contains(CGPoint(x: safe.midX, y: safe.midY)), "the safe link is on that line: \(safe)")
+        XCTAssertGreaterThan(safe.minX, paragraph.frame.minX + 200, "the script link's words come well before it")
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: paragraph.frame.minX + 40, dy: safe.midY)).tap()
         sleep(2)
         XCTAssertFalse(button(AccessibilityID.browserMoreMenu).exists, "a tap on the script link's text opened the browser")
         XCTAssertFalse(app.alerts.firstMatch.exists, "a script ran")

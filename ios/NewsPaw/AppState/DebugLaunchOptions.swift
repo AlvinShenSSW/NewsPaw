@@ -20,6 +20,14 @@ struct DebugLaunchOptions {
     /// articles. Applied only together with `libraryDirectory`, like the
     /// fixture transport; without it the clock is `Date()`.
     let clockOffset: TimeInterval
+    /// What the stand-in authenticator answers, in order (RD18 decision
+    /// 15); with none it answers "unavailable". Used only together with
+    /// `libraryDirectory`.
+    let authenticationSteps: [FixtureAuthenticator.Step]
+    /// Whether the adult partition's feature switch is off for this launch
+    /// (RD18 decision 1). It can only turn the feature off, and only
+    /// together with `libraryDirectory`.
+    let adultFeatureOff: Bool
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -45,6 +53,10 @@ struct DebugLaunchOptions {
         } else {
             clockOffset = 0
         }
+        authenticationSteps = (environment[UITestLaunchKey.authenticationAnswers] ?? "")
+            .split(separator: ",")
+            .compactMap { FixtureAuthenticator.Step(String($0)) }
+        adultFeatureOff = environment[UITestLaunchKey.adultFeatureOff] == "1"
     }
 
     /// Accepts only a name that stays inside the temporary directory.

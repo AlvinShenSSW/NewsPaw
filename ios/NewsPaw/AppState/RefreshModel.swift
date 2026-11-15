@@ -98,6 +98,12 @@ final class RefreshModel {
         onRunEnded?()
     }
 
+    /// The workspace is dropped (RD18 decision 4): the run in flight is
+    /// cancelled. What it has stored stays in the library.
+    func stop() {
+        engine.cancelAll()
+    }
+
     // MARK: - Background time (decision 6)
 
     private func beginBackgroundTime() {

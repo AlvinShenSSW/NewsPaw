@@ -18,10 +18,21 @@ struct SidebarView: View {
     @Environment(NavigationModel.self) private var navigation
     @Environment(CategoryModel.self) private var categories
     @Environment(SourceModel.self) private var sources
+    @Environment(AppModel.self) private var model
     @State private var editMode = EditMode.inactive
 
     var body: some View {
         List(selection: selection) {
+            if model.showsPartitionSwitch {
+                // At the top of the sidebar, in the pane and in the
+                // slide-over alike (ux section 2).
+                Section {
+                    PartitionSwitch(beforeChoice: closeSlideOver)
+                        .listRowInsets(EdgeInsets(top: 0, leading: Theme.Spacing.small, bottom: 0, trailing: Theme.Spacing.small))
+                        .listRowBackground(Color.clear)
+                        .selectionDisabled()
+                }
+            }
             Section {
                 Label("Today", systemImage: "sun.max")
                     .tag(SidebarItem.today)
@@ -98,6 +109,14 @@ struct SidebarView: View {
             if case .slideOver(let close) = form {
                 close(true)
             }
+        }
+    }
+
+    /// A partition chosen, or the lock button pressed, in the slide-over:
+    /// it closes at once, so that what follows is shown at the root.
+    private func closeSlideOver() {
+        if case .slideOver(let close) = form {
+            close(false)
         }
     }
 

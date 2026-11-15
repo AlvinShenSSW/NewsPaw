@@ -75,6 +75,7 @@ struct TodayDateLine: View {
 /// rounded group. A row selects the category as the sidebar or Library
 /// does; on iPhone that moves to the Library tab.
 struct TodayCategoryRows: View {
+    @Environment(\.accent) private var accent
     let rows: [(category: LibraryCategory, unread: Int)]
     @Environment(NavigationModel.self) private var navigation
 
@@ -92,7 +93,7 @@ struct TodayCategoryRows: View {
                 } label: {
                     HStack(spacing: Theme.Spacing.medium) {
                         Image(systemName: row.category.icon.rawValue)
-                            .foregroundStyle(Theme.accent)
+                            .foregroundStyle(accent)
                             .frame(width: 28)
                             .accessibilityHidden(true)
                         Text(verbatim: row.category.name)

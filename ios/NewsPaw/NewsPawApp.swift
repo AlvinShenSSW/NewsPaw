@@ -3,13 +3,13 @@ import SwiftUI
 @main
 struct NewsPawApp: App {
     @State private var model = AppModel()
-    @Environment(\.scenePhase) private var scenePhase
 
     #if DEBUG
     init() {
         // Under the UI tests only: around context menus the harness waits up
         // to 60 s for an "animations complete" notification that never comes.
-        if ProcessInfo.processInfo.environment[UITestLaunchKey.libraryDirectory] != nil {
+        let environment = ProcessInfo.processInfo.environment
+        if environment[UITestLaunchKey.libraryDirectory] != nil, environment[UITestLaunchKey.keepAnimations] != "1" {
             UIView.setAnimationsEnabled(false)
         }
     }
@@ -20,9 +20,6 @@ struct NewsPawApp: App {
             RootView()
                 .environment(model)
                 .task { await model.start() }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            model.scenePhaseChanged(to: phase)
         }
     }
 }

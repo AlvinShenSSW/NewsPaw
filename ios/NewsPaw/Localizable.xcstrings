@@ -203,6 +203,50 @@
         }
       }
     },
+    "Adult" : {
+      "comment" : "Partition switch: the adult partition, in the capsule and in its menu.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "成人"
+          }
+        }
+      }
+    },
+    "Adult Partition" : {
+      "comment" : "The Settings row, the screen's title and the switch that turns the adult partition on.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "成人分区"
+          }
+        }
+      }
+    },
+    "After 1 Minute" : {
+      "comment" : "Lock timing.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 分钟后"
+          }
+        }
+      }
+    },
+    "After 5 Minutes" : {
+      "comment" : "Lock timing.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5 分钟后"
+          }
+        }
+      }
+    },
     "Airplane" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -276,6 +320,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "澳大利亚"
+          }
+        }
+      }
+    },
+    "Authentication is needed to open these settings." : {
+      "comment" : "Alert: opening Settings › Adult Partition did not pass authentication.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要通过验证才能打开这些设置。"
           }
         }
       }
@@ -644,7 +699,7 @@
       }
     },
     "Delete" : {
-      "comment" : "Context-menu item of a source.",
+      "comment" : "Context-menu item of a source; the last button before the adult partition's data is deleted.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -676,6 +731,17 @@
         }
       }
     },
+    "Delete Data" : {
+      "comment" : "Alert button: goes on to delete the adult partition's data; asks once more.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除数据"
+          }
+        }
+      }
+    },
     "Delete Source" : {
       "comment" : "Destructive button: deletes a source.",
       "localizations" : {
@@ -683,6 +749,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除来源"
+          }
+        }
+      }
+    },
+    "Delete everything in the adult partition?" : {
+      "comment" : "Alert title: the second question before the adult partition's data is deleted.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要删除成人分区里的所有内容吗？"
           }
         }
       }
@@ -1052,6 +1129,17 @@
         }
       }
     },
+    "Immediately" : {
+      "comment" : "Lock timing: as soon as the app is left.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立即"
+          }
+        }
+      }
+    },
     "It was created by a newer version of the app. Update NewsPaw to open it." : {
       "comment" : "Library failure screen: the reason shown when the library was written by a newer version of the app.",
       "localizations" : {
@@ -1098,6 +1186,17 @@
         }
       }
     },
+    "Its categories, sources, articles, images and keys are removed from this device. This cannot be undone." : {
+      "comment" : "Alert message under \"Delete everything in the adult partition?\".",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其中的分类、来源、文章、图片和 Key 会从这台设备上移除，且无法恢复。"
+          }
+        }
+      }
+    },
     "Its key is removed from this device." : {
       "comment" : "Message of the confirmation before removing a model.",
       "localizations" : {
@@ -1127,6 +1226,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文章保留时间"
+          }
+        }
+      }
+    },
+    "Keep Data Hidden" : {
+      "comment" : "Alert button: turns the adult partition off and keeps its data.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保留数据并隐藏"
           }
         }
       }
@@ -1281,6 +1391,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在载入…"
+          }
+        }
+      }
+    },
+    "Lock" : {
+      "comment" : "Button next to the partition switch in the adult partition: locks it.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "锁定"
+          }
+        }
+      }
+    },
+    "Lock After Leaving the App" : {
+      "comment" : "Settings › Adult Partition: the header of the lock timing choices.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "离开应用后锁定"
+          }
+        }
+      }
+    },
+    "Lock the adult partition" : {
+      "comment" : "VoiceOver label of the lock button.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "锁定成人分区"
           }
         }
       }
@@ -1628,6 +1771,17 @@
         }
       }
     },
+    "Normal" : {
+      "comment" : "Partition switch: the normal partition, in the capsule and in its menu.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "普通"
+          }
+        }
+      }
+    },
     "Not set up" : {
       "comment" : "State of a model row that has not been set up.",
       "localizations" : {
@@ -1760,6 +1914,17 @@
         }
       }
     },
+    "Open the adult partition's settings" : {
+      "comment" : "The sentence in the system's authentication prompt when Settings › Adult Partition is opened.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开成人分区的设置"
+          }
+        }
+      }
+    },
     "Open this link in another app?" : {
       "comment" : "Title of the question when a page's link uses a scheme of another app (mailto:, tel:, an app's own).",
       "localizations" : {
@@ -1778,6 +1943,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "调色板"
+          }
+        }
+      }
+    },
+    "Partition: Adult" : {
+      "comment" : "VoiceOver label of the partition switch while the adult partition is shown.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分区：成人"
+          }
+        }
+      }
+    },
+    "Partition: Normal" : {
+      "comment" : "VoiceOver label of the partition switch while the normal partition is shown.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分区：普通"
           }
         }
       }
@@ -2068,6 +2255,17 @@
         }
       }
     },
+    "Set a device passcode to use the adult partition." : {
+      "comment" : "Alert: the device has no passcode, so nothing can authenticate.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先设置设备密码，才能使用成人分区。"
+          }
+        }
+      }
+    },
     "Set up the primary model first" : {
       "comment" : "Footer under the disabled backup model row while no primary model exists.",
       "localizations" : {
@@ -2317,6 +2515,61 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "地址必须以 https:// 开头。"
+          }
+        }
+      }
+    },
+    "The adult partition is a second, separate library. Its categories, sources and articles are shown only after Face ID, Touch ID or the device passcode, and it locks again when you leave the app." : {
+      "comment" : "Settings › Adult Partition while it is off: the explanation under the switch.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "成人分区是另一个独立的资料库。只有通过面容 ID、触控 ID 或设备密码后，才会显示其中的分类、来源和文章；离开应用后会再次锁定。"
+          }
+        }
+      }
+    },
+    "The adult partition is still locked." : {
+      "comment" : "Alert: unlocking the adult partition did not pass authentication.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "成人分区仍处于锁定状态。"
+          }
+        }
+      }
+    },
+    "The adult partition was not turned on." : {
+      "comment" : "Alert: turning the adult partition on did not pass authentication, or its library could not be created.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "成人分区没有开启。"
+          }
+        }
+      }
+    },
+    "The adult partition's data could not be deleted. Try again." : {
+      "comment" : "Alert: deleting the adult partition's data failed; the partition is still on.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法删除成人分区的数据，请再试一次。"
+          }
+        }
+      }
+    },
+    "The adult partition's library could not be opened." : {
+      "comment" : "Alert title: authentication passed and the adult library could not be opened. The reason follows as the message.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法打开成人分区的资料库。"
           }
         }
       }
@@ -2734,6 +2987,39 @@
         }
       }
     },
+    "Turn Off the Adult Partition" : {
+      "comment" : "Settings › Adult Partition: the button that turns the partition off.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭成人分区"
+          }
+        }
+      }
+    },
+    "Turn off the adult partition?" : {
+      "comment" : "Alert title: the first question of turning the adult partition off.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要关闭成人分区吗？"
+          }
+        }
+      }
+    },
+    "Turn on the adult partition" : {
+      "comment" : "The sentence in the system's authentication prompt when the adult partition is turned on.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启成人分区"
+          }
+        }
+      }
+    },
     "Type the model's name, or load the list of models the service offers." : {
       "comment" : "Footer of the model-name section in the model form.",
       "localizations" : {
@@ -2741,6 +3027,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "输入模型名称，或载入服务提供的模型列表。"
+          }
+        }
+      }
+    },
+    "Unlock the adult partition" : {
+      "comment" : "The sentence in the system's authentication prompt when the adult partition is chosen.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解锁成人分区"
           }
         }
       }
@@ -2895,6 +3192,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "世界"
+          }
+        }
+      }
+    },
+    "You can keep its data hidden on this device, or delete it." : {
+      "comment" : "Alert message under \"Turn off the adult partition?\".",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可以把其中的数据保留在这台设备上并隐藏，也可以删除。"
           }
         }
       }

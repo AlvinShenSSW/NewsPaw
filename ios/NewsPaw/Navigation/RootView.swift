@@ -3,11 +3,26 @@ import SwiftUI
 import UIKit
 
 /// The library failure screen, or the app once its library is open: the
-/// shell on the workspace shown, and on nothing else (RD18 decision 3).
+/// shell on the workspace shown, and on nothing else (RD18 decision 3). The
+/// adult partition's questions and sentences are presented here, outside
+/// the shell, so that they outlive a swap of workspaces.
 struct RootView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        content
+            .adultPartitionDialogs()
+        #if DEBUG
+            .overlay(alignment: .topLeading) {
+                if model.showsDebugReport {
+                    AdultDebugElement()
+                }
+            }
+        #endif
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch model.status {
         case .loading:
             Theme.background.ignoresSafeArea()
@@ -23,6 +38,8 @@ struct RootView: View {
                     .environment(workspace.browser)
                     .environment(workspace.modelSettings)
                     .environment(workspace.navigation)
+                    // The accent follows the partition (decision 7).
+                    .environment(\.accent, Theme.accent(of: workspace.partition))
                     // Another workspace is another shell: no sheet, alert,
                     // menu, pushed screen or view state survives the change.
                     .id(workspace.id)
@@ -31,11 +48,40 @@ struct RootView: View {
     }
 }
 
+#if DEBUG
+/// The element the UI tests read (RD18 decision 4): whether the adult
+/// library's file exists and whether the library, the adult workspace and
+/// its browser model are released. Present only under a UI-test library
+/// directory; a debug build only.
+private struct AdultDebugElement: View {
+    @Environment(AppModel.self) private var model
+    @State private var report = ""
+
+    var body: some View {
+        Color.clear
+            .frame(width: 1, height: 1)
+            .accessibilityElement()
+            .accessibilityLabel(Text(verbatim: report))
+            .accessibilityIdentifier(DebugAccessibilityID.adultReport)
+            .task {
+                while !Task.isCancelled {
+                    let current = await model.adultDebugReport()
+                    if current != report {
+                        report = current
+                    }
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+            }
+    }
+}
+#endif
+
 /// Measures the window's width and shows the tab container or the pane
 /// container. Sheets and the alerts and dialogs for when no sheet is open
 /// are presented here, above the container switch, so a switch cannot
 /// dismiss them.
 struct ShellView: View {
+    @Environment(\.accent) private var accent
     @Environment(CategoryModel.self) private var categories
     @Environment(SourceModel.self) private var sources
     @Environment(NavigationModel.self) private var navigation
@@ -71,13 +117,13 @@ struct ShellView: View {
                 .sourceDialogs(host: .sheet)
                 .environment(categories)
                 .environment(sources)
-                .tint(Theme.accent)
+                .tint(accent)
         }
         .categoryDialogs(host: .root)
         .sourceDialogs(host: .root)
         .markAllReadDialog(host: .root)
         .browserDialogs()
-        .tint(Theme.accent)
+        .tint(accent)
         .foregroundStyle(Theme.text)
     }
 

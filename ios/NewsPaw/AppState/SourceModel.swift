@@ -212,6 +212,13 @@ final class SourceModel {
         }
     }
 
+    /// The workspace is dropped (RD18 decision 4): the detection in flight
+    /// is cancelled and Add source's state, which holds this model, let go.
+    func stop() {
+        addSource?.cancel()
+        addSource = nil
+    }
+
     /// Saves what Add source chose. On success the sheet closes, the lists
     /// are read again and the category is expanded; on failure the sheet
     /// stays with its values and the alert is shown on it.

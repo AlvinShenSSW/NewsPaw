@@ -110,6 +110,7 @@ struct CategorySheetView: View {
 /// The fixed set of category icons. The selected icon has a ring and a
 /// check mark, not only a colour, and the selected trait for VoiceOver.
 struct IconGrid: View {
+    @Environment(\.accent) private var accent
     @Binding var selection: CategoryIcon
     @ScaledMetric private var cellSize = Theme.minimumTapTarget
 
@@ -122,19 +123,19 @@ struct IconGrid: View {
                 } label: {
                     Image(systemName: icon.rawValue)
                         .font(.title3)
-                        .foregroundStyle(isSelected ? Theme.accent : Theme.text)
+                        .foregroundStyle(isSelected ? accent : Theme.text)
                         .frame(width: cellSize, height: cellSize)
                         .overlay {
                             if isSelected {
                                 RoundedRectangle(cornerRadius: Theme.Radius.thumbnail)
-                                    .strokeBorder(Theme.accent, lineWidth: 2)
+                                    .strokeBorder(accent, lineWidth: 2)
                             }
                         }
                         .overlay(alignment: .topTrailing) {
                             if isSelected {
                                 Image(systemName: "checkmark.circle.fill")
                                     .symbolRenderingMode(.palette)
-                                    .foregroundStyle(Theme.onAccent, Theme.accent)
+                                    .foregroundStyle(Theme.onAccent, accent)
                                     .font(.caption)
                                     .offset(x: Theme.Spacing.tight, y: -Theme.Spacing.tight)
                             }

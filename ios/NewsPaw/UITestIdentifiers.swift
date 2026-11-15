@@ -192,6 +192,23 @@ enum AccessibilityID {
     static let modelListPrefix = "modelList."
     static let modelListCancelButton = "slot.modelListCancel"
 
+    // Adult partition (RD18)
+    static let partitionSwitch = "partition.switch"
+    static let partitionNormalChoice = "partition.normal"
+    static let partitionAdultChoice = "partition.adult"
+    static let lockButton = "partition.lock"
+    static let cover = "partition.cover"
+    static let adultPartitionRow = "settings.adultPartition"
+    static let adultPartitionToggle = "adult.toggle"
+    static let adultExplanation = "adult.explanation"
+    static let lockTimingPicker = "adult.lockTiming"
+    static let turnOffAdultButton = "adult.turnOff"
+
+    /// A lock timing's row, by its seconds.
+    static func lockTimingOption(_ seconds: Int) -> String {
+        "adult.lockTiming." + String(seconds)
+    }
+
     /// A preset's row in the form's service picker.
     static func presetOption(_ rawValue: String) -> String {
         "slot.preset." + rawValue
@@ -221,5 +238,27 @@ enum UITestLaunchKey {
     /// A whole number of days added to the app's clock; honoured only with
     /// `libraryDirectory`.
     static let clockOffsetDays = "NEWSPAW_UITEST_CLOCK_OFFSET_DAYS"
+    /// The stand-in authenticator's answers, in order, separated by commas:
+    /// `passed`, `cancelled`, `interrupted`, `failed`, `unavailable`. An
+    /// answer followed by `@inactive` is given once the scene is inactive
+    /// (the system's prompt answers then); by `@reactivated`, once it has
+    /// been inactive and is active again. Honoured only with
+    /// `libraryDirectory`.
+    static let authenticationAnswers = "NEWSPAW_UITEST_AUTH_ANSWERS"
+    /// "1" turns the adult partition's feature switch off for this launch;
+    /// honoured only with `libraryDirectory`.
+    static let adultFeatureOff = "NEWSPAW_UITEST_ADULT_FEATURE_OFF"
+    /// "1" leaves the app's animations on under a UI test, for the checks
+    /// that look at a transition (RD18 criterion 9); the harness is slow
+    /// around context menus then.
+    static let keepAnimations = "NEWSPAW_UITEST_KEEP_ANIMATIONS"
+}
+
+/// Identifiers of what exists only in a debug build under the UI tests.
+enum DebugAccessibilityID {
+    /// The element that reports the adult library's state (RD18 decision
+    /// 4): its label is `file=<0|1> library=<held|released>
+    /// workspace=<none|held|released> browser=<none|held|released>`.
+    static let adultReport = "debug.adultReport"
 }
 #endif

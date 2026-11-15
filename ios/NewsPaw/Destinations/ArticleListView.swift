@@ -212,6 +212,7 @@ private struct ArticleListContent: View {
 /// A row as a button that opens its article, with the swipes, the menu and
 /// the appearance tracking the snapshot needs.
 private struct ArticleRowButton: View {
+    @Environment(\.accent) private var accent
     let row: ArticleRow
     let kind: ArticleListKind
     let model: ArticleListModel
@@ -235,13 +236,13 @@ private struct ArticleRowButton: View {
             Button(ArticleActionWording.read(isRead: row.isRead), systemImage: row.isRead ? "circle.fill" : "circle") {
                 toggleRead()
             }
-            .tint(Theme.accent)
+            .tint(accent)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(ArticleActionWording.star(isStarred: row.isStarred), systemImage: row.isStarred ? "star.slash" : "star") {
                 toggleStar()
             }
-            .tint(Theme.accent)
+            .tint(accent)
         }
         .contextMenu {
             if let url = row.linkURL {

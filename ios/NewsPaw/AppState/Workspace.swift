@@ -24,6 +24,8 @@ struct BrowserSetup {
     var dataStore: WKWebsiteDataStore
     var addressMap = BrowserAddressMap()
     var schemeHandlers: [String: any WKURLSchemeHandler] = [:]
+    /// False in the adult workspace (RD18 decision 13).
+    var allowsPictureInPicture = true
 }
 
 /// Everything the interface builds on one library (RD18 decision 3): the
@@ -57,7 +59,8 @@ final class Workspace: Identifiable {
         )
         let browser = BrowserModel(
             dataStore: setup.dataStore, navigation: navigation, sources: sources,
-            addressMap: setup.addressMap, schemeHandlers: setup.schemeHandlers
+            addressMap: setup.addressMap, schemeHandlers: setup.schemeHandlers,
+            allowsPictureInPicture: setup.allowsPictureInPicture
         )
         let modelSettings = ModelSettingsModel(models: parts.models, navigation: navigation)
         categories.onReload = { [weak sources] in await sources?.reload() }
@@ -83,5 +86,21 @@ final class Workspace: Identifiable {
         await categories.reload()
         await refresh.load()
         await modelSettings.reload()
+    }
+
+    /// The workspace is dropped (RD18 decision 4): its refresh run and its
+    /// source detection are cancelled, a running model test is cancelled,
+    /// and its browser sessions are ended with their web views taken out of
+    /// the view tree. Image loads belong to the rows' own tasks and end
+    /// with the views. After this the workspace does nothing by itself, and
+    /// it is released, with its library, once the last task that was
+    /// running in it has ended.
+    func stop() {
+        refresh.stop()
+        sources.stop()
+        browser.stop()
+        // Closes the sheet and every pushed screen; the model form, if one
+        // was pushed, cancels its running Test or list with its route.
+        navigation.clear()
     }
 }

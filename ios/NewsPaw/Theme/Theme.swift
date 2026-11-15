@@ -26,7 +26,12 @@ enum Theme {
     static let hairline = Color(Palette.hairline)
     static let text = Color(Palette.text)
     static let secondaryText = Color(Palette.secondaryText)
+    /// The accent of the normal partition. Views do not use it directly:
+    /// they read `\.accent` from the environment, which follows the
+    /// partition shown (RD18 decision 7).
     static let accent = Color(Palette.accent)
+    /// The accent of the adult partition, in the same roles.
+    static let adultAccent = Color(Palette.adultAccent)
     static let onAccent = Color(Palette.onAccent)
     /// The fill of the system paste button; used for nothing else.
     static let neutralFill = Color(Palette.neutralFill)
@@ -56,6 +61,27 @@ enum Theme {
 
     /// The smallest tap target (ux section 6).
     static let minimumTapTarget = 44.0
+}
+
+extension Theme {
+    /// The accent of a partition.
+    static func accent(of partition: Partition) -> Color {
+        partition == .adult ? adultAccent : accent
+    }
+
+    /// The same as a UIKit colour, for the window's tint: alerts take it
+    /// from there, not from SwiftUI's tint.
+    static func uiAccent(of partition: Partition) -> UIColor {
+        let token = partition == .adult ? Palette.adultAccent : Palette.accent
+        return UIColor(Color(token))
+    }
+}
+
+extension EnvironmentValues {
+    /// The accent of the partition shown (ux section 5; RD18 decision 7):
+    /// set once at the root, read by the root's tint and by every view
+    /// that draws with the accent, sheets included.
+    @Entry var accent: Color = Theme.accent
 }
 
 extension View {

@@ -78,18 +78,23 @@ final class BrowserModel {
     @ObservationIgnored let dataStore: WKWebsiteDataStore
     @ObservationIgnored let addressMap: BrowserAddressMap
     @ObservationIgnored private let schemeHandlers: [String: any WKURLSchemeHandler]
+    /// Whether a page's video may go into Picture in Picture: not in the
+    /// adult library's browser (RD18 decision 13).
+    @ObservationIgnored private let allowsPictureInPicture: Bool
     @ObservationIgnored private let navigation: NavigationModel
     @ObservationIgnored private let sources: SourceModel
 
     init(
         dataStore: WKWebsiteDataStore, navigation: NavigationModel, sources: SourceModel,
-        addressMap: BrowserAddressMap = BrowserAddressMap(), schemeHandlers: [String: any WKURLSchemeHandler] = [:]
+        addressMap: BrowserAddressMap = BrowserAddressMap(), schemeHandlers: [String: any WKURLSchemeHandler] = [:],
+        allowsPictureInPicture: Bool = true
     ) {
         self.dataStore = dataStore
         self.navigation = navigation
         self.sources = sources
         self.addressMap = addressMap
         self.schemeHandlers = schemeHandlers
+        self.allowsPictureInPicture = allowsPictureInPicture
     }
 
     func session(_ stack: BrowserStack) -> BrowserSession? {
@@ -141,7 +146,34 @@ final class BrowserModel {
     }
 
     private func configuration() -> WKWebViewConfiguration {
-        BrowserConfiguration.make(dataStore: dataStore, schemeHandlers: schemeHandlers)
+        BrowserConfiguration.make(
+            dataStore: dataStore, schemeHandlers: schemeHandlers, allowsPictureInPicture: allowsPictureInPicture
+        )
+    }
+
+    // MARK: - Leaving and locking (RD18 decisions 4 and 13)
+
+    /// The scene is leaving the foreground: every page's media are paused
+    /// and their full-screen presentations closed, so that a video does not
+    /// go on playing over the cover or in the system's playback controls.
+    func pauseMedia() {
+        for session in [librarySession, starredSession].compactMap(\.self) {
+            session.pauseMedia()
+        }
+    }
+
+    /// The workspace is dropped: every session ends, its web view is taken
+    /// out of the view tree, and nothing of the browser stays presented.
+    func stop() {
+        for session in [librarySession, starredSession].compactMap(\.self) {
+            session.end()
+            session.webView.removeFromSuperview()
+        }
+        librarySession = nil
+        starredSession = nil
+        question = nil
+        fileNotice = nil
+        isShowingNoApp = false
     }
 
     // MARK: - Questions and notices
@@ -318,6 +350,12 @@ final class BrowserSession: NSObject {
         webView.stopLoading()
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
+    }
+
+    /// Pauses the page's media and closes a full-screen presentation of it.
+    func pauseMedia() {
+        webView.pauseAllMediaPlayback(completionHandler: nil)
+        webView.closeAllMediaPresentations(completionHandler: nil)
     }
 
     // MARK: - What the bars show (decision 10)

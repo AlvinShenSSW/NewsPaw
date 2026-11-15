@@ -2,8 +2,11 @@ import NewsPawKit
 import SwiftUI
 
 /// Settings (ux S8). Each later issue adds its own row, in the order of
-/// the ux table: Models & Translation, Refresh, Data, then About.
+/// the ux table: Models & Translation, Refresh, Adult Partition, Data, then
+/// About.
 struct SettingsView: View {
+    @Environment(AppModel.self) private var model
+
     var body: some View {
         List {
             Section {
@@ -15,6 +18,9 @@ struct SettingsView: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .accessibilityIdentifier(AccessibilityID.refreshRow)
+                if model.gateState != .unavailable {
+                    adultPartitionRow
+                }
                 NavigationLink(value: SettingsRoute.data) {
                     Label("Data", systemImage: "externaldrive")
                 }
@@ -36,6 +42,36 @@ struct SettingsView: View {
     }
 }
 
+extension SettingsView {
+    /// Adult Partition (ux S10; RD18 decision 10), present only when the
+    /// feature switch is on. Not a link: while the partition is on and
+    /// locked, choosing it authenticates before the screen is pushed.
+    private var adultPartitionRow: some View {
+        Button {
+            Task { await model.openAdultSettings() }
+        } label: {
+            HStack {
+                Label {
+                    Text("Adult Partition")
+                        .foregroundStyle(Theme.text)
+                } icon: {
+                    Image(systemName: "lock.shield")
+                        .foregroundStyle(.tint)
+                }
+                Spacer(minLength: Theme.Spacing.small)
+                Image(systemName: "chevron.forward")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.secondaryText)
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(model.isAuthenticating)
+        .accessibilityIdentifier(AccessibilityID.adultPartitionRow)
+    }
+}
+
 /// What a Settings route shows.
 struct SettingsDestination: View {
     let route: SettingsRoute
@@ -45,6 +81,7 @@ struct SettingsDestination: View {
         case .models: ModelsView()
         case .modelSlot(let role): ModelSlotForm(role: role)
         case .refresh: RefreshSettingsView()
+        case .adultPartition: AdultPartitionView()
         case .data: DataSettingsView()
         case .about: AboutView()
         }

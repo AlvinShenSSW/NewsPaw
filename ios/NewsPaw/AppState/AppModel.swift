@@ -1,6 +1,7 @@
 import Foundation
 import NewsPawKit
 import SwiftUI
+import UIKit
 import WebKit
 
 /// Why the library could not be opened, as the failure screen tells it.
@@ -21,8 +22,37 @@ enum LibraryFailure: Equatable {
     }
 }
 
-/// The app's startup state and the workspace on screen (RD18 decision 3):
-/// the normal library's, kept for the life of the app.
+/// One sentence the adult partition has to say (RD18 decision 11), shown
+/// as an alert at the root with OK.
+enum AdultNotice: Equatable {
+    /// Unlocking did not pass.
+    case stillLocked
+    /// Turning on did not pass, or the library's file could not be made.
+    case notTurnedOn
+    /// Opening Settings › Adult Partition did not pass.
+    case settingsNeedAuthentication
+    /// The device has no passcode.
+    case passcodeNeeded
+    /// The authentication passed and the adult library could not be
+    /// opened. Only the reason's sentence is shown, never the error's text.
+    case couldNotOpen(LibraryFailure)
+    /// Deleting the partition's data failed; the partition is still on.
+    case couldNotDelete
+}
+
+/// The questions of turning the partition off (RD18 decision 9).
+enum TurnOffQuestion {
+    /// Keep Data Hidden, Delete Data or Cancel.
+    case keepOrDelete
+    /// Delete, once more, or Cancel.
+    case confirmDelete
+}
+
+/// The app's startup state, the workspace on screen and the adult
+/// partition's gate (RD18): the normal library's workspace, kept for the
+/// life of the app, and the adult library's, kept only while unlocked. It
+/// follows the scene through UIKit's notifications for the lock timing and
+/// the cover (decisions 8 and 12).
 @MainActor @Observable
 final class AppModel {
     enum Status {
@@ -35,21 +65,77 @@ final class AppModel {
     private(set) var status = Status.loading
     /// The normal library's workspace; set before `status` is ready.
     private(set) var normal: Workspace?
-    /// The app's one store; it gives out one library per partition.
-    private var store: LibraryStore?
-    /// Whether the scene has been in the background since it was last
-    /// active: the next `active` is an entry.
-    private var wasInBackground = false
+    /// The adult library's workspace: only while the partition is
+    /// unlocked. Nothing else of the interface holds the adult library.
+    private(set) var adult: Workspace?
+    /// The gate's state, as the views read it. Unavailable until the
+    /// library is open, and for good when the feature switch is off.
+    private(set) var gateState = AdultGate.State.unavailable
+    /// The stored lock timing.
+    private(set) var lockTiming = LockTiming.immediately
+    /// Whether the system's authentication is being asked for: the
+    /// partition switch and the Settings switch wait for its answer.
+    private(set) var isAuthenticating = false
+    /// The sentence to show at the root; it outlives a swap of workspaces.
+    var notice: AdultNotice?
+    /// The question of turning off being asked at the root.
+    var turnOffQuestion: TurnOffQuestion?
 
-    /// The workspace on screen.
+    /// The app's one store; it gives out one library per partition.
+    @ObservationIgnored private var store: LibraryStore?
+    @ObservationIgnored private var gate: AdultGate?
+    @ObservationIgnored private var parts: WorkspaceParts?
+    /// Makes the adult workspace's browser set-up: a new non-persistent
+    /// website data store for each unlock (decision 13).
+    @ObservationIgnored private var makeAdultBrowser: (@MainActor () -> BrowserSetup)?
+    /// The app's clock.
+    @ObservationIgnored private var now: @Sendable () -> Date = { Date() }
+    @ObservationIgnored private let cover = CoverWindow()
+    @ObservationIgnored private var sceneIsActive = false
+    /// The scene's absence, as the lock rule counts it.
+    @ObservationIgnored private var absence = Absence()
+    /// Whether the scene has been in the background since it was last
+    /// active: the next activation is an entry for the refresh rule.
+    @ObservationIgnored private var wasInBackground = false
+    /// The unlock that is running, so that the background can discard it.
+    @ObservationIgnored private var unlockAttempt: UnlockAttempt?
+    @ObservationIgnored private var sceneObservers: [any NSObjectProtocol] = []
+
+    #if DEBUG
+    /// Whether the UI tests' report element is shown: only under a UI-test
+    /// library directory.
+    private(set) var showsDebugReport = false
+    @ObservationIgnored private var adultWasShown = false
+    @ObservationIgnored private weak var lastAdultWorkspace: Workspace?
+    @ObservationIgnored private weak var lastAdultBrowser: BrowserModel?
+    #endif
+
+    /// One unlock from the choice to its end.
+    private final class UnlockAttempt {
+        /// Whether the scene entered the background at any moment since
+        /// the choice was made (decision 5).
+        var enteredBackground = false
+    }
+
+    /// The workspace on screen: the adult one while unlocked, else the
+    /// normal one.
     var shown: Workspace? {
-        normal
+        adult ?? normal
+    }
+
+    /// Whether the partition switch is offered: only while the partition is
+    /// turned on (ux section 2).
+    var showsPartitionSwitch: Bool {
+        gateState == .locked || gateState == .unlocked
     }
 
     /// Opens the normal library, creating it on first launch. A failure is
     /// shown and left as it is: the file is never deleted, reset or replaced.
+    /// The adult library is not opened here: a launch starts in the normal
+    /// partition.
     func start() async {
         guard case .loading = status else { return }
+        observeScene()
         // The one transport the app makes requests through. Under a UI-test
         // library directory it is the fixture transport, never the real one.
         // The one clock of the library and of Today's status line.
@@ -73,6 +159,16 @@ final class AppModel {
         let keyStore = options.libraryDirectory.map { KeychainKeyStore(partition: .normal, uiTestSuffix: $0.lastPathComponent) }
             ?? KeychainKeyStore(partition: .normal)
         let modelHTTP: any ModelHTTP = options.libraryDirectory != nil ? FixtureModelHTTP() : URLSessionModelHTTP()
+        // The adult partition: under a UI-test library directory the
+        // stand-in authenticator, never LocalAuthentication, and keys under
+        // a service named after the directory; the feature switch can be
+        // turned off there, never on.
+        let authenticator: any DeviceAuthenticator = options.libraryDirectory != nil
+            ? FixtureAuthenticator(options.authenticationSteps) : SystemDeviceAuthenticator()
+        let adultKeys = options.libraryDirectory.map { KeychainKeyStore(partition: .adult, uiTestSuffix: $0.lastPathComponent) }
+            ?? KeychainKeyStore(partition: .adult)
+        let adultIsEnabled = BuildFeatures.adultPartition && !(options.libraryDirectory != nil && options.adultFeatureOff)
+        showsDebugReport = options.libraryDirectory != nil
         #else
         let directory = LibraryStore.defaultDirectory()
         let transport: any Transport = URLSessionTransport()
@@ -82,21 +178,30 @@ final class AppModel {
         let now: @Sendable () -> Date = { Date() }
         let keyStore = KeychainKeyStore(partition: .normal)
         let modelHTTP: any ModelHTTP = URLSessionModelHTTP()
+        let authenticator: any DeviceAuthenticator = SystemDeviceAuthenticator()
+        let adultKeys = KeychainKeyStore(partition: .adult)
+        let adultIsEnabled = BuildFeatures.adultPartition
         #endif
+        self.now = now
         do {
             let store = LibraryStore(directory: directory, cacheRoot: cacheRoot, now: now)
             self.store = store
             let library = try await store.openNormal()
+            let preferences = Preferences(defaults)
             let parts = WorkspaceParts(
                 transport: transport, candidateLimit: candidateLimit, now: now,
-                refreshSettings: RefreshSettings(Preferences(defaults)),
+                refreshSettings: RefreshSettings(preferences),
                 models: LibraryModels(library: library, keys: keyStore, http: modelHTTP)
             )
+            self.parts = parts
             // The embedded browser: the system's default website data store
-            // for the normal library; under a UI-test library directory a
-            // non-persistent one and the fixture pages.
+            // for the normal library, and a non-persistent one, new for each
+            // unlock and without Picture in Picture, for the adult library
+            // (decision 13); under a UI-test library directory a
+            // non-persistent one and the fixture pages for both.
             #if DEBUG
-            let browser = if options.libraryDirectory != nil {
+            let fixtures = options.libraryDirectory != nil
+            let browser = if fixtures {
                 BrowserSetup(
                     dataStore: .nonPersistent(), addressMap: BrowserFixtures.map,
                     schemeHandlers: [BrowserFixtures.scheme: BrowserFixtures()]
@@ -104,8 +209,19 @@ final class AppModel {
             } else {
                 BrowserSetup(dataStore: .default())
             }
+            makeAdultBrowser = {
+                if fixtures {
+                    BrowserSetup(
+                        dataStore: .nonPersistent(), addressMap: BrowserFixtures.map,
+                        schemeHandlers: [BrowserFixtures.scheme: BrowserFixtures()], allowsPictureInPicture: false
+                    )
+                } else {
+                    BrowserSetup(dataStore: .nonPersistent(), allowsPictureInPicture: false)
+                }
+            }
             #else
             let browser = BrowserSetup(dataStore: .default())
+            makeAdultBrowser = { BrowserSetup(dataStore: .nonPersistent(), allowsPictureInPicture: false) }
             #endif
             let workspace = Workspace(library: library, parts: parts, browser: browser)
             #if DEBUG
@@ -117,6 +233,14 @@ final class AppModel {
             workspace.sources.failNextSave = options.failNextSourceSave
             #endif
             await workspace.load()
+            // The gate: the only way to the adult library from here on.
+            let gate = AdultGate(
+                store: store, authenticator: authenticator, preferences: preferences, keys: adultKeys,
+                isEnabled: adultIsEnabled
+            )
+            self.gate = gate
+            gateState = await gate.state
+            lockTiming = await gate.lockTiming
             normal = workspace
             status = .ready
             // The launch is the first entry (RD06 decision 3).
@@ -128,21 +252,359 @@ final class AppModel {
         }
     }
 
-    /// Every return from the background to `active` is an entry; a return
-    /// from `inactive` alone (Control Centre, a system alert) is not. The
-    /// launch's own first `active` arrives while the library is still
-    /// opening and is not one either: `start()` makes the launch entry.
-    func scenePhaseChanged(to phase: ScenePhase) {
-        switch phase {
-        case .background:
-            wasInBackground = true
-        case .active where wasInBackground:
-            wasInBackground = false
-            if let refresh = shown?.refresh {
-                Task { await refresh.entered() }
+    // MARK: - Switching (decision 5)
+
+    /// "Adult" in the partition switch: authenticates, builds and loads the
+    /// adult workspace and shows it at the root of the current tab. An
+    /// authentication that does not pass leaves everything as it was, with
+    /// its sentence. An unlock during which the scene entered the
+    /// background is discarded.
+    func chooseAdult() async {
+        guard let gate, let parts, let makeAdultBrowser, let normal, adult == nil, gateState == .locked,
+              !isAuthenticating
+        else { return }
+        // Chosen in the slide-over: it closes, so that what follows is
+        // shown at the root.
+        normal.navigation.closeSlideOver()
+        isAuthenticating = true
+        defer { isAuthenticating = false }
+        let attempt = UnlockAttempt()
+        unlockAttempt = attempt
+        defer {
+            if unlockAttempt === attempt {
+                unlockAttempt = nil
             }
-        default:
+        }
+        switch await gate.unlock(reason: String(localized: "Unlock the adult partition")) {
+        case .unlocked(let library):
+            let workspace = Workspace(library: library, parts: parts, browser: makeAdultBrowser())
+            await workspace.load()
+            // From here to the end of the case nothing suspends before the
+            // workspace is shown: the check and the showing are one step.
+            if attempt.enteredBackground {
+                workspace.stop()
+                await gate.lock()
+            } else {
+                show(workspace)
+            }
+        case .refused(.notAuthenticated(let answer)):
+            notice = Self.notice(for: answer, otherwise: .stillLocked)
+        case .couldNotOpen(let error):
+            notice = .couldNotOpen(LibraryFailure(error))
+        case .refused(.busy), .refused(.notAllowed), .discarded:
+            break
+        }
+        gateState = await gate.state
+    }
+
+    /// Shows the adult workspace in place of the normal one, at the root of
+    /// the current tab, in one step and without animation.
+    private func show(_ workspace: Workspace) {
+        guard let normal else { return }
+        cover.prepare()
+        withoutAnimation {
+            workspace.navigation.showAtRoot(of: normal.navigation.currentTab, layout: normal.navigation.layout)
+            adult = workspace
+        }
+        gateState = .unlocked
+        // The normal workspace is not shown from here on: nothing of it
+        // stays pushed or presented, and its pages end. Its models go on
+        // refreshing (decision 13).
+        normal.navigation.clear()
+        applyTint()
+        #if DEBUG
+        adultWasShown = true
+        lastAdultWorkspace = workspace
+        lastAdultBrowser = workspace.browser
+        #endif
+        if !sceneIsActive {
+            // Shown while the system's prompt still keeps the scene
+            // inactive: the cover's rule applies at this moment (decision
+            // 12), and the absence the lock rule counts begins here, not at
+            // the prompt.
+            cover.show()
+            restartAbsence()
+        }
+        // The refresh-on-entry rule of the partition entered.
+        Task { await workspace.refresh.entered() }
+    }
+
+    // MARK: - Locking (decision 4)
+
+    /// Locks the adult partition: "Normal" in the switch, the lock button,
+    /// or the timing rule. In one step, with no suspension and without
+    /// animation, the normal workspace is shown at the root of the current
+    /// tab and the adult workspace is told to stop and dropped; then the
+    /// gate locks, and the store lets go of the adult library.
+    func lock() {
+        guard let workspace = adult, let normal else { return }
+        withoutAnimation {
+            normal.navigation.showAtRoot(of: workspace.navigation.currentTab, layout: workspace.navigation.layout)
+            adult = nil
+        }
+        workspace.stop()
+        gateState = .locked
+        applyTint()
+        // A cover that is shown stays until the scene is active again, so
+        // that the swap is drawn under it (decision 12).
+        let gate = gate
+        Task {
+            await gate?.lock()
+            if let gate {
+                gateState = await gate.state
+            }
+            // Returning to the normal partition is an entry for its refresh.
+            await normal.refresh.entered()
+        }
+    }
+
+    /// Swaps what is shown without any animation: no dismissal of a sheet
+    /// or a pushed screen of the workspace left is played.
+    private func withoutAnimation(_ change: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        UIView.performWithoutAnimation {
+            withTransaction(transaction, change)
+        }
+    }
+
+    /// The window's tint follows the partition: alerts take their tint
+    /// from the window, not from SwiftUI (decision 7).
+    private func applyTint() {
+        let partition = shown?.partition ?? .normal
+        for scene in UIApplication.shared.connectedScenes {
+            for window in (scene as? UIWindowScene)?.windows ?? [] {
+                window.tintColor = Theme.uiAccent(of: partition)
+            }
+        }
+    }
+
+    // MARK: - Settings › Adult Partition (decisions 9 and 10)
+
+    /// The Settings row was chosen. While the partition is on and locked
+    /// this authenticates first; inside the adult partition, which an
+    /// authentication unlocked already, and while the partition is off, it
+    /// opens at once. It never unlocks the partition.
+    func openAdultSettings() async {
+        guard let gate, let workspace = shown, !isAuthenticating else { return }
+        switch gateState {
+        case .off, .unlocked:
+            pushAdultSettings(on: workspace)
+        case .locked:
+            isAuthenticating = true
+            defer { isAuthenticating = false }
+            switch await gate.authenticateForSettings(reason: String(localized: "Open the adult partition's settings")) {
+            case .passed:
+                guard shown === workspace else { return }
+                if !sceneIsActive {
+                    restartAbsence()
+                }
+                pushAdultSettings(on: workspace)
+            case .refused(.notAuthenticated(let answer)):
+                notice = Self.notice(for: answer, otherwise: .settingsNeedAuthentication)
+            case .refused(.busy), .refused(.notAllowed):
+                break
+            }
+        case .unavailable:
             break
         }
     }
+
+    private func pushAdultSettings(on workspace: Workspace) {
+        if !workspace.navigation.settingsPath.contains(.adultPartition) {
+            workspace.navigation.settingsPath.append(.adultPartition)
+        }
+    }
+
+    /// The screen opened from the normal partition does not stay open
+    /// across an absence: it is popped by the rule that locks the
+    /// partition (decision 10). While the partition is off the screen
+    /// protects nothing and stays.
+    private func closeAdultSettingsOfNormal() {
+        guard gateState == .locked, let normal else { return }
+        normal.navigation.settingsPath.removeAll { $0 == .adultPartition }
+    }
+
+    /// The switch on the screen was turned on: authenticates, creates the
+    /// adult library's file and stores "on". The app stays in the normal
+    /// partition.
+    func turnOnAdult() async {
+        guard let gate, gateState == .off, !isAuthenticating else { return }
+        isAuthenticating = true
+        defer { isAuthenticating = false }
+        switch await gate.turnOn(reason: String(localized: "Turn on the adult partition")) {
+        case .turnedOn:
+            // The screen now shows what an authentication protects.
+            if !sceneIsActive {
+                restartAbsence()
+            }
+        case .refused(.notAuthenticated(let answer)):
+            notice = Self.notice(for: answer, otherwise: .notTurnedOn)
+        case .couldNotCreate:
+            notice = .notTurnedOn
+        case .refused(.busy), .refused(.notAllowed):
+            break
+        }
+        gateState = await gate.state
+    }
+
+    func setLockTiming(_ timing: LockTiming) {
+        guard let gate, timing != lockTiming else { return }
+        lockTiming = timing
+        Task {
+            await gate.setLockTiming(timing)
+            lockTiming = await gate.lockTiming
+        }
+    }
+
+    /// "Turn Off the Adult Partition": asks at the root.
+    func askToTurnOff() {
+        guard showsPartitionSwitch else { return }
+        turnOffQuestion = .keepOrDelete
+    }
+
+    /// The last answer was given: the app locks, then the gate turns the
+    /// partition off, keeping its data hidden or deleting it. A deletion
+    /// that fails says so and leaves the partition on.
+    func turnOff(deletingData: Bool) async {
+        turnOffQuestion = nil
+        guard let gate else { return }
+        lock()
+        switch await gate.turnOff(deletingData: deletingData) {
+        case .turnedOff, .refused:
+            break
+        case .couldNotDelete:
+            notice = .couldNotDelete
+        }
+        gateState = await gate.state
+    }
+
+    /// The sentence for an authentication that did not pass: the device
+    /// without a passcode has its own, an interrupted one shows nothing.
+    private static func notice(for answer: AuthenticationAnswer, otherwise: AdultNotice) -> AdultNotice? {
+        switch answer {
+        case .unavailable: .passcodeNeeded
+        case .cancelled, .failed: otherwise
+        case .interrupted, .passed: nil
+        }
+    }
+
+    // MARK: - The scene (decisions 8 and 12)
+
+    /// Follows the scene through UIKit's notifications, not through
+    /// `scenePhase`: will-deactivate, did-enter-background and
+    /// did-activate. (Will-enter-foreground changes nothing here.) They are
+    /// delivered on the main thread and handled before they return, so
+    /// that the cover is up before the system takes its picture.
+    private func observeScene() {
+        guard sceneObservers.isEmpty else { return }
+        sceneIsActive = UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        let center = NotificationCenter.default
+        func observe(_ name: Notification.Name, _ handler: @escaping @MainActor (AppModel) -> Void) {
+            sceneObservers.append(center.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    if let self {
+                        handler(self)
+                    }
+                }
+            })
+        }
+        observe(UIScene.willDeactivateNotification) { $0.sceneWillDeactivate() }
+        observe(UIScene.didEnterBackgroundNotification) { $0.sceneDidEnterBackground() }
+        observe(UIScene.didActivateNotification) { $0.sceneDidActivate() }
+    }
+
+    private func sceneWillDeactivate() {
+        sceneIsActive = false
+        absence.willDeactivate(at: now())
+        if let adult {
+            applyCoverRule()
+            // A video must not go on playing over the cover (decision 13).
+            adult.browser.pauseMedia()
+        }
+    }
+
+    private func sceneDidEnterBackground() {
+        sceneIsActive = false
+        wasInBackground = true
+        // An unlock that is still running is discarded (decision 5).
+        if let unlockAttempt {
+            unlockAttempt.enteredBackground = true
+            let gate = gate
+            Task { await gate?.lock() }
+        }
+        let locks = absence.didEnterBackground(at: now(), timing: lockTiming)
+        applyCoverRule()
+        if locks {
+            lockByRule()
+        }
+    }
+
+    private func sceneDidActivate() {
+        sceneIsActive = true
+        // The 5-second fallback is on: the app switcher and Control Centre
+        // deliver no did-enter-background (measured, assumption A7).
+        let locks = absence.didActivate(at: now(), timing: lockTiming, fallback: true)
+        let locksAdult = locks && adult != nil
+        if locks {
+            lockByRule()
+        }
+        if wasInBackground {
+            wasInBackground = false
+            // Every return from the background is an entry (RD06 decision
+            // 3); a lock of the adult partition has made the normal
+            // partition's entry itself.
+            if !locksAdult, let refresh = shown?.refresh {
+                Task { await refresh.entered() }
+            }
+        }
+        // The cover goes one main-loop turn after the check and any swap
+        // it caused, so that no frame of the adult partition is drawn
+        // under a cover that is already gone (decision 12).
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.sceneIsActive else { return }
+            self.cover.hide()
+        }
+    }
+
+    /// The lock rule answered "lock": the adult partition when it is
+    /// shown, else Settings › Adult Partition of the normal partition.
+    private func lockByRule() {
+        if adult != nil {
+            lock()
+        } else {
+            closeAdultSettingsOfNormal()
+        }
+    }
+
+    /// The cover's one rule (decision 12). It only ever shows the cover
+    /// here; the cover is hidden at did-activate alone.
+    private func applyCoverRule() {
+        if CoverRule.isShown(adultIsShown: adult != nil, sceneIsActive: sceneIsActive) {
+            cover.show()
+        }
+    }
+
+    /// What is protected became shown while the scene is inactive (the
+    /// system's prompt is still up): the absence is counted from now.
+    private func restartAbsence() {
+        absence = Absence()
+        absence.willDeactivate(at: now())
+    }
+
+    #if DEBUG
+    // MARK: - The UI tests' report (decision 4)
+
+    /// Whether the adult library's file exists and whether the library,
+    /// the adult workspace and its browser model are released.
+    func adultDebugReport() async -> String {
+        guard let gate else { return "" }
+        let file = gate.adultLibraryFileExists ? 1 : 0
+        let library = await gate.adultLibraryIsReleased ? "released" : "held"
+        func state(_ object: AnyObject?) -> String {
+            !adultWasShown ? "none" : object == nil ? "released" : "held"
+        }
+        return "file=\(file) library=\(library) workspace=\(state(lastAdultWorkspace)) browser=\(state(lastAdultBrowser))"
+    }
+    #endif
 }

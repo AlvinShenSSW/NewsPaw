@@ -1,5 +1,6 @@
 import Foundation
 @testable import NewsPawKit
+import Synchronization
 import Testing
 
 /// RD18: the gate in front of the adult library (decision 2), over a
@@ -579,6 +580,75 @@ struct AdultGateTests {
         #expect(FileManager.default.fileExists(atPath: fixture.adultCacheDirectory.path))
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fixture.cacheRoot.path)
         #expect(await fixture.gate.turnOff(deletingData: true) == .turnedOff)
+        #expect(!FileManager.default.fileExists(atPath: fixture.adultCacheDirectory.path))
+    }
+
+    @Test("criterion 12: a thumbnail whose fetch ends after Delete writes nothing and does not create the cache directory again")
+    func thumbnailEndingAfterDelete() async throws {
+        let fixture = try GateFixture()
+        defer { fixture.cleanUp() }
+        let (adult, _) = try await filled(fixture)
+        let image = ThumbnailLoaderTests.png(width: 40, height: 30)
+        let go = Signal()
+        let transport = CountingTransport { url in
+            await go.wait()
+            return TransportResponse(finalURL: url, status: 200, headers: [:], body: image)
+        }
+        // The loader holds the cache; the library is let go, as a dropped
+        // workspace's is.
+        let loader = ThumbnailLoader(transport: transport, cache: adult.imageCache)
+        _ = consume adult
+        let loading = Task { await loader.thumbnail(for: "https://images.example.invalid/late.png") }
+        while transport.inFlight < 1 {
+            try await Task.sleep(for: .milliseconds(2))
+        }
+
+        #expect(await fixture.gate.turnOff(deletingData: true) == .turnedOff)
+        #expect(!FileManager.default.fileExists(atPath: fixture.adultCacheDirectory.path))
+
+        // The fetch ends after Delete has reported success, and nothing
+        // cancelled the request: its store is refused.
+        go.fire()
+        #expect(await loading.value != nil)
+        #expect(!FileManager.default.fileExists(atPath: fixture.adultCacheDirectory.path))
+    }
+
+    @Test("criterion 12: a thumbnail store in flight when Delete begins ends before the removal; afterwards the cache directory does not exist")
+    func deleteWaitsForAStoreInFlight() async throws {
+        let fixture = try GateFixture()
+        defer { fixture.cleanUp() }
+        let (adult, _) = try await filled(fixture)
+        let cache = adult.imageCache
+        let entered = Mutex(false)
+        let go = DispatchSemaphore(value: 0)
+        // The first store stops just before it writes until the test lets
+        // it go; a later one that gets that far goes on at once.
+        await cache.setStoreWillWrite {
+            let first = entered.withLock { entered in
+                defer { entered = true }
+                return !entered
+            }
+            if first {
+                go.wait()
+            }
+        }
+        let storing = Task.detached { await cache.store(Data([4, 5, 6]), for: "https://example.invalid/late.png") }
+        while !entered.withLock({ $0 }) {
+            try await Task.sleep(for: .milliseconds(2))
+        }
+
+        let gate = fixture.gate
+        let deleting = Task { await gate.turnOff(deletingData: true) }
+        // Delete cannot get past the cache while the store is in flight.
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(FileManager.default.fileExists(atPath: fixture.adultCacheDirectory.path))
+        go.signal()
+
+        // The store was in flight: it wrote, and Delete removed it after.
+        #expect(await storing.value)
+        #expect(await deleting.value == .turnedOff)
+        #expect(!FileManager.default.fileExists(atPath: fixture.adultCacheDirectory.path))
+        #expect(!(await cache.store(Data([7]), for: "https://example.invalid/later.png")))
         #expect(!FileManager.default.fileExists(atPath: fixture.adultCacheDirectory.path))
     }
 

@@ -259,6 +259,30 @@ struct AdultLibraryCloseTests {
         #expect(await normal.imageCache.size() == 1)
     }
 
+    @Test("closing the adult library closes its image cache: a kept reference stores nothing; the normal cache and the next library's cache store")
+    func closeClosesTheImageCache() async throws {
+        let (store, _, cacheRoot, root) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let normal = try await store.openNormal()
+        let adult = try await store.createAdultLibrary()
+        // The cache as a thumbnail loader holds it, apart from the library.
+        let kept = adult.imageCache
+        #expect(await kept.store(Data([1]), for: "https://example.invalid/a.png"))
+        let adultDirectory = cacheRoot.appending(path: "adult")
+
+        try await store.closeAdultLibrary()
+
+        #expect(!(await kept.store(Data([2]), for: "https://example.invalid/b.png")))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: adultDirectory.path).count == 1)
+        // The normal library is never closed, and its cache stores.
+        #expect(await normal.imageCache.store(Data([3]), for: "https://example.invalid/n.png"))
+        // The next open is a new library with a cache of its own.
+        let reopened = try await store.openAdultLibrary()
+        #expect(await reopened.imageCache.store(Data([4]), for: "https://example.invalid/b.png"))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: adultDirectory.path).count == 2)
+        #expect(!(await kept.store(Data([5]), for: "https://example.invalid/c.png")))
+    }
+
     @Test("a file that cannot be removed fails the deletion with a storage error that names no path")
     func deleteFails() async throws {
         let (store, directory, _, root) = try makeStore()

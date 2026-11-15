@@ -97,11 +97,15 @@ public actor LibraryStore {
     /// flight and for nothing else. A reference still held somewhere —
     /// UIKit keeps the views' models alive after a lock (assumption A4) —
     /// fails on use from then on instead of keeping the file open, and the
-    /// next open makes a new pool. With nothing open this does nothing.
+    /// next open makes a new pool. Then the library's image cache is
+    /// closed: a store that is running ends first, and every later one
+    /// writes nothing, so that a thumbnail that was ending cannot write
+    /// adult images, or create their directory again, after a lock or a
+    /// deletion. With nothing open this does nothing.
     ///
     /// - Throws: `LibraryError.storage` when the connections cannot be
     ///   closed. The object then stays the one the next open gives out, so
-    ///   there are still never two open pools.
+    ///   there are still never two open pools; its cache stays open with it.
     func closeAdultLibrary() async throws {
         var living = lastAdult
         while let entry = libraries[.adult] {
@@ -112,9 +116,14 @@ public actor LibraryStore {
                 living = library ?? living
             }
         }
-        // No suspension from here on: nothing can open the file meanwhile.
+        // No suspension from here to the pool's close: nothing can open the
+        // file meanwhile.
         lastAdult = living
         try living?.close()
+        // An open after this point makes a new library with a cache of its
+        // own; this one stays closed. (While a library is open the store
+        // holds it, so the library with an open cache is always `living`.)
+        await living?.imageCache.close()
     }
 
     /// Whether no pool is open on the adult library's file: the store
@@ -147,8 +156,10 @@ public actor LibraryStore {
     }
 
     /// Removes the adult image cache's directory; a missing one is not a
-    /// failure. Called last when the partition's data is deleted, so that a
-    /// thumbnail store that was ending cannot recreate it afterwards.
+    /// failure. Called last when the partition's data is deleted, after
+    /// `deleteAdultLibraryFiles()` has closed the cache, so that a thumbnail
+    /// store that was ending has written before the removal or writes
+    /// nothing, and cannot recreate the directory afterwards.
     nonisolated func deleteAdultImageCache() throws {
         try Self.removeIfPresent(cacheDirectory(for: .adult))
     }

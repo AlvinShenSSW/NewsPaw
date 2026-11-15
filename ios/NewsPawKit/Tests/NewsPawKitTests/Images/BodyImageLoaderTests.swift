@@ -231,6 +231,65 @@ struct BodyImageLoaderTests {
         #expect(await cache.size() == 0)
     }
 
+    @Test("the answer tells a failure from a cancelled request; a failure that arrives after the request was cancelled is still a failure")
+    func outcomes() async throws {
+        let (root, cache) = try makeCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let image = Images.png(width: 40, height: 40)
+        let loaded = BodyImageLoader(transport: Images.answering(image), cache: cache)
+        guard case .image(let data) = await loaded.load(url("ok.png")) else {
+            Issue.record("not loaded")
+            return
+        }
+        #expect(BodyImageLoader.pixelSize(of: data)?.width == 40)
+        #expect(await loaded.load(url("ok.png")) == .image(data), "from the cache")
+        #expect(await BodyImageLoader(transport: Images.answering(image, status: 500), cache: cache).load(url("500.png")) == .failed)
+        #expect(await BodyImageLoader(transport: Images.answering(Data("text".utf8)), cache: cache).load(url("text.png")) == .failed)
+        #expect(await loaded.load(URL(string: "file:///etc/hosts")!) == .failed)
+
+        // The transport reports a failure after the request was cancelled.
+        let go = Signal()
+        let failing = CountingTransport { _ in
+            await go.wait()
+            throw TransportFailure.unreachable
+        }
+        let late = BodyImageLoader(transport: failing, cache: cache)
+        let failed = Task { await late.load(url("late.png")) }
+        try await waitUntil { failing.inFlight == 1 }
+        failed.cancel()
+        go.fire()
+        #expect(await failed.value == .failed)
+
+        // The exchange itself was cancelled: nothing is known.
+        let stop = Signal()
+        let cancelling = CountingTransport { _ in
+            await stop.wait()
+            throw CancellationError()
+        }
+        let cancelled = Task { await BodyImageLoader(transport: cancelling, cache: cache).load(url("cancelled.png")) }
+        try await waitUntil { cancelling.inFlight == 1 }
+        cancelled.cancel()
+        stop.fire()
+        #expect(await cancelled.value == .cancelled)
+
+        // Cancelled while waiting for a slot: no request, nothing known.
+        let hold = Signal()
+        let slow = CountingTransport { url in
+            await hold.wait()
+            return TransportResponse(finalURL: url, status: 200, headers: [:], body: image)
+        }
+        let one = BodyImageLoader(transport: slow, cache: cache, limit: 1)
+        let first = Task { await one.load(url("first.png")) }
+        try await waitUntil { slow.inFlight == 1 }
+        let waiting = Task { await one.load(url("waiting.png")) }
+        try await Task.sleep(for: .milliseconds(100))
+        waiting.cancel()
+        #expect(await waiting.value == .cancelled)
+        hold.fire()
+        #expect(await first.value != .failed)
+        #expect(slow.received.map(\.lastPathComponent) == ["first.png"])
+    }
+
     @Test("a loader stores in its own library's cache only, and a body image and a thumbnail of one address do not answer for each other")
     func oneCacheAndItsOwnKey() async throws {
         let (root, normal) = try makeCache("normal")

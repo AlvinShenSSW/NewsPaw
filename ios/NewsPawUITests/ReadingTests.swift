@@ -433,7 +433,10 @@ final class ReadingTests: ReadingTestCase {
         waitForAbsence(viewed)
         waitForTitle("Picture story")
 
-        // Opened again, the image that failed once is asked for again.
+        // Opened again, the image that failed is asked for again. (The
+        // fixture's image fails for four seconds from its first request;
+        // the viewer alone took longer.)
+        sleep(4)
         backToList()
         openArticle("Empty body")
         backToList()
@@ -580,9 +583,28 @@ final class ReadingTests: ReadingTestCase {
         XCTAssertEqual(shownAgain.identifier, topTitle, "the same row is at the top")
         XCTAssertEqual(shownAgain.frame.minY, topY, accuracy: 1)
 
-        // Another sidebar selection shows the list.
-        hide.tap()
-        waitForLabel(hide, containing: "Show Article List")
+        // Another sidebar selection shows its list, also one that has an
+        // article open: Starred, with the article starred here.
+        button(AccessibilityID.readingStarButton).tap()
+        waitForLabel(button(AccessibilityID.readingStarButton), containing: "Unstar")
+        openStarred()
+        openArticle("Long story 10")
+        openSourceList("Long Counting Feed", in: Reading.category)
+        waitFor(articleRow("Long story 11")).tap()
+        waitForTitle("Long story 11")
+        waitFor(button(AccessibilityID.hideListButton)).tap()
+        waitForLabel(button(AccessibilityID.hideListButton), containing: "Show Article List")
+        openStarred()
+        waitForTitle("Long story 10")
+        XCTAssertEqual(waitFor(button(AccessibilityID.hideListButton)).label, "Hide Article List", "Starred shows its list")
+        XCTAssertTrue(waitFor(articleRow("Long story 10")).isHittable)
+
+        // And a selection with nothing open.
+        openSourceList("Long Counting Feed", in: Reading.category)
+        waitFor(articleRow("Long story 12")).tap()
+        waitForTitle("Long story 12")
+        waitFor(button(AccessibilityID.hideListButton)).tap()
+        waitForLabel(button(AccessibilityID.hideListButton), containing: "Show Article List")
         openSourceList(Reading.source, in: Reading.category)
         waitFor(articleRow("Every block"))
         XCTAssertTrue(articleRow("Every block").isHittable, "a new selection shows its list")

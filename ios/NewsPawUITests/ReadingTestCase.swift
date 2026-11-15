@@ -251,6 +251,13 @@ class ReadingTestCase: BrowserTestCase {
                        "\(what): the pitch is \(latinPitch()), not \(expected)", file: file, line: line)
     }
 
+    /// A failure is photographed where the run names a directory: what was
+    /// on screen says more than the line.
+    override func record(_ issue: XCTIssue) {
+        capture("failure-\(name.replacingOccurrences(of: " ", with: "-").filter { $0.isLetter || $0.isNumber || $0 == "-" })")
+        super.record(issue)
+    }
+
     /// Writes a screenshot to the directory the run names, as the other
     /// screenshot tests do; nothing otherwise.
     func capture(_ name: String) {

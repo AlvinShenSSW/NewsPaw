@@ -66,15 +66,22 @@ public final class FixtureTransport: Transport {
         public static let reading = "https://reading.example.invalid/rss.xml"
         /// The images of that feed's bodies, under this address: `photo.png`
         /// (600 × 400), `small.png` (60 × 40), `pixel.png` (1 × 1),
-        /// `flaky.png` (no answer to the first request of a transport, the
-        /// photo after it), `vector.svg` (not an image the system decodes)
+        /// `flaky.png` (no answer for `flakyImageWindow` from a transport's
+        /// first request for it, the photo after that: it fails when an
+        /// article is first opened, however many times it is asked for
+        /// then, and answers when the article is opened again later),
+        /// `vector.svg` (not an image the system decodes)
         /// and `big/<number>.png` (2,400 × 1,600). Any other name does not
         /// answer.
         public static let readingImages = "https://reading.example.invalid/images/"
     }
 
+    /// How long `flaky.png` fails from the first request for it.
+    static let flakyImageWindow = Duration.seconds(4)
+
     private let sequenceRequests = Mutex(0)
-    private let flakyImageRequests = Mutex(0)
+    /// When `flaky.png` was first asked for.
+    private let flakyImageFirstRequest = Mutex<ContinuousClock.Instant?>(nil)
 
     public init() {}
 
@@ -158,11 +165,12 @@ public final class FixtureTransport: Transport {
         case "pixel.png":
             return image(Self.pixelImagePNG)
         case "flaky.png":
-            let number = flakyImageRequests.withLock { count in
-                count += 1
-                return count
+            let now = ContinuousClock.now
+            let first = flakyImageFirstRequest.withLock { first in
+                first = first ?? now
+                return first ?? now
             }
-            if number == 1 {
+            if now - first < Self.flakyImageWindow {
                 throw TransportFailure.unreachable
             }
             return image(Self.articleImagePNG)

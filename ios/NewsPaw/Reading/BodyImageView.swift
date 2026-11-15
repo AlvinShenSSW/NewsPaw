@@ -33,6 +33,9 @@ struct BodyImageView: View {
     /// The width the image has on screen, in points.
     @State private var shownWidth = 0.0
 
+    /// How long a block is on screen before its image is asked for.
+    private static let patience = Duration.milliseconds(150)
+
     private enum Phase {
         case waiting
         case loaded(UIImage)
@@ -150,9 +153,31 @@ struct BodyImageView: View {
         if case .loaded(let decoded) = phase, abs(decoded.size.width - min(shownWidth, maximumWidth)) < 1 {
             return
         }
-        guard let data = await session.loader.image(for: url) else {
-            fail(url)
-            return
+        let data: Data
+        if let cached = await session.loader.cachedImage(for: url) {
+            data = cached
+        } else {
+            // An image that is not stored is asked for once its block has
+            // stayed a moment: a block that only passes by while scrolling,
+            // or that the stack lays out and discards at once (seen at the
+            // first layout: every block twice), makes no request.
+            try? await Task.sleep(for: Self.patience)
+            guard !Task.isCancelled else { return }
+            switch await session.loader.load(url) {
+            case .image(let stored):
+                data = stored
+            case .failed:
+            // Known for this opening, also when the image has scrolled
+            // away meanwhile: it is not asked for again until the article
+            // is opened again.
+                session.markFailed(url)
+                if !Task.isCancelled {
+                    phase = .failed
+                }
+                return
+            case .cancelled:
+                return
+            }
         }
         guard let size = BodyImageLoader.pixelSize(of: data) else {
             fail(url)

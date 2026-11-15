@@ -170,7 +170,7 @@ struct FixtureTransportTests {
         #expect(try body("Line heights").blocks.count == 6)
     }
 
-    @Test("the reading feed's images: sizes as named, one that fails once per transport, one that is no image, the rest unreachable")
+    @Test("the reading feed's images: sizes as named, one that is no image, the rest unreachable")
     func readingImages() async throws {
         let transport = FixtureTransport()
         func image(_ name: String) async throws -> TransportResponse {
@@ -184,9 +184,6 @@ struct FixtureTransportTests {
         #expect(size(try await image("pixel.png").body) == [1, 1])
         #expect(size(try await image("big/7.png").body) == [2_400, 1_600])
         #expect(ThumbnailLoader.reduced(try await image("vector.svg").body) == nil)
-        await #expect(throws: TransportFailure.unreachable) { try await image("flaky.png") }
-        #expect(size(try await image("flaky.png").body) == [600, 400])
-        #expect(size(try await image("flaky.png").body) == [600, 400])
         await #expect(throws: TransportFailure.unreachable) { try await image("missing.png") }
         await #expect(throws: TransportFailure.unreachable) { try await image("tracker.png") }
     }
@@ -214,6 +211,20 @@ struct FixtureTransportTests {
 extension TimedAndHeavySuites {
     @Suite("Fixture transport, timed")
     struct FixtureTransportTimedTests {
+        @Test("the flaky image fails for its window from the first request, however often it is asked, and answers after it")
+        func flakyImage() async throws {
+            let transport = FixtureTransport()
+            let url = try #require(URL(string: FixtureTransport.Address.readingImages + "flaky.png"))
+            for _ in 0..<3 {
+                await #expect(throws: TransportFailure.unreachable) { try await transport.fetch(TransportRequest(url: url)) }
+            }
+            try await Task.sleep(for: FixtureTransport.flakyImageWindow + .milliseconds(200))
+            let answer = try await transport.fetch(TransportRequest(url: url))
+            #expect(BodyImageLoader.pixelSize(of: answer.body)?.width == 600)
+            // Counted per transport.
+            await #expect(throws: TransportFailure.unreachable) { try await FixtureTransport().fetch(TransportRequest(url: url)) }
+        }
+
         @Test("the slow declared feed is not checked within the fixture limit, and answers when asked directly")
         func slowFeed() async throws {
             let fixture = try await SourceFixture.make()

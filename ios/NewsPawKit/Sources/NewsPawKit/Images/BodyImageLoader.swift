@@ -21,6 +21,8 @@ import ImageIO
 /// whose queue this repeats). A cancelled request stores nothing. Unlike a
 /// thumbnail, a failure is not remembered here: who shows the article
 /// decides when to ask again, which is when the article is opened again.
+/// So the answer says which it was: a request that was cancelled says
+/// nothing about the image, one that failed does.
 public actor BodyImageLoader {
     /// The longest side of a stored body image, in pixels.
     public static let maximumPixelSize = 2_048
@@ -51,29 +53,68 @@ public actor BodyImageLoader {
         url.absoluteString
     }
 
-    /// The image at `url` as the stored JPEG, or `nil` when there is none:
-    /// the fetch failed, the answer is too large or not an image the system
-    /// decodes, it declares too many pixels, or the calling task was
-    /// cancelled.
+    /// What a request for an image came to.
+    public enum Outcome: Sendable, Equatable {
+        /// The stored JPEG.
+        case image(Data)
+        /// There is no image to show: the address may not be requested,
+        /// the fetch failed, the answer is too large or not an image the
+        /// system decodes, or it declares too many pixels.
+        case failed
+        /// The calling task was cancelled before an answer was there:
+        /// nothing is known about the image, and nothing was stored.
+        case cancelled
+    }
+
+    /// The stored JPEG of the image at `url` when the cache holds it; no
+    /// request is made.
+    public func cachedImage(for url: URL) async -> Data? {
+        await cache.data(for: Self.cacheKey(for: url))
+    }
+
+    /// The image at `url` as the stored JPEG, or `nil` when there is none
+    /// or the calling task was cancelled.
     public func image(for url: URL) async -> Data? {
+        if case .image(let data) = await load(url) {
+            return data
+        }
+        return nil
+    }
+
+    /// Asks for the image at `url`: from the cache, else through the
+    /// transport. A failure the transport reports is a failure even when
+    /// the calling task was cancelled meanwhile (a cancelled exchange is the
+    /// transport's `CancellationError`, not a failure): the image is then
+    /// known to fail, and is not asked for again at once.
+    public func load(_ url: URL) async -> Outcome {
         let key = Self.cacheKey(for: url)
         if let cached = await cache.data(for: key) {
-            return cached
+            return .image(cached)
         }
-        guard !Task.isCancelled, url.isCollectableAddress else { return nil }
-        guard await acquireSlot() else { return nil }
+        guard !Task.isCancelled else { return .cancelled }
+        guard url.isCollectableAddress else { return .failed }
+        guard await acquireSlot() else { return .cancelled }
         defer { releaseSlot() }
-        guard !Task.isCancelled else { return nil }
+        guard !Task.isCancelled else { return .cancelled }
         // Another request for the same address may have stored it meanwhile.
         if let cached = await cache.data(for: key) {
-            return cached
+            return .image(cached)
         }
-        guard let response = try? await transport.fetch(TransportRequest(url: url)), !Task.isCancelled,
-              (200..<300).contains(response.status), response.body.count <= Self.maximumReceivedBytes,
-              let image = await Self.reduce(response.body), !Task.isCancelled
-        else { return nil }
+        let response: TransportResponse
+        do {
+            response = try await transport.fetch(TransportRequest(url: url))
+        } catch is CancellationError {
+            return .cancelled
+        } catch {
+            return .failed
+        }
+        guard (200..<300).contains(response.status), response.body.count <= Self.maximumReceivedBytes else { return .failed }
+        // A cancelled request is not decoded, and stores nothing.
+        guard !Task.isCancelled else { return .cancelled }
+        guard let image = await Self.reduce(response.body) else { return .failed }
+        guard !Task.isCancelled else { return .cancelled }
         await cache.store(image, for: key)
-        return image
+        return .image(image)
     }
 
     // MARK: - Reduction and decoding

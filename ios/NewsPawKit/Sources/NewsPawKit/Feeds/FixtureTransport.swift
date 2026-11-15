@@ -16,7 +16,7 @@ public final class FixtureTransport: Transport {
     /// How long the slow declared feed takes to answer.
     static let slowAnswer = Duration.seconds(3)
     /// How long the stalling feed takes to answer after its first answer.
-    static let stallingAnswer = Duration.seconds(25)
+    static let stallingAnswer = Duration.seconds(45)
 
     /// The addresses of the table, in normal form.
     public enum Address {

@@ -176,7 +176,7 @@ final class AdultLockTests: AdultTestCase {
     func testACollectionOfTheHiddenPartitionLeavesTheShownOneAlone() {
         launchAtFullWidth(authentication: ["passed", "passed", "passed"])
         createCategory("World")
-        // Answers at once when added, and after 25 seconds from then on.
+        // Answers at once when added, and after 45 seconds from then on.
         addSource("https://stalling.example.invalid/rss.xml", to: "World")
         turnOnAdult()
         enterAdult()
@@ -186,7 +186,7 @@ final class AdultLockTests: AdultTestCase {
         waitForPartition(Wording.normal)
 
         // The normal category's refresh starts a collection that is still
-        // running half a minute from now.
+        // running three quarters of a minute from now.
         showCategoryList()
         waitFor(element(AccessibilityID.categoryRow("World"))).press(forDuration: 1.2)
         waitFor(menuButton("Refresh")).tap()
@@ -197,11 +197,11 @@ final class AdultLockTests: AdultTestCase {
         openListSettings(source: true)
         let name = waitFor(app.textFields[AccessibilityID.nameField])
         let elapsed = Date().timeIntervalSince(started)
-        XCTAssertLessThan(elapsed, 24, "the normal collection may have ended before the sheet was open")
+        XCTAssertLessThan(elapsed, 43, "the normal collection may have ended before the sheet was open")
 
         // Until well after the collection has ended and the normal
         // partition's lists have been read again.
-        Thread.sleep(forTimeInterval: max(0, 30 - Date().timeIntervalSince(started)))
+        Thread.sleep(forTimeInterval: max(0, 50 - Date().timeIntervalSince(started)))
         XCTAssertTrue(name.exists, "the adult source's settings sheet was closed")
         XCTAssertEqual(name.value as? String, "Articles Feed")
         button(AccessibilityID.cancelButton).tap()
@@ -264,6 +264,51 @@ final class AdultLockTests: AdultTestCase {
         // Closed; and no menu was used in the adult partition of this
         // launch, so nothing of it is held either.
         waitForReport(Self.closed, "library=released", Self.dropped, "browser=released")
+    }
+
+    // MARK: - Assumption A5: what is presented goes with the workspace
+
+    /// A lock while a context menu is open, and while a confirmation
+    /// dialog is open above a sheet: both are gone with the adult
+    /// workspace, nothing of them is left on screen, and nothing they
+    /// offered was done.
+    func testALockClosesAnOpenMenuAndAnOpenDialog() {
+        launchAtFullWidth(authentication: ["passed", "passed", "passed", "passed"])
+        createCategory("World")
+        turnOnAdult()
+        enterAdult()
+        createCategory("Velvet")
+
+        // A context menu open on the adult category.
+        showCategoryList()
+        waitFor(element(AccessibilityID.categoryRow("Velvet"))).press(forDuration: 1.2)
+        waitFor(app.buttons["Category Settings"])
+        leaveAndReturn()
+        waitForAbsence(app.buttons["Category Settings"])
+        waitForPartition(Wording.normal)
+        waitForReport(Self.closed, Self.dropped)
+        showCategoryList()
+        waitFor(element(AccessibilityID.categoryRow("World")))
+        assertNothingShown(of: ["Velvet"], on: "the category list after a lock with a menu open")
+
+        // The deletion dialog, which names the category, above its
+        // settings sheet.
+        enterAdult()
+        openCategorySettings("Velvet")
+        waitFor(button(AccessibilityID.deleteCategoryButton)).tap()
+        waitFor(deletionDialogButton("Delete Category"))
+        leaveAndReturn()
+        waitForAbsence(deletionDialogButton("Delete Category"))
+        waitForAbsence(app.textFields[AccessibilityID.nameField])
+        waitForPartition(Wording.normal)
+        waitForReport(Self.closed, Self.dropped)
+        assertNothingShown(of: ["Velvet"], on: "the normal partition after a lock with a dialog open")
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+
+        // Nothing was deleted.
+        enterAdult()
+        showCategoryList()
+        waitFor(element(AccessibilityID.categoryRow("Velvet")))
     }
 
     // MARK: - A kept reference fails quietly

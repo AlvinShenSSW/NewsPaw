@@ -8,6 +8,7 @@ import SwiftUI
 /// are rows, so that every option wraps at the largest text size.
 struct ReadingSettingsView: View {
     @Environment(ReadingSettings.self) private var settings
+    @Environment(\.accent) private var accent
 
     var body: some View {
         @Bindable var settings = settings
@@ -84,7 +85,7 @@ struct ReadingSettingsView: View {
             HStack(spacing: Theme.Spacing.tight) {
                 ForEach(steps.indices, id: \.self) { step in
                     Circle()
-                        .fill(step == index ? Theme.accent : Theme.hairline)
+                        .fill(step == index ? accent : Theme.hairline)
                         .frame(width: 8, height: 8)
                 }
             }
@@ -113,6 +114,7 @@ struct ReadingSettingsView: View {
 /// width, with its title and Close.
 struct ReadingSettingsPopover: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accent) private var accent
 
     private static let height = 580.0
 
@@ -137,7 +139,7 @@ struct ReadingSettingsPopover: View {
         // the settings take what there is and scroll, with Close in reach.
         .frame(idealWidth: 340, idealHeight: Self.height)
         .presentationDetents([.height(Self.height), .large])
-        .tint(Theme.accent)
+        .tint(accent)
         .foregroundStyle(Theme.text)
     }
 }

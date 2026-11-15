@@ -131,9 +131,11 @@ struct ReadingSettingsPopover: View {
                     }
                 }
         }
-        // Room for the three sections at the default text size, as a
-        // popover and as a sheet; with larger text the list scrolls.
-        .frame(minWidth: 340, minHeight: Self.height)
+        // Room for the three sections at the default text size: the
+        // popover's size, and the sheet's first detent. An ideal size, not
+        // a least one: where the screen is lower (an iPhone in landscape)
+        // the settings take what there is and scroll, with Close in reach.
+        .frame(idealWidth: 340, idealHeight: Self.height)
         .presentationDetents([.height(Self.height), .large])
         .tint(Theme.accent)
         .foregroundStyle(Theme.text)

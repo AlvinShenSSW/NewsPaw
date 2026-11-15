@@ -236,6 +236,35 @@ final class ReadingTests: ReadingTestCase {
         closeReadingSettings()
     }
 
+    /// "Aa" on iPhone in landscape, where the screen is lower than the
+    /// three sections are high: Close and the first control are on screen,
+    /// and every option is reached by scrolling the settings themselves.
+    func testReadingSettingsInLandscapeOnPhone() throws {
+        try XCTSkipIf(isPad, "the iPhone's landscape: its screen is about 440 pt high")
+        launchWithReadingFeed()
+        openArticle("Line heights")
+        waitFor(block(at: 1))
+        rotate(.landscapeLeft)
+        addTeardownBlock { @MainActor in
+            XCUIDevice.shared.orientation = .portrait
+        }
+        openReadingSettings()
+        capture("aa-landscape")
+        let close = button(AccessibilityID.readingSettingsCloseButton)
+        XCTAssertTrue(close.isHittable, "Close can be tapped: \(close.frame) in \(window)")
+        XCTAssertTrue(window.contains(close.frame), "Close is on screen: \(close.frame) in \(window)")
+        let larger = button(AccessibilityID.textSizeLargerButton)
+        XCTAssertTrue(larger.isHittable, "the text size can be changed: \(larger.frame)")
+        larger.tap()
+        XCTAssertEqual(element(AccessibilityID.textSizeValue).value as? String, "4 / 5")
+        chooseReadingOption("Relaxed")
+        chooseReadingOption("Serif")
+        capture("aa-landscape-scrolled")
+        XCTAssertTrue(close.isHittable, "Close is still there after scrolling")
+        closeReadingSettings()
+        waitForTitle("Line heights")
+    }
+
     /// The body scales with Dynamic Type: the same lines stand further
     /// apart in a launch with a larger text size.
     func testBodyScalesWithDynamicType() {

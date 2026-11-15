@@ -21,7 +21,7 @@ struct AdultGateTests {
         #expect(!fixture.gate.adultLibraryFileExists)
         #expect(fixture.adultFiles().isEmpty)
         #expect(await fixture.gate.lockTiming == .immediately)
-        #expect(await fixture.store.adultLibraryIsReleased)
+        #expect(await fixture.store.adultLibraryIsClosed)
         // Nothing asked the owner to authenticate.
         #expect(fixture.authenticator.reasons.isEmpty)
     }
@@ -52,7 +52,7 @@ struct AdultGateTests {
         #expect(Preferences(fixture.defaults).adultPartitionIsOn)
         #expect(fixture.gate.adultLibraryFileExists)
         // Created, then released: nothing holds the file open.
-        #expect(await fixture.store.adultLibraryIsReleased)
+        #expect(await fixture.store.adultLibraryIsClosed)
         #expect(fixture.authenticator.reasons == ["Turn on the adult partition"])
         // Turning on twice is not an operation.
         #expect(await fixture.gate.turnOn(reason: "again") == .refused(.notAllowed))
@@ -73,7 +73,7 @@ struct AdultGateTests {
         #expect(try Data(contentsOf: fixture.databaseURL) == garbage)
         // An opened database would have its side files beside it.
         #expect(fixture.adultFiles() == ["adult.sqlite"])
-        #expect(await fixture.store.adultLibraryIsReleased)
+        #expect(await fixture.store.adultLibraryIsClosed)
     }
 
     @Test("turning on: a file that cannot be created leaves the partition off")
@@ -101,7 +101,7 @@ struct AdultGateTests {
 
         #expect(result.summary == "refused(notAuthenticated(\(answer)))")
         #expect(await fixture.gate.state == .locked)
-        #expect(await fixture.store.adultLibraryIsReleased)
+        #expect(await fixture.store.adultLibraryIsClosed)
         #expect(fixture.authenticator.reasons == ["on", "Unlock"])
     }
 
@@ -118,7 +118,7 @@ struct AdultGateTests {
         #expect(adult !== normal)
         #expect(await fixture.gate.state == .unlocked)
         #expect(try await adult.categories().isEmpty)
-        #expect(!(await fixture.store.adultLibraryIsReleased))
+        #expect(!(await fixture.store.adultLibraryIsClosed))
         // A second unlock asks again: one success is not reused. With no
         // answer left the stub says "unavailable".
         let second = await fixture.gate.unlock(reason: "again")
@@ -175,7 +175,7 @@ struct AdultGateTests {
 
         #expect(result.summary == "couldNotOpen(damaged)")
         #expect(await fixture.gate.state == .locked)
-        #expect(await fixture.store.adultLibraryIsReleased)
+        #expect(await fixture.store.adultLibraryIsClosed)
         // Delete opens nothing, so it works on the damaged file.
         #expect(await fixture.gate.turnOff(deletingData: true) == .turnedOff)
         #expect(fixture.adultFiles().isEmpty)
@@ -186,53 +186,102 @@ struct AdultGateTests {
         #expect(try await library.categories().isEmpty)
     }
 
-    // MARK: - Criterion 7: locking releases the library
+    // MARK: - Criterion 7: locking closes the library
 
-    @Test("criterion 7: after a lock the library is gone once nothing holds it, and an unlock meanwhile gets the same object")
-    func lockReleases() async throws {
+    @Test("criterion 7: a lock closes the pool although the library is still held; the next unlock is a new pool with the data")
+    func lockCloses() async throws {
         let fixture = try GateFixture()
         defer { fixture.cleanUp() }
-        var adult: Library? = try await fixture.turnOnAndUnlock()
-        _ = try await adult?.createCategory(name: "Kept", icon: .heart)
+        let held = try await fixture.turnOnAndUnlock()
+        _ = try await held.createCategory(name: "Kept", icon: .heart)
 
         await fixture.gate.lock()
 
         #expect(await fixture.gate.state == .locked)
-        // Still held here (as by a task that has not ended): not released,
-        // and the next unlock gets this object, not a second pool.
-        #expect(!(await fixture.store.adultLibraryIsReleased))
+        // Closed at once, although this test still holds the object, as
+        // UIKit holds the views' models after a lock.
+        #expect(await fixture.gate.adultLibraryIsClosed)
+        #expect(held.isClosed)
+        #expect(!(await fixture.gate.adultLibraryObjectIsReleased))
+        // The next unlock opens the file anew; the old object stays closed.
         fixture.authenticator.add(.passed)
-        var again: Library? = try await fixture.unlock()
-        #expect(again === adult)
+        let again = try await fixture.unlock()
+        #expect(again !== held)
+        #expect(held.isClosed)
+        #expect(try await again.categories().map(\.name) == ["Kept"])
+        #expect(!(await fixture.gate.adultLibraryIsClosed))
         await fixture.gate.lock()
-        adult = nil
-        again = nil
-        #expect(await waitForRelease(fixture.store))
-        // And a later unlock opens the file again, with what was stored.
-        fixture.authenticator.add(.passed)
-        let reopened = try await fixture.unlock()
-        #expect(try await reopened.categories().map(\.name) == ["Kept"])
+        #expect(again.isClosed)
+        #expect(await fixture.gate.adultLibraryIsClosed)
     }
 
-    @Test("criterion 7: a lock while a read of the library is running releases it when the read ends")
+    @Test("a reference kept across a lock fails quietly: the library's own error, nothing written, nothing created")
+    func keptReferenceFailsQuietly() async throws {
+        let fixture = try GateFixture()
+        defer { fixture.cleanUp() }
+        let kept = try await fixture.turnOnAndUnlock()
+        let category = try await kept.createCategory(name: "Kept", icon: .heart)
+        try await kept.pool.writeWithoutTransaction { db in _ = try db.checkpoint(.truncate) }
+        await fixture.gate.lock()
+        let filesBefore = fixture.adultFiles()
+        let bytesBefore = try Data(contentsOf: fixture.databaseURL)
+
+        // Everything a stopped workspace's model might still ask of it.
+        await #expect(throws: LibraryError.self) { try await kept.categories() }
+        await #expect(throws: LibraryError.self) { try await kept.categorySummaries() }
+        await #expect(throws: LibraryError.self) { try await kept.sourceSummaries() }
+        await #expect(throws: LibraryError.self) { try await kept.createCategory(name: "Late", icon: .heart) }
+        await #expect(throws: LibraryError.self) { try await kept.renameCategory(category.id, to: "Renamed") }
+        await #expect(throws: LibraryError.self) { try await kept.lastRefreshAt() }
+        do {
+            _ = try await kept.categories()
+        } catch let error as LibraryError {
+            // A storage error with SQLite's own words: no row, no name.
+            guard case .storage(let text) = error else {
+                Issue.record("\(error)")
+                return
+            }
+            #expect(!text.contains("Kept"), "the error carries content: \(text)")
+        }
+
+        #expect(fixture.adultFiles() == filesBefore)
+        #expect(try Data(contentsOf: fixture.databaseURL) == bytesBefore)
+        #expect(await fixture.gate.adultLibraryIsClosed)
+        // And the data is as it was for the next unlock.
+        fixture.authenticator.add(.passed)
+        let again = try await fixture.unlock()
+        #expect(try await again.categories().map(\.name) == ["Kept"])
+    }
+
+    @Test("criterion 7: a lock while a task writes waits for the write in flight; the task's later writes fail and nothing is half written")
     func lockDuringUse() async throws {
         let fixture = try GateFixture()
         defer { fixture.cleanUp() }
         let adult = try await fixture.turnOnAndUnlock()
-        // A task that uses the library across the lock, as a refresh does.
-        let running = Task { [adult] in
-            for index in 0..<20 {
-                _ = try await adult.createCategory(name: "Category \(index)", icon: .heart)
+        // A task that writes across the lock, as a save or a refresh does.
+        let running = Task { [adult] () -> Int in
+            var written = 0
+            for index in 0..<200 {
+                do {
+                    _ = try await adult.createCategory(name: "Category \(index)", icon: .heart)
+                    written += 1
+                } catch {
+                    break
+                }
             }
+            return written
         }
+        try await Task.sleep(for: .milliseconds(20))
 
         await fixture.gate.lock()
-        #expect(await fixture.gate.state == .locked)
-        try await running.value
 
-        // `adult` is this test's own reference; without it nothing holds it.
-        _ = consume adult
-        #expect(await waitForRelease(fixture.store))
+        #expect(await fixture.gate.state == .locked)
+        #expect(await fixture.gate.adultLibraryIsClosed)
+        let written = await running.value
+        // Every write that reported success is in the file, and no other.
+        fixture.authenticator.add(.passed)
+        let again = try await fixture.unlock()
+        #expect(try await again.categories().count == written)
     }
 
     // MARK: - Criterion 14: one operation at a time; an unlock discarded
@@ -299,7 +348,8 @@ struct AdultGateTests {
 
         #expect(await unlocking.value == "discarded")
         #expect(await gate.state == .locked)
-        #expect(await waitForRelease(fixture.store))
+        #expect(await fixture.store.adultLibraryIsClosed)
+        #expect(await fixture.store.adultLibraryObjectIsReleased)
     }
 
     // MARK: - Criterion 10: authenticating for the settings
@@ -312,7 +362,7 @@ struct AdultGateTests {
 
         #expect(await fixture.gate.authenticateForSettings(reason: "Open the settings") == .passed)
         #expect(await fixture.gate.state == .locked)
-        #expect(await fixture.store.adultLibraryIsReleased)
+        #expect(await fixture.store.adultLibraryIsClosed)
 
         #expect(await fixture.gate.authenticateForSettings(reason: "Open the settings") == .refused(.notAuthenticated(.cancelled)))
         #expect(await fixture.gate.state == .locked)
@@ -334,7 +384,7 @@ struct AdultGateTests {
 
         #expect(await next.gate.state == .locked)
         #expect(await next.gate.lockTiming == .afterOneMinute)
-        #expect(await next.store.adultLibraryIsReleased)
+        #expect(await next.store.adultLibraryIsClosed)
         #expect(next.authenticator.reasons.isEmpty)
     }
 
@@ -357,7 +407,7 @@ struct AdultGateTests {
         #expect(fixture.gate.adultLibraryFileExists)
         #expect(fixture.keys.references == [reference])
         #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.adultCacheDirectory.path).count == 1)
-        #expect(await waitForRelease(fixture.store))
+        #expect(await fixture.store.adultLibraryIsClosed)
         // While off, nothing is reachable.
         fixture.authenticator.add(.passed)
         #expect(await fixture.gate.unlock(reason: "unlock").summary == "refused(notAllowed)")
@@ -397,7 +447,7 @@ struct AdultGateTests {
         #expect(fixture.adultFiles().isEmpty)
         #expect(fixture.keys.references.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: fixture.adultCacheDirectory.path))
-        #expect(await fixture.store.adultLibraryIsReleased)
+        #expect(await fixture.store.adultLibraryIsClosed)
         // The normal partition is untouched.
         #expect(try await normal.categories().map(\.name) == ["Normal"])
         #expect(await normal.imageCache.size() == 1)
@@ -420,7 +470,7 @@ struct AdultGateTests {
 
         #expect(fixture.adultFiles().isEmpty)
         // The store forgot the object although it is still alive here.
-        #expect(await fixture.store.adultLibraryIsReleased)
+        #expect(await fixture.store.adultLibraryIsClosed)
         await #expect(throws: LibraryError.self) { try await held.categories() }
         await #expect(throws: LibraryError.self) { try await held.createCategory(name: "Late", icon: .heart) }
         #expect(fixture.adultFiles().isEmpty)
@@ -520,7 +570,7 @@ struct AdultGateTests {
         try await adult.pool.writeWithoutTransaction { db in _ = try db.checkpoint(.truncate) }
         _ = consume adult
         await fixture.gate.lock()
-        #expect(await waitForRelease(fixture.store))
+        #expect(await fixture.store.adultLibraryIsClosed)
         let before = try Data(contentsOf: fixture.databaseURL)
         let filesBefore = fixture.adultFiles()
 
@@ -536,7 +586,7 @@ struct AdultGateTests {
         await off.gate.lock()
         // Nobody was asked, nothing was opened, written or removed.
         #expect(off.authenticator.reasons.isEmpty)
-        #expect(await off.store.adultLibraryIsReleased)
+        #expect(await off.store.adultLibraryIsClosed)
         #expect(try Data(contentsOf: fixture.databaseURL) == before)
         #expect(fixture.adultFiles() == filesBefore)
         #expect(Preferences(fixture.defaults).adultPartitionIsOn)

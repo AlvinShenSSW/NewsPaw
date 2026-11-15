@@ -50,9 +50,10 @@ struct RootView: View {
 
 #if DEBUG
 /// The element the UI tests read (RD18 decision 4): whether the adult
-/// library's file exists and whether the library, the adult workspace and
-/// its browser model are released. Present only under a UI-test library
-/// directory; a debug build only.
+/// library's file exists, whether its connections are closed, and whether
+/// the library object, the adult workspace and its browser model are gone
+/// from memory. Present only under a UI-test library directory; a debug
+/// build only.
 private struct AdultDebugElement: View {
     @Environment(AppModel.self) private var model
     @State private var report = ""

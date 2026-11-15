@@ -105,6 +105,9 @@ final class AppModel {
     /// Whether the UI tests' report element is shown: only under a UI-test
     /// library directory.
     private(set) var showsDebugReport = false
+    /// The slow-save option, which the adult workspace's first category
+    /// save takes too, so that a save can be overrun by a lock.
+    @ObservationIgnored private var slowNextSave: Duration?
     @ObservationIgnored private var adultWasShown = false
     @ObservationIgnored private weak var lastAdultWorkspace: Workspace?
     @ObservationIgnored private weak var lastAdultBrowser: BrowserModel?
@@ -169,6 +172,7 @@ final class AppModel {
             ?? KeychainKeyStore(partition: .adult)
         let adultIsEnabled = BuildFeatures.adultPartition && !(options.libraryDirectory != nil && options.adultFeatureOff)
         showsDebugReport = options.libraryDirectory != nil
+        slowNextSave = options.slowNextSave
         #else
         let directory = LibraryStore.defaultDirectory()
         let transport: any Transport = URLSessionTransport()
@@ -278,6 +282,9 @@ final class AppModel {
         switch await gate.unlock(reason: String(localized: "Unlock the adult partition")) {
         case .unlocked(let library):
             let workspace = Workspace(library: library, parts: parts, browser: makeAdultBrowser())
+            #if DEBUG
+            workspace.categories.slowNextSave = slowNextSave
+            #endif
             await workspace.load()
             // From here to the end of the case nothing suspends before the
             // workspace is shown: the check and the showing are one step.
@@ -335,7 +342,9 @@ final class AppModel {
     /// or the timing rule. In one step, with no suspension and without
     /// animation, the normal workspace is shown at the root of the current
     /// tab and the adult workspace is told to stop and dropped; then the
-    /// gate locks, and the store lets go of the adult library.
+    /// gate locks, which closes the adult library's connections. What a
+    /// kept reference of the dropped workspace does after that fails and
+    /// is shown nowhere.
     func lock() {
         guard let workspace = adult, let normal else { return }
         withoutAnimation {
@@ -595,16 +604,18 @@ final class AppModel {
     #if DEBUG
     // MARK: - The UI tests' report (decision 4)
 
-    /// Whether the adult library's file exists and whether the library,
-    /// the adult workspace and its browser model are released.
+    /// Whether the adult library's file exists, whether a pool is open on
+    /// it, and whether the library object, the adult workspace and its
+    /// browser model are gone from memory.
     func adultDebugReport() async -> String {
         guard let gate else { return "" }
         let file = gate.adultLibraryFileExists ? 1 : 0
-        let library = await gate.adultLibraryIsReleased ? "released" : "held"
+        let pool = await gate.adultLibraryIsClosed ? "closed" : "open"
+        let library = await gate.adultLibraryObjectIsReleased ? "released" : "held"
         func state(_ object: AnyObject?) -> String {
             !adultWasShown ? "none" : object == nil ? "released" : "held"
         }
-        return "file=\(file) library=\(library) workspace=\(state(lastAdultWorkspace)) browser=\(state(lastAdultBrowser))"
+        return "file=\(file) pool=\(pool) library=\(library) workspace=\(state(lastAdultWorkspace)) browser=\(state(lastAdultBrowser))"
     }
     #endif
 }

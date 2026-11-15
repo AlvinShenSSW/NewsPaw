@@ -33,13 +33,14 @@ final class AdultLockTests: AdultTestCase {
     /// After each way of locking the app is at the root of the current tab
     /// of the normal partition, a walk over every screen finds none of the
     /// adult names, and the adult library, its workspace and its browser
-    /// workspace is released: also when the lock came while a refresh was
-    /// running, and while a sheet and the browser were open. In this test
-    /// an article was starred by a swipe and menus were used, after which
-    /// UIKit keeps the views' models and the library object (assumption
-    /// A4), so the library and the browser model are asserted released
-    /// only in the tests whose paths UIKit does not hold; here the report
-    /// is recorded.
+    /// library's connections are closed and its workspace is gone: also
+    /// when the lock came while a refresh was running, and while a sheet
+    /// and the browser were open; and what the stopped workspace's tasks
+    /// run into raises no alert. In this test an article was starred by a
+    /// swipe and menus were used, after which UIKit keeps the views'
+    /// models and the library object (assumption A4): whether those
+    /// objects are gone is recorded here and asserted in the tests whose
+    /// paths UIKit does not hold.
     func testNothingOfTheAdultPartitionIsLeftAfterALock() {
         // Turning on, three unlocks, and Settings › Adult Partition opened
         // from the normal partition in each of the three walks.
@@ -53,8 +54,11 @@ final class AdultLockTests: AdultTestCase {
         tapLock()
         waitForPartition(Wording.normal)
         XCTAssertFalse(lockButton.exists)
-        waitForReport("file=1", Self.releasedByTheApp, seconds: Self.releaseAtOnce)
+        waitForReport("file=1", Self.closed, Self.dropped)
         record("RD18 after the lock button", report)
+        // The cancelled refresh's last reads fail against the closed
+        // library; nothing says so.
+        XCTAssertFalse(app.alerts.firstMatch.waitForExistence(timeout: 4), "an alert after the lock")
         walkTheNormalPartition("after the lock button")
 
         // 2. Normal chosen in the switch, from the Starred tab: the normal
@@ -68,7 +72,7 @@ final class AdultLockTests: AdultTestCase {
         if usesTabs {
             XCTAssertTrue(app.tabBars.buttons.element(boundBy: 2).isSelected, "not on the Starred tab")
         }
-        waitForReport(Self.releasedByTheApp, seconds: Self.releaseAtOnce)
+        waitForReport(Self.closed, Self.dropped)
         record("RD18 after choosing Normal", report)
         walkTheNormalPartition("after choosing Normal")
 
@@ -79,14 +83,15 @@ final class AdultLockTests: AdultTestCase {
         openWebPageSource(in: "Velvet")
         chooseInMore("Save This Page as a Source")
         waitFor(app.textFields[AccessibilityID.addressField])
-        waitForReport("library=held", "workspace=held", "browser=held", seconds: Self.releaseAtOnce)
+        waitForReport("pool=open", "library=held", "workspace=held", "browser=held")
         leaveAndReturn()
         waitForAbsence(app.textFields[AccessibilityID.addressField])
         waitForAbsence(moreMenu)
         waitForPartition(Wording.normal)
         XCTAssertFalse(lockButton.exists)
-        waitForReport(Self.releasedByTheApp, seconds: Self.releaseAtOnce)
+        waitForReport(Self.closed, Self.dropped)
         record("RD18 after the timing rule", report)
+        XCTAssertFalse(app.alerts.firstMatch.exists, "an alert after the lock")
         walkTheNormalPartition("after the timing rule")
     }
 
@@ -154,7 +159,7 @@ final class AdultLockTests: AdultTestCase {
         tapAdultRow()
         waitFor(turnOffButton)
         assertNothingShown(of: names, on: "Settings › Adult Partition \(when)")
-        XCTAssertTrue(report.contains(Self.releasedByTheApp), report)
+        XCTAssertTrue(report.contains(Self.closed) && report.contains(Self.dropped), report)
         openSettings()
     }
 
@@ -230,7 +235,7 @@ final class AdultLockTests: AdultTestCase {
         // Still unlocked, and its settings still open.
         XCTAssertTrue(turnOffButton.waitForExistence(timeout: 3))
         XCTAssertEqual(partitionLabel(), Wording.adult)
-        waitForReport("library=held", "workspace=held")
+        waitForReport("pool=open", "library=held", "workspace=held")
 
         // A relaunch starts in the normal partition, with nothing opened,
         // and keeps the setting.
@@ -238,7 +243,7 @@ final class AdultLockTests: AdultTestCase {
         launchAtFullWidth(authentication: ["passed", "passed"])
         XCTAssertEqual(partitionLabel(), Wording.normal)
         XCTAssertFalse(lockButton.exists)
-        waitForReport("file=1", "library=released", "workspace=none")
+        waitForReport("file=1", Self.closed, "library=released", "workspace=none")
         showCategoryList()
         waitFor(element(AccessibilityID.categoryRow("World")))
         tapAdultRow()
@@ -252,17 +257,50 @@ final class AdultLockTests: AdultTestCase {
         leaveAndReturn()
         waitForPartition(Wording.normal)
         XCTAssertFalse(lockButton.exists)
-        // No menu was used in the adult partition of this launch.
-        waitForReport("library=released", "workspace=released", "browser=released", seconds: Self.releaseAtOnce)
+        // Closed; and no menu was used in the adult partition of this
+        // launch, so nothing of it is held either.
+        waitForReport(Self.closed, "library=released", Self.dropped, "browser=released")
+    }
+
+    // MARK: - A kept reference fails quietly
+
+    /// A category save of the adult partition that is still waiting when
+    /// the partition locks runs into the closed library: it fails, nothing
+    /// says so in the normal partition, and nothing was saved.
+    func testASaveOverrunByALockFailsQuietly() {
+        // The first category save of each workspace waits 6 seconds.
+        launchAtFullWidth(slowNextSave: 6, authentication: ["passed", "passed", "passed"])
+        turnOnAdult()
+        enterAdult()
+        openNewCategory()
+        let field = app.textFields[AccessibilityID.nameField]
+        field.tap()
+        field.typeText("Velvet\n")
+        tapSave()
+        // The timing rule ("immediately") locks while the save waits.
+        leaveAndReturn()
+        waitForAbsence(field)
+        waitForPartition(Wording.normal)
+        waitForReport(Self.closed, Self.dropped)
+        // Past the moment the save ran and failed.
+        XCTAssertFalse(app.alerts.firstMatch.waitForExistence(timeout: 8), "the failed save of the locked partition raised an alert")
+        assertNothingShown(of: ["Velvet"], on: "the normal partition")
+        XCTAssertTrue(report.contains(Self.closed), report)
+        // Nothing was saved: the adult partition has no category.
+        enterAdult()
+        showCategoryList()
+        waitFor(element(AccessibilityID.noCategories))
+        XCTAssertFalse(element(AccessibilityID.categoryRow("Velvet")).exists)
     }
 
     // MARK: - Criterion 7, without a menu
 
     /// The timing rule locks while the browser is open on an adult web
-    /// page and a sheet is open above it: the library, the workspace, the
-    /// browser model and with it the web view are released at once. On the
-    /// panes nothing here uses a menu; on the tab structure the "+" menu
-    /// does, so UIKit's timer may hold them for its minute.
+    /// page and a sheet is open above it: the library is closed at once,
+    /// and the library object, the workspace, the browser model and with
+    /// it the web view are gone from memory. On the panes nothing here
+    /// uses a menu; on the tab structure the "+" menu does, so UIKit's
+    /// timer may hold the objects for its minute.
     func testALockWithTheBrowserAndASheetOpenReleasesEverything() {
         launchAtFullWidth(authentication: ["passed", "passed"])
         turnOnAdult()
@@ -270,7 +308,7 @@ final class AdultLockTests: AdultTestCase {
         createCategory("Velvet")
         addWebPageSource(to: "Velvet")
         openWebPageSource(in: "Velvet")
-        waitForReport("library=held", "workspace=held", "browser=held", seconds: Self.releaseAtOnce)
+        waitForReport("pool=open", "library=held", "workspace=held", "browser=held")
         if usesTabs {
             leaveAndReturn()
         } else {
@@ -281,9 +319,9 @@ final class AdultLockTests: AdultTestCase {
         }
         waitForAbsence(moreMenu)
         waitForPartition(Wording.normal)
+        waitForReport(Self.closed, Self.dropped)
         waitForReport(
-            "library=released", "workspace=released", "browser=released",
-            seconds: usesTabs ? Self.releaseAfterAMenu : Self.releaseAtOnce
+            "library=released", "browser=released", seconds: usesTabs ? Self.releaseAfterAMenu : Self.atOnce
         )
     }
 

@@ -237,3 +237,46 @@ Version 2 after debate round 1 (one fresh critic; 12 findings; code read at d91d
 | D12 | P3 | "Sidebar selection set to its launch default, tab kept" contradicted itself; the list on screen after a return was a stale snapshot; the away time could be overwritten; criterion 1's directory check had no mechanism; a thumbnail store ending late could recreate the cache directory | "Tab kept, paths empty", the list entered (decision 3); first will-deactivate kept (decision 8); the debug element reports the file (criterion 1); the cache directory removed last (decision 9) |
 
 Not re-reviewed after these changes. Not measured by anyone yet: everything in the Assumptions table.
+
+## Post-implementation record
+
+Added by the implementer on 2026-11-15, after the assumptions were measured. The text above is the frozen design and is unchanged; where this section differs from it, this section is what was built. Evidence is in the run's evidence directory (`rd18/assumptions.md`, `rd18/a4/`, `rd18/probe-logs/`).
+
+### Assumption A4 as measured: UIKit keeps the adult views' environment after a lock
+
+Measured on the iPad simulator (iOS 27.0) with the design's debug element and `leaks <pid> --trace=<the adult BrowserModel>`, with the design as frozen (the store holding the adult library weakly after a lock):
+
+| Path in the adult partition before the lock | The library object and the browser model object after the lock | Holder |
+| --- | --- | --- |
+| Lists, sheets and the browser only (also with the browser on a page and a sheet open at the lock) | Gone within 1 to 4 seconds | none |
+| Any menu used (a row's context menu, a toolbar menu, and therefore choosing "Normal" in the partition switch); the same with the app's animations on | Held at 40 seconds, gone by 75 seconds | An `NSTimer` of UIKit's `-[_UIMenuPresentationSourceSceneComponent scheduleClearPresentationSourceForSource…]` holds the `_UIMenuPresentationSource`, whose `_sourceView` holds SwiftUI's list coordinator and with it the views' environment |
+| An article opened (the reading screen has selectable text), or a row starred by a swipe | Still held at 90, 150 and 240 seconds; not seen to end | `UIKeyboardImpl.m_markedTextOverlay._cachedTraitCollection`, and in another run `_UISystemBackgroundView._cachedTraitCollection` of bar buttons: a `UITraitCollection` whose custom trait `SwiftUIEnvironmentWrapper` is SwiftUI's environment |
+
+The `Workspace` object was gone at once in every run: the app's own objects have no cycle. What is kept is UIKit's: it caches trait collections, each trait collection carries the whole SwiftUI environment of the view it came from, and the environment holds the models, which hold the library. The app has no public way to empty those caches. After the lock nothing of the adult partition is on screen or in the accessibility tree (checked by a dump of it), and the gate is locked.
+
+### Decision 4, as built: the adult library is closed at every lock
+
+By the driver's decision of 2026-11-15, in place of "the store then holds the adult library only weakly … an unlock while the old object is still alive gets that same object back":
+
+- `AdultGate.lock()` has the store **close the adult library's connections explicitly and forget the object** (`LibraryStore.closeAdultLibrary()`). Deleting the partition's data closes by the same function; there is one closing path.
+- The close waits for the one read and the one write in flight and for nothing else (GRDB's `DatabasePool.close()`; measured in `AdultLibraryCloseTests.closeWaitsForWhatIsInFlight`). It has no time limit of its own: its bound is the transaction in flight, and each of the app's transactions is one short group of statements. If a write did not end, the close would not return: the interface has already swapped to the normal partition and the gate already answers "locked" before the close is asked for, so nothing adult is shown or given out meanwhile; the file stays open until the write ends, and an unlock asked for meanwhile authenticates and then waits for the store. A write that was in flight is committed; one that had not started fails.
+- Every later use of a reference that something still holds fails with `LibraryError.storage` and touches no file. The next unlock opens a new pool on the file, with the data as the last committed write left it. There are never two open pools: a pool that could not be closed stays the store's and is the object the next unlock gets.
+- `Workspace.stop()` runs before the close and cancels the refresh run, the source detection, a running model test and the browser sessions. A save that was queued is not cancelled; it runs into the closed library and fails. A stopped workspace's models raise no alert for anything (`CategoryModel` and `SourceModel` refuse to show "The change could not be saved." once stopped), and the app writes no log, so such a failure surfaces nowhere (`AdultGateTests.keptReferenceFailsQuietly`; UI test `testASaveOverrunByALockFailsQuietly`).
+- One operation at a time still holds for the gate's other operations. `lock()` is never refused, as before.
+
+### Criterion 7, reworded
+
+> After locking — by the button, by choosing Normal, by the timing rule — and whatever was done in the adult partition before it (lists only; a menu used; an article opened; a row swiped; a refresh running; a sheet and the browser open), the adult library's connections are closed and the adult workspace object is gone. The library object and the browser model object are gone from memory where UIKit does not keep the views' environment (lists, sheets, the browser); where it does, the holder is named.
+
+Evidence: package tests of the store and the gate (closed at once although a reference is held; the held reference fails; the next unlock is a new pool); UI tests through the debug element, whose report is now `file=<0|1> pool=<open|closed> library=<held|released> workspace=<none|held|released> browser=<none|held|released>` — `pool=closed` and `workspace=released` are asserted after every lock on every path, `library=released` and `browser=released` on the paths of the table's first row, and recorded on the others.
+
+### Known limits
+
+- A model object that UIKit keeps after a lock still holds what it had loaded: the category and source summaries, the rows of the lists that were read, the articles that were opened. That is memory of the same process; nothing shows it, and it is not emptied. It goes when UIKit lets go of the trait collection or the menu's source view: after about a minute for a menu, and not within the four minutes measured for an opened article or a swiped row.
+- Whether the browser model object, and with it the workspace's other model objects, is released after a lock is outside the app's control on those paths. Its sessions are ended and its web views are taken out of the view tree and released by `stop()` in every case.
+- Assumption A7: in an iPad window that is not full screen, Home delivers no scene notification at all; the app neither shows the cover nor locks until another app is opened, the device is locked or Notification Centre is opened fully (`rd18/assumptions.md`, with what stays visible in the strip).
+
+### Handoff notes, added
+
+- RD24: background collection of adult sources can no longer share a living library object with the interface across a lock. A lock closes the pool under whatever holds it, so a run that is collecting when the partition locks has its later reads and writes fail. RD24 decides whether a lock waits for a run or cancels it, and opens the adult library for itself through the store.
+- RD19: Delete closes by the same path as a lock; removing the adult browser's own data store joins it there.

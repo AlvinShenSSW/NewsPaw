@@ -23,32 +23,36 @@ class AdultTestCase: BrowserTestCase {
 
     // MARK: - The report (decision 4)
 
-    /// `file=<0|1> library=<held|released> workspace=<none|held|released>
-    /// browser=<none|held|released>`.
+    /// `file=<0|1> pool=<open|closed> library=<held|released>
+    /// workspace=<none|held|released> browser=<none|held|released>`:
+    /// whether the adult library's file exists, whether connections are
+    /// open on it, and whether the library object, the adult workspace and
+    /// its browser model are gone from memory.
     var report: String {
         element(DebugAccessibilityID.adultReport).label
     }
 
-    /// How long a release may take after a lock when a menu was used in
-    /// the adult partition shortly before it and nothing else holds: UIKit
-    /// keeps the source view of the last menu it presented, and through
-    /// its environment the models and the library, until a timer of its
-    /// own clears it (measured: between 40 and 75 seconds;
-    /// `_UIMenuPresentationSourceSceneComponent`).
+    /// What every lock leaves at once, on every path (RD18 criterion 7 as
+    /// built): the adult library's connections are closed, and the
+    /// workspace object is gone, so no cycle of the app's own holds it.
+    static let closed = "pool=closed"
+    static let dropped = "workspace=released"
+    /// How long that may take: the lock's own step, with the read or the
+    /// write in flight.
+    static let atOnce: TimeInterval = 10
+    /// How long the objects' release may take after a menu was used in the
+    /// adult partition and nothing else holds them: UIKit keeps the source
+    /// view of the last menu it presented, and through its environment the
+    /// models and the library object, until a timer of its own clears it
+    /// (measured: between 40 and 75 seconds;
+    /// `_UIMenuPresentationSourceSceneComponent`). After an article was
+    /// opened or a row swiped UIKit keeps them for longer than a test can
+    /// wait (trait collections that carry the views' environment); there
+    /// the objects' state is recorded, not asserted.
     static let releaseAfterAMenu: TimeInterval = 90
-    /// How long a release may take when UIKit holds nothing: the tasks
-    /// that were running in the workspace end, and it is gone.
-    static let releaseAtOnce: TimeInterval = 10
-    /// What every lock must leave, whatever was done before it: the
-    /// workspace object itself is gone, so no cycle of the app's own holds
-    /// it. After an article was opened or a row swiped, UIKit keeps trait
-    /// collections that carry the views' environment, and with it the
-    /// models and the library object, for longer than a test can wait
-    /// (measured, RD18 assumption A4); those paths assert this much.
-    static let releasedByTheApp = "workspace=released"
 
     /// Waits until the report holds every one of `parts`.
-    func waitForReport(_ parts: String..., seconds: TimeInterval = AdultTestCase.releaseAfterAMenu,
+    func waitForReport(_ parts: String..., seconds: TimeInterval = AdultTestCase.atOnce,
                        file: StaticString = #filePath, line: UInt = #line) {
         let asked = Date()
         let reported = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in

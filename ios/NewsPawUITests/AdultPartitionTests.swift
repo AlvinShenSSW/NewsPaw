@@ -12,7 +12,7 @@ final class AdultPartitionTests: AdultTestCase {
     /// feature switch is on, the partition is off.
     func testFreshInstallHasNoSwitchAndNoAdultFile() {
         launchAtFullWidth()
-        waitForReport("file=0", "library=released", "workspace=none")
+        waitForReport("file=0", Self.closed, "library=released", "workspace=none")
         if app.tabBars.firstMatch.exists {
             for tab in 0..<3 {
                 app.tabBars.buttons.element(boundBy: tab).tap()
@@ -30,7 +30,7 @@ final class AdultPartitionTests: AdultTestCase {
         XCTAssertEqual(adultToggle.value as? String, "0")
         XCTAssertTrue(element(AccessibilityID.adultExplanation).exists)
         XCTAssertFalse(turnOffButton.exists)
-        waitForReport("file=0", "library=released", "workspace=none")
+        waitForReport("file=0", Self.closed, "library=released", "workspace=none")
     }
 
     // MARK: - Criterion 2: turning on
@@ -62,7 +62,7 @@ final class AdultPartitionTests: AdultTestCase {
         XCTAssertTrue(timing("Immediately").isSelected)
         // The file exists, nothing holds it open, and no adult workspace
         // was built: the app is still in the normal partition.
-        waitForReport("file=1", "library=released", "workspace=none")
+        waitForReport("file=1", Self.closed, "library=released", "workspace=none")
         if app.tabBars.firstMatch.exists {
             for tab in 0..<3 {
                 app.tabBars.buttons.element(boundBy: tab).tap()
@@ -118,7 +118,7 @@ final class AdultPartitionTests: AdultTestCase {
             waitFor(button(AccessibilityID.addMenu))
         }
         XCTAssertFalse(element(AccessibilityID.categoryRow("World")).exists)
-        waitForReport("file=1", "library=held", "workspace=held")
+        waitForReport("file=1", "pool=open", "library=held", "workspace=held")
         // Criterion 18: both controls are at least 44 pt tall.
         XCTAssertGreaterThanOrEqual(partitionSwitch.frame.height, 44)
         XCTAssertGreaterThanOrEqual(lockButton.frame.height, 44)
@@ -129,9 +129,9 @@ final class AdultPartitionTests: AdultTestCase {
         waitForPartition(Wording.normal)
         XCTAssertFalse(lockButton.exists)
         waitFor(element(AccessibilityID.categoryRow("World")))
-        // No menu was used in the adult partition: nothing of it is held
-        // once its own tasks have ended.
-        waitForReport("library=released", "workspace=released", "browser=released", seconds: Self.releaseAtOnce)
+        // Closed; and since no menu was used, no article opened and no row
+        // swiped in the adult partition, nothing of it is held either.
+        waitForReport(Self.closed, "library=released", Self.dropped, "browser=released")
     }
 
     /// The other stand-in order (decision 15): the answer comes only after
@@ -159,7 +159,7 @@ final class AdultPartitionTests: AdultTestCase {
         XCTAssertFalse(lockButton.waitForExistence(timeout: 3))
         XCTAssertEqual(partitionLabel(), Wording.normal)
         XCTAssertFalse(app.alerts.firstMatch.exists, "a discarded unlock says nothing")
-        waitForReport("library=released", "workspace=none")
+        waitForReport(Self.closed, "library=released", "workspace=none")
         // And the gate is free for the next choice.
         enterAdult()
     }

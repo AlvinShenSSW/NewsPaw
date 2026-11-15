@@ -7,6 +7,8 @@ import Foundation
 /// One operation runs at a time: a call made while another is running
 /// answers `busy` and does nothing. `lock()` is the exception: it always
 /// locks, and an unlock that was running when it was called is discarded.
+/// A lock closes the adult library's connections; the next unlock opens
+/// new ones, and the store never has two pools open on the file.
 ///
 /// Its answers are closed enumerations. No text of a keychain or file error
 /// reaches the interface: only "could not be opened", with the
@@ -149,20 +151,25 @@ public actor AdultGate {
             return .couldNotOpen(error as? LibraryError ?? .storage(String(describing: type(of: error))))
         }
         guard locks == locksBefore else {
-            // Locked while the library was being opened: let go of it again.
-            await store.releaseAdultLibrary()
+            // Locked while the library was being opened: closed again.
+            try? await store.closeAdultLibrary()
             return .discarded
         }
         isUnlocked = true
         return .unlocked(library)
     }
 
-    /// Locks the partition: the store lets go of the adult library. Never
-    /// fails, and is never refused: an unlock running now is discarded.
+    /// Locks the partition: the store closes the adult library's
+    /// connections and forgets the object. It waits for the one read and
+    /// the one write in flight, with no time limit of its own; every later
+    /// use of a reference that something still holds fails. Never fails,
+    /// and is never refused: an unlock running now is discarded.
     public func lock() async {
         locks += 1
         isUnlocked = false
-        await store.releaseAdultLibrary()
+        // A pool that could not be closed stays the store's, and the next
+        // unlock gets that same object: `adultLibraryIsClosed` says so.
+        try? await store.closeAdultLibrary()
     }
 
     /// Authenticates for Settings › Adult Partition and changes nothing: it
@@ -225,9 +232,16 @@ public actor AdultGate {
         store.adultLibraryExists
     }
 
-    /// Whether nothing in the process holds the adult library any more
-    /// (RD18 criterion 7); for the debug element of the UI tests.
-    public var adultLibraryIsReleased: Bool {
-        get async { await store.adultLibraryIsReleased }
+    /// Whether no pool is open on the adult library's file (RD18 criterion
+    /// 7): true after every lock, whatever still holds the object; for the
+    /// debug element of the UI tests.
+    public var adultLibraryIsClosed: Bool {
+        get async { await store.adultLibraryIsClosed }
+    }
+
+    /// Whether the adult library object last given out is gone from
+    /// memory; for the debug element of the UI tests.
+    public var adultLibraryObjectIsReleased: Bool {
+        get async { await store.adultLibraryObjectIsReleased }
     }
 }

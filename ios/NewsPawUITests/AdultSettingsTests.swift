@@ -27,7 +27,7 @@ final class AdultSettingsTests: AdultTestCase {
         waitFor(turnOffButton)
         // The partition is still locked: no adult workspace was built and
         // the library was not opened.
-        XCTAssertTrue(report.contains("library=released") && report.contains("workspace=none"), report)
+        XCTAssertTrue(report.contains(Self.closed) && report.contains("library=released") && report.contains("workspace=none"), report)
         XCTAssertEqual(partitionLabel(), Wording.normal)
         XCTAssertFalse(lockButton.exists)
     }
@@ -56,7 +56,7 @@ final class AdultSettingsTests: AdultTestCase {
         // is kept and not held open.
         waitFor(adultToggle)
         XCTAssertEqual(adultToggle.value as? String, "0")
-        waitForReport("file=1", "library=released")
+        waitForReport("file=1", Self.closed, Self.dropped)
         XCTAssertFalse(switchIsOffered(), "the partition switch is still shown")
 
         // Turning on again brings the data back.
@@ -96,10 +96,8 @@ final class AdultSettingsTests: AdultTestCase {
         waitFor(adultRow)
         XCTAssertFalse(turnOffButton.exists)
         XCTAssertFalse(app.alerts.firstMatch.exists, "a deletion that worked says nothing")
-        // The store has closed and forgotten the library; the workspace is
-        // gone. (The "+" menu of the tab structure may keep the browser
-        // model for UIKit's minute.)
-        waitForReport("file=0", "library=released", "workspace=released", "browser=released")
+        // The library is closed and its file gone; the workspace is gone.
+        waitForReport("file=0", Self.closed, Self.dropped)
         XCTAssertFalse(switchIsOffered(), "the partition switch is still shown")
         showCategoryList()
         waitFor(element(AccessibilityID.categoryRow("World")))
@@ -125,7 +123,7 @@ final class AdultSettingsTests: AdultTestCase {
         turnOnAdult()
         enterAdult()
         createCategory("Velvet")
-        waitForReport("file=1", "library=held")
+        waitForReport("file=1", "pool=open", "library=held")
         app.terminate()
 
         launchAtFullWidth(authentication: ["passed", "passed"], adultFeatureOff: true)
@@ -142,7 +140,7 @@ final class AdultSettingsTests: AdultTestCase {
         }
         XCTAssertFalse(lockButton.exists)
         // The file is there and nothing opened it.
-        waitForReport("file=1", "library=released", "workspace=none")
+        waitForReport("file=1", Self.closed, "library=released", "workspace=none")
 
         // The next launch with the feature on has everything again.
         app.terminate()

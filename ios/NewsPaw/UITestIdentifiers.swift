@@ -257,8 +257,11 @@ enum UITestLaunchKey {
 /// Identifiers of what exists only in a debug build under the UI tests.
 enum DebugAccessibilityID {
     /// The element that reports the adult library's state (RD18 decision
-    /// 4): its label is `file=<0|1> library=<held|released>
-    /// workspace=<none|held|released> browser=<none|held|released>`.
+    /// 4): its label is `file=<0|1> pool=<open|closed>
+    /// library=<held|released> workspace=<none|held|released>
+    /// browser=<none|held|released>`. `pool` is whether connections are
+    /// open on the file; the other three are whether the objects are gone
+    /// from memory.
     static let adultReport = "debug.adultReport"
 }
 #endif

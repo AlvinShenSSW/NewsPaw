@@ -168,15 +168,3 @@ extension AdultGate.UnlockResult {
         }
     }
 }
-
-/// Waits until the store reports the adult library released, for a short
-/// while: a task that held it may still be ending.
-func waitForRelease(_ store: LibraryStore) async -> Bool {
-    for _ in 0..<500 {
-        if await store.adultLibraryIsReleased {
-            return true
-        }
-        try? await Task.sleep(for: .milliseconds(2))
-    }
-    return false
-}

@@ -155,6 +155,6 @@ final class AdultScreenshotTests: AdultTestCase {
         Thread.sleep(forTimeInterval: 3)
         XCTAssertFalse(field.exists, "the adult sheet is still shown")
         XCTAssertEqual(partitionLabel(), Wording.normal)
-        waitForReport(Self.releasedByTheApp, seconds: Self.releaseAtOnce)
+        waitForReport(Self.closed, Self.dropped)
     }
 }

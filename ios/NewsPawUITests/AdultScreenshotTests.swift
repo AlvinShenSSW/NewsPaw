@@ -104,7 +104,10 @@ final class AdultScreenshotTests: AdultTestCase {
         if usesTabs {
             goBack()
         }
-        openCategorySettings("Velvet")
+        // By the list's own menu, whose items are found in either language.
+        openCategoryList("Velvet")
+        openListSettings(source: false)
+        waitFor(app.textFields[AccessibilityID.nameField])
         capture("adult-category-settings")
         button(AccessibilityID.cancelButton).tap()
         waitForAbsence(app.textFields[AccessibilityID.nameField])

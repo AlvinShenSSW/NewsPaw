@@ -339,7 +339,18 @@ final class ReadingModel {
             } catch {
                 body = .failed
             }
-            guard !Task.isCancelled, self.navigation.openArticles.contains(id) else { return }
+            // A cancelled task was replaced or dropped: what stands for the
+            // article now is not its to change.
+            guard !Task.isCancelled else { return }
+            guard self.navigation.openArticles.contains(id) else {
+                // Not open at this moment: nothing is kept, so that opening
+                // it again reads it again instead of waiting for a task that
+                // has ended.
+                self.bodies[id] = nil
+                self.bodyTasks[id] = nil
+                self.positions[id] = nil
+                return
+            }
             self.bodies[id] = body
             self.bodyTasks[id] = nil
         }

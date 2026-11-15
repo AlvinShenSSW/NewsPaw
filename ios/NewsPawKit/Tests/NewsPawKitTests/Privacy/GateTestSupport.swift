@@ -5,8 +5,11 @@ import Testing
 
 /// The device authenticator of the package tests (RD18 decision 2): it
 /// answers from a list, in order, and "unavailable" once the list is used
-/// up. It can be told to hold every request until it is released, to stand
-/// for a prompt that is still on screen. It never calls LocalAuthentication.
+/// up. It can be told to hold its next request until it is released, to
+/// stand for a prompt that is still on screen; a request made meanwhile is
+/// answered at once, so that a second prompt, which the gate must not ask
+/// for, shows as an answer and not as a test that never ends. It never
+/// calls LocalAuthentication.
 final class StubAuthenticator: DeviceAuthenticator {
     private struct State {
         var answers: [AuthenticationAnswer]
@@ -30,12 +33,12 @@ final class StubAuthenticator: DeviceAuthenticator {
         state.withLock { $0.answers += answers }
     }
 
-    /// From now on a request waits until `release()`.
+    /// The next request waits until `release()`.
     func hold() {
         state.withLock { $0.holds = true }
     }
 
-    /// Lets every held request answer, and later ones answer at once.
+    /// Lets the held request answer.
     func release() {
         let held = state.withLock { state in
             state.holds = false
@@ -58,10 +61,12 @@ final class StubAuthenticator: DeviceAuthenticator {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             let holds = state.withLock { state in
                 state.reasons.append(reason)
-                if state.holds {
+                let holds = state.holds
+                if holds {
                     state.held.append(continuation)
+                    state.holds = false
                 }
-                return state.holds
+                return holds
             }
             if !holds {
                 continuation.resume()

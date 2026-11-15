@@ -45,20 +45,21 @@ struct PartitionMenu: View {
 
     var body: some View {
         Menu {
-            Button {
-                beforeChoice()
-                model.lock()
+            // A picker, so that the system marks the current partition
+            // itself: its checkmark is kept at the largest text sizes,
+            // where a menu drops an item's own image (measured), and
+            // VoiceOver hears it as selected.
+            Picker(selection: choice) {
+                Text("Normal")
+                    .tag(Partition.normal)
+                    .accessibilityIdentifier(AccessibilityID.partitionNormalChoice)
+                Text("Adult")
+                    .tag(Partition.adult)
+                    .accessibilityIdentifier(AccessibilityID.partitionAdultChoice)
             } label: {
-                choice(Text("Normal"), isCurrent: !isAdult)
+                EmptyView()
             }
-            .accessibilityIdentifier(AccessibilityID.partitionNormalChoice)
-            Button {
-                beforeChoice()
-                Task { await model.chooseAdult() }
-            } label: {
-                choice(Text("Adult"), isCurrent: isAdult)
-            }
-            .accessibilityIdentifier(AccessibilityID.partitionAdultChoice)
+            .pickerStyle(.inline)
         } label: {
             capsule
         }
@@ -69,16 +70,17 @@ struct PartitionMenu: View {
         .accessibilityIdentifier(AccessibilityID.partitionSwitch)
     }
 
-    @ViewBuilder
-    private func choice(_ name: Text, isCurrent: Bool) -> some View {
-        if isCurrent {
-            Label {
-                name
-            } icon: {
-                Image(systemName: "checkmark")
+    /// The partition shown; choosing the other one locks, or asks for
+    /// authentication. Choosing the one shown changes nothing.
+    private var choice: Binding<Partition> {
+        Binding {
+            isAdult ? .adult : .normal
+        } set: { partition in
+            beforeChoice()
+            switch partition {
+            case .normal: model.lock()
+            case .adult: Task { await model.chooseAdult() }
             }
-        } else {
-            name
         }
     }
 

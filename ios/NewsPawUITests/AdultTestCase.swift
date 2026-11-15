@@ -185,12 +185,20 @@ class AdultTestCase: BrowserTestCase {
                        file: file, line: line)
     }
 
+    /// A choice of the switch's open menu, by its identifier or, where the
+    /// menu does not carry it, by its English or Simplified Chinese name.
+    func partitionChoice(adult: Bool) -> XCUIElement {
+        let identifier = adult ? AccessibilityID.partitionAdultChoice : AccessibilityID.partitionNormalChoice
+        let names = adult ? ["Adult", "成人"] : ["Normal", "普通"]
+        return app.buttons.matching(NSPredicate(format: "identifier == %@ OR label IN %@", identifier, names)).firstMatch
+    }
+
     /// Opens the switch's menu and taps Adult; what follows is the
     /// stand-in's next answer.
     func chooseAdult() {
         revealSwitchPlace()
         waitFor(partitionSwitch).tap()
-        waitFor(button(AccessibilityID.partitionAdultChoice)).tap()
+        waitFor(partitionChoice(adult: true)).tap()
     }
 
     /// Chooses Adult with a passed answer and waits for the adult
@@ -203,7 +211,7 @@ class AdultTestCase: BrowserTestCase {
     func chooseNormal() {
         revealSwitchPlace()
         waitFor(partitionSwitch).tap()
-        waitFor(button(AccessibilityID.partitionNormalChoice)).tap()
+        waitFor(partitionChoice(adult: false)).tap()
     }
 
     func tapLock() {

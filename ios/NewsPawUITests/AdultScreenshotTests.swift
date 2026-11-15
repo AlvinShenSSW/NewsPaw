@@ -29,7 +29,7 @@ final class AdultScreenshotTests: AdultTestCase {
         func enter() {
             revealSwitchPlace()
             waitFor(partitionSwitch).tap()
-            waitFor(button(AccessibilityID.partitionAdultChoice)).tap()
+            waitFor(partitionChoice(adult: true)).tap()
             revealSwitchPlace()
             waitFor(lockButton)
         }
@@ -58,9 +58,9 @@ final class AdultScreenshotTests: AdultTestCase {
         waitFor(partitionSwitch)
         capture("switch-normal")
         partitionSwitch.tap()
-        waitFor(button(AccessibilityID.partitionAdultChoice))
+        waitFor(partitionChoice(adult: true))
         capture("switch-menu")
-        button(AccessibilityID.partitionNormalChoice).tap()
+        partitionChoice(adult: false).tap()
 
         openSettings()
         capture("settings")

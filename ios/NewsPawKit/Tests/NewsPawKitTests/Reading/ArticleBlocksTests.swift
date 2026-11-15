@@ -600,6 +600,32 @@ struct ArticleBlocksTests {
         #expect(!closedComment.isCut)
     }
 
+    @Test("a body that ends inside a tag that never ends is cut, the text before kept")
+    func endsInsideTag() {
+        for tail in [
+            "<img src=\"https://img.example/a.png", "<img src='https://img.example/a.png", "<img src=https://img.example/a.png",
+            "<a href=\"https://example.com/x\"", "<b", "</p", "</p ", "<!DOCTYPE html", "<!", "<?xml version='1.0'",
+            "<script>c</script", "<iframe>c</IFRAME ",
+        ] {
+            let cut = ArticleBlocks.make(html: "<p>a</p><p>b " + tail, baseURL: base)
+            #expect(cut.blocks == [p("a"), p("b")], "\(tail)")
+            #expect(cut.isCut, "\(tail)")
+        }
+        // The same tags closed: nothing is cut.
+        for closed in [
+            "<img src=\"https://img.example/a.png\" alt=\"x>y\">", "<a href=\"https://example.com/x\">c</a>", "<b>c</b>",
+            "</p>", "</p >", "<!DOCTYPE html>", "<?xml version='1.0'?>", "<script>c</script>", "<iframe>c</IFRAME >",
+        ] {
+            let whole = ArticleBlocks.make(html: "<p>a</p><p>b " + closed + "</p><p>d</p>", baseURL: base)
+            #expect(!whole.isCut, "\(closed)")
+            #expect(whole.blocks.first == p("a") && whole.blocks.last == p("d"), "\(closed): \(whole.blocks)")
+        }
+        // A `<` that starts no tag is text.
+        let text = ArticleBlocks.make(html: "<p>a < b</p>", baseURL: base)
+        #expect(text.blocks == [p("a < b")])
+        #expect(!text.isCut)
+    }
+
     @Test("a tag written as empty by an XML serialiser drops nothing after it")
     func selfClosedDroppedElements() {
         let html = #"<p>a</p><iframe src="https://frame.example/x"/><video src="v.mp4"/><script src="x.js"/><svg/><object/><p>b</p>"#

@@ -17,8 +17,8 @@ import Foundation
 /// - The content of a raw-text element is one token, not scanned for tags;
 ///   without its end tag it runs to the end of the input.
 /// - The scan says how it ended, so that a caller can tell an unclosed
-///   comment or raw-text element (which hid the rest of the input) from an
-///   input read to its end.
+///   comment, raw-text element or tag (which hid the rest of the input)
+///   from an input read to its end.
 /// - A `<` that starts no tag is text.
 /// Accepted approximations: a `<!…>` that is not a comment ends at the first
 /// `>`; `<!-->` is a complete comment.
@@ -112,6 +112,11 @@ enum TagScanner {
         /// Inside a raw-text element that has no end tag: its token ran to
         /// the end of the input.
         case unclosedRawText
+        /// Inside a start or end tag, a `<!…>` or a `<?…>` that has no end
+        /// before the end of the input (no `>` outside a quoted value): the
+        /// rest of the input was in it. A tag cut by `maximumTagLength`
+        /// before the end of the input is skipped, and the scan goes on.
+        case unclosedTag
     }
 
     private static let lessThan = UInt8(ascii: "<")
@@ -159,13 +164,15 @@ enum TagScanner {
                     guard let end = findCommentEnd(in: bytes, from: next + 1) else { return .unclosedComment }
                     index = end + 3
                 } else {
-                    index = (find(greaterThan, in: bytes, from: next, to: count) ?? count - 1) + 1
+                    guard let end = find(greaterThan, in: bytes, from: next, to: count) else { return .unclosedTag }
+                    index = end + 1
                 }
                 textStart = index
                 continue
             case question:
                 guard flushText(to: open) else { return .stopped }
-                index = (find(greaterThan, in: bytes, from: next, to: count) ?? count - 1) + 1
+                guard let end = find(greaterThan, in: bytes, from: next, to: count) else { return .unclosedTag }
+                index = end + 1
                 textStart = index
                 continue
             default:
@@ -190,6 +197,8 @@ enum TagScanner {
             guard let end = readAttributes(
                 bytes, from: nameEnd, limit: limit, keep: keep, into: &attributes, only: options.attributes
             ) else {
+                // No end before the end of the input: the rest was in it.
+                guard limit < count else { return .unclosedTag }
                 // No end within the limit: the tag is skipped with what was
                 // looked at.
                 index = limit
@@ -212,6 +221,8 @@ enum TagScanner {
                 index = close.end
                 textStart = index
                 guard handle(Token(kind: .endTag, range: close.start..<close.end, name: name)) else { return .stopped }
+                // An end tag whose `>` never came ended the input.
+                guard close.isClosed else { return .unclosedTag }
             }
         }
         return flushText(to: count) ? .input : .stopped
@@ -281,10 +292,11 @@ enum TagScanner {
     }
 
     /// The next end tag `</name` (case ignored, followed by white space,
-    /// `/`, `>` or the end), as the range from its `<` to after its `>`.
+    /// `/`, `>` or the end), as the range from its `<` to after its `>`, or
+    /// to the end of the input when it has no `>` (`isClosed` false).
     private static func findEndTag(
         _ bytes: UnsafeBufferPointer<UInt8>, name: [UInt8], from start: Int
-    ) -> (start: Int, end: Int)? {
+    ) -> (start: Int, end: Int, isClosed: Bool)? {
         let count = bytes.count
         var index = start
         while index < count {
@@ -299,8 +311,10 @@ enum TagScanner {
                 if matches {
                     let after = nameStart + name.count
                     if after == count || isSpace(bytes[after]) || bytes[after] == slash || bytes[after] == greaterThan {
-                        let end = (find(greaterThan, in: bytes, from: after, to: count) ?? count - 1) + 1
-                        return (open, end)
+                        guard let end = find(greaterThan, in: bytes, from: after, to: count) else {
+                            return (open, count, false)
+                        }
+                        return (open, end + 1, true)
                     }
                 }
             }

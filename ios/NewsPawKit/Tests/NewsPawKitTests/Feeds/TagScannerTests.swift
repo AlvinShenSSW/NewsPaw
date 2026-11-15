@@ -112,7 +112,7 @@ struct TagScannerTests {
         #expect(upper == "blockquote")
     }
 
-    @Test("the scan says how it ended: at the input's end, stopped, or inside an unclosed comment or raw-text element")
+    @Test("the scan says how it ended: at the input's end, stopped, or inside an unclosed comment, raw-text element or tag")
     func ends() {
         func end(_ html: String) -> TagScanner.End {
             TagScanner.scan(Array(html.utf8), options: Self.options) { _ in true }
@@ -121,15 +121,28 @@ struct TagScannerTests {
         #expect(end("") == .input)
         #expect(end("a <script>x</script> b") == .input)
         #expect(end("a <script>x</SCRIPT > b") == .input)
-        #expect(end("a <script>x</script") == .input)
+        #expect(end("a <script>x</script") == .unclosedTag)
         #expect(end("a <script>x") == .unclosedRawText)
         #expect(end("a <script>") == .unclosedRawText)
         #expect(end("a <title>x</titles>") == .unclosedRawText)
         #expect(end("a <!-- x --> b") == .input)
         #expect(end("a <!-- x") == .unclosedComment)
         #expect(end("a <!--") == .unclosedComment)
-        // A tag left open within the cap is skipped, as before: the input's end.
-        #expect(end("a <p class='x") == .input)
+        // A tag, `<!…>` or `<?…>` that has no end before the input's end.
+        #expect(end("a <p class='x") == .unclosedTag)
+        #expect(end("a <p class=x") == .unclosedTag)
+        #expect(end("a <p") == .unclosedTag)
+        #expect(end("a </p") == .unclosedTag)
+        #expect(end("a <!DOCTYPE html") == .unclosedTag)
+        #expect(end("a <!") == .unclosedTag)
+        #expect(end("a <?xml version='1.0'") == .unclosedTag)
+        #expect(end("a <p class='x>y'>b") == .input)
+        #expect(end("<!DOCTYPE html><?xml?><p>a</p >") == .input)
+        // A tag longer than the cap before the input's end is skipped, as
+        // before, and the scan goes on to the end.
+        #expect(end("a <p class='" + String(repeating: "x", count: 100) + "'> b") == .input)
+        // A `<` that starts no tag is text.
+        #expect(end("a < b") == .input)
         let stopped = TagScanner.scan(Array("<p>a</p><p>b</p>".utf8), options: Self.options) { _ in false }
         #expect(stopped == .stopped)
         let stoppedAtRaw = TagScanner.scan(Array("<script>x".utf8), options: Self.options) { $0.kind != .rawText }

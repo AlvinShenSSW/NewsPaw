@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic feed shaped like a repository's commits.atom. Invented names and text; links under example.invalid. -->
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" xml:lang="en-US">
+  <id>tag:github.com,2008:/lantern-works/lantern/commits/main</id>
+  <link type="text/html" rel="alternate" href="https://example.invalid/lantern-works/lantern/commits/main"/>
+  <link type="application/atom+xml" rel="self" href="https://example.invalid/lantern-works/lantern/commits/main.atom"/>
+  <title>Recent Commits to lantern:main</title>
+  <updated>2026-11-04T18:20:00Z</updated>
+  <entry>
+    <id>tag:github.com,2008:Grit::Commit/0a1b2c3d4e5f60718293a4b5c6d7e8f901234567</id>
+    <link type="text/html" rel="alternate" href="https://example.invalid/lantern-works/lantern/commit/0a1b2c3d4e5f60718293a4b5c6d7e8f901234567"/>
+    <title>
+        Trim the wick before lighting
+    </title>
+    <updated>2026-11-04T18:20:00Z</updated>
+    <media:thumbnail height="30" width="30" url="https://example.invalid/avatars/lamplighter.png?s=30&amp;v=4"/>
+    <author>
+      <name>lamplighter</name>
+      <uri>https://example.invalid/lamplighter</uri>
+    </author>
+    <content type="html">
+      &lt;pre style=&#39;white-space:pre-wrap;width:81ex&#39;&gt;Trim the wick before lighting&lt;/pre&gt;
+    </content>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Grit::Commit/1b2c3d4e5f60718293a4b5c6d7e8f9012345678a</id>
+    <link type="text/html" rel="alternate" href="https://example.invalid/lantern-works/lantern/commit/1b2c3d4e5f60718293a4b5c6d7e8f9012345678a"/>
+    <title>
+        Polish the glass
+    </title>
+    <updated>2026-11-02T07:45:00Z</updated>
+    <media:thumbnail height="30" width="30" url="https://example.invalid/avatars/wickmaker.png?s=30&amp;v=4"/>
+    <author>
+      <name>wickmaker</name>
+      <uri>https://example.invalid/wickmaker</uri>
+    </author>
+    <content type="html">
+      &lt;pre style=&#39;white-space:pre-wrap;width:81ex&#39;&gt;Polish the glass&lt;/pre&gt;
+    </content>
+  </entry>
+</feed>

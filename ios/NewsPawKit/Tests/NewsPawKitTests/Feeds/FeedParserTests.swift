@@ -511,3 +511,71 @@ struct SeededGenerator: RandomNumberGenerator {
         return value ^ (value >> 31)
     }
 }
+
+/// RD07 criterion 11 and assumption A1: the synthetic fixtures shaped like
+/// a repository's three Atom feeds parse with the merged parser.
+@Suite("Feed parser: GitHub's Atom feeds")
+struct GitHubFeedParserTests {
+    static let avatar = "https://example.invalid/avatars/lamplighter.png?s=60&v=4"
+
+    @Test("Releases: identity from id, the link, the date from updated, the avatar as image, notes as text only in the excerpt")
+    func releases() throws {
+        let feed = try #require(parse(try FeedFixture.data("github-releases.atom")))
+        #expect(feed.format == .atom)
+        #expect(feed.title == "Release notes from lantern")
+        #expect(feed.isComplete)
+        #expect(feed.items.count == 4)
+        let first = try #require(feed.items.first)
+        #expect(first.externalID == "tag:github.com,2008:Repository/40000001/v3.2.0")
+        #expect(first.url == "https://example.invalid/lantern-works/lantern/releases/tag/v3.2.0")
+        #expect(first.title == "v3.2.0")
+        #expect(first.publishedAt == date("2026-11-03T09:30:00Z"))
+        #expect(first.author == "lamplighter")
+        #expect(first.imageURL == Self.avatar)
+        #expect(first.excerpt == "What's Changed Brighter wicks in #42 Thanks to everyone who tested the glass.")
+        // The notes are stored as text, the script and the link with them;
+        // nothing is executed or followed.
+        let content = try #require(first.contentHTML)
+        #expect(content.contains("<script>document.title = \"release script ran\"</script>"))
+        #expect(content.contains(#"<a href="https://example.invalid/lantern-works/lantern/pull/42">#42</a>"#))
+        #expect(feed.items.map(\.title) == ["v3.2.0", "v3.1.1", "v3.1.0", "v3.0.0"])
+    }
+
+    @Test("Tags: the same identities and links as Releases, no excerpt and no content")
+    func tags() throws {
+        let tags = try #require(parse(try FeedFixture.data("github-tags.atom")))
+        let releases = try #require(parse(try FeedFixture.data("github-releases.atom")))
+        #expect(tags.items.count == 2)
+        for (tag, release) in zip(tags.items, releases.items) {
+            #expect(tag.externalID == release.externalID)
+            #expect(tag.url == release.url)
+            #expect(tag.publishedAt == release.publishedAt)
+            #expect(tag.excerpt == nil)
+            #expect(tag.contentHTML == nil)
+            #expect(tag.imageURL == Self.avatar)
+        }
+    }
+
+    @Test("Commits: a commit identity, the title without its surrounding white space, the message as excerpt")
+    func commits() throws {
+        let feed = try #require(parse(try FeedFixture.data("github-commits.atom")))
+        #expect(feed.items.count == 2)
+        let first = try #require(feed.items.first)
+        #expect(first.externalID == "tag:github.com,2008:Grit::Commit/0a1b2c3d4e5f60718293a4b5c6d7e8f901234567")
+        #expect(first.url == "https://example.invalid/lantern-works/lantern/commit/0a1b2c3d4e5f60718293a4b5c6d7e8f901234567")
+        #expect(first.title == "Trim the wick before lighting")
+        #expect(first.publishedAt == date("2026-11-04T18:20:00Z"))
+        #expect(first.excerpt == "Trim the wick before lighting")
+        #expect(first.imageURL == "https://example.invalid/avatars/lamplighter.png?s=30&v=4")
+        #expect(feed.items[1].title == "Polish the glass")
+    }
+
+    @Test("a repository with no tag: a feed with no entries")
+    func empty() throws {
+        let feed = try #require(parse(try FeedFixture.data("github-empty.atom")))
+        #expect(feed.format == .atom)
+        #expect(feed.title == "Release notes from sketches")
+        #expect(feed.items.isEmpty)
+        #expect(feed.isComplete)
+    }
+}

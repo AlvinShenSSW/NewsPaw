@@ -221,7 +221,7 @@ struct BodyImageView: View {
         let loader = session.loader
         Task {
             guard let data = await loader.image(for: url),
-                  let decoded = await Self.decode(data, maximumPixelSize: BodyImageLoader.maximumPixelSize)
+                  let decoded = await Self.decode(data, maximumPixelSize: BodyImageLoader.maximumSide)
             else { return }
             view(ViewedImage(image: UIImage(cgImage: decoded), alternativeText: alternativeText))
         }

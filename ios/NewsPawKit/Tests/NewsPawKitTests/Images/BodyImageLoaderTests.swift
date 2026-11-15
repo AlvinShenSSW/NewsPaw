@@ -24,23 +24,24 @@ struct BodyImageLoaderTests {
         (try? FileManager.default.contentsOfDirectory(atPath: cache.directory.path)) ?? []
     }
 
-    @Test("an image is reduced to at most 2,048 pixels, stored as JPEG under its own address, never as received, and then answered from the cache")
+    @Test("an image is reduced to at most 2,048 × 2,048 pixels in all, stored as JPEG under its own address, never as received, and then answered from the cache")
     func validImage() async throws {
         let (root, cache) = try makeCache()
         defer { try? FileManager.default.removeItem(at: root) }
-        let received = Images.png(width: 4_000, height: 1_000)
+        let received = Images.png(width: 4_000, height: 2_000)
         let transport = Images.answering(received)
         let loader = BodyImageLoader(transport: transport, cache: cache)
 
         let data = try #require(await loader.image(for: url("wide.png")))
         let decoded = try Images.decode(data)
         #expect(decoded.type == UTType.jpeg.identifier)
-        #expect(decoded.width == 2_048)
-        #expect(decoded.height == 512)
+        // Half of its 8,000,000 pixels and a little more: 2,896 × 1,448.
+        #expect(decoded.width == 2_896)
+        #expect(decoded.height == 1_448)
         #expect(await cache.data(for: "https://images.example.invalid/wide.png") == data)
         #expect(BodyImageLoader.cacheKey(for: url("wide.png")) == "https://images.example.invalid/wide.png")
-        #expect(BodyImageLoader.pixelSize(of: data)?.width == 2_048)
-        #expect(BodyImageLoader.pixelSize(of: data)?.height == 512)
+        #expect(BodyImageLoader.pixelSize(of: data)?.width == 2_896)
+        #expect(BodyImageLoader.pixelSize(of: data)?.height == 1_448)
 
         #expect(await loader.image(for: url("wide.png")) == data)
         #expect(transport.received.count == 1, "the second request was answered from the cache")
@@ -54,6 +55,58 @@ struct BodyImageLoaderTests {
             #expect(stored != received)
             #expect(try Images.decode(stored).type == UTType.jpeg.identifier)
         }
+    }
+
+    @Test("the stored size is bounded by the pixels in all and by 8,192 on a side, the shape kept: a long picture stays readable")
+    func storedSize() async throws {
+        #expect(BodyImageLoader.maximumPixelCount == 2_048 * 2_048)
+        #expect(BodyImageLoader.maximumSide == 8_192)
+        // Within both bounds: its own size.
+        #expect(BodyImageLoader.storedLongerSide(width: 2_048, height: 2_048) == 2_048)
+        #expect(BodyImageLoader.storedLongerSide(width: 4_000, height: 1_000) == 4_000)
+        #expect(BodyImageLoader.storedLongerSide(width: 2_400, height: 1_600) == 2_400)
+        #expect(BodyImageLoader.storedLongerSide(width: 512, height: 8_192) == 8_192)
+        #expect(BodyImageLoader.storedLongerSide(width: 1, height: 1) == 1)
+        // One pixel more than the count, or than the side.
+        #expect(BodyImageLoader.storedLongerSide(width: 2_049, height: 2_048) == 2_048)
+        #expect(BodyImageLoader.storedLongerSide(width: 100, height: 8_193) == 8_192)
+        // Square, wide, and the long screenshot of a phone.
+        #expect(BodyImageLoader.storedLongerSide(width: 3_000, height: 3_000) == 2_048)
+        #expect(BodyImageLoader.storedLongerSide(width: 20_000, height: 2_000) == 6_472)
+        #expect(BodyImageLoader.storedLongerSide(width: 1_080, height: 6_000) == 4_826)
+        #expect(BodyImageLoader.storedLongerSide(width: 100, height: 30_000) == 8_192)
+        // Whatever the shape, the stored image is within the count however
+        // its shorter side is rounded.
+        for (width, height) in [(1_080, 6_000), (6_000, 1_080), (3_001, 2_999), (7_000, 5_714), (39_999, 1_000), (1, 40_000), (4_097, 1_025)] {
+            let longer = BodyImageLoader.storedLongerSide(width: width, height: height)
+            let shorter = (Double(min(width, height)) * Double(longer) / Double(max(width, height))).rounded(.up)
+            #expect(longer <= 8_192, "\(width) × \(height)")
+            #expect(Double(longer) * shorter <= Double(2_048 * 2_048), "\(width) × \(height)")
+            #expect(longer <= max(width, height), "never enlarged: \(width) × \(height)")
+        }
+
+        let (root, cache) = try makeCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        func stored(_ width: Int, _ height: Int, _ name: String) async throws -> (width: Int, height: Int) {
+            let loader = BodyImageLoader(transport: Images.answering(Images.png(width: width, height: height, gray: true)), cache: cache)
+            let data = try #require(await loader.image(for: url(name)))
+            return try #require(BodyImageLoader.pixelSize(of: data))
+        }
+        // 1,080 × 6,000, ordinary in feeds: 369 pixels wide under the old
+        // bound of 2,048 on the longer side.
+        let long = try await stored(1_080, 6_000, "long.png")
+        #expect(long.height == 4_826)
+        #expect((868...869).contains(long.width))
+        #expect(long.width * long.height <= 2_048 * 2_048)
+        // Within the count: as received in size.
+        let wide = try await stored(4_000, 1_000, "wide.png")
+        #expect(wide.width == 4_000 && wide.height == 1_000)
+        // A strip: the side bound.
+        let strip = try await stored(100, 30_000, "strip.png")
+        #expect(strip.height == 8_192)
+        #expect((27...28).contains(strip.width))
+        let square = try await stored(3_000, 3_000, "square.png")
+        #expect(square.width == 2_048 && square.height == 2_048)
     }
 
     @Test("an image smaller than the bound keeps its size: it is never enlarged")

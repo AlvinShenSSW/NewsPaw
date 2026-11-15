@@ -160,7 +160,7 @@ struct FixtureTransportTests {
         #expect(try #require(items.first { $0.title == "Cut linkless story" }).url == nil)
 
         let pictures = try body("Picture story")
-        #expect(pictures.blocks.filter { if case .image = $0.kind { true } else { false } }.count == 6)
+        #expect(pictures.blocks.filter { if case .image = $0.kind { true } else { false } }.count == 7)
         #expect(try body("Hundred pictures").blocks.filter { if case .image = $0.kind { true } else { false } }.count == 100)
 
         let empty = try #require(items.first { $0.title == "Empty body" })
@@ -183,6 +183,7 @@ struct FixtureTransportTests {
         #expect(size(try await image("small.png").body) == [60, 40])
         #expect(size(try await image("pixel.png").body) == [1, 1])
         #expect(size(try await image("big/7.png").body) == [2_400, 1_600])
+        #expect(size(try await image("tall.png").body) == [1_080, 6_000])
         #expect(ThumbnailLoader.reduced(try await image("vector.svg").body) == nil)
         await #expect(throws: TransportFailure.unreachable) { try await image("missing.png") }
         await #expect(throws: TransportFailure.unreachable) { try await image("tracker.png") }

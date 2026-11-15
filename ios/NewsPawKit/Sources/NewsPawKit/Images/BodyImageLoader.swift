@@ -10,9 +10,9 @@ import ImageIO
 /// transport under its rules, refuses an answer of more than
 /// `maximumReceivedBytes` and an image that declares more than
 /// `ThumbnailLoader.maximumDeclaredPixels` before decoding it, reduces it to
-/// at most `maximumPixelSize` pixels on its longer side (an image smaller
-/// than that keeps its size), flattens it onto white and re-encodes it as
-/// JPEG. Only that JPEG is stored, under the image's own address; no fetched
+/// at most `maximumPixelCount` pixels in all and `maximumSide` on a side,
+/// its shape kept (an image within both keeps its size), flattens it onto
+/// white and re-encodes it as JPEG. Only that JPEG is stored, under the image's own address; no fetched
 /// byte is written as received. An animated image is stored as its first
 /// frame.
 ///
@@ -24,8 +24,13 @@ import ImageIO
 /// So the answer says which it was: a request that was cancelled says
 /// nothing about the image, one that failed does.
 public actor BodyImageLoader {
+    /// The most pixels a stored body image has in all: what a square of
+    /// 2,048 on a side has. A bound on the pixels, not on the longer side,
+    /// so that a long picture (a screenshot of 1,080 × 6,000) is stored
+    /// wide enough to be read, at the same decoded size in memory.
+    public static let maximumPixelCount = 2_048 * 2_048
     /// The longest side of a stored body image, in pixels.
-    public static let maximumPixelSize = 2_048
+    public static let maximumSide = 8_192
     /// The largest answer accepted, in bytes as received.
     public static let maximumReceivedBytes = 10 * 1024 * 1024
     /// At most this many requests are in flight.
@@ -122,7 +127,28 @@ public actor BodyImageLoader {
     /// Off the actor: decoding and encoding take a moment.
     @concurrent
     private static func reduce(_ data: Data) async -> Data? {
-        ThumbnailLoader.reduced(data, maximumPixelSize: maximumPixelSize)
+        ThumbnailLoader.reduced(data, longerSide: storedLongerSide)
+    }
+
+    /// The longer side, in pixels, at which an image of `width` × `height`
+    /// pixels is stored: its own when the image is within
+    /// `maximumPixelCount` pixels and `maximumSide` on each side, else the
+    /// longest at which it is, its shape kept. Never more than its own.
+    public static func storedLongerSide(width: Int, height: Int) -> Int {
+        let longer = max(width, height)
+        let shorter = min(width, height)
+        guard shorter > 0 else { return 0 }
+        var side = min(longer, maximumSide)
+        if Double(width) * Double(height) > Double(maximumPixelCount) {
+            // side × (side × shorter / longer) is the count at most.
+            side = min(side, Int((Double(maximumPixelCount) * Double(longer) / Double(shorter)).squareRoot().rounded(.down)))
+        }
+        // The shorter side comes out rounded: within the count whichever
+        // way it is rounded.
+        while side > 1, Double(side) * (Double(shorter) * Double(side) / Double(longer)).rounded(.up) > Double(maximumPixelCount) {
+            side -= 1
+        }
+        return max(side, 1)
     }
 
     /// The width and height of the image in `data`, in pixels, read from its

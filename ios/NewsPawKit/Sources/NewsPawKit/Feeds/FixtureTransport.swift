@@ -1,5 +1,6 @@
 #if DEBUG
 import CoreGraphics
+import CoreText
 import Foundation
 import ImageIO
 import Synchronization
@@ -70,9 +71,9 @@ public final class FixtureTransport: Transport {
         /// first request for it, the photo after that: it fails when an
         /// article is first opened, however many times it is asked for
         /// then, and answers when the article is opened again later),
-        /// `vector.svg` (not an image the system decodes)
-        /// and `big/<number>.png` (2,400 × 1,600). Any other name does not
-        /// answer.
+        /// `vector.svg` (not an image the system decodes),
+        /// `big/<number>.png` (2,400 × 1,600) and `tall.png` (1,080 ×
+        /// 6,000, lines of text). Any other name does not answer.
         public static let readingImages = "https://reading.example.invalid/images/"
     }
 
@@ -179,6 +180,8 @@ public final class FixtureTransport: Transport {
             return image(Data(svg.utf8), type: "image/svg+xml")
         case let name where name.hasPrefix("big/") && name.hasSuffix(".png"):
             return image(Self.bigImagePNG)
+        case "tall.png":
+            return image(Self.tallImagePNG)
         default:
             throw TransportFailure.unreachable
         }
@@ -303,7 +306,8 @@ public final class FixtureTransport: Transport {
 
     /// The pictures of "Picture story": one that loads, a small one, a
     /// pixel that declares no size, one that fails once, one the system
-    /// cannot decode, one that never answers and has no alternative text.
+    /// cannot decode, one that never answers and has no alternative text,
+    /// and a long one.
     static let pictureBody = """
         <p>A picture that loads:</p><img src="\(Address.readingImages)photo.png" alt="A photograph">
         <p>A small picture:</p><img src="\(Address.readingImages)small.png" alt="A small picture">
@@ -311,6 +315,7 @@ public final class FixtureTransport: Transport {
         <p>A picture that fails once:</p><img src="\(Address.readingImages)flaky.png" alt="A flaky picture">
         <p>A drawing the system cannot decode:</p><img src="\(Address.readingImages)vector.svg" alt="A vector drawing">
         <p>A picture that never answers:</p><img src="\(Address.readingImages)missing.png">
+        <p>A long picture:</p><img src="\(Address.readingImages)tall.png" alt="A long picture">
         <p>After the pictures.</p>
         """
 
@@ -397,8 +402,8 @@ public final class FixtureTransport: Transport {
         context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
     }
 
-    /// A 2,400 × 1,600 PNG, larger than a stored body image: bands of
-    /// colour with a disc.
+    /// A 2,400 × 1,600 PNG, near the most pixels a stored body image has:
+    /// bands of colour with a disc.
     static let bigImagePNG = png(width: 2_400, height: 1_600) { context in
         for band in 0..<8 {
             let shade = 0.25 + Double(band) * 0.08
@@ -407,6 +412,33 @@ public final class FixtureTransport: Transport {
         }
         context.setFillColor(CGColor(srgbRed: 0.16, green: 0.36, blue: 0.62, alpha: 1))
         context.fillEllipse(in: CGRect(x: 800, y: 400, width: 800, height: 800))
+    }
+
+    /// A 1,080 × 6,000 PNG, as a long screenshot of a phone is: 50 numbered
+    /// lines of text 36 pixels high on white, each beside a block of
+    /// colour. It has more pixels than a body image is stored with, and is
+    /// readable only when it is stored wide enough.
+    static let tallImagePNG = png(width: 1_080, height: 6_000) { context in
+        context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 1_080, height: 6_000))
+        let font = CTFontCreateWithName("Helvetica" as CFString, 36, nil)
+        for line in 1...50 {
+            // The context's origin is at the bottom: line 1 is at the top.
+            let baseline = Double(6_000 - line * 120 + 40)
+            let shade = Double(line % 5) * 0.15
+            context.setFillColor(CGColor(srgbRed: 0.16 + shade, green: 0.36, blue: 0.62 - shade, alpha: 1))
+            context.fill(CGRect(x: 40, y: baseline - 10, width: 60, height: 60))
+            let text = NSAttributedString(
+                string: "Line \(line) of a long picture, to be read when zoomed in",
+                attributes: [
+                    NSAttributedString.Key(kCTFontAttributeName as String): font,
+                    NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
+                ]
+            )
+            context.setFillColor(CGColor(srgbRed: 0.1, green: 0.1, blue: 0.1, alpha: 1))
+            context.textPosition = CGPoint(x: 130, y: baseline)
+            CTLineDraw(CTLineCreateWithAttributedString(text), context)
+        }
     }
 
     private static func png(width: Int, height: Int, draw: (CGContext) -> Void) -> Data {

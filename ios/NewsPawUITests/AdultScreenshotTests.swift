@@ -111,7 +111,14 @@ final class AdultScreenshotTests: AdultTestCase {
         capture("adult-category-settings")
         button(AccessibilityID.cancelButton).tap()
         waitForAbsence(app.textFields[AccessibilityID.nameField])
-        openAddSource()
+        if usesTabs {
+            openAddSource()
+        } else {
+            // Below the fold of the sidebar at the largest text size.
+            openSidebarIfNeeded()
+            scrollTo(button(AccessibilityID.addSourceButton)).tap()
+            waitFor(app.textFields[AccessibilityID.addressField])
+        }
         capture("adult-add-source")
         button(AccessibilityID.cancelButton).tap()
         waitForAbsence(app.textFields[AccessibilityID.addressField])

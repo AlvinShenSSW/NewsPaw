@@ -406,6 +406,23 @@ final class AdultLockTests: AdultTestCase {
         XCTAssertTrue(report.contains("sessions=1"), "a session was made after the lock: \(report)")
     }
 
+    // MARK: - Decision 8's fallback, through the app
+
+    /// Under "Immediately" an absence that never enters the background —
+    /// Control Centre over the app — locks once it has lasted five seconds.
+    /// (A short one shows the cover and does not lock: `testChoosingAdult`.)
+    func testALongLookAtControlCentreLocks() {
+        launchAtFullWidth(authentication: ["passed", "passed"])
+        turnOnAdult()
+        enterAdult()
+        showControlCentre()
+        Thread.sleep(forTimeInterval: 6)
+        hideControlCentre()
+        waitForPartition(Wording.normal)
+        XCTAssertFalse(lockButton.exists)
+        waitForReport(Self.closed, Self.dropped)
+    }
+
     /// Settings › Adult Partition opened from the normal partition is
     /// closed by the rule that locks: it stays across a short absence under
     /// "After 1 Minute" and is closed by one under "Immediately", and so

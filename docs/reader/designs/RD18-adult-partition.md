@@ -341,6 +341,16 @@ Added on 2026-11-16 after the external gate's round 1 (finding: a late thumbnail
 
 Evidence: package tests `ImageCacheTests.closedCacheStoresNothing`, `AdultLibraryCloseTests.closeClosesTheImageCache`, `AdultGateTests.thumbnailEndingAfterDelete` (a thumbnail whose fetch ends after Delete, with only the loader holding the cache) and `AdultGateTests.deleteWaitsForAStoreInFlight` (a store held inside the cache, by a debug-only hook, when Delete begins).
 
+### Decisions 3, 4 and 7 with RD11's reading screen
+
+Added on 2026-11-16 when `main` with RD11 (#132) was merged into this branch.
+
+- **Decision 3.** The reading settings (text size, line spacing, typeface) are device settings (spec section 4): one `ReadingSettings` object for the app, made once and given to every workspace through `WorkspaceParts`, as `RefreshSettings` is, so that a change in one partition is the other's. Everything else RD11 added — the bodies, the reader's place, previous and next, the "no longer available" handling, the list's top — is the reading model's and therefore each workspace's; body images go through the workspace library's `BodyImageLoader` and image cache, so the adult partition's go only to the adult cache, which every lock closes.
+- **Decision 4.** `Workspace.stop()` also stops the reading model: its body reads and conversions in flight are cancelled and their results dropped, and once stopped it reads no body, a body image is neither asked for nor read from the cache, the image viewer does not open, and an article found gone closes no screen. List reads and state changes still queued run into the closed library and fail, shown nowhere, as the other models' saves do.
+- **Decision 7.** The reading settings' controls read the accent from the environment, like every other view.
+
+Evidence: UI tests `AdultLockTests.testAnAdultArticleOpenAtALockOpensWithItsBodyAfterTheUnlock` (an adult article open when the app is left; after the lock the reading screen is gone, the library closed and the normal image cache empty; unlocked again, the article opens with its body and its image, and the adult image cache holds the body's images) and `testAReadingSettingChangedInOnePartitionIsTheOthers`; the package scan `AdultScanTests.accentComesFromTheEnvironment`. The stopped reading model has no test of its own: what it prevents happens only in a view that UIKit keeps off screen after a lock (assumption A4), which a UI test cannot reach.
+
 ### Known limits
 
 - A model object that UIKit keeps after a lock still holds what it had loaded: the category and source summaries, the rows of the lists that were read, the articles that were opened. That is memory of the same process; nothing shows it, and it is not emptied. It goes when UIKit lets go of the trait collection or the menu's source view: after about a minute for a menu, and not within the four minutes measured for an opened article or a swiped row.

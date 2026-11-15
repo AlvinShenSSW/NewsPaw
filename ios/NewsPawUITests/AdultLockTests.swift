@@ -483,4 +483,83 @@ final class AdultLockTests: AdultTestCase {
         XCTAssertFalse(app.buttons["30 Days"].firstMatch.isSelected)
         XCTAssertTrue(scrollTo(app.buttons["Manual Only"].firstMatch).isSelected, "the normal partition kept its own interval")
     }
+
+    /// The reading settings are the app's, not a partition's (RD11
+    /// decision 10; spec section 4: device settings): a text size chosen in
+    /// the adult partition is the normal partition's too.
+    func testAReadingSettingChangedInOnePartitionIsTheOthers() {
+        launchAtFullWidth(authentication: ["passed", "passed"])
+        turnOnAdult()
+        enterAdult()
+        openSettings()
+        scrollTo(element(AccessibilityID.readingSettingsRow)).tap()
+        let size = waitFor(element(AccessibilityID.textSizeValue))
+        XCTAssertEqual(size.value as? String, "3 / 5")
+        waitFor(button(AccessibilityID.textSizeLargerButton)).tap()
+        waitForValue(size, "4 / 5")
+
+        tapLock()
+        waitForPartition(Wording.normal)
+        openSettings()
+        scrollTo(element(AccessibilityID.readingSettingsRow)).tap()
+        waitForValue(element(AccessibilityID.textSizeValue), "4 / 5")
+    }
+
+    // MARK: - The reading screen (RD11) across a lock
+
+    /// An article open in the adult partition when the app is left under
+    /// "Immediately": the reading screen goes with the adult workspace,
+    /// the adult library is closed and nothing of the article is shown,
+    /// and the normal partition's image cache holds none of its body
+    /// images. Unlocked again, the article opens with its body and its
+    /// image, through the new adult library and its image cache.
+    func testAnAdultArticleOpenAtALockOpensWithItsBodyAfterTheUnlock() {
+        let adultNames = ["Velvet", "Reading Feed", "Picture story", "A picture that loads", "A photograph"]
+        let title = element(AccessibilityID.readingTitle)
+        let firstBlock = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label == %@", AccessibilityID.readingBlockPrefix, "A picture that loads:"
+        )).firstMatch
+        let photo = element(AccessibilityID.readingImage(1))
+        let zero = Int64(0).formatted(.byteCount(style: .file))
+        launchAtFullWidth(authentication: ["passed", "passed", "passed"])
+        turnOnAdult()
+        enterAdult()
+        createCategory("Velvet")
+        addSource("https://reading.example.invalid/rss.xml", to: "Velvet")
+        openSourceList("Reading Feed", in: "Velvet")
+        openArticle("Picture story")
+        waitFor(firstBlock)
+        XCTAssertEqual(waitFor(photo).label, "A photograph")
+
+        leaveAndReturn()
+        waitForPartition(Wording.normal)
+        waitForAbsence(title)
+        waitForReport(Self.closed, Self.dropped)
+        assertNothingShown(of: adultNames, on: "the normal partition after the lock")
+        openSettings()
+        scrollTo(element(AccessibilityID.dataRow)).tap()
+        let normalCache = waitFor(element(AccessibilityID.cacheSize))
+        let empty = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", zero), object: normalCache)
+        XCTAssertEqual(XCTWaiter.wait(for: [empty], timeout: timeout), .completed,
+                       "the normal image cache holds \(normalCache.label) after the adult body's images")
+
+        enterAdult()
+        openSourceList("Reading Feed", in: "Velvet")
+        // Read at the first opening: listed under All.
+        chooseFilter("All")
+        openArticle("Picture story")
+        waitFor(firstBlock)
+        XCTAssertEqual(waitFor(photo).label, "A photograph")
+        waitForReport("pool=open")
+        // The pushed reading screen hides the tab bar.
+        backToList()
+        openSettings()
+        scrollTo(element(AccessibilityID.dataRow)).tap()
+        let adultCache = waitFor(element(AccessibilityID.cacheSize))
+        let filled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label != %@ AND label != %@", zero, "–"), object: adultCache
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [filled], timeout: timeout), .completed,
+                       "the adult body's images are in the adult image cache: \(adultCache.label)")
+    }
 }

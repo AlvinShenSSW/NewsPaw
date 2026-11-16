@@ -3,8 +3,10 @@ import XCTest
 /// RD21 criteria 11 and 12: every Settings row of ux S8 present at this
 /// issue opens a screen with its title, and About's three licences open
 /// their full texts. Rows of later issues (Usage, RD17; Data's import and
-/// export rows, RD08 and RD20) are not there yet.
-final class SettingsRowTests: ReadingTestCase {
+/// export rows, RD08 and RD20) are not there yet. A translation test case
+/// for its `openSidebarIfNeeded`, which first leaves a Settings screen
+/// pushed on the leading pane.
+final class SettingsRowTests: TranslationTestCase {
     func testEveryRowOpensItsScreen() {
         launchReading()
         let rows = [

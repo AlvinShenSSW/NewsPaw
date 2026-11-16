@@ -321,6 +321,25 @@ final class SourceModel {
         model.isPickingFile = true
     }
 
+    /// Ends the import in progress, whatever its stage, without presenting
+    /// anything: the workspace is left for the other partition (RD08
+    /// criterion 8). A result that arrives afterwards is dropped.
+    func endOPMLImport() {
+        opmlImport?.cancel()
+        opmlImport = nil
+    }
+
+    /// The screen that started an import went away. An import still being
+    /// read ends with it, so that its result does not pop up the next time
+    /// the screen is shown; one whose picker, alert or preview is on screen
+    /// is left alone.
+    func opmlImportScreenLeft(_ origin: OPMLImportOrigin) {
+        guard let model = opmlImport, model.origin == origin, !model.isPickingFile, model.alert == nil,
+              !model.isShowingPreview
+        else { return }
+        endOPMLImport()
+    }
+
     /// Whether `model` is still the import this workspace holds: a result
     /// for any other is dropped.
     func isCurrent(_ model: OPMLImportModel) -> Bool {

@@ -91,6 +91,11 @@ private struct OPMLImportPresenter: ViewModifier {
                         .tint(accent)
                 }
             }
+            // Leaving the screen ends an import still being read: its result
+            // is not kept for the next visit.
+            .onDisappear {
+                sources.opmlImportScreenLeft(origin)
+            }
     }
 }
 

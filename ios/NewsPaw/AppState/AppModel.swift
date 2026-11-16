@@ -350,8 +350,11 @@ final class AppModel {
         gateState = .unlocked
         // The normal workspace is not shown from here on: nothing of it
         // stays pushed or presented, and its pages end. Its models go on
-        // refreshing (decision 13).
+        // refreshing (decision 13). An OPML import of it that is still
+        // being read ends, so that its result is not shown on return (RD08
+        // criterion 8).
         normal.navigation.clear()
+        normal.sources.endOPMLImport()
         applyTint()
         #if DEBUG
         adultWasShown = true

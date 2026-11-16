@@ -29,6 +29,36 @@ struct FixtureModelHTTPTests {
         let draft = ModelSlotDraft(role: .primary, preset: .custom, address: FixtureModelHTTP.Address.passed, model: "m", newKey: nil)
         #expect(try await fixture.models.listModels(draft) == FixtureModelHTTP.listedModels.sorted())
         let reply = try await fixture.models.send(texts: ["One", "Two"], instructions: "i", purpose: .titles, role: .primary)
-        #expect(reply == ModelReply(texts: ["One", "Two"], isCutOff: false, inputTokens: 12, outputTokens: 5))
+        #expect(reply == ModelReply(texts: ["One", "Two"], isCutOff: false, inputTokens: 12, outputTokens: 5, model: "test-model"))
+    }
+
+    @Test("RD14: the translator marks each text with the language asked for and obeys its words; the backup ignores the 429 word")
+    func translator() async throws {
+        let fixture = try await ModelsFixture.make(http: FixtureModelHTTP())
+        defer { fixture.remove() }
+        try await fixture.save(address: FixtureModelHTTP.Address.translate)
+        try await fixture.save(.backup, address: FixtureModelHTTP.Address.translateBackup)
+        let before = FixtureModelHTTP.translationRequests
+        let reply = try await fixture.models.send(
+            texts: ["One", "<b>Two</b>"], instructions: TranslationPrompt.titles(into: .japanese), purpose: .titles, role: .primary
+        )
+        #expect(reply.texts == ["译[ja]：One", "译[ja]：<b>Two</b>"])
+        let chinese = try await fixture.models.send(
+            texts: ["One"], instructions: TranslationPrompt.titles(into: .simplifiedChinese), purpose: .titles, role: .primary
+        )
+        #expect(chinese.texts == ["译[zh-Hans]：One"])
+        let instructions = TranslationPrompt.titles(into: .english)
+        await #expect(throws: ModelFailure.refused) {
+            try await fixture.models.send(texts: ["a fixture:refuse b"], instructions: instructions, purpose: .titles, role: .primary)
+        }
+        await #expect(throws: ModelFailure.limited) {
+            try await fixture.models.send(texts: ["a fixture:limit b"], instructions: instructions, purpose: .titles, role: .primary)
+        }
+        let backup = try await fixture.models.send(texts: ["a fixture:limit b"], instructions: instructions, purpose: .titles, role: .backup)
+        #expect(backup.texts == ["译[en]：a fixture:limit b"])
+        let start = ContinuousClock.now
+        _ = try await fixture.models.send(texts: ["fixture:slow"], instructions: instructions, purpose: .titles, role: .primary)
+        #expect(ContinuousClock.now - start >= .seconds(2))
+        #expect(FixtureModelHTTP.translationRequests - before >= 6)
     }
 }

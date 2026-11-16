@@ -96,6 +96,29 @@ struct FixtureTransportTests {
         #expect(none.title == "Plain Page" && none.candidates.isEmpty)
     }
 
+    @Test("RD14: the translation feeds: a title with markup arrives as text, Chinese in both scripts, 60 foreign items; one item per word")
+    func translationFeeds() async throws {
+        let transport = FixtureTransport()
+        guard case .feed(let fetched) = try await fetch(transport, FixtureTransport.Address.translation) else {
+            Issue.record("not a feed")
+            return
+        }
+        let titles = fetched.feed.items.map(\.title)
+        #expect(titles.count == 63)
+        #expect(Array(titles.prefix(3)) == [FixtureTransport.markupTitle, FixtureTransport.simplifiedTitle, FixtureTransport.traditionalTitle])
+        #expect(titles.last == "Foreign story 60")
+        #expect(fetched.feed.items.last?.excerpt == "A short summary of foreign story 60.")
+        for (word, title) in [("refuse", "A story the model refuses fixture:refuse"), ("limit", "A story the service limits fixture:limit"),
+                              ("slow", "A story that takes its time fixture:slow")] {
+            guard case .feed(let one) = try await fetch(transport, FixtureTransport.Address.translationWord(word)) else {
+                Issue.record("\(word): not a feed")
+                continue
+            }
+            #expect(one.feed.items.map(\.title) == [title])
+        }
+        #expect(try await fetch(transport, FixtureTransport.Address.translationWord("other")) == .failed(.unreachable))
+    }
+
     @Test("the reading feed's bodies convert as the UI tests expect: every block kind, an excerpt, a hostile body, cut bodies, pictures, an empty body")
     func readingFeed() async throws {
         let transport = FixtureTransport()

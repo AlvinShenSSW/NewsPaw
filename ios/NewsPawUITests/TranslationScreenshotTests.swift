@@ -82,8 +82,10 @@ final class TranslationScreenshotTests: TranslationTestCase {
         }
         flip(original)
         capture("settings-original-on")
+        // "Foreign story 01" was opened above, so it is read and left out
+        // of the Unread list.
         openCategoryList(Translation.category)
-        waitFor(articleRow(Translation.foreign(1)))
+        waitFor(articleRow(Translation.foreign(2)))
         capture("list-with-originals")
     }
 }

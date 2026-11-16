@@ -101,7 +101,7 @@ final class ArticleDetailTests: ArticleTestCase {
         XCTAssertEqual(articleRowsShown().filter { $0.identifier == row.identifier }.count, 1, "one element per row")
         swipeAction(on: row, leading: false, "Star")
         waitForLabel(row, containing: ", Starred")
-        XCTAssertTrue(row.label.hasSuffix(", Starred"), row.label)
+        XCTAssertEqual(row.label.components(separatedBy: ", ").dropFirst(4).first, "Starred", row.label)
 
         // Icon-only controls: labels, and their tap targets.
         let markAll = waitFor(button(AccessibilityID.markAllReadButton))

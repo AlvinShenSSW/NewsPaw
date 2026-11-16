@@ -61,6 +61,10 @@ final class SourceModel {
     /// reading screen may be gone with its source, or with the retention
     /// clean-up (RD11 decision 15). Set by the reading model.
     @ObservationIgnored var onReloaded: (@MainActor () -> Void)?
+    /// Called after a source's settings were saved: the failures of the
+    /// articles' pages are forgotten (RD12 decision 6). Set by the
+    /// workspace.
+    @ObservationIgnored var onSettingsSaved: (@MainActor () -> Void)?
 
     #if DEBUG
     /// Set by the UI tests: the next source save fails before reaching
@@ -436,6 +440,9 @@ final class SourceModel {
             if finalChanges != SourceChanges() {
                 try await library.updateSource(id, finalChanges)
             }
+        }
+        if saved {
+            onSettingsSaved?()
         }
         if saved, navigation.sheet == .sourceSettings(id) {
             navigation.sheet = nil

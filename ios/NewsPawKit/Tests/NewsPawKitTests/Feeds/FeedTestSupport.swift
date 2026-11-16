@@ -314,6 +314,7 @@ final class LoopbackServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "LoopbackServer")
     private let log = Mutex<[Request]>([])
+    private let connectionCount = Mutex(0)
     private let handler: Handler
 
     init(_ handler: @escaping Handler) throws {
@@ -333,6 +334,7 @@ final class LoopbackServer: @unchecked Sendable {
                 connection.cancel()
                 return
             }
+            self.connectionCount.withLock { $0 += 1 }
             connection.start(queue: self.queue)
             self.receive(on: connection, buffer: Data())
         }
@@ -357,6 +359,12 @@ final class LoopbackServer: @unchecked Sendable {
 
     var requests: [Request] {
         log.withLock { $0 }
+    }
+
+    /// How many connections were opened to the listener, with or without a
+    /// request on them (a `preconnect` opens one and sends nothing).
+    var connections: Int {
+        connectionCount.withLock { $0 }
     }
 
     private func receive(on connection: NWConnection, buffer: Data) {

@@ -210,7 +210,7 @@ struct SourceSettingsView: View {
     }
 
     private var footnote: some View {
-        Text("Saved now; used once translation and full-text reading are available.")
+        Text("Saved now; used once translation is available.")
             .foregroundStyle(Theme.secondaryText)
     }
 }

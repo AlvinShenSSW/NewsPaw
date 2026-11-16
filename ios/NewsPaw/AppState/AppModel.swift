@@ -152,9 +152,9 @@ final class AppModel {
     func start() async {
         guard case .loading = status else { return }
         observeScene()
-        // An OPML export left by a session that ended with its share sheet
-        // open (RD08 decision 7).
-        OPMLExportFile.empty()
+        // OPML exports left by a session that ended with a share sheet open
+        // (RD08 decision 7).
+        OPMLExportFile.emptyAll()
         // The one transport the app makes requests through. Under a UI-test
         // library directory it is the fixture transport, never the real one.
         // The one clock of the library and of Today's status line.
@@ -390,6 +390,9 @@ final class AppModel {
             adult = nil
         }
         workspace.stop()
+        // An adult export whose share sheet the swap took away is not
+        // dismissed through the sheet: every export file goes now (RD08).
+        OPMLExportFile.emptyAll()
         gateState = .locked
         applyTint()
         // A cover that is shown stays until the scene is active again and

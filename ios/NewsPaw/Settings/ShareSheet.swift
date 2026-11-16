@@ -20,29 +20,38 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
-/// The exported OPML file: one directory of its own under the temporary
-/// directory, emptied before each export, when the share sheet closes and at
-/// launch. The file holds the addresses of the partition it came from; its
-/// name and title do not name the partition.
+/// The exported OPML files: each export in a directory of its own under
+/// `OPML Export` in the temporary directory, removed when its share sheet
+/// ends; the whole folder is emptied at launch and at every lock of the
+/// adult partition. A file holds the addresses of the partition it came
+/// from; its name and title do not name the partition.
 enum OPMLExportFile {
-    static var directory: URL {
+    static var root: URL {
         FileManager.default.temporaryDirectory.appending(path: "OPML Export", directoryHint: .isDirectory)
     }
 
-    /// Removes the directory and whatever is in it.
-    static func empty() {
-        try? FileManager.default.removeItem(at: directory)
+    /// Removes every export, whichever partition and screen it came from.
+    static func emptyAll() {
+        try? FileManager.default.removeItem(at: root)
     }
 
-    /// Writes `data` as "NewsPaw Feeds <yyyy-MM-dd>.opml" in an emptied
-    /// directory and returns its address.
+    /// Writes `data` as "NewsPaw Feeds <yyyy-MM-dd>.opml" in a new
+    /// directory of its own, so that no other export can overwrite or
+    /// remove it, and returns its address.
     static func write(_ data: Data, on date: Date) throws -> URL {
-        empty()
+        let directory = root.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // The owner's calendar day, not the one in GMT.
         let day = date.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day().dateSeparator(.dash))
         let url = directory.appending(path: "NewsPaw Feeds \(day).opml")
         try data.write(to: url, options: .atomic)
         return url
+    }
+
+    /// Removes the directory of the export at `url`, and nothing else.
+    static func remove(_ url: URL) {
+        let directory = url.deletingLastPathComponent()
+        guard directory.deletingLastPathComponent().standardizedFileURL == root.standardizedFileURL else { return }
+        try? FileManager.default.removeItem(at: directory)
     }
 }

@@ -154,7 +154,12 @@ struct DataSettingsView: View {
     @State private var isClearing = false
     @State private var isExporting = false
     @State private var exported: ExportedFile?
+    /// The export the share sheet shows, until its directory is removed.
+    @State private var shownExport: URL?
     @State private var exportFailed = false
+    /// Whether this screen is shown: an export that ends after it went
+    /// away is removed, not presented.
+    @State private var isShown = false
 
     /// The file handed to the share sheet.
     private struct ExportedFile: Identifiable {
@@ -197,10 +202,10 @@ struct DataSettingsView: View {
                 // On the row, not on the list: the list carries the import's
                 // sheet and alert, and two of a kind on one view do not both
                 // present.
-                .sheet(item: $exported, onDismiss: OPMLExportFile.empty) { file in
+                .sheet(item: $exported, onDismiss: removeShownExport) { file in
                     ShareSheet(url: file.url) {
                         exported = nil
-                        OPMLExportFile.empty()
+                        removeShownExport()
                     }
                     .ignoresSafeArea()
                 }
@@ -253,15 +258,28 @@ struct DataSettingsView: View {
         .stackBackground(Theme.groupedBackground)
         .navigationTitle("Data")
         .onAppear {
+            isShown = true
             Task { size = await reading.library.imageCache.size() }
+        }
+        .onDisappear {
+            isShown = false
         }
         .opmlImport(from: .settings)
     }
 
+    /// The share sheet ended, by an activity or by being closed: its
+    /// export's directory is removed.
+    private func removeShownExport() {
+        if let url = shownExport {
+            OPMLExportFile.remove(url)
+            shownExport = nil
+        }
+    }
+
     /// "Export OPML": the library's file is built off the main actor and
-    /// written to the export directory, emptied first; the share sheet
-    /// shows it. A result for a workspace that was dropped meanwhile is
-    /// not shown.
+    /// written to a directory of its own; the share sheet shows it. A result
+    /// that arrives after the workspace was dropped or the screen was left
+    /// is removed, not shown.
     private func export() {
         isExporting = true
         let library = sources.library
@@ -270,10 +288,11 @@ struct DataSettingsView: View {
             do {
                 let data = try await library.opmlExport()
                 let url = try await Task.detached { try OPMLExportFile.write(data, on: Date()) }.value
-                guard !sources.isStopped else {
-                    OPMLExportFile.empty()
+                guard !sources.isStopped, isShown, exported == nil else {
+                    OPMLExportFile.remove(url)
                     return
                 }
+                shownExport = url
                 exported = ExportedFile(url: url)
             } catch {
                 if !sources.isStopped {

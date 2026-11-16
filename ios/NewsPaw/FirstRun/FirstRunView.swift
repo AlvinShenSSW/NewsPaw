@@ -2,7 +2,7 @@ import NewsPawKit
 import SwiftUI
 
 /// A step of the first run (ux S12).
-enum FirstRunStep: Int, CaseIterable {
+enum FirstRunStep: Int {
     case language = 1
     case model = 2
     case sources = 3

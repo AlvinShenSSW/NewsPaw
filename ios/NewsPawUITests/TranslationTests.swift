@@ -120,6 +120,38 @@ final class TranslationTests: TranslationTestCase {
         XCTAssertFalse(element(AccessibilityID.readingOriginalTitle).exists)
     }
 
+    /// RD21 criterion 10 (spec N01): with no model set up, the foreign rows
+    /// of a source that translates automatically show the warning mark,
+    /// and a row in the reading language none; the mark's question says
+    /// "Set up a model to translate" with "Open Settings", which opens
+    /// Models & Translation; once a primary model is saved the marks go and
+    /// the titles translate.
+    func testNoModelMarkOpensSettings() {
+        launchReading()
+        addFeed(Translation.feed, to: Translation.category)
+        let row = waitFor(articleRow(Translation.foreign(1)))
+        let mark = waitFor(warningMark(Translation.foreign(1)))
+        waitForLabel(row, containing: "Not translated, Set up a model to translate")
+        XCTAssertEqual(mark.label, Sentence.notTranslated)
+        XCTAssertFalse(warningMark(Translation.simplified).exists, "a row in the reading language is marked")
+        XCTAssertFalse(row.label.contains("译["), row.label)
+
+        mark.tap()
+        waitFor(question("Set up a model to translate"))
+        XCTAssertEqual(Set(alertButtonLabels()), ["Open Settings", "Cancel"])
+        XCTAssertFalse(readingTitle.exists, "the mark's tap opened the article")
+        alertButton("Open Settings").tap()
+        waitForAbsence(question("Set up a model to translate"))
+        waitFor(element(AccessibilityID.primaryModelRow)).tap()
+        setUpTranslatorInForm()
+        waitFor(element(AccessibilityID.primaryModelRow))
+
+        openCategoryList(Translation.category)
+        let translated = waitFor(articleRow(Translation.foreign(1)))
+        waitLong(for: translated, containing: Translation.translated(Translation.foreign(1)))
+        XCTAssertFalse(warningMark(Translation.foreign(1)).exists, "the mark stayed after a model was saved")
+    }
+
     /// Criterion 5 (UI): a 429 without a backup blocks the row with the
     /// service's sentence and Retry; a retry that fails again says so in
     /// an alert and stores nothing.

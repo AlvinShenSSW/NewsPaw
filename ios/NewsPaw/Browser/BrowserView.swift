@@ -38,10 +38,44 @@ struct BrowserView: View {
 
     var body: some View {
         @Bindable var session = session
+        content
+            .stackBackground(Theme.background)
+            .navigationTitle(Text(verbatim: session.displayTitle))
+            .navigationSubtitle(Text(verbatim: session.host))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if let article = session.temporaryArticle {
+                    readerToolbar(article)
+                } else {
+                    toolbar
+                }
+            }
+            // Pushed in the tab structure the tab bar would cover the bottom
+            // bar.
+            .toolbar(.hidden, for: .tabBar)
+            .alert(Text("This page has no readable article"), isPresented: $session.isShowingNoReadableArticle) {
+                Button("OK") {}
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(AccessibilityID.browser)
+    }
+
+    /// The page; or reader mode's temporary article in its place (RD12),
+    /// while the session keeps the page's web view, with its page and its
+    /// history, out of the view tree until Close (assumption A4).
+    @ViewBuilder
+    private var content: some View {
+        if let article = session.temporaryArticle {
+            TemporaryArticleView(article: article) { url in
+                session.openFromTemporaryArticle(url)
+            }
+        } else {
+            page
+        }
+    }
+
+    private var page: some View {
         WebViewHost(session: session)
-            // Beneath a temporary article the page stays alive, with its
-            // history (assumption A4), out of reach of VoiceOver.
-            .accessibilityHidden(session.temporaryArticle != nil)
             // The page runs behind the bottom bar only; the web view keeps
             // its content clear of it, so the end of a page scrolls above
             // the bar. It stays out from under the top bar: the title and
@@ -63,13 +97,6 @@ struct BrowserView: View {
                     failureView(failure)
                 }
             }
-            .overlay {
-                if let article = session.temporaryArticle {
-                    TemporaryArticleView(article: article) { url in
-                        session.openFromTemporaryArticle(url)
-                    }
-                }
-            }
             .overlay(alignment: .top) {
                 if session.isLoading {
                     ProgressView(value: session.progress)
@@ -79,25 +106,6 @@ struct BrowserView: View {
                         .accessibilityIdentifier(AccessibilityID.browserProgress)
                 }
             }
-            .stackBackground(Theme.background)
-            .navigationTitle(Text(verbatim: session.displayTitle))
-            .navigationSubtitle(Text(verbatim: session.host))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if let article = session.temporaryArticle {
-                    readerToolbar(article)
-                } else {
-                    toolbar
-                }
-            }
-            // Pushed in the tab structure the tab bar would cover the bottom
-            // bar.
-            .toolbar(.hidden, for: .tabBar)
-            .alert(Text("This page has no readable article"), isPresented: $session.isShowingNoReadableArticle) {
-                Button("OK") {}
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier(AccessibilityID.browser)
     }
 
     // MARK: - Failure (decision 7)
@@ -273,12 +281,14 @@ private struct TemporaryArticleView: View {
                 }
             }
             .frame(maxWidth: 680, alignment: .leading)
+            // Inside the scroll view: the browser's own identifier is on
+            // the view this one stands in.
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(AccessibilityID.readerArticle)
             .padding(Theme.Spacing.standard)
             .frame(maxWidth: .infinity)
         }
         .background(Theme.background)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(AccessibilityID.readerArticle)
     }
 }
 

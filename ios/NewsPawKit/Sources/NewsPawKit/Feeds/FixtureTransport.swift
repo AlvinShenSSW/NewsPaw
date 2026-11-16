@@ -454,12 +454,13 @@ public final class FixtureTransport: Transport {
     ]
 
     /// The article page: a title, a heading, the paragraphs above with an
-    /// edition number, a link to the list page, a picture, and the
+    /// edition number, a link to the list page at the start of a line (a
+    /// link that wraps has no point of its own to tap), a picture, and the
     /// furniture of a news site around them.
     static func fullTextArticle(edition: Int) -> String {
         let paragraphs = fullTextParagraphs.enumerated().map { index, text in
             index == 2
-                ? "<p>\(text) See also <a href=\"/pages/list\">the latest stories</a> from the harbour.</p>"
+                ? "<p><a href=\"/pages/list\">The latest stories</a> are on the list. \(text)</p>"
                 : "<p>\(text)</p>"
         }
         return """
@@ -512,7 +513,7 @@ public final class FixtureTransport: Transport {
 
     /// The full text of the feed's own full-text items: more than 1,000
     /// characters, less than the article page.
-    static let fullFeedBody = fullTextParagraphs.prefix(4).map { "<p>Feed text. \($0)</p>" }.joined()
+    static let fullFeedBody = fullTextParagraphs.prefix(5).map { "<p>Feed text. \($0)</p>" }.joined()
 
     private static let fullTextFeed: String = {
         func item(_ title: String, page: String, hoursAgo: Int, body: String? = nil) -> String {

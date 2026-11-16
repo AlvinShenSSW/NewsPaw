@@ -191,11 +191,9 @@ final class FullTextTests: FullTextTestCase {
         // A link in the temporary article is loaded by the browser.
         openReaderMode()
         // The temporary article's link, not the page's beneath it.
-        let link = element(AccessibilityID.readerArticle).links["the latest stories"]
+        let link = element(AccessibilityID.readerArticle).links["The latest stories"]
         scrollArticle(to: link)
-        // Near the end of its first line: the link wraps on a narrow
-        // screen, and the middle of its frame is then between its lines.
-        link.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.2)).tap()
+        link.tap()
         waitForAbsence(readerTitle)
         waitForPage(FullText.listTitle)
         waitFor(readerButton)

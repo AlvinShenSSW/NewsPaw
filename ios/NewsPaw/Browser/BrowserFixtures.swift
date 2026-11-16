@@ -194,6 +194,8 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
             send(task, html: Self.handlers)
         case ("fulltext.example.invalid", "/pages/article"):
             send(task, html: Self.ferryArticle)
+        case ("fulltext.example.invalid", "/pages/stalled"):
+            send(task, html: Self.page("Stalled page", "<p>A page whose address the fixture transport never answers.</p>"))
         case ("fulltext.example.invalid", "/pages/list"):
             let items = (1...30).map {
                 "<li><h2><a href=\"/pages/story-\($0)\">Headline number \($0) from the harbour</a></h2>"
@@ -383,6 +385,7 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         <p>\(FixtureTransport.fullTextParagraphs[1])</p>
         <p>\(FixtureTransport.fullTextParagraphs[2]) See also <a href="/pages/list">the latest stories</a> from the harbour.</p>
         <p>\(FixtureTransport.fullTextParagraphs[3])</p>
+        <p><a href="/pages/stalled">a story that never loads</a></p>
         <script>
         var audio = null;
         function silence(seconds) {

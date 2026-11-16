@@ -391,6 +391,32 @@ struct CategoryMoveTests {
         #expect(try await fixture.destination.sources().filter { $0.categoryID == fixture.category }.count == 2)
     }
 
+    // MARK: - Review round 2: an edit saved after the plan was read
+
+    @Test("a rename and a new icon saved after the plan was read move with the category; a category gone meanwhile moves nothing")
+    func categoryReadAgainWhenTheMoveRuns() async throws {
+        let fixture = try await Fixture.make(toAdult: false, twin: false)
+        defer { fixture.remove() }
+        let plan = try await fixture.plan()
+        try await fixture.old.renameCategory(fixture.category, to: "Renamed")
+        try await fixture.old.setCategoryIcon(fixture.category, to: .star)
+
+        #expect(await CategoryMove.run(plan, from: fixture.old, to: fixture.destination) == .moved(staying: 0, categoryRemoved: true))
+
+        let moved = try #require(try await fixture.destination.categories().first { $0.id == fixture.category })
+        #expect(moved.name == "Renamed")
+        #expect(moved.icon == .star)
+
+        // A category deleted after its plan was read.
+        let other = try await Fixture.make(toAdult: true, twin: false)
+        defer { other.remove() }
+        let gonePlan = try await other.plan()
+        try await other.old.deleteCategory(other.category, sources: .deleteSources)
+        let before = try await Self.snapshot(other.destination)
+        #expect(await CategoryMove.run(gonePlan, from: other.old, to: other.destination) == .notMoved)
+        #expect(try await Self.snapshot(other.destination) == before)
+    }
+
     // MARK: - Review round 1: a refresh already running in the destination
 
     /// A whole-library refresh of the destination took its targets before

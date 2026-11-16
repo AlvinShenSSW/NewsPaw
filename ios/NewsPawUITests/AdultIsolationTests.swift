@@ -240,6 +240,43 @@ final class AdultIsolationTests: IsolationTestCase {
         XCTAssertEqual(openStoragePage(of: "Plain story", in: "Velvet"), "none", "the page wrote again after Clear")
     }
 
+    // MARK: - Review round 2: no adult page while Clear runs
+
+    /// While Clear runs (held 8 s by the debug option) an adult page asked
+    /// for gets no session: its screen stays empty, and the page opens once
+    /// the clear has ended.
+    func testNoAdultPageOpensWhileClearRuns() {
+        app.terminate()
+        let application = XCUIApplication()
+        application.launchEnvironment[UITestLaunchKey.clearPause] = "8"
+        launch(application, authentication: ["passed", "passed"])
+        rotate(.portrait)
+        requireFullWidth()
+        turnOnAdult()
+        enterAdult()
+        createCategory("Velvet")
+        addSource(Fixture.articles, to: "Velvet")
+        openAdultSettings()
+        scrollTo(clearBrowsingButton).tap()
+        waitFor(button(AccessibilityID.confirmClearBrowsingDataButton)).tap()
+        let before = sessionsMade
+        XCTAssertGreaterThanOrEqual(before, 0, report)
+
+        openCategoryList("Velvet")
+        openArticle("Plain story")
+        waitFor(button(AccessibilityID.openOriginalButton)).tap()
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertEqual(sessionsMade, before, "a session was made while Clear ran")
+        XCTAssertFalse(barText("Original of plain-story").exists, "the page opened while Clear ran")
+
+        // Once the clear has ended the page opens.
+        let opened = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            self.barText("Original of plain-story").exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [opened], timeout: 60), .completed, "the page did not open after Clear")
+        XCTAssertEqual(sessionsMade, before + 1, report)
+    }
+
     // MARK: - Criterion 7
 
     /// Delete removes the adult browser's data with the rest: after

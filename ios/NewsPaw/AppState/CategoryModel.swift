@@ -161,11 +161,13 @@ final class CategoryModel {
         library.partition
     }
 
-    /// Whether a category save is queued or running. Meanwhile the open
-    /// editor is locked and rows cannot be moved or deleted: an edit made
-    /// then would be built on a list that is about to change (RD03 C2–C5).
+    /// Whether a category save is queued or running, or a move's plan is
+    /// read or the move runs (review round 2). Meanwhile the open editor is
+    /// locked and rows cannot be moved or deleted: an edit made then would
+    /// be built on a list that is about to change (RD03 C2–C5), or saved in
+    /// a library the category is leaving.
     var isBusy: Bool {
-        queuedOperations > 0
+        queuedOperations > 0 || isMoving
     }
 
     var activeDialogHost: CategoryDialogHost {
@@ -380,7 +382,11 @@ final class CategoryModel {
         pendingMove = nil
         guard let mover, !isMoving, !isStopped else { return }
         isMoving = true
+        let previous = lastOperation
         Task {
+            // A category save queued before the move ends first; none can
+            // start meanwhile (`isBusy`).
+            _ = await previous?.value
             let outcome = await mover.run(plan)
             isMoving = false
             guard !isStopped else { return }

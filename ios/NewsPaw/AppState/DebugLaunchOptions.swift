@@ -46,6 +46,9 @@ struct DebugLaunchOptions {
     /// so that a lock can come during the run (RD19 criterion 12). Applied
     /// only together with `libraryDirectory`.
     let moveStepPause: Duration?
+    /// How long Clear Browsing Data waits before it clears (review round
+    /// 2). Applied only together with `libraryDirectory`.
+    let clearPause: Duration?
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -95,6 +98,11 @@ struct DebugLaunchOptions {
             moveStepPause = .seconds(seconds)
         } else {
             moveStepPause = nil
+        }
+        if let text = environment[UITestLaunchKey.clearPause], let seconds = Int(text), seconds > 0 {
+            clearPause = .seconds(seconds)
+        } else {
+            clearPause = nil
         }
     }
 

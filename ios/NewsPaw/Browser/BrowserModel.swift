@@ -96,6 +96,12 @@ final class BrowserModel {
     /// Whether the workspace of this model was dropped (RD18 decision 4):
     /// from then on it makes no session and no web view.
     private(set) var isStopped = false
+    /// Whether a session may be made now: not while the adult browser's
+    /// data are being cleared or removed (review round 2), so that no page
+    /// keeps or writes back what the clear removes. A route that asks
+    /// meanwhile shows an empty screen and gets its session once
+    /// `stacksChanged()` is called after the clear. Set by the app model.
+    @ObservationIgnored var mayMakeSessions: @MainActor () -> Bool = { true }
     /// Whether the pages' media playback is suspended: from leaving the
     /// foreground until the scene is active again, and for good once the
     /// model is stopped (RD18 decision 13). A session made meanwhile starts
@@ -160,7 +166,7 @@ final class BrowserModel {
         guard current?.route != route else { return }
         current?.end()
         var next: BrowserSession?
-        if let route, let start = address(of: route) {
+        if let route, let start = address(of: route), mayMakeSessions() {
             var sourceID: UUID?
             if case .source(let id) = route {
                 sourceID = id

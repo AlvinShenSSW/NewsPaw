@@ -147,9 +147,16 @@ public enum CategoryMove {
     }
 
     private static func steps(_ plan: Plan, from: Library, to: Library, hooks: Hooks) async -> Outcome {
+        // The category as it is now, not as the plan read it: a rename or a
+        // new icon saved since then moves with it (review round 2). Gone
+        // meanwhile: nothing is moved.
+        let key = plan.category.id.databaseKey
+        guard let category = (try? await from.read({ db in try Category.fetchOne(db, key: key) })) ?? nil else {
+            return .notMoved
+        }
         let moved: [UUID]?
         do {
-            moved = try await copy(plan, to: to, hooks: hooks)
+            moved = try await copy(plan, category: category, to: to, hooks: hooks)
         } catch {
             return .notMoved
         }
@@ -166,7 +173,7 @@ public enum CategoryMove {
     /// Step 1. Returns the sources moved (copied now, or already there by
     /// their identifier), or `nil` when every source now has a twin in the
     /// destination and nothing was written.
-    private static func copy(_ plan: Plan, to: Library, hooks: Hooks) async throws -> [UUID]? {
+    private static func copy(_ plan: Plan, category: Category, to: Library, hooks: Hooks) async throws -> [UUID]? {
         let now = to.now()
         return try await to.write { db in
             hooks.inside?(.copy)
@@ -186,8 +193,8 @@ public enum CategoryMove {
             if try !(Bool.fetchOne(db, sql: "SELECT EXISTS (SELECT 1 FROM category WHERE id = ?)", arguments: [categoryKey]) ?? false) {
                 let last = try Int.fetchOne(db, sql: "SELECT MAX(sort_order) FROM category")
                 try Category(
-                    id: plan.category.id, name: plan.category.name, sortOrder: last.map { $0 + 1 } ?? 0,
-                    iconName: plan.category.iconName, overview: plan.category.overview, updatedAt: now
+                    id: category.id, name: category.name, sortOrder: last.map { $0 + 1 } ?? 0,
+                    iconName: category.iconName, overview: category.overview, updatedAt: now
                 ).insert(db)
             }
             for source in moving {

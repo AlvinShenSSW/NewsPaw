@@ -207,6 +207,33 @@ final class CategoryMoveTests: IsolationTestCase {
         waitFor(sourceRow("Fixture Feed"))
     }
 
+    // MARK: - Review round 2: the editor is locked while a move runs
+
+    /// An adult → normal move held between its steps (debug option): the
+    /// category's sheet stays on screen, and neither its name nor Save can
+    /// be used until the move has ended.
+    func testTheSheetIsLockedWhileAMoveRuns() {
+        launchForMoves(authentication: ["passed", "passed"], pause: 6)
+        turnOnAdult()
+        enterAdult()
+        createCategory("Velvet")
+        addSource(Fixture.feed, to: "Velvet")
+        openCategorySheet("Velvet")
+        tapMove()
+        _ = waitForAlert()
+        waitFor(button(AccessibilityID.confirmMoveButton)).tap()
+        waitForAbsence(app.alerts.firstMatch)
+        // Held between the copy and the deletion.
+        let field = app.textFields[AccessibilityID.nameField]
+        XCTAssertTrue(field.exists, "the sheet closed before the move ended")
+        XCTAssertFalse(field.isEnabled, "the name could be edited during the move")
+        XCTAssertFalse(button(AccessibilityID.saveButton).isEnabled, "Save could be used during the move")
+        // The move ends and takes the sheet with it.
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 60), .completed)
+        XCTAssertFalse(categoriesShown().contains("Velvet"))
+    }
+
     // MARK: - Criterion 12: a lock during a normal → adult run
 
     /// A normal → adult move whose run a lock overtakes (the run waits

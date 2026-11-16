@@ -364,6 +364,9 @@ enum UITestLaunchKey {
     /// A number of seconds a category move waits between its copy and its
     /// deletion (RD19); honoured only with `libraryDirectory`.
     static let moveStepPause = "NEWSPAW_UITEST_MOVE_STEP_PAUSE"
+    /// A number of seconds Clear Browsing Data waits before it clears
+    /// (review round 2); honoured only with `libraryDirectory`.
+    static let clearPause = "NEWSPAW_UITEST_CLEAR_PAUSE"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.

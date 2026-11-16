@@ -142,6 +142,7 @@ struct AdultPartitionView: View {
                 Text("Turn Off the Adult Partition")
                     .frame(minHeight: Theme.minimumTapTarget)
             }
+            .disabled(!model.canTurnOff)
             .accessibilityIdentifier(AccessibilityID.turnOffAdultButton)
         } footer: {
             if partitionModels == nil {

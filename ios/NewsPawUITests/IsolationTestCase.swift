@@ -45,6 +45,13 @@ class IsolationTestCase: AdultTestCase {
         return Int(report[range.upperBound...].prefix { $0.isNumber }) ?? -1
     }
 
+    /// How many browser sessions the app has made, from the debug report.
+    var sessionsMade: Int {
+        let report = self.report
+        guard let range = report.range(of: "sessions=") else { return -1 }
+        return Int(report[range.upperBound...].prefix { $0.isNumber }) ?? -1
+    }
+
     // MARK: - Settings › Adult Partition
 
     /// Settings, at its root, also from a pushed article or page: on the

@@ -79,7 +79,9 @@ final class ArticleListTests: ArticleTestCase {
         openSourceList("Articles Feed", in: "World")
         chooseFilter("All")
         waitForUnread(articleRow("Plain story"), false)
-        XCTAssertTrue(articleRow("Linkless story").label.hasSuffix(", Starred"), articleRow("Linkless story").label)
+        // "Starred" follows the time; with no model set up the
+        // translation's mark follows it (RD21 decision 7).
+        XCTAssertTrue(articleRow("Linkless story").label.contains(", Starred"), articleRow("Linkless story").label)
         XCTAssertTrue(isUnread(articleRow("Image story")))
         openStarred()
         waitFor(articleRow("Linkless story"))

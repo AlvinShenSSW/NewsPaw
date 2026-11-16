@@ -359,9 +359,10 @@ struct BodyTranslatorTests {
             #expect(containing.filter { $0.host == Self.backup }.count == 1)
         }
 
-        // New work replacing work whose request is in flight waits for it.
+        // New work replacing work whose request is in flight waits for it:
+        // here a request that is slow to end once cancelled.
         let held = TranslationService()
-        held.hold(request: 1)
+        held.hold(request: 1, ignoringCancellation: true)
         let replacing = try await BodyFixture.make(service: held)
         defer { replacing.remove() }
         let other = try await replacing.article()
@@ -370,11 +371,21 @@ struct BodyTranslatorTests {
         await replacing.eventually { replacing.service.requests.count == 1 }
         let second = replacing.job(BodySegments.plan(BodyFixture.blocks(2, story: "Other"), locale: .japanese), article: other)
         await replacing.translator.start(second)
+        // The second job's request must not be sent before the first has
+        // ended: give it time to be sent wrongly, then end the first.
+        let deadline = ContinuousClock.now + .seconds(2)
+        while replacing.service.requests.count < 2, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        held.release(request: 1)
         await replacing.translator.settled()
         #expect(replacing.end(of: first.id) == .cancelled)
         #expect(replacing.end(of: second.id) == .finished)
         #expect(replacing.service.mostInFlight == 1)
-        #expect(try await replacing.usage().map(\.outcome.rawValue).sorted() == ["cancelled", "ok"])
+        // The slow request answered after all: its row says so, and its
+        // result was dropped.
+        #expect(try await replacing.usage().map(\.outcome.rawValue).sorted() == ["ok", "ok"])
+        #expect(try await replacing.stored(other, .simplifiedChinese).isEmpty)
     }
 
     // MARK: - Criterion 5
@@ -581,6 +592,26 @@ struct BodyTranslatorTests {
         #expect(fixture.service.requests.count == 1)
         #expect(try await fixture.stored(article).isEmpty)
         #expect(try await fixture.usage().map(\.outcome) == [.cancelled])
+    }
+
+    @Test("a reply that arrives after its work was cancelled stores nothing and is not reported")
+    func replyAfterCancellation() async throws {
+        let service = TranslationService()
+        // The request answers although it was cancelled.
+        service.hold(request: 2, ignoringCancellation: true)
+        let fixture = try await BodyFixture.make(service: service)
+        defer { fixture.remove() }
+        let article = try await fixture.article()
+        let plan = BodySegments.plan(BodyFixture.blocks(4), locale: .simplifiedChinese)
+        let job = fixture.job(plan, article: article)
+        await fixture.translator.start(job)
+        await fixture.eventually { fixture.service.requests.count == 2 }
+        await fixture.translator.cancel()
+        service.release(request: 2)
+        await fixture.translator.settled()
+        #expect(fixture.end(of: job.id) == .cancelled)
+        #expect(Set(try await fixture.stored(article).keys) == Set(plan.chunks[0].map(\.hash)))
+        #expect(Set(fixture.translated.keys) == Set(plan.chunks[0].map(\.hash)))
     }
 
     @Test("cancelling a job by its identifier cancels only that job")

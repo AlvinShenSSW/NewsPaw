@@ -40,6 +40,9 @@ final class TranslationService: ModelHTTP {
     /// Requests held until released by number (the first is 1).
     private struct Holds {
         var held: Set<Int> = []
+        /// Held requests that a cancellation does not release: a request
+        /// that is slow to end.
+        var deaf: Set<Int> = []
         var released: Set<Int> = []
         var waiting: [Int: CheckedContinuation<Void, Never>] = [:]
     }
@@ -61,8 +64,13 @@ final class TranslationService: ModelHTTP {
     /// until its task is cancelled (it then throws `CancellationError`, as
     /// a cancelled request does). Tests that need a request in flight hold
     /// it instead of giving it a delay that a slow runner could outlast.
-    func hold(request number: Int) {
-        holds.withLock { _ = $0.held.insert(number) }
+    func hold(request number: Int, ignoringCancellation: Bool = false) {
+        holds.withLock { holds in
+            holds.held.insert(number)
+            if ignoringCancellation {
+                holds.deaf.insert(number)
+            }
+        }
     }
 
     func release(request number: Int) {
@@ -119,9 +127,14 @@ final class TranslationService: ModelHTTP {
                     }
                 }
             } onCancel: {
-                release(request: number)
+                if !holds.withLock({ $0.deaf.contains(number) }) {
+                    release(request: number)
+                }
             }
-            try Task.checkCancellation()
+            // A deaf request answers whatever happened meanwhile.
+            if !holds.withLock({ $0.deaf.contains(number) }) {
+                try Task.checkCancellation()
+            }
         }
         if delay > .zero {
             try await Task.sleep(for: delay)

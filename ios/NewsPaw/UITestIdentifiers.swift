@@ -301,6 +301,36 @@ enum AccessibilityID {
     static func modelListRow(_ name: String) -> String {
         modelListPrefix + name
     }
+
+    // First run (RD21)
+    static let firstRun = "firstRun"
+    static let firstRunStep = "firstRun.step"
+    static let firstRunSkip = "firstRun.skip"
+    static let firstRunBack = "firstRun.back"
+    static let firstRunContinue = "firstRun.continue"
+    static let firstRunDone = "firstRun.done"
+    static let firstRunLanguagePicker = "firstRun.language"
+    static let firstRunText = "firstRun.text"
+    static let firstRunPrimaryModel = "firstRun.primaryModel"
+    static let firstRunAddSource = "firstRun.addSource"
+    static let firstRunCategoryPrefix = "firstRun.category."
+
+    /// A suggested category's row in the first run, by its group's raw value.
+    static func firstRunCategory(_ group: String) -> String {
+        firstRunCategoryPrefix + group
+    }
+
+    // Today with no source (RD21 decision 10)
+    static let todayAddSourceButton = "today.addSource"
+
+    // About's licences (RD21 decision 9)
+    static let licenceText = "licence.text"
+    static let licenceAddress = "licence.address"
+
+    /// A licence's row in About, by its notice's identifier.
+    static func licenceRow(_ id: String) -> String {
+        "about.licence." + id
+    }
 }
 
 #if DEBUG
@@ -346,6 +376,10 @@ enum UITestLaunchKey {
     /// A whole number stored as the daily automatic limit (RD14 decision
     /// 8); honoured only with `libraryDirectory`.
     static let dailyAutomaticLimit = "NEWSPAW_UITEST_DAILY_AUTOMATIC_LIMIT"
+    /// "1" lets the first run show and its flag be read and written (RD21);
+    /// honoured only with `libraryDirectory`. Without it a UI-test launch
+    /// starts on the shell.
+    static let firstRun = "NEWSPAW_UITEST_FIRST_RUN"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.

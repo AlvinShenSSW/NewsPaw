@@ -80,10 +80,16 @@ final class AppModel {
     var notice: AdultNotice?
     /// The question of turning off being asked at the root.
     var turnOffQuestion: TurnOffQuestion?
+    /// Whether the first run (ux S12; RD21) is shown in place of the
+    /// shell's containers: decided once, when the normal library has
+    /// loaded.
+    private(set) var showsFirstRun = false
 
     /// The app's one store; it gives out one library per partition.
     @ObservationIgnored private var store: LibraryStore?
     @ObservationIgnored private var gate: AdultGate?
+    /// The device's preferences, where the first-run flag is kept.
+    @ObservationIgnored private var preferences: Preferences?
     @ObservationIgnored private var parts: WorkspaceParts?
     /// Makes the adult workspace's browser set-up: a new non-persistent
     /// website data store for each unlock (decision 13).
@@ -134,6 +140,12 @@ final class AppModel {
     /// normal one.
     var shown: Workspace? {
         adult ?? normal
+    }
+
+    /// Whether the shell shows the first run: only on the normal
+    /// workspace.
+    var isShowingFirstRun: Bool {
+        showsFirstRun && adult == nil
     }
 
     /// Whether the partition switch is offered: only while the partition is
@@ -263,6 +275,17 @@ final class AppModel {
             workspace.sources.failNextSave = options.failNextSourceSave
             #endif
             await workspace.load()
+            // The first run (RD21 decisions 1 and 2). Under a UI-test
+            // library directory only when asked for.
+            #if DEBUG
+            let decidesFirstRun = options.libraryDirectory == nil || options.firstRun
+            #else
+            let decidesFirstRun = true
+            #endif
+            self.preferences = preferences
+            if decidesFirstRun {
+                showsFirstRun = Self.startsFirstRun(preferences: preferences, categories: workspace.categories)
+            }
             // The gate: the only way to the adult library from here on.
             let gate = AdultGate(
                 store: store, authenticator: authenticator, preferences: preferences, keys: adultKeys,
@@ -279,6 +302,38 @@ final class AppModel {
             return
         } catch {
             status = .failed(LibraryFailure(error))
+        }
+    }
+
+    // MARK: - The first run (RD21)
+
+    /// Whether a launch shows the first run (decisions 1 and 2): only when
+    /// its flag is absent and the normal library's categories were read and
+    /// are none. A library with a category (an upgrade, a restore, or a
+    /// first run interrupted after one was created) writes the flag and
+    /// shows the shell; a failed read shows the shell and writes nothing,
+    /// so that the next launch decides again.
+    private static func startsFirstRun(preferences: Preferences, categories: CategoryModel) -> Bool {
+        guard !preferences.firstRunIsDone, categories.loadState == .loaded else { return false }
+        if categories.summaries.isEmpty {
+            return true
+        }
+        preferences.firstRunIsDone = true
+        return false
+    }
+
+    /// The first run ended, by Done or by Skip on its last step (decision
+    /// 8): the flag is written, the shell shows Today with nothing pushed
+    /// or presented, and a library with a feed-like source is refreshed at
+    /// once, since the launch's entry refresh ran on the empty library.
+    func finishFirstRun() {
+        guard showsFirstRun, let normal else { return }
+        preferences?.firstRunIsDone = true
+        normal.navigation.showAtRoot(of: .today, layout: nil)
+        showsFirstRun = false
+        if normal.sources.hasFeedLikeSource {
+            let refresh = normal.refresh
+            Task { await refresh.refresh(.library) }
         }
     }
 

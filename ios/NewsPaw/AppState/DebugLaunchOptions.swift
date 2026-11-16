@@ -39,6 +39,10 @@ struct DebugLaunchOptions {
     /// The daily automatic limit to store (RD14 decision 8). Applied only
     /// together with `libraryDirectory`.
     let dailyAutomaticLimit: Int?
+    /// Whether the first run may be shown (RD21 decision 1): under a UI-test
+    /// library directory it is shown, and its flag kept, only when asked
+    /// for, so that the other suites start on the shell.
+    let firstRun: Bool
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -83,6 +87,7 @@ struct DebugLaunchOptions {
         } else {
             dailyAutomaticLimit = nil
         }
+        firstRun = environment[UITestLaunchKey.firstRun] == "1"
     }
 
     /// Accepts only a name that stays inside the temporary directory.

@@ -93,7 +93,8 @@ final class TranslationModel {
     // MARK: - What a row shows
 
     /// The mark of an article's row, from its stored state and this model.
-    /// A library with no model set up shows no mark.
+    /// A library with no model set up marks its waiting rows too, whose
+    /// question says so and opens Settings (spec N01; RD21 decision 7).
     func mark(for row: ArticleRow) -> TranslationMark? {
         if inRequest.contains(row.id) || retrying.contains(row.id) {
             return .working
@@ -105,7 +106,7 @@ final class TranslationModel {
         // row with its translation in that language was not stopped by it
         // (a block of a request begun before the language was switched
         // back can arrive after the switch). A stored failure is shown above.
-        if row.translation == nil, let block = blocked[row.id], block != .setUp(.noModelSetUp) {
+        if row.translation == nil, let block = blocked[row.id] {
             return .warning(.blocked(row.id, block))
         }
         return nil

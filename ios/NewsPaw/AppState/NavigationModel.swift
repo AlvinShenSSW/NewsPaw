@@ -103,6 +103,9 @@ enum SettingsRoute: Hashable {
     case adultPartition
     case data
     case about
+    /// One bundled library's licence, by its notice's identifier, pushed on
+    /// About (RD21 decision 9).
+    case licence(String)
 
     /// Whether the route's screen is a form the owner types into, which
     /// has to stay clear of the keyboard in a pane too (`paneRoot`).

@@ -83,11 +83,13 @@ private struct AdultDebugElement: View {
 }
 #endif
 
-/// Measures the window's width and shows the tab container or the pane
-/// container. Sheets and the alerts and dialogs for when no sheet is open
-/// are presented here, above the container switch, so a switch cannot
-/// dismiss them.
+/// Measures the window's width and shows the first run (RD21 decision 1),
+/// the tab container or the pane container. Sheets and the alerts and
+/// dialogs for when no sheet is open are presented here, above the
+/// container switch, so a switch cannot dismiss them, and the first run
+/// has them as the containers do.
 struct ShellView: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.accent) private var accent
     @Environment(CategoryModel.self) private var categories
     @Environment(SourceModel.self) private var sources
@@ -103,6 +105,8 @@ struct ShellView: View {
         Group {
             if width == 0 {
                 Theme.background
+            } else if model.isShowingFirstRun {
+                FirstRunView()
             } else if layout.structure == .tabs {
                 TabContainer()
             } else {

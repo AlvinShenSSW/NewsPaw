@@ -77,7 +77,8 @@ final class IsolationScreenshotTests: IsolationTestCase {
         // S10 from the normal partition.
         openSettings()
         scrollTo(adultRow).tap()
-        waitFor(turnOffButton)
+        // Below the fold at the largest text size.
+        scrollTo(turnOffButton)
         app.swipeDown()
         capture("s10-from-normal")
         scrollToEnd()
@@ -90,8 +91,11 @@ final class IsolationScreenshotTests: IsolationTestCase {
 
         // S10 inside the adult partition.
         enter()
-        openAdultSettings()
-        app.swipeDown()
+        tapAdultRow()
+        scrollTo(turnOffButton)
+        for _ in 0..<6 {
+            app.swipeDown()
+        }
         capture("s10-inside")
         scrollToEnd()
         capture("s10-inside-end")

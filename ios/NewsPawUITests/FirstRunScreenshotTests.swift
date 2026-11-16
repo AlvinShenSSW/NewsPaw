@@ -66,7 +66,9 @@ final class FirstRunScreenshotTests: FirstRunTestCase {
         saveIntoNewCategory("World")
         waitForAbsence(app.textFields[AccessibilityID.addressField])
         openCategoryList("World")
-        let mark = waitFor(warningMark(Translation.foreign(1)))
+        // The list's first row: at the largest text size the later rows
+        // are below the fold.
+        let mark = waitFor(warningMark(Translation.markup))
         capture("no-model-row")
         mark.tap()
         waitFor(app.alerts.firstMatch)

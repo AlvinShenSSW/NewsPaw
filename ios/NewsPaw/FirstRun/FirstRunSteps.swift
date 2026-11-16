@@ -85,6 +85,10 @@ struct FirstRunModelStep: View {
 struct FirstRunSourcesStep: View {
     @Environment(\.accent) private var accent
     @Environment(CategoryModel.self) private var categories
+    /// The icon's column grows with the text, so that at the accessibility
+    /// sizes the symbol neither overlaps the name nor reaches the row's
+    /// edge.
+    @ScaledMetric(relativeTo: .body) private var iconWidth = 28.0
     @Binding var ticked: Set<SuggestedSourceGroup>
     let isCreating: Bool
     let addSource: () -> Void
@@ -136,7 +140,7 @@ struct FirstRunSourcesStep: View {
             HStack(spacing: Theme.Spacing.medium) {
                 Image(systemName: group.icon.rawValue)
                     .foregroundStyle(accent)
-                    .frame(width: 28)
+                    .frame(width: iconWidth)
                     .accessibilityHidden(true)
                 SourceWording.group(group)
                     .foregroundStyle(Theme.text)

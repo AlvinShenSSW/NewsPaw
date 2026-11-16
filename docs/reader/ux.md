@@ -186,7 +186,7 @@ Three steps, each skippable:
 
 1. Reading language (preselected from the system language).
 2. A model for the normal partition: preset, key, Test. A note says what is sent to the service: titles and article text.
-3. Sources: Suggested sources, Paste an address, Import configuration / OPML.
+3. Sources: Suggested sources, Paste an address, Import configuration / OPML. The step also offers the suggested categories of N02, all unticked; the ticked ones are created when the owner adds a source or finishes.
 
 It ends on Today.
 

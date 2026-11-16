@@ -242,7 +242,7 @@ private struct ArticleRowButton: View {
             } label: {
                 ArticleRowView(
                     row: row, translatedTitle: translation == nil ? nil : row.translatedTitle,
-                    showsOriginal: translationSettings.showsOriginalTitles, language: translationSettings.readingLocale, mark: mark
+                    showsOriginal: translationSettings.showsOriginalTitles, mark: mark
                 )
                 .contentShape(Rectangle())
             }

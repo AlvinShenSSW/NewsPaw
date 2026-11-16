@@ -92,7 +92,6 @@ private struct ArticleScreen: View {
     @Environment(NavigationModel.self) private var navigation
     @Environment(ReadingSettings.self) private var settings
     @Environment(TranslationModel.self) private var translation: TranslationModel?
-    @Environment(TranslationSettings.self) private var translationSettings
     @Environment(\.layoutDirection) private var layoutDirection
     @State private var isShowingSettings = false
     /// The title's size: 22 pt at the default Dynamic Type size, scaled
@@ -140,19 +139,12 @@ private struct ArticleScreen: View {
     @ViewBuilder
     private var header: some View {
         let translated = translation == nil ? nil : row.translatedTitle
-        Group {
-            if let translated {
-                Text(verbatim: translated)
-                    .accessibilityLabel(Text(spokenTranslation(translated)))
-            } else {
-                Text(verbatim: row.displayTitle)
-            }
-        }
-        .font(.system(size: min(scaledTitleSize * settings.textSize.factor, ReadingMetrics.maximumSize), weight: .bold))
-        .foregroundStyle(Theme.text)
-        .fixedSize(horizontal: false, vertical: true)
-        .accessibilityAddTraits(.isHeader)
-        .accessibilityIdentifier(AccessibilityID.readingTitle)
+        Text(verbatim: translated ?? row.displayTitle)
+            .font(.system(size: min(scaledTitleSize * settings.textSize.factor, ReadingMetrics.maximumSize), weight: .bold))
+            .foregroundStyle(Theme.text)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityIdentifier(AccessibilityID.readingTitle)
         if translated != nil {
             Text(verbatim: row.displayTitle)
                 .font(.subheadline)
@@ -165,14 +157,6 @@ private struct ArticleScreen: View {
             .foregroundStyle(Theme.secondaryText)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier(AccessibilityID.readingByline)
-    }
-
-    /// A translated title as VoiceOver reads it: in the reading language.
-    private func spokenTranslation(_ text: String) -> AttributedString {
-        var spoken = AttributedString(text)
-        spoken[AccessibilitySpeechLanguageAttribute.self] = translationSettings.readingLocale.rawValue
-        spoken.languageIdentifier = translationSettings.readingLocale.rawValue
-        return spoken
     }
 
     /// Source · author · time; an absent author is left out.

@@ -1,7 +1,5 @@
 import Foundation
 import NewsPawKit
-import SwiftUI
-import UIKit
 
 /// The wording of translation (ux section 4; RD14 decision 9). No internal
 /// word (slot, batch, pause) is shown.
@@ -71,23 +69,6 @@ enum TranslationWording {
         case .retryWithBackup: String(localized: "Retry with the Backup Model")
         case .openSettings: String(localized: "Open Settings")
         }
-    }
-}
-
-/// The language of a run of an accessibility label, for VoiceOver (ux
-/// section 6; RD14 decision 9): UIKit's speech-language attribute, which
-/// SwiftUI carries into the element's attributed label.
-enum AccessibilitySpeechLanguageAttribute: CodableAttributedStringKey, ObjectiveCConvertibleAttributedStringKey {
-    typealias Value = String
-    typealias ObjectiveCValue = NSString
-    static let name = NSAttributedString.Key.accessibilitySpeechLanguage.rawValue
-
-    static func objectiveCValue(for value: String) throws -> NSString {
-        value as NSString
-    }
-
-    static func value(for object: NSString) throws -> String {
-        object as String
     }
 }
 

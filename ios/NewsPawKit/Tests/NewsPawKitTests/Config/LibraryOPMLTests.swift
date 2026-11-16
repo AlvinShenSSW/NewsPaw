@@ -345,31 +345,29 @@ struct LibraryOPMLTests {
 
     // MARK: - Criterion 10 at the library
 
-    @Test("folders named with 160 kB of combining marks are planned within a time bound")
+    @Test("folders named with 320 kB of combining marks are read and planned within a time bound")
     func combiningMarksPlan() async throws {
         let fixture = try await Fixture.make()
         defer { fixture.close() }
-        let marks = "a" + String(repeating: "\u{0301}\u{0316}", count: 40_000)
-        let reordered = "a" + String(repeating: "\u{0316}\u{0301}", count: 40_000)
-        let text = #"""
-            <opml version="2.0"><body>
-              <outline text="\#(marks)"><outline text="A" xmlUrl="https://a.example/feed"/></outline>
-              <outline text="\#(reordered)"><outline text="B" xmlUrl="https://b.example/feed"/></outline>
-              <outline text="\#(marks)z"><outline text="C" xmlUrl="https://c.example/feed"/></outline>
-            </body></opml>
-            """#
+        let marks = "a" + String(repeating: "\u{0301}\u{0316}", count: 80_000)
+        let reordered = "a" + String(repeating: "\u{0316}\u{0301}", count: 80_000)
+        let folders = [marks, reordered, marks + "z", reordered + "z"].enumerated().map { index, name in
+            #"<outline text="\#(name)"><outline text="F\#(index)" xmlUrl="https://\#(index).example/feed"/></outline>"#
+        }
+        let text = #"<opml version="2.0"><body>\#(folders.joined())</body></opml>"#
         _ = try await fixture.library.createCategory(name: "a\u{0301}", icon: .folder)
 
         let start = ContinuousClock.now
         let document = try OPMLReader.read(Data(text.utf8)).get()
         let plan = try await fixture.library.opmlImportPlan(document)
         let elapsed = ContinuousClock.now - start
-        print("RD08 criterion 10 | read and plan, three folders named with 160 kB of marks | \(elapsed)")
+        print("RD08 criterion 10 | read and plan, four folders named with 320 kB of marks | \(elapsed)")
 
-        #expect(plan.addedFeeds == 3)
-        // Without the byte bound, hashing and comparing these names takes
-        // seconds (RD08 table: 0.7 s per hash, 1.5 s per comparison).
-        #expect(elapsed < .seconds(1))
+        #expect(plan.addedFeeds == 4)
+        // About 0.1 s with the byte bound. Without it the plan hashes and
+        // compares these names, at about 2.8 s per hash (four times the
+        // design's 0.7 s for 160 kB).
+        #expect(elapsed < .seconds(3))
     }
 
     // MARK: - Export (criterion 6)

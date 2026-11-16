@@ -69,9 +69,9 @@ public enum ReadingTypeface: String, Sendable, CaseIterable {
 
 /// The settings kept in the system preferences store (spec section 4): the
 /// two refresh settings and the three translation settings (RD14), under the
-/// names the configuration file uses; the three reading settings (RD11) and
-/// the two device settings of the adult partition (RD18), which the
-/// configuration file never carries. A stored value outside its set reads
+/// names the configuration file uses; the three reading settings (RD11), the
+/// two device settings of the adult partition (RD18) and the first-run flag
+/// (RD21), which the configuration file never carries. A stored value outside its set reads
 /// as the default. Nothing about a partition's content is kept here.
 ///
 /// Sendable by hand: its one stored property is a `UserDefaults`, which the
@@ -87,6 +87,7 @@ public struct Preferences: @unchecked Sendable {
     static let readingLocaleKey = "reading_locale"
     static let autoTranslateTitlesKey = "auto_translate_titles"
     static let showOriginalTitlesKey = "show_original_titles"
+    static let firstRunDoneKey = "first_run_done"
 
     private let defaults: UserDefaults
 
@@ -177,6 +178,16 @@ public struct Preferences: @unchecked Sendable {
         get { truthValue(Self.showOriginalTitlesKey) ?? false }
         nonmutating set {
             defaults.set(newValue, forKey: Self.showOriginalTitlesKey)
+        }
+    }
+
+    /// Whether the first run has ended on this device (RD21 decision 2): a
+    /// device setting, never exported or imported. Anything stored that is
+    /// not `true` reads as not done.
+    public var firstRunIsDone: Bool {
+        get { truthValue(Self.firstRunDoneKey) ?? false }
+        nonmutating set {
+            defaults.set(newValue, forKey: Self.firstRunDoneKey)
         }
     }
 

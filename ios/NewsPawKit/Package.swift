@@ -19,11 +19,14 @@ let package = Package(
                 .product(name: "SwiftSoup", package: "SwiftSoup"),
             ],
             exclude: [
-                "Reading/Resources/LICENSE",
                 "Reading/Resources/README.md",
             ],
             resources: [
                 .copy("Reading/Resources/Readability.js"),
+                // Readability's notice, shown in About with the full
+                // Apache License 2.0 from `Notices` (RD21 decision 9).
+                .copy("Reading/Resources/LICENSE"),
+                .copy("Notices"),
             ]
         ),
         .testTarget(

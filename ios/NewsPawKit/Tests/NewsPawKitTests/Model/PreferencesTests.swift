@@ -190,4 +190,29 @@ struct PreferencesTests {
             #expect(!preferences.showOriginalTitles)
         }
     }
+
+    // MARK: - RD21 decision 2
+
+    @Test("the first-run flag: absent reads as not done; true is done; it is stored under first_run_done")
+    func firstRunFlag() throws {
+        try withSuite { defaults in
+            let preferences = Preferences(defaults)
+            #expect(!preferences.firstRunIsDone)
+            preferences.firstRunIsDone = true
+            #expect(Preferences(defaults).firstRunIsDone)
+            #expect(defaults.object(forKey: "first_run_done") as? Bool == true)
+            preferences.firstRunIsDone = false
+            #expect(!Preferences(defaults).firstRunIsDone)
+        }
+    }
+
+    @Test("a stored first-run value that is not a truth value reads as not done")
+    func firstRunFlagOutsideItsSet() throws {
+        try withSuite { defaults in
+            for value: Any in [1, "1", "true", "YES", 1.0, Date()] {
+                defaults.set(value, forKey: "first_run_done")
+                #expect(!Preferences(defaults).firstRunIsDone, "\(value)")
+            }
+        }
+    }
 }

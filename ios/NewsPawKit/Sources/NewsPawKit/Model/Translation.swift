@@ -11,6 +11,22 @@ public enum ReadingLocale: String, Sendable, Hashable, CaseIterable {
 
     public static let standard = ReadingLocale.simplifiedChinese
 
+    /// The reading language the first run preselects (RD21 decision 4),
+    /// from the system's preferred languages, the first of which is the
+    /// system language: Chinese of any script or region → Simplified
+    /// Chinese, Japanese → Japanese, English → English, anything else → the
+    /// standard.
+    public static func preselected(from preferredLanguages: [String]) -> ReadingLocale {
+        guard let first = preferredLanguages.first else { return .standard }
+        let code = first.split(whereSeparator: { $0 == "-" || $0 == "_" }).first.map { $0.lowercased() } ?? ""
+        switch code {
+        case "zh": return .simplifiedChinese
+        case "ja": return .japanese
+        case "en": return .english
+        default: return .standard
+        }
+    }
+
     /// The language's name in English, as the model's instructions name it.
     var englishName: String {
         switch self {

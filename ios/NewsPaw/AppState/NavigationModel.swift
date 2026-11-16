@@ -99,6 +99,8 @@ enum SettingsRoute: Hashable {
     case refresh
     /// Reading (ux S8; RD11): text size, line spacing, typeface.
     case reading
+    /// Settings › Adult Partition (ux S10; RD18 decision 10).
+    case adultPartition
     case data
     case about
 
@@ -523,6 +525,38 @@ final class NavigationModel {
             libraryPath = []
         } else if !layout.sidebarIsPane {
             openSlideOver()
+        }
+    }
+
+    /// The workspace of this navigation is dropped: nothing stays
+    /// presented or pushed, and no list is entered.
+    func clear() {
+        sheet = nil
+        closeSlideOver()
+        libraryPath = []
+        starredPath = []
+        settingsPath = []
+    }
+
+    /// The workspace of this navigation is shown in place of the other
+    /// one (RD18 decision 3): the tab is kept, every stack is at its root,
+    /// the sheet and the slide-over are closed, and the list on screen is
+    /// entered so that it is read again.
+    func showAtRoot(of tab: AppTab, layout: WindowLayout?) {
+        clear()
+        currentTab = tab
+        self.layout = layout ?? self.layout
+        switch tab {
+        case .starred:
+            onListEntered?(.starred)
+        case .library:
+            // The panes show All Unread for the Library root; the tab
+            // structure shows the category list, which is no article list.
+            if self.layout?.structure == .panes {
+                onListEntered?(.allUnread)
+            }
+        case .today, .settings:
+            break
         }
     }
 

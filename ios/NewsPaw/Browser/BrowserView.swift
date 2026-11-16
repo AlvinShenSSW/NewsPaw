@@ -27,6 +27,7 @@ struct BrowserPane: View {
 /// progress line while a page loads; Back, Forward and More below. The
 /// places of Translate and reader mode stay empty until RD16 and RD12.
 struct BrowserView: View {
+    @Environment(\.accent) private var accent
     let session: BrowserSession
     let close: (() -> Void)?
     @Environment(SourceModel.self) private var sources
@@ -59,7 +60,7 @@ struct BrowserView: View {
                 if session.isLoading {
                     ProgressView(value: session.progress)
                         .progressViewStyle(.linear)
-                        .tint(Theme.accent)
+                        .tint(accent)
                         .accessibilityLabel(Text("Loading"))
                         .accessibilityIdentifier(AccessibilityID.browserProgress)
                 }

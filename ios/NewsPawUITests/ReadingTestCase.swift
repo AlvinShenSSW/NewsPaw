@@ -17,9 +17,6 @@ class ReadingTestCase: BrowserTestCase {
 
     static let largestText = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
 
-    /// The environment of the next launch besides the library directory.
-    var extraEnvironment: [String: String] = [:]
-
     /// Launches at full size, in portrait on iPhone and as asked on iPad,
     /// with the reading feed in "World" and its source's list shown.
     func launchWithReadingFeed(_ orientation: UIDeviceOrientation = .portrait, arguments: [String] = [], pageSize: Int? = nil) {
@@ -41,9 +38,6 @@ class ReadingTestCase: BrowserTestCase {
     func launchReading(_ orientation: UIDeviceOrientation = .portrait, arguments: [String] = [], pageSize: Int? = nil) {
         app.terminate()
         let application = XCUIApplication()
-        for (key, value) in extraEnvironment {
-            application.launchEnvironment[key] = value
-        }
         if let pageSize {
             application.launchEnvironment[UITestLaunchKey.articlePageSize] = String(pageSize)
         }

@@ -15,6 +15,11 @@ import Foundation
 /// the directory on every store cost about 100 ms at 20,000 files. It is
 /// taken from a listing at first use and again whenever an eviction is
 /// needed, so files removed behind the cache's back are noticed then.
+///
+/// A cache whose library was closed stores nothing (RD18): the adult
+/// library is closed at every lock and before its data is deleted, and a
+/// thumbnail that was ending must not write its bytes, or create the
+/// directory again, after that.
 public actor ImageCache {
     /// 500 MB.
     public static let standardLimit = 500 * 1024 * 1024
@@ -25,6 +30,18 @@ public actor ImageCache {
     public nonisolated let limit: Int
     /// The running total in bytes; `nil` until first use.
     private var total: Int?
+    /// Whether the cache's library was closed: a store then writes nothing.
+    private var isClosed = false
+
+    #if DEBUG
+    /// Package tests only: runs inside a store that is about to write, so
+    /// that a test can hold a store in flight.
+    private var storeWillWrite: (@Sendable () -> Void)?
+
+    func setStoreWillWrite(_ hook: (@Sendable () -> Void)?) {
+        storeWillWrite = hook
+    }
+    #endif
 
     init(directory: URL, limit: Int = standardLimit) {
         self.directory = directory
@@ -42,12 +59,16 @@ public actor ImageCache {
 
     /// Stores `data` for `address`, then removes the least recently used
     /// items until the total is within the limit. An item larger than the
-    /// limit is not stored and removes nothing.
+    /// limit is not stored and removes nothing; a closed cache stores
+    /// nothing and creates no directory.
     ///
     /// - Returns: whether the item was stored.
     @discardableResult
     public func store(_ data: Data, for address: String) -> Bool {
-        guard data.count <= limit else { return false }
+        guard !isClosed, data.count <= limit else { return false }
+        #if DEBUG
+        storeWillWrite?()
+        #endif
         let url = fileURL(for: address)
         var total = currentTotal()
         let replaced = fileSize(at: url)
@@ -82,6 +103,16 @@ public actor ImageCache {
             left += item.size
         }
         total = left
+    }
+
+    /// The cache's library was closed (RD18: every lock of the adult
+    /// partition, and before its data is deleted): from now on a store
+    /// writes nothing. A store that is running ends first, because the
+    /// actor runs one at a time; so once this returns, nothing of this
+    /// cache writes any more and its directory can be removed. Reads and
+    /// Clear are unchanged.
+    func close() {
+        isClosed = true
     }
 
     // MARK: - Total

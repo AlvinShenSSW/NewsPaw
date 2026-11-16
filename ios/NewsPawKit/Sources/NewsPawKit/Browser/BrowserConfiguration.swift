@@ -6,9 +6,14 @@ import WebKit
 /// app's. The only scheme handlers are the ones passed in, which the app
 /// does only for the UI tests' fixture pages in a debug build.
 public enum BrowserConfiguration {
+    /// - Parameter allowsPictureInPicture: false for the adult library's
+    ///   sessions (RD18 decision 13), whose video must not go on playing in
+    ///   a window of its own after the app is left. Picture in Picture
+    ///   exists on iOS only.
     @MainActor
     public static func make(
-        dataStore: WKWebsiteDataStore, schemeHandlers: [String: any WKURLSchemeHandler] = [:]
+        dataStore: WKWebsiteDataStore, schemeHandlers: [String: any WKURLSchemeHandler] = [:],
+        allowsPictureInPicture: Bool = true
     ) -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = dataStore
@@ -18,6 +23,9 @@ public enum BrowserConfiguration {
         // itself.
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        #if os(iOS)
+        configuration.allowsPictureInPictureMediaPlayback = allowsPictureInPicture
+        #endif
         for (scheme, handler) in schemeHandlers {
             configuration.setURLSchemeHandler(handler, forURLScheme: scheme)
         }

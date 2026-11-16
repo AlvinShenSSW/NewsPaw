@@ -1,0 +1,24 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSFaceIDUsageDescription" : {
+      "comment" : "Privacy - Face ID Usage Description: why the app asks for Face ID.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "NewsPaw uses Face ID to unlock the adult partition."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NewsPaw 使用面容 ID 来解锁成人分区。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

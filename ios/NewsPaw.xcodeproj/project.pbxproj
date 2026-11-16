@@ -262,6 +262,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "NewsPaw-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = NewsPaw;
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "NewsPaw uses Face ID to unlock the adult partition.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -293,6 +294,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "NewsPaw-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = NewsPaw;
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "NewsPaw uses Face ID to unlock the adult partition.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

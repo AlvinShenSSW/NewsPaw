@@ -8,6 +8,9 @@ class NewsPawUITestCase: XCTestCase {
     private(set) var app = XCUIApplication()
     private(set) var libraryName = ""
     let timeout: TimeInterval = 10
+    /// Set by a test that looks at a transition: the app keeps its
+    /// animations on in the launches that follow.
+    var keepsAnimations = false
 
     override func setUp() async throws {
         continueAfterFailure = false
@@ -28,10 +31,11 @@ class NewsPawUITestCase: XCTestCase {
     @discardableResult
     func launch(
         syntheticSources: Int? = nil, failNextSave: Bool = false, slowNextSave: Int? = nil, failNextSourceSave: Bool = false,
-        clockOffsetDays: Int? = nil, arguments: [String] = []
+        clockOffsetDays: Int? = nil, arguments: [String] = [], authentication: [String] = [], adultFeatureOff: Bool = false
     ) -> XCUIApplication {
         return launch(XCUIApplication(), syntheticSources: syntheticSources, failNextSave: failNextSave, slowNextSave: slowNextSave,
-                      failNextSourceSave: failNextSourceSave, clockOffsetDays: clockOffsetDays, arguments: arguments)
+                      failNextSourceSave: failNextSourceSave, clockOffsetDays: clockOffsetDays, arguments: arguments,
+                      authentication: authentication, adultFeatureOff: adultFeatureOff)
     }
 
     /// Launches `application`, which may already carry launch environment
@@ -39,7 +43,8 @@ class NewsPawUITestCase: XCTestCase {
     @discardableResult
     func launch(
         _ application: XCUIApplication, syntheticSources: Int? = nil, failNextSave: Bool = false, slowNextSave: Int? = nil,
-        failNextSourceSave: Bool = false, clockOffsetDays: Int? = nil, arguments: [String] = []
+        failNextSourceSave: Bool = false, clockOffsetDays: Int? = nil, arguments: [String] = [],
+        authentication: [String] = [], adultFeatureOff: Bool = false
     ) -> XCUIApplication {
         app = application
         app.launchArguments = arguments
@@ -58,6 +63,16 @@ class NewsPawUITestCase: XCTestCase {
         }
         if let clockOffsetDays {
             app.launchEnvironment[UITestLaunchKey.clockOffsetDays] = String(clockOffsetDays)
+        }
+        if !authentication.isEmpty {
+            // What the stand-in authenticator answers, in order (RD18).
+            app.launchEnvironment[UITestLaunchKey.authenticationAnswers] = authentication.joined(separator: ",")
+        }
+        if adultFeatureOff {
+            app.launchEnvironment[UITestLaunchKey.adultFeatureOff] = "1"
+        }
+        if keepsAnimations {
+            app.launchEnvironment[UITestLaunchKey.keepAnimations] = "1"
         }
         app.launch()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: timeout))
@@ -238,9 +253,12 @@ class NewsPawUITestCase: XCTestCase {
 
     func launchAtFullWidth(
         _ orientation: UIDeviceOrientation = .portrait, syntheticSources: Int? = nil, failNextSave: Bool = false,
-        slowNextSave: Int? = nil, failNextSourceSave: Bool = false
+        slowNextSave: Int? = nil, failNextSourceSave: Bool = false, authentication: [String] = [], adultFeatureOff: Bool = false
     ) {
-        launch(syntheticSources: syntheticSources, failNextSave: failNextSave, slowNextSave: slowNextSave, failNextSourceSave: failNextSourceSave)
+        launch(
+            syntheticSources: syntheticSources, failNextSave: failNextSave, slowNextSave: slowNextSave,
+            failNextSourceSave: failNextSourceSave, authentication: authentication, adultFeatureOff: adultFeatureOff
+        )
         rotate(orientation)
         requireFullWidth()
     }

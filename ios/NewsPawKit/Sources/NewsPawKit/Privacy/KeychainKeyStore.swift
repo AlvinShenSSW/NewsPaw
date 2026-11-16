@@ -82,4 +82,18 @@ public final class KeychainKeyStore: KeyStore {
             throw KeyStoreError.refused(status: status)
         }
     }
+
+    /// One delete over the store's service: every key of this partition,
+    /// whatever its reference, and nothing of another service.
+    public func removeAll() throws {
+        let everything: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecUseDataProtectionKeychain as String: true,
+        ]
+        let status = SecItemDelete(everything as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeyStoreError.refused(status: status)
+        }
+    }
 }

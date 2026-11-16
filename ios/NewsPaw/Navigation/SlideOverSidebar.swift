@@ -6,6 +6,7 @@ import SwiftUI
 /// nothing behind it can be reached), with a dimmed layer and a panel that
 /// slides in from the leading edge.
 struct SlideOverSidebar: View {
+    @Environment(\.accent) private var accent
     @Environment(NavigationModel.self) private var navigation
     @Environment(CategoryModel.self) private var categories
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -31,7 +32,7 @@ struct SlideOverSidebar: View {
         .categoryDialogs(host: .slideOver)
         .sourceDialogs(host: .slideOver)
         .markAllReadDialog(host: .slideOver)
-        .tint(Theme.accent)
+        .tint(accent)
         .foregroundStyle(Theme.text)
         .onAppear {
             if reduceMotion {

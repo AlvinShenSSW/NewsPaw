@@ -70,6 +70,20 @@ final class BrowserModel {
     var fileNotice: BrowserFileNotice?
     /// Whether "No app on this device can open this link." is shown.
     var isShowingNoApp = false
+    /// Whether the workspace of this model was dropped (RD18 decision 4):
+    /// from then on it makes no session and no web view.
+    private(set) var isStopped = false
+    /// Whether the pages' media playback is suspended: from leaving the
+    /// foreground until the scene is active again, and for good once the
+    /// model is stopped (RD18 decision 13). A session made meanwhile starts
+    /// suspended.
+    @ObservationIgnored private var mediaIsSuspended = false
+
+    #if DEBUG
+    /// How many sessions the app has made, for the UI tests' report: a
+    /// stopped model must add none.
+    private(set) static var sessionsMade = 0
+    #endif
 
     /// The one store of every session: the system's default persistent
     /// store for the normal library, a non-persistent one under the UI
@@ -78,18 +92,23 @@ final class BrowserModel {
     @ObservationIgnored let dataStore: WKWebsiteDataStore
     @ObservationIgnored let addressMap: BrowserAddressMap
     @ObservationIgnored private let schemeHandlers: [String: any WKURLSchemeHandler]
+    /// Whether a page's video may go into Picture in Picture: not in the
+    /// adult library's browser (RD18 decision 13).
+    @ObservationIgnored private let allowsPictureInPicture: Bool
     @ObservationIgnored private let navigation: NavigationModel
     @ObservationIgnored private let sources: SourceModel
 
     init(
         dataStore: WKWebsiteDataStore, navigation: NavigationModel, sources: SourceModel,
-        addressMap: BrowserAddressMap = BrowserAddressMap(), schemeHandlers: [String: any WKURLSchemeHandler] = [:]
+        addressMap: BrowserAddressMap = BrowserAddressMap(), schemeHandlers: [String: any WKURLSchemeHandler] = [:],
+        allowsPictureInPicture: Bool = true
     ) {
         self.dataStore = dataStore
         self.navigation = navigation
         self.sources = sources
         self.addressMap = addressMap
         self.schemeHandlers = schemeHandlers
+        self.allowsPictureInPicture = allowsPictureInPicture
     }
 
     func session(_ stack: BrowserStack) -> BrowserSession? {
@@ -102,6 +121,9 @@ final class BrowserModel {
     /// session, started at the route's address; a session whose route left
     /// its stack ends (decision 3).
     func stacksChanged() {
+        // A dropped workspace's stacks are emptied one after the other;
+        // a route still on one of them must not get a session again.
+        guard !isStopped else { return }
         sync(.library)
         sync(.starred)
     }
@@ -118,6 +140,12 @@ final class BrowserModel {
                 sourceID = id
             }
             next = BrowserSession(route: route, sourceID: sourceID, model: self, configuration: configuration())
+            #if DEBUG
+            Self.sessionsMade += 1
+            #endif
+            if mediaIsSuspended {
+                next?.suspendMedia()
+            }
             next?.load(start)
         }
         if stack == .starred {
@@ -141,7 +169,60 @@ final class BrowserModel {
     }
 
     private func configuration() -> WKWebViewConfiguration {
-        BrowserConfiguration.make(dataStore: dataStore, schemeHandlers: schemeHandlers)
+        BrowserConfiguration.make(
+            dataStore: dataStore, schemeHandlers: schemeHandlers, allowsPictureInPicture: allowsPictureInPicture
+        )
+    }
+
+    // MARK: - Leaving and locking (RD18 decisions 4 and 13)
+
+    /// The scene is not active: every page's media are paused, their
+    /// full-screen presentations closed, and their playback suspended until
+    /// `allowMedia()`, so that a page's script cannot start a media element
+    /// again while the app is not active: it does not play beneath the
+    /// cover or in the system's playback controls. Once per absence: the
+    /// scene's notifications can ask twice (will-deactivate, then
+    /// did-enter-background), and WebKit wants suspending and resuming in
+    /// pairs.
+    func suspendMedia() {
+        guard !mediaIsSuspended else { return }
+        mediaIsSuspended = true
+        for session in [librarySession, starredSession].compactMap(\.self) {
+            session.suspendMedia()
+        }
+    }
+
+    /// The scene is active again and this model's workspace is still the
+    /// one shown: the pages may play again. What was paused stays paused
+    /// until the page or the owner plays it. A stopped model stays
+    /// suspended.
+    func allowMedia() {
+        guard mediaIsSuspended, !isStopped else { return }
+        mediaIsSuspended = false
+        for session in [librarySession, starredSession].compactMap(\.self) {
+            session.allowMedia()
+        }
+    }
+
+    /// The workspace is dropped: every session's media are paused, its
+    /// full-screen presentations closed and its playback suspended for
+    /// good (UIKit may keep a web view alive after this, and its page must
+    /// not play again); then the session ends, its web view is taken out
+    /// of the view tree, and nothing of the browser stays presented. No
+    /// session is made after this.
+    func stop() {
+        isStopped = true
+        mediaIsSuspended = true
+        for session in [librarySession, starredSession].compactMap(\.self) {
+            session.suspendMedia()
+            session.end()
+            session.webView.removeFromSuperview()
+        }
+        librarySession = nil
+        starredSession = nil
+        question = nil
+        fileNotice = nil
+        isShowingNoApp = false
     }
 
     // MARK: - Questions and notices
@@ -318,6 +399,23 @@ final class BrowserSession: NSObject {
         webView.stopLoading()
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
+    }
+
+    /// Pauses the page's media, closes a full-screen presentation of it,
+    /// and suspends its playback until `allowMedia()`: a media element the
+    /// page calls `play()` on meanwhile stays paused. (An audio context the
+    /// page resumes is not held: WebKit lets a page's `resume()` end the
+    /// suspension, measured on the iOS 27.0 simulator; see the RD18
+    /// design's post-implementation record.)
+    func suspendMedia() {
+        webView.pauseAllMediaPlayback(completionHandler: nil)
+        webView.closeAllMediaPresentations(completionHandler: nil)
+        webView.setAllMediaPlaybackSuspended(true, completionHandler: nil)
+    }
+
+    /// Lets the page play again.
+    func allowMedia() {
+        webView.setAllMediaPlaybackSuspended(false, completionHandler: nil)
     }
 
     // MARK: - What the bars show (decision 10)

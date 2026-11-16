@@ -6,6 +6,7 @@ import SwiftUI
 /// Model for a saved one. Cancel asks before discarding unsaved changes;
 /// Save writes without testing.
 struct ModelSlotForm: View {
+    @Environment(\.accent) private var accent
     let role: ModelRole
     @Environment(ModelSettingsModel.self) private var models
     @FocusState private var focus: Field?
@@ -81,7 +82,7 @@ struct ModelSlotForm: View {
         .sheet(isPresented: $models.isShowingModelList) {
             ModelListSheet()
                 .environment(models)
-                .tint(Theme.accent)
+                .tint(accent)
         }
     }
 

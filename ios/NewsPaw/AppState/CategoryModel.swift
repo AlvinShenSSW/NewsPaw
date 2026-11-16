@@ -62,7 +62,19 @@ final class CategoryModel {
     var draftIcon = CategoryIcon.folder
     /// The category whose deletion is being confirmed.
     var pendingDeletion: CategorySummary?
-    var isShowingSaveError = false
+    /// Whether "The change could not be saved." is shown. A stopped model
+    /// never raises it: what a dropped workspace's task fails at, against
+    /// its closed library, is shown nowhere (RD18).
+    var isShowingSaveError = false {
+        didSet {
+            if isStopped, isShowingSaveError {
+                isShowingSaveError = false
+            }
+        }
+    }
+
+    /// Whether the workspace of this model was dropped.
+    private(set) var isStopped = false
 
     private let library: Library
     private let navigation: NavigationModel
@@ -93,6 +105,14 @@ final class CategoryModel {
     init(library: Library, navigation: NavigationModel) {
         self.library = library
         self.navigation = navigation
+    }
+
+    /// The workspace is dropped (RD18 decision 4): from here on nothing
+    /// this model does is shown.
+    func stop() {
+        isStopped = true
+        isShowingSaveError = false
+        pendingDeletion = nil
     }
 
     /// Whether a category save is queued or running. Meanwhile the open

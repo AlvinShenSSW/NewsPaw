@@ -144,6 +144,54 @@ final class TranslationService: ModelHTTP {
     }
 }
 
+/// Holds the translator at one of its suspension points
+/// (`TitleTranslator.SuspensionPoint`), the first time it gets there, until
+/// the test releases it: the race tests hold an interleaving instead of
+/// sleeping for it.
+final class SuspensionGate: Sendable {
+    typealias Point = TitleTranslator.SuspensionPoint
+
+    private struct State {
+        var held: Set<Point> = []
+        var reached: Set<Point> = []
+        var released: Set<Point> = []
+        var waiting: [Point: CheckedContinuation<Void, Never>] = [:]
+    }
+
+    private let state = Mutex(State())
+
+    func hold(_ point: Point) {
+        state.withLock { _ = $0.held.insert(point) }
+    }
+
+    func reached(_ point: Point) -> Bool {
+        state.withLock { $0.reached.contains(point) }
+    }
+
+    func release(_ point: Point) {
+        let waiting = state.withLock { state in
+            state.released.insert(point)
+            return state.waiting.removeValue(forKey: point)
+        }
+        waiting?.resume()
+    }
+
+    /// The translator's hook.
+    func arrive(_ point: Point) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let now = state.withLock { state in
+                state.reached.insert(point)
+                guard state.held.contains(point), !state.released.contains(point) else { return true }
+                state.waiting[point] = continuation
+                return false
+            }
+            if now {
+                continuation.resume()
+            }
+        }
+    }
+}
+
 /// A sleep the tests end by hand: what the service pause waits with.
 final class ManualSleeper: Sendable {
     private let waiting = Mutex<[(Duration, CheckedContinuation<Void, any Error>)]>([])

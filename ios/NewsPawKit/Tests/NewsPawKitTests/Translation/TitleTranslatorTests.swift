@@ -395,6 +395,116 @@ struct TitleTranslatorTests {
         #expect(try await fixture.translation(id)?.title == "T:Story one", "\(name)")
     }
 
+    // MARK: - Stale writes across an await (fix round 3)
+
+    @Test("a pass whose candidates come back after a newer pass began does not replace its queue: all 50 are translated in the new language")
+    func stalePassDropped() async throws {
+        let fixture = try await TranslatorFixture.make()
+        defer { fixture.remove() }
+        let ids = try await fixture.englishArticles(50, in: try await fixture.source())
+        await fixture.start()
+        for id in ids {
+            #expect(try await fixture.translation(id)?.state == .done)
+        }
+        let gate = SuspensionGate()
+        gate.hold(.passCandidates(.simplifiedChinese))
+        await fixture.translator.setSuspensionHook { await gate.arrive($0) }
+        // The first Japanese request stays in flight while the old pass ends.
+        fixture.service.hold(request: 4)
+
+        // A Chinese pass is held at its read; then the language changes and
+        // the Japanese pass fills the queue and sends its first 20.
+        await fixture.translator.resume(after: .refreshEnded)
+        await fixture.eventually { gate.reached(.passCandidates(.simplifiedChinese)) }
+        await fixture.translator.configure(TranslationConfiguration(locale: .japanese, automatic: true))
+        await fixture.eventually { fixture.service.requests.count == 4 }
+        // The Chinese pass comes back (nothing waits in Chinese) and ends.
+        gate.release(.passCandidates(.simplifiedChinese))
+        await fixture.eventually { await fixture.translator.sideWorkRunning == 0 }
+        fixture.service.release(request: 4)
+        await fixture.translator.settled()
+
+        var japanese = 0
+        for id in ids where try await fixture.translation(id, .japanese)?.state == .done {
+            japanese += 1
+        }
+        #expect(japanese == 50)
+        #expect(fixture.service.requests.count == 6)
+    }
+
+    @Test("a slot repaired while a set-up failure reads the slots for its pause: no pause, no block, the repaired slot translates")
+    func setUpPauseAfterRepair() async throws {
+        let repaired = "repaired.example.invalid"
+        let service = TranslationService { host, _, _ in host == Self.primary ? .status(401) : .texts(TranslationService.marked) }
+        let fixture = try await TranslatorFixture.make(service: service)
+        defer { fixture.remove() }
+        let gate = SuspensionGate()
+        gate.hold(.setUpSlots)
+        await fixture.translator.setSuspensionHook { await gate.arrive($0) }
+        let id = try await fixture.article("Story one", in: try await fixture.source())
+        await fixture.translator.configure(TranslationConfiguration(locale: .simplifiedChinese, automatic: true))
+        await fixture.eventually { gate.reached(.setUpSlots) }
+        try await fixture.saveSlot(.primary, host: repaired)
+        await fixture.translator.resume(after: .slotsChanged)
+        gate.release(.setUpSlots)
+        await fixture.translator.settled()
+
+        #expect(await fixture.translator.pausedBy == nil)
+        #expect(fixture.blocked[id] == nil)
+        #expect(fixture.service.requests.map(\.host) == [Self.primary, repaired])
+        #expect(try await fixture.translation(id)?.title == "T:Story one")
+    }
+
+    @Test("a slot repaired while a service failure looks for a backup: no pause, no block, no backup; the repaired slot translates",
+          arguments: [false, true])
+    func backupCheckAfterRepair(_ backup: Bool) async throws {
+        let repaired = "repaired.example.invalid"
+        let service = TranslationService { host, _, _ in host == Self.primary ? .status(503) : .texts(TranslationService.marked) }
+        let fixture = try await TranslatorFixture.make(service: service, backup: backup)
+        defer { fixture.remove() }
+        let gate = SuspensionGate()
+        gate.hold(.backupCheck)
+        await fixture.translator.setSuspensionHook { await gate.arrive($0) }
+        let id = try await fixture.article("Story one", in: try await fixture.source())
+        await fixture.translator.configure(TranslationConfiguration(locale: .simplifiedChinese, automatic: true))
+        await fixture.eventually { gate.reached(.backupCheck) }
+        try await fixture.saveSlot(.primary, host: repaired)
+        await fixture.translator.resume(after: .slotsChanged)
+        gate.release(.backupCheck)
+        await fixture.translator.settled()
+
+        #expect(await fixture.translator.pausedBy == nil, "backup: \(backup)")
+        #expect(fixture.blocked[id] == nil, "backup: \(backup)")
+        #expect(fixture.service.requests.map(\.host) == [Self.primary, repaired], "backup: \(backup)")
+        #expect(try await fixture.translation(id)?.title == "T:Story one", "backup: \(backup)")
+    }
+
+    @Test("a slot repaired while a failed batch's rows are written: the batch does not pause the repaired slot")
+    func failedBatchAfterRepair() async throws {
+        let repaired = "repaired.example.invalid"
+        // Every model refuses: the repaired one too.
+        let service = TranslationService { _, _, _ in .refusal }
+        let fixture = try await TranslatorFixture.make(service: service)
+        defer { fixture.remove() }
+        let gate = SuspensionGate()
+        gate.hold(.failedRowsWrite)
+        await fixture.translator.setSuspensionHook { await gate.arrive($0) }
+        _ = try await fixture.englishArticles(2, in: try await fixture.source())
+        // The batch of two is refused, then its first half: held before its
+        // failed row is written.
+        await fixture.translator.configure(TranslationConfiguration(locale: .simplifiedChinese, automatic: true))
+        await fixture.eventually { gate.reached(.failedRowsWrite) }
+        try await fixture.saveSlot(.primary, host: repaired)
+        await fixture.translator.resume(after: .slotsChanged)
+        gate.release(.failedRowsWrite)
+        await fixture.translator.settled()
+
+        // The second half went to the repaired slot; the old slot's refusals
+        // pause nothing.
+        #expect(fixture.service.requests.map(\.host) == [Self.primary, Self.primary, repaired])
+        #expect(await fixture.translator.pausedBy == nil)
+    }
+
     // MARK: - Criterion 7
 
     @Test("criterion 7: at the limit no automatic request is sent, not a backup attempt either; the reason is the daily limit")

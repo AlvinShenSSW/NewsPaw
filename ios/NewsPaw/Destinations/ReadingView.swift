@@ -128,6 +128,7 @@ private struct ArticleScreen: View {
         }
         .onDisappear {
             reading.readingScreenClosed(row.id)
+            translation?.articleClosed(row.id)
         }
     }
 

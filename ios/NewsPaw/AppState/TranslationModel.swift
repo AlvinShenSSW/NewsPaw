@@ -57,6 +57,14 @@ final class TranslationModel {
     @ObservationIgnored private weak var reading: ReadingModel?
     /// The rows on screen, as their appearing and disappearing report them.
     @ObservationIgnored private var onScreen: Set<UUID> = []
+    /// The articles open on a reading screen, from its appearing to its
+    /// disappearing: on screen as a row is, so that a resumption asks for
+    /// them again.
+    @ObservationIgnored private var openArticles: Set<UUID> = []
+    /// What the translator is told is on screen.
+    private var shown: Set<UUID> {
+        onScreen.union(openArticles)
+    }
     /// Rows asked for and not yet passed on, most recent last.
     @ObservationIgnored private var asked: [UUID] = []
     @ObservationIgnored private var gathering: Task<Void, Never>?
@@ -93,7 +101,11 @@ final class TranslationModel {
         if let translation = row.translation, translation.state == .failed {
             return .warning(.failed(row.id, translation.failure ?? .malformed))
         }
-        if let block = blocked[row.id], block != .setUp(.noModelSetUp) {
+        // A block is shown only on a row waiting in the reading language: a
+        // row with its translation in that language was not stopped by it
+        // (a block of a request begun before the language was switched
+        // back can arrive after the switch). A stored failure is shown above.
+        if row.translation == nil, let block = blocked[row.id], block != .setUp(.noModelSetUp) {
             return .warning(.blocked(row.id, block))
         }
         return nil
@@ -112,11 +124,17 @@ final class TranslationModel {
         onScreen.remove(id)
     }
 
-    /// The reading screen asks for its article as a row does.
+    /// The reading screen asks for its article as a row does, and keeps it
+    /// on screen while it is shown.
     func articleOpened(_ row: ArticleRow) {
+        openArticles.insert(row.id)
         if row.translation == nil {
             ask(row.id)
         }
+    }
+
+    func articleClosed(_ id: UUID) {
+        openArticles.remove(id)
     }
 
     private func ask(_ id: UUID) {
@@ -135,7 +153,7 @@ final class TranslationModel {
         guard !isStopped else { return }
         let ids = Array(asked.reversed())
         asked = []
-        await translator.setRowsOnScreen(onScreen)
+        await translator.setRowsOnScreen(shown)
         await translator.ask(ids)
     }
 
@@ -163,9 +181,9 @@ final class TranslationModel {
         guard !isStopped else { return }
         reading?.translationLocaleChanged()
         let configuration = settings.configuration
-        let onScreen = onScreen
+        let shown = shown
         Task {
-            await translator.setRowsOnScreen(onScreen)
+            await translator.setRowsOnScreen(shown)
             await translator.configure(configuration)
         }
     }
@@ -173,18 +191,18 @@ final class TranslationModel {
     func automaticTranslationChanged() {
         guard !isStopped else { return }
         let configuration = settings.configuration
-        let onScreen = onScreen
+        let shown = shown
         Task {
-            await translator.setRowsOnScreen(onScreen)
+            await translator.setRowsOnScreen(shown)
             await translator.configure(configuration)
         }
     }
 
     private func resume(after trigger: TranslationTrigger) {
         guard !isStopped else { return }
-        let onScreen = onScreen
+        let shown = shown
         Task {
-            await translator.setRowsOnScreen(onScreen)
+            await translator.setRowsOnScreen(shown)
             await translator.resume(after: trigger)
         }
     }

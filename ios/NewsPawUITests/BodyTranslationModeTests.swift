@@ -130,21 +130,20 @@ final class BodyTranslationModeTests: BodyTranslationTestCase {
         return bars.map(\.frame.maxY).max() ?? readingArea.minY
     }
 
-    /// The first block whose bottom is below the scroll view's top, and its
-    /// top (in Side by Side, of its text or its original, whichever is
-    /// lower there).
+    /// The block at the top: the first whose text (or, in Side by Side, its
+    /// original) ends below the scroll view's top, and the top of that text.
     func topBlock() -> (index: Int?, minY: CGFloat) {
         let top = scrollTop
         let prefixes = [AccessibilityID.readingBlockPrefix, "reading.original."]
         let texts = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier BEGINSWITH %@ OR identifier BEGINSWITH %@", prefixes[0], prefixes[1]))
             .allElementsBoundByIndex
-            .filter { $0.exists && !$0.frame.isEmpty && $0.frame.maxY > top + 1 }
+            .filter { $0.exists && !$0.frame.isEmpty && $0.frame.maxY - selectionInset > top + 1 }
             .sorted { $0.frame.minY < $1.frame.minY }
         guard let first = texts.first, let number = first.identifier.split(separator: ".").last, let index = Int(number) else {
             return (nil, 0)
         }
-        return (index, first.frame.minY)
+        return (index, first.frame.minY + selectionInset)
     }
 
     /// The top of block `index`'s first line once it has stopped moving
@@ -162,13 +161,19 @@ final class BodyTranslationModeTests: BodyTranslationTestCase {
 
     func position(of index: Int) -> CGFloat {
         let target = block(at: index)
-        return target.exists ? target.frame.minY : .infinity
+        return target.exists ? target.frame.minY + selectionInset : .infinity
     }
+
+    /// How far a selectable text's reported frame reaches beyond its text,
+    /// above and below: half of the 32 pt measured at the default size
+    /// (RD11, `ReadingTestCase.latinPitch`). Measured here: block 18 set at
+    /// the top edge (116) reported its frame from 115.3.
+    let selectionInset: CGFloat = 16
 
     /// The top of a block's text and of its original under it (Side by
     /// Side); `infinity` for one that is not there.
     func positions(of index: Int) -> (CGFloat, CGFloat) {
         let original = element(AccessibilityID.readingOriginalBlock(index))
-        return (position(of: index), original.exists ? original.frame.minY : .infinity)
+        return (position(of: index), original.exists ? original.frame.minY + selectionInset : .infinity)
     }
 }

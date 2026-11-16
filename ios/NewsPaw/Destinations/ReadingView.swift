@@ -436,6 +436,12 @@ struct ReaderPosition: ViewModifier {
     @State private var rows = BlockRowFrames()
 
     func body(content: Content) -> some View {
+        ScrollViewReader { proxy in
+            positioned(content, proxy: proxy)
+        }
+    }
+
+    private func positioned(_ content: Content, proxy: ScrollViewProxy) -> some View {
         content
             .environment(\.blockRowFrames, rows)
             .scrollPosition($position, anchor: .top)
@@ -448,19 +454,41 @@ struct ReaderPosition: ViewModifier {
                 reading.readerMoved(to: block, in: articleID)
             }
             .onChange(of: mode) {
-                keepTopBlock()
+                keepTopBlock(proxy)
             }
     }
 
-    /// The block at the top stays there across a switch (assumption A3):
-    /// the block whose row holds the visible top edge — not the position's
-    /// `viewID`, which names the first block below that edge (measured:
-    /// the reader saw block 16 at the top and the position held 17) — is
-    /// scrolled to the top once, through the bound position, and the new
-    /// layout puts its first line there (in Side by Side, its
-    /// translation). Nothing is done at the article's top.
-    private func keepTopBlock() {
+    /// Counts the switches, so that a newer one ends an older one's
+    /// scrolls.
+    @State private var switches = 0
+
+    /// The block at the top stays there across a switch (assumption A3).
+    /// It is the block whose row holds the visible top edge before the
+    /// switch — not the position's `viewID`, which names the first block
+    /// below that edge (measured: the reader saw block 16 at the top and
+    /// the position held 17). That block is scrolled to the top, and
+    /// scrolled to again after the lazy stack's next passes while the rows
+    /// around it take their new sizes; a newer switch ends these scrolls.
+    ///
+    /// Measured on the iPhone (fix round 1): scrolled to once, going into
+    /// Side by Side it landed 233 pt low (in the same update as the
+    /// switch) or 878 pt low (after one layout pass), or 790–970 pt above
+    /// the top (scrolled to before the blocks changed): the rows above it
+    /// are scrolled through at sizes not yet measured in the new mode. With
+    /// the scrolls repeated over 0.5 s its first line stayed at the top
+    /// (131 pt, the bar ending at 116) in every switch. Nothing is
+    /// scrolled at the article's top.
+    private func keepTopBlock(_ proxy: ScrollViewProxy) {
         guard let block = rows.block(atTop: rows.visibleTop) else { return }
-        position.scrollTo(id: block, anchor: .top)
+        switches += 1
+        let switchNumber = switches
+        proxy.scrollTo(block, anchor: .top)
+        Task { @MainActor in
+            for delay in [0, 50, 150, 300] {
+                try? await Task.sleep(for: .milliseconds(delay))
+                guard switchNumber == switches else { return }
+                proxy.scrollTo(block, anchor: .top)
+            }
+        }
     }
 }

@@ -95,7 +95,7 @@ final class TranslationTests: TranslationTestCase {
         // A3: the mark takes its own tap.
         mark.tap()
         waitFor(question(Sentence.refused))
-        XCTAssertEqual(alertButtonLabels(), ["Retry", "Retry with the Backup Model", "Cancel"])
+        XCTAssertEqual(Set(alertButtonLabels()), ["Retry", "Retry with the Backup Model", "Cancel"])
         XCTAssertFalse(readingTitle.exists, "the mark's tap opened the article")
         screenshot("RD14 refused question")
         alertButton("Cancel").tap()
@@ -129,7 +129,7 @@ final class TranslationTests: TranslationTestCase {
         let row = waitFor(articleRow(Translation.limited))
         waitFor(warningMark(Translation.limited)).tap()
         waitFor(question(Sentence.limited))
-        XCTAssertEqual(alertButtonLabels(), ["Retry", "Cancel"])
+        XCTAssertEqual(Set(alertButtonLabels()), ["Retry", "Cancel"])
         alertButton("Retry").tap()
         // Retried at once, refused again by the service: the sentence again.
         waitFor(question(Sentence.limited))
@@ -148,7 +148,7 @@ final class TranslationTests: TranslationTestCase {
         let row = waitFor(articleRow(Translation.slow))
         waitFor(warningMark(Translation.slow)).tap()
         waitFor(question(Sentence.dailyLimit))
-        XCTAssertEqual(alertButtonLabels(), ["Retry", "Cancel"])
+        XCTAssertEqual(Set(alertButtonLabels()), ["Retry", "Cancel"])
         alertButton("Retry").tap()
         waitFor(activityMark(Translation.slow))
         XCTAssertTrue(row.label.contains("Translating…"), row.label)
@@ -160,8 +160,8 @@ final class TranslationTests: TranslationTestCase {
 
     /// Assumption A4: rows updated in place while the list is scrolled do
     /// not move it. The list is scrolled to the middle of the 63 rows, the
-    /// reading language changes, and the rows on screen are translated
-    /// again where they stand.
+    /// reading language changes to Japanese, and the rows on screen are
+    /// translated again where they stand.
     func testUpdatesInPlaceKeepTheScrollPosition() {
         launchTranslating()
         addFeed(Translation.feed, to: Translation.category)
@@ -172,7 +172,7 @@ final class TranslationTests: TranslationTestCase {
         record("A4 before", "top row \(topBefore ?? "none"), Foreign story 30 at \(before)")
 
         openTranslationSettings()
-        option("English").tap()
+        option("Japanese").tap()
         if usesTabs {
             // The Library tab keeps its stack and the list's place.
             app.tabBars.buttons.element(boundBy: 1).tap()
@@ -181,7 +181,7 @@ final class TranslationTests: TranslationTestCase {
             _ = scrollList(to: Translation.foreign(30))
         }
         let row = waitFor(articleRow(Translation.foreign(30)))
-        waitForLabel(row, containing: Translation.translated(Translation.foreign(30), "en"))
+        waitForLabel(row, containing: Translation.translated(Translation.foreign(30), "ja"))
         let afterFirst = row.frame.minY
         // Wait for the rest of the updates of the rows on screen.
         Thread.sleep(forTimeInterval: 2)

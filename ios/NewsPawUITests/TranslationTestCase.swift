@@ -88,7 +88,7 @@ class TranslationTestCase: ReadingTestCase {
         app.alerts.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
     }
 
-    /// The labels of the open alert's buttons, in order.
+    /// The labels of the open alert's buttons (the system orders them).
     func alertButtonLabels() -> [String] {
         app.alerts.firstMatch.buttons.allElementsBoundByIndex.map(\.label)
     }

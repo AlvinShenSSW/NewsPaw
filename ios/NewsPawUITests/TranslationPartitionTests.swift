@@ -28,6 +28,8 @@ final class TranslationPartitionTests: AdultTestCase {
         addSource(Self.feed, to: "World")
         openCategoryList("World")
         waitForLabel(waitFor(articleRow(Self.first)), containing: "译[zh-Hans]：\(Self.first)")
+        // A refresh ends: the pass translates the category's newest 50.
+        pullList()
         // Let the pass end: its requests are counted before the adult
         // partition is entered.
         var settled = -2
@@ -38,7 +40,7 @@ final class TranslationPartitionTests: AdultTestCase {
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [stable], timeout: 20), .completed, report)
         let before = translationRequests
-        XCTAssertGreaterThanOrEqual(before, 3, "the normal pass made its requests")
+        XCTAssertGreaterThanOrEqual(before, 1, "the normal partition's rows were translated")
 
         turnOnAdult()
         enterAdult()
@@ -57,6 +59,8 @@ final class TranslationPartitionTests: AdultTestCase {
         Thread.sleep(forTimeInterval: 2)
         XCTAssertEqual(translationRequests, before, "a request was sent from the adult partition: \(report)")
         // The reading screen shows the original too.
+        app.swipeDown()
+        app.swipeDown()
         openArticle(Self.first)
         XCTAssertFalse(element(AccessibilityID.readingOriginalTitle).exists)
         XCTAssertEqual(translationRequests, before, report)

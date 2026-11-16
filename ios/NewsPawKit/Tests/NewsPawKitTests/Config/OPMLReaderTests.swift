@@ -408,6 +408,23 @@ struct OPMLReaderTests {
         #expect(OPMLReader.read(contentsOf: directory.appending(path: "missing.opml")) == .failure(.unreadable))
     }
 
+    @Test("a file over the limit is refused by its size, before it is opened")
+    func refusedBySize() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "large.opml")
+        #expect(FileManager.default.createFile(atPath: url.path, contents: nil))
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: UInt64(OPMLReader.maximumBytes + 1))
+        try handle.close()
+        // Not readable: only its size can refuse it as too large; opening
+        // it would be refused as unreadable.
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: url.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path) }
+
+        #expect(OPMLReader.read(contentsOf: url) == .failure(.tooLarge))
+    }
+
     @Test("the bounded read stops at the limit plus one byte, whatever the file's size")
     func boundedRead() throws {
         let directory = try makeTemporaryDirectory()

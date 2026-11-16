@@ -81,11 +81,26 @@ struct SettingsDestination: View {
         switch route {
         case .models: ModelsView()
         case .modelSlot(let role): ModelSlotForm(role: role)
+        case .adultModelSlot(let role): AdultModelSlotForm(role: role)
         case .refresh: RefreshSettingsView()
         case .reading: ReadingSettingsScreen()
         case .adultPartition: AdultPartitionView()
         case .data: DataSettingsView()
         case .about: AboutView()
+        }
+    }
+}
+
+/// The form of one of the adult library's slots (ux S9 inside S10; RD19
+/// decision 2): RD13's form on the adult workspace's model of them.
+struct AdultModelSlotForm: View {
+    let role: ModelRole
+    @Environment(\.partitionModelSettings) private var models
+
+    var body: some View {
+        if let models {
+            ModelSlotForm(role: role)
+                .environment(models)
         }
     }
 }

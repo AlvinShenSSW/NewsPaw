@@ -39,6 +39,13 @@ struct DebugLaunchOptions {
     /// The daily automatic limit to store (RD14 decision 8). Applied only
     /// together with `libraryDirectory`.
     let dailyAutomaticLimit: Int?
+    /// Whether the deletion of the next category move fails (RD19
+    /// criterion 12). Applied only together with `libraryDirectory`.
+    let failNextMoveDeletion: Bool
+    /// How long a category move waits between its copy and its deletion,
+    /// so that a lock can come during the run (RD19 criterion 12). Applied
+    /// only together with `libraryDirectory`.
+    let moveStepPause: Duration?
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -82,6 +89,12 @@ struct DebugLaunchOptions {
             dailyAutomaticLimit = limit
         } else {
             dailyAutomaticLimit = nil
+        }
+        failNextMoveDeletion = environment[UITestLaunchKey.failNextMoveDeletion] == "1"
+        if let text = environment[UITestLaunchKey.moveStepPause], let seconds = Int(text), seconds > 0 {
+            moveStepPause = .seconds(seconds)
+        } else {
+            moveStepPause = nil
         }
     }
 

@@ -5,8 +5,10 @@ import WebKit
 
 /// What every workspace of the app is built with: the transport, the clock,
 /// the shared refresh, reading and translation settings and the normal
-/// library's models. Nothing of it holds a library's content (RD18
-/// decision 3).
+/// library's models, which Settings › Models & Translation shows in either
+/// partition. Nothing of it holds a library's content (RD18 decision 3).
+/// Each workspace is given its own library's models besides (RD19
+/// decision 1).
 @MainActor
 struct WorkspaceParts {
     let transport: any Transport
@@ -20,12 +22,14 @@ struct WorkspaceParts {
     let readingSettings: ReadingSettings
     /// The model slots of the normal library: Settings › Models &
     /// Translation is the normal partition's in either partition (ux S8).
-    let models: LibraryModels
+    /// Nothing of a workspace is translated through them but the normal
+    /// workspace's own.
+    let normalModels: LibraryModels
     /// The translation settings (RD14 decision 1): global, one object for
     /// the app.
     let translationSettings: TranslationSettings
-    /// Called after a slot of `models` changed, from the Settings of any
-    /// workspace: the translation of the models' library resumes.
+    /// Called after a slot of `normalModels` changed, from the Settings of
+    /// any workspace: the normal library's translation resumes.
     let slotsChanged: @MainActor () -> Void
 }
 
@@ -40,34 +44,75 @@ struct BrowserSetup {
     var allowsPictureInPicture = true
 }
 
+/// An operation that needs the adult library and began in the normal
+/// partition (RD19 decision 9; RD20 adds its own case): it is carried
+/// through the partition switch's own unlock and handed to the adult
+/// workspace once that is shown. It lives only in that call and then in
+/// the adult workspace, so that a lock drops it.
+enum PendingAdultOperation {
+    /// Moving the normal category of this identifier to the adult
+    /// partition.
+    case move(categoryID: UUID)
+}
+
+/// What an unlock asked for by `AppModel.chooseAdult(pending:)` came to.
+enum AdultUnlockOutcome: Equatable {
+    /// The adult workspace is shown, and a pending operation was handed to
+    /// it.
+    case unlocked
+    /// The authentication did not pass: cancelled, failed, interrupted, or
+    /// no passcode.
+    case notAuthenticated(AuthenticationAnswer)
+    /// Not asked for: the gate is not locked, or another operation or
+    /// authentication runs.
+    case refused
+    /// The background or a lock discarded it.
+    case discarded
+    /// The adult library could not be opened.
+    case couldNotOpen
+}
+
 /// Everything the interface builds on one library (RD18 decision 3): the
-/// category, source, refresh, reading and browser models, a model-settings
-/// model, and its own navigation. The root view shows exactly one
-/// workspace; a model of a workspace reads and writes only that
-/// workspace's navigation, so a model of the workspace that is not shown
-/// cannot close a screen or a sheet of the other.
+/// category, source, refresh, reading and browser models, the library's own
+/// models and translation (RD19 decision 1), the model-settings models, and
+/// its own navigation. The root view shows exactly one workspace; a model
+/// of a workspace reads and writes only that workspace's navigation, so a
+/// model of the workspace that is not shown cannot close a screen or a
+/// sheet of the other.
 @MainActor
 final class Workspace: Identifiable {
     let partition: Partition
     let navigation = NavigationModel()
+    /// The library's own models: every translator of the workspace is made
+    /// from them, and the library's text goes through no other.
+    let models: LibraryModels
     let categories: CategoryModel
     let sources: SourceModel
     let refresh: RefreshModel
     let reading: ReadingModel
     let browser: BrowserModel
+    /// Settings › Models & Translation: the normal library's slots, in
+    /// either partition (ux S8).
     let modelSettings: ModelSettingsModel
+    /// The adult library's slots in Settings › Adult Partition (ux S10;
+    /// RD19 decision 2): the adult workspace's only.
+    let partitionModelSettings: ModelSettingsModel?
     /// The app's one reading settings object, shared by every workspace.
     let readingSettings: ReadingSettings
     /// The app's one translation settings object, shared by every workspace.
     let translationSettings: TranslationSettings
-    /// Translation of this workspace's library (RD14 decision 12): only when
-    /// the library has its own models. The adult library has none until
-    /// RD19, so its workspace has none and shows originals; nothing of it
-    /// is ever sent through the normal library's models.
-    let translation: TranslationModel?
+    /// Translation of this workspace's library (RD14 decision 12), through
+    /// its own models (RD19 decision 1): with no slot of its own the
+    /// library's rows show originals; nothing of it is ever sent through
+    /// another library's models.
+    let translation: TranslationModel
 
-    init(library: Library, parts: WorkspaceParts, browser setup: BrowserSetup) {
+    /// - Parameter models: the library's own models; another library's are
+    ///   a programming error.
+    init(library: Library, models: LibraryModels, parts: WorkspaceParts, browser setup: BrowserSetup) {
+        precondition(models.belong(to: library), "the models of another library")
         partition = library.partition
+        self.models = models
         let navigation = navigation
         let categories = CategoryModel(library: library, navigation: navigation)
         let refresh = RefreshModel(library: library, transport: parts.transport, settings: parts.refreshSettings, now: parts.now)
@@ -95,12 +140,17 @@ final class Workspace: Identifiable {
             addressMap: setup.addressMap, schemeHandlers: setup.schemeHandlers,
             allowsPictureInPicture: setup.allowsPictureInPicture
         )
-        let modelSettings = ModelSettingsModel(models: parts.models, navigation: navigation)
-        let translation = parts.models.belong(to: library)
-            ? TranslationModel(models: parts.models, settings: parts.translationSettings, reading: reading, now: parts.now)
+        let modelSettings = ModelSettingsModel(models: parts.normalModels, navigation: navigation, formRoute: SettingsRoute.modelSlot)
+        let partitionModelSettings = library.partition == .adult
+            ? ModelSettingsModel(models: models, navigation: navigation, formRoute: SettingsRoute.adultModelSlot)
             : nil
+        let translation = TranslationModel(models: models, settings: parts.translationSettings, reading: reading, now: parts.now)
         reading.translationLocale = { [weak translation] in translation?.settings.readingLocale }
+        // A change of the normal slots resumes the normal library's
+        // translation, whichever workspace's Settings made it; a change of
+        // the adult slots, the adult library's.
         modelSettings.onSlotsChanged = parts.slotsChanged
+        partitionModelSettings?.onSlotsChanged = { [weak translation] in translation?.slotsChanged() }
         categories.onReload = { [weak sources] in await sources?.reload() }
         categories.sourcesOf = { [weak sources] id in Set(sources?.sources(in: id).map(\.id) ?? []) }
         refresh.onListsChanged = { [weak sources] in await sources?.reload() }
@@ -113,25 +163,54 @@ final class Workspace: Identifiable {
         navigation.onListEntered = { [weak reading] list in reading?.entered(list) }
         navigation.isWebPageSource = { [weak sources] id in sources?.summary(id)?.kind == .webpage }
         navigation.onStacksChanged = { [weak browser] in browser?.stacksChanged() }
-        navigation.onSettingsPathChanged = { [weak modelSettings] path in modelSettings?.settingsPathChanged(path) }
+        navigation.onSettingsPathChanged = { [weak modelSettings, weak partitionModelSettings] path in
+            modelSettings?.settingsPathChanged(path)
+            partitionModelSettings?.settingsPathChanged(path)
+        }
+        navigation.sourceOfArticle = { [weak reading] id in reading?.source(ofArticle: id) }
         self.categories = categories
         self.sources = sources
         self.refresh = refresh
         self.reading = reading
         self.browser = browser
         self.modelSettings = modelSettings
+        self.partitionModelSettings = partitionModelSettings
         self.translation = translation
         readingSettings = parts.readingSettings
         translationSettings = parts.translationSettings
     }
 
     /// Reads what the root screens show: the categories (and with them the
-    /// sources), the recorded refresh time and the model slots.
+    /// sources), the recorded refresh time, the list settings and the model
+    /// slots.
     func load() async {
         await categories.reload()
         await refresh.load()
+        await reading.loadSettings()
         await modelSettings.reload()
-        await translation?.start()
+        await partitionModelSettings?.reload()
+        await translation.start()
+    }
+
+    /// The workspace was just shown with an operation that began in the
+    /// other partition (RD19 decision 9): from here on it is this
+    /// workspace's, and a lock drops it with the workspace.
+    func begin(_ pending: PendingAdultOperation?) {
+        switch pending {
+        case .move(let id)?:
+            categories.beginMove(id, from: .normal)
+        case nil:
+            break
+        }
+    }
+
+    /// A category was moved out of this workspace's library (RD19 decision
+    /// 11): every route that shows it, a moved source or an article of
+    /// one is closed, and every living list is read again, before the
+    /// library's image cache is cleared.
+    func letGo(ofMoved sources: Set<UUID>, category: UUID) async {
+        navigation.close(showing: sources, category: category)
+        await reading.reloadAllLists()
     }
 
     /// The workspace is dropped (RD18 decision 4), before its library is
@@ -153,7 +232,7 @@ final class Workspace: Identifiable {
         refresh.stop()
         reading.stop()
         browser.stop()
-        translation?.stop()
+        translation.stop()
         // Closes the sheet and every pushed screen; the model form, if one
         // was pushed, cancels its running Test or list with its route.
         navigation.clear()

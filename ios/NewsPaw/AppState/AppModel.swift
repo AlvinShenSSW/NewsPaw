@@ -76,6 +76,11 @@ final class AppModel {
     /// Whether the system's authentication is being asked for: the
     /// partition switch and the Settings switch wait for its answer.
     private(set) var isAuthenticating = false
+    /// Whether the partition is being turned off: Clear Browsing Data
+    /// waits for it.
+    private(set) var isTurningOff = false
+    /// Whether the adult browser's data are being cleared.
+    private(set) var isClearingBrowsingData = false
     /// The sentence to show at the root; it outlives a swap of workspaces.
     var notice: AdultNotice?
     /// The question of turning off being asked at the root.
@@ -85,9 +90,20 @@ final class AppModel {
     @ObservationIgnored private var store: LibraryStore?
     @ObservationIgnored private var gate: AdultGate?
     @ObservationIgnored private var parts: WorkspaceParts?
-    /// Makes the adult workspace's browser set-up: a new non-persistent
-    /// website data store for each unlock (decision 13).
+    /// Makes the adult workspace's browser set-up for each unlock: the
+    /// adult partition's own persistent website data store, without Picture
+    /// in Picture (RD18 decision 13; RD19 decision 4).
     @ObservationIgnored private var makeAdultBrowser: (@MainActor () -> BrowserSetup)?
+    /// The adult browser's data: Clear Browsing Data (RD19 decision 5).
+    @ObservationIgnored private var adultBrowserData: (any AdultBrowserData)?
+    /// The adult partition's key store, for the adult library's models.
+    @ObservationIgnored private var adultKeys: (any KeyStore)?
+    /// Makes the adult library's models' own HTTP stand-in for each unlock
+    /// (RD19 decision 3): no connection is shared with the normal one.
+    @ObservationIgnored private var makeAdultModelHTTP: (@Sendable () -> any ModelHTTP)?
+    /// The normal library, which a move holds beside the adult one (RD19
+    /// decision 11).
+    @ObservationIgnored private var normalLibrary: Library?
     /// The app's clock.
     @ObservationIgnored private var now: @Sendable () -> Date = { Date() }
     @ObservationIgnored private let cover = CoverWindow()
@@ -121,6 +137,10 @@ final class AppModel {
     @ObservationIgnored private var adultWasShown = false
     @ObservationIgnored private weak var lastAdultWorkspace: Workspace?
     @ObservationIgnored private weak var lastAdultBrowser: BrowserModel?
+    /// What the UI tests ask of the next move (RD19): its deletion failing
+    /// once, and a pause between its steps.
+    @ObservationIgnored private var failNextMoveDeletion = false
+    @ObservationIgnored private var moveStepPause: Duration?
     #endif
 
     /// One unlock from the choice to its end.
@@ -172,6 +192,8 @@ final class AppModel {
         let keyStore = options.libraryDirectory.map { KeychainKeyStore(partition: .normal, uiTestSuffix: $0.lastPathComponent) }
             ?? KeychainKeyStore(partition: .normal)
         let modelHTTP: any ModelHTTP = options.libraryDirectory != nil ? FixtureModelHTTP() : URLSessionModelHTTP()
+        let usesModelFixture = options.libraryDirectory != nil
+        makeAdultModelHTTP = { () -> any ModelHTTP in usesModelFixture ? FixtureModelHTTP() : URLSessionModelHTTP() }
         // The adult partition: under a UI-test library directory the
         // stand-in authenticator, never LocalAuthentication, and keys under
         // a service named after the directory; the feature switch can be
@@ -183,6 +205,10 @@ final class AppModel {
         let adultIsEnabled = BuildFeatures.adultPartition && !(options.libraryDirectory != nil && options.adultFeatureOff)
         showsDebugReport = options.libraryDirectory != nil
         slowNextSave = options.slowNextSave
+        if options.libraryDirectory != nil {
+            failNextMoveDeletion = options.failNextMoveDeletion
+            moveStepPause = options.moveStepPause
+        }
         #else
         let directory = LibraryStore.defaultDirectory()
         let transport: any Transport = URLSessionTransport()
@@ -192,58 +218,68 @@ final class AppModel {
         let now: @Sendable () -> Date = { Date() }
         let keyStore = KeychainKeyStore(partition: .normal)
         let modelHTTP: any ModelHTTP = URLSessionModelHTTP()
+        makeAdultModelHTTP = { URLSessionModelHTTP() }
         let authenticator: any DeviceAuthenticator = SystemDeviceAuthenticator()
         let adultKeys = KeychainKeyStore(partition: .adult)
         let adultIsEnabled = BuildFeatures.adultPartition
         #endif
         self.now = now
+        self.adultKeys = adultKeys
         do {
             let store = LibraryStore(directory: directory, cacheRoot: cacheRoot, now: now)
             self.store = store
             let library = try await store.openNormal()
+            normalLibrary = library
             let preferences = Preferences(defaults)
             let models = LibraryModels(library: library, keys: keyStore, http: modelHTTP)
             let parts = WorkspaceParts(
                 transport: transport, candidateLimit: candidateLimit, now: now,
                 refreshSettings: RefreshSettings(preferences),
                 readingSettings: ReadingSettings(preferences: preferences),
-                models: models,
+                normalModels: models,
                 translationSettings: TranslationSettings(preferences: preferences),
-                // The models are the normal library's: its workspace's
-                // translation resumes, whichever workspace's Settings saved.
-                slotsChanged: { [weak self] in self?.normal?.translation?.slotsChanged() }
+                // The normal library's models: its workspace's translation
+                // resumes, whichever workspace's Settings saved.
+                slotsChanged: { [weak self] in self?.normal?.translation.slotsChanged() }
             )
             self.parts = parts
-            // The embedded browser: the system's default website data store
-            // for the normal library, and a non-persistent one, new for each
-            // unlock and without Picture in Picture, for the adult library
-            // (decision 13); under a UI-test library directory a
-            // non-persistent one and the fixture pages for both.
+            // The embedded browser (RD19 decision 4): the system's default
+            // website data store for the normal library, and the adult
+            // partition's own persistent one, without Picture in Picture,
+            // for the adult library (RD18 decision 13). Under a UI-test
+            // library directory the fixture pages for both, a store that
+            // lasts the process for the normal library, and for the adult
+            // library a persistent store of the directory's own, never the
+            // real one; the stores of earlier tests are removed.
             #if DEBUG
-            let fixtures = options.libraryDirectory != nil
-            let browser = if fixtures {
-                BrowserSetup(
-                    dataStore: .nonPersistent(), addressMap: BrowserFixtures.map,
+            let browser: BrowserSetup
+            let adultBrowserData: any AdultBrowserData
+            if let name = options.libraryDirectory?.lastPathComponent {
+                let identifier = BrowserDataStores.uiTestAdultIdentifier(directoryName: name)
+                await BrowserDataStores.removeUITestStores(keeping: identifier)
+                browser = BrowserSetup(
+                    dataStore: BrowserDataStores.uiTestStore(for: .normal, directoryName: name), addressMap: BrowserFixtures.map,
                     schemeHandlers: [BrowserFixtures.scheme: BrowserFixtures()]
                 )
-            } else {
-                BrowserSetup(dataStore: .default())
-            }
-            makeAdultBrowser = {
-                if fixtures {
+                makeAdultBrowser = {
                     BrowserSetup(
-                        dataStore: .nonPersistent(), addressMap: BrowserFixtures.map,
+                        dataStore: BrowserDataStores.uiTestStore(for: .adult, directoryName: name), addressMap: BrowserFixtures.map,
                         schemeHandlers: [BrowserFixtures.scheme: BrowserFixtures()], allowsPictureInPicture: false
                     )
-                } else {
-                    BrowserSetup(dataStore: .nonPersistent(), allowsPictureInPicture: false)
                 }
+                adultBrowserData = WebKitAdultBrowserData(identifier: identifier)
+            } else {
+                browser = BrowserSetup(dataStore: BrowserDataStores.store(for: .normal))
+                makeAdultBrowser = { BrowserSetup(dataStore: BrowserDataStores.store(for: .adult), allowsPictureInPicture: false) }
+                adultBrowserData = WebKitAdultBrowserData(identifier: BrowserDataStores.adultIdentifier)
             }
             #else
-            let browser = BrowserSetup(dataStore: .default())
-            makeAdultBrowser = { BrowserSetup(dataStore: .nonPersistent(), allowsPictureInPicture: false) }
+            let browser = BrowserSetup(dataStore: BrowserDataStores.store(for: .normal))
+            makeAdultBrowser = { BrowserSetup(dataStore: BrowserDataStores.store(for: .adult), allowsPictureInPicture: false) }
+            let adultBrowserData: any AdultBrowserData = WebKitAdultBrowserData(identifier: BrowserDataStores.adultIdentifier)
             #endif
-            let workspace = Workspace(library: library, parts: parts, browser: browser)
+            self.adultBrowserData = adultBrowserData
+            let workspace = Workspace(library: library, models: models, parts: parts, browser: browser)
             #if DEBUG
             if options.libraryDirectory != nil {
                 articlePageSize = options.articlePageSize
@@ -266,7 +302,7 @@ final class AppModel {
             // The gate: the only way to the adult library from here on.
             let gate = AdultGate(
                 store: store, authenticator: authenticator, preferences: preferences, keys: adultKeys,
-                isEnabled: adultIsEnabled
+                browserData: adultBrowserData, isEnabled: adultIsEnabled
             )
             self.gate = gate
             gateState = await gate.state
@@ -289,10 +325,19 @@ final class AppModel {
     /// authentication that does not pass leaves everything as it was, with
     /// its sentence. An unlock during which the scene entered the
     /// background is discarded.
-    func chooseAdult() async {
-        guard let gate, let parts, let makeAdultBrowser, let normal, adult == nil, gateState == .locked,
-              !isAuthenticating
-        else { return }
+    ///
+    /// The same unlock carries an operation that began in the normal
+    /// partition and needs the adult library (RD19 decision 9): `pending`
+    /// is handed to the adult workspace in the step that shows it, and
+    /// this model keeps nothing of it. On every other outcome it is
+    /// dropped, with nothing read or written.
+    ///
+    /// - Returns: what the unlock came to.
+    @discardableResult
+    func chooseAdult(pending: PendingAdultOperation? = nil) async -> AdultUnlockOutcome {
+        guard let gate, let parts, let makeAdultBrowser, let adultKeys, let makeAdultModelHTTP, let normal, adult == nil,
+              gateState == .locked, !isAuthenticating, !isTurningOff
+        else { return .refused }
         // Chosen in the slide-over: it closes, so that what follows is
         // shown at the root.
         normal.navigation.closeSlideOver()
@@ -305,9 +350,15 @@ final class AppModel {
                 unlockAttempt = nil
             }
         }
+        let outcome: AdultUnlockOutcome
         switch await gate.unlock(reason: String(localized: "Unlock the adult partition")) {
         case .unlocked(let library):
-            let workspace = Workspace(library: library, parts: parts, browser: makeAdultBrowser())
+            // The adult library's own models (RD19 decisions 1 and 3): the
+            // adult key store and an HTTP stand-in of their own. They go
+            // with the workspace at the lock.
+            let models = LibraryModels(library: library, keys: adultKeys, http: makeAdultModelHTTP())
+            let workspace = Workspace(library: library, models: models, parts: parts, browser: makeAdultBrowser())
+            workspace.categories.mover = mover(adult: library, workspace: workspace)
             #if DEBUG
             workspace.categories.slowNextSave = slowNextSave
             if let size = articlePageSize {
@@ -316,21 +367,30 @@ final class AppModel {
             #endif
             await workspace.load()
             // From here to the end of the case nothing suspends before the
-            // workspace is shown: the check and the showing are one step.
+            // workspace is shown: the check, the showing and the hand-over
+            // are one step.
             if attempt.enteredBackground {
                 workspace.stop()
                 await gate.lock()
+                outcome = .discarded
             } else {
                 show(workspace)
+                workspace.begin(pending)
+                outcome = .unlocked
             }
         case .refused(.notAuthenticated(let answer)):
             notice = Self.notice(for: answer, otherwise: .stillLocked)
+            outcome = .notAuthenticated(answer)
         case .couldNotOpen(let error):
             notice = .couldNotOpen(LibraryFailure(error))
-        case .refused(.busy), .refused(.notAllowed), .discarded:
-            break
+            outcome = .couldNotOpen
+        case .refused(.busy), .refused(.notAllowed):
+            outcome = .refused
+        case .discarded:
+            outcome = .discarded
         }
         gateState = await gate.state
+        return outcome
     }
 
     /// Shows the adult workspace in place of the normal one, at the root of
@@ -504,6 +564,107 @@ final class AppModel {
         }
     }
 
+    // MARK: - Clear Browsing Data (RD19 decision 5)
+
+    /// Whether Clear Browsing Data can be asked for now: not while a gate
+    /// operation runs or a clear has not ended.
+    var canClearBrowsingData: Bool {
+        showsPartitionSwitch && !isAuthenticating && !isTurningOff && !isClearingBrowsingData
+    }
+
+    /// Removes every kind of website data of the adult browser's own store;
+    /// the normal partition's are kept. An adult page open now is closed
+    /// first, on both stacks, so that none writes during or after.
+    ///
+    /// - Returns: whether the clear ended.
+    @discardableResult
+    func clearAdultBrowsingData() async -> Bool {
+        guard canClearBrowsingData, let adultBrowserData else { return false }
+        isClearingBrowsingData = true
+        defer { isClearingBrowsingData = false }
+        adult?.navigation.closeBrowsers()
+        await adultBrowserData.clear()
+        return true
+    }
+
+    // MARK: - Moving a category (RD19 decisions 9 to 11)
+
+    /// What the adult workspace's category model moves with: the normal
+    /// library, opened at start, and the adult one of this unlock. Moves
+    /// run inside the adult partition, in both directions.
+    private func mover(adult library: Library, workspace: Workspace) -> CategoryMover {
+        CategoryMover(
+            plan: { [weak self] id, from in
+                guard let normalLibrary = self?.normalLibrary else { return nil }
+                let (old, new) = from == .normal ? (normalLibrary, library) : (library, normalLibrary)
+                return try? await CategoryMove.plan(category: id, from: old, to: new)
+            },
+            run: { [weak self, weak workspace] plan in
+                guard let self, let workspace else { return .notMoved }
+                return await self.runMove(plan, adultLibrary: library, workspace: workspace)
+            }
+        )
+    }
+
+    /// Runs a move (decision 11): copy, then deletion; then the old
+    /// partition's workspace closes every route that shows the category, a
+    /// moved source or an article of one, and reads every living list
+    /// again; only then is the old image cache cleared. When the old
+    /// partition is the normal one its cache is cleared after a `moved`
+    /// run whatever became of the adult workspace meanwhile; an adult cache
+    /// is cleared only while the adult workspace is still the one shown (a
+    /// lock closed it, and what it keeps stays in the adult partition).
+    /// Both workspaces then read their categories and recorded refresh
+    /// time, and a destination on screen refreshes the new category.
+    private func runMove(_ plan: CategoryMove.Plan, adultLibrary: Library, workspace: Workspace) async -> CategoryMove.Outcome {
+        guard let normalLibrary, let normal else { return .notMoved }
+        let toAdult = plan.from == .normal
+        let (old, new) = toAdult ? (normalLibrary, adultLibrary) : (adultLibrary, normalLibrary)
+        #if DEBUG
+        let failing: CategoryMove.Step? = failNextMoveDeletion ? .deletion : nil
+        failNextMoveDeletion = false
+        let outcome = await CategoryMove.run(
+            plan, from: old, to: new, debug: CategoryMove.DebugOptions(failing: failing, pauseBetweenSteps: moveStepPause)
+        )
+        #else
+        let outcome = await CategoryMove.run(plan, from: old, to: new)
+        #endif
+        let moved = Set(plan.moving.map(\.id))
+        switch outcome {
+        case .moved:
+            if toAdult {
+                // The normal workspace is not shown: its navigation was
+                // cleared when the adult one was shown (RD18).
+                await normal.letGo(ofMoved: moved, category: plan.category.id)
+                await CategoryMove.clearOldCache(from: normalLibrary)
+            } else if adult === workspace {
+                await workspace.letGo(ofMoved: moved, category: plan.category.id)
+                if adult === workspace {
+                    await CategoryMove.clearOldCache(from: adultLibrary)
+                }
+            }
+        case .copiedNotRemoved:
+            break
+        case .nothingToMove, .notMoved:
+            return outcome
+        }
+        var readAgain = [normal]
+        if adult === workspace {
+            readAgain.append(workspace)
+        }
+        for each in readAgain {
+            await each.categories.reload()
+            await each.refresh.load()
+        }
+        // A destination on screen collects the moved sources at once; the
+        // normal partition collects them at its next entry (gap 5).
+        if toAdult, case .moved = outcome, adult === workspace {
+            let id = plan.category.id
+            Task { await workspace.refresh.refresh(.category(id)) }
+        }
+        return outcome
+    }
+
     /// "Turn Off the Adult Partition": asks at the root.
     func askToTurnOff() {
         guard showsPartitionSwitch else { return }
@@ -516,6 +677,8 @@ final class AppModel {
     func turnOff(deletingData: Bool) async {
         turnOffQuestion = nil
         guard let gate else { return }
+        isTurningOff = true
+        defer { isTurningOff = false }
         lock()
         switch await gate.turnOff(deletingData: deletingData) {
         case .turnedOff, .refused:
@@ -608,8 +771,10 @@ final class AppModel {
             }
             // The app came to the front: a translation pause of the normal
             // library may end (RD14 decision 6), whichever partition is
-            // shown, since the normal workspace goes on working.
-            normal?.translation?.cameToFront()
+            // shown, since the normal workspace goes on working; and the
+            // adult library's, while it is shown.
+            normal?.translation.cameToFront()
+            adult?.translation.cameToFront()
         }
         removeCover()
     }

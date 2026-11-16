@@ -302,6 +302,28 @@
         }
       }
     },
+    "Already in the adult partition, so they stay here in “%@”: %@" : {
+      "comment" : "Part of the confirmation of moving a category: the sources that stay; the arguments are the category's name and the sources' names.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以下来源在成人分区中已存在，因此留在这里的“%@”中：%@"
+          }
+        }
+      }
+    },
+    "Already in the normal partition, so they stay here in “%@”: %@" : {
+      "comment" : "Part of the confirmation of moving a category: the sources that stay; the arguments are the category's name and the sources' names.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以下来源在普通分区中已存在，因此留在这里的“%@”中：%@"
+          }
+        }
+      }
+    },
     "Already in “%@”" : {
       "comment" : "Second line of a declared feed that is already in the library. %@ is the category's name.",
       "localizations" : {
@@ -412,6 +434,17 @@
         }
       }
     },
+    "Browsing data was cleared." : {
+      "comment" : "Footer under Clear Browsing Data once the adult partition's browser data were removed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览数据已清除。"
+          }
+        }
+      }
+    },
     "Building with columns" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -511,6 +544,28 @@
         }
       }
     },
+    "Clear" : {
+      "comment" : "Destructive button of the question before the adult partition's browser data are removed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除"
+          }
+        }
+      }
+    },
+    "Clear Browsing Data" : {
+      "comment" : "Button in Settings › Adult Partition: removes the adult partition's browser data.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除浏览数据"
+          }
+        }
+      }
+    },
     "Clear Image Cache" : {
       "comment" : "Settings → Data: button that empties the current library's image cache.",
       "localizations" : {
@@ -518,6 +573,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清除图片缓存"
+          }
+        }
+      }
+    },
+    "Clear the adult partition's browsing data?" : {
+      "comment" : "Question asked before the adult partition's browser data are removed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要清除成人分区的浏览数据吗？"
           }
         }
       }
@@ -573,6 +639,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "继续"
+          }
+        }
+      }
+    },
+    "Cookies, sign-ins and other website data of the adult partition's browser are removed from this device. The normal partition's are kept." : {
+      "comment" : "Message of the question before the adult partition's browser data are removed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "成人分区浏览器的 Cookie、登录状态和其他网站数据将从这台设备上移除，普通分区的不受影响。"
           }
         }
       }
@@ -903,6 +980,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每小时"
+          }
+        }
+      }
+    },
+    "Every source of “%@” is already in the adult partition. Nothing was moved." : {
+      "comment" : "Alert after a move was asked for: every source of the category exists in the adult partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”的所有来源在成人分区中都已存在，没有移动任何内容。"
+          }
+        }
+      }
+    },
+    "Every source of “%@” is already in the normal partition. Nothing was moved." : {
+      "comment" : "Alert after a move was asked for: every source of the category exists in the normal partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”的所有来源在普通分区中都已存在，没有移动任何内容。"
           }
         }
       }
@@ -1314,6 +1413,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "它的 Key 会从这台设备上移除。"
+          }
+        }
+      }
+    },
+    "Its sources move there and are collected again; new articles there are translated by that partition's model. Here, its %lld articles are deleted with their translations and overviews, and read and starred states are lost." : {
+      "comment" : "Message of the confirmation of moving a category: the consequences; the argument is the number of its articles deleted in this partition.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Its sources move there and are collected again; new articles there are translated by that partition's model. Here, its %lld article is deleted with its translations and overviews, and read and starred states are lost."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Its sources move there and are collected again; new articles there are translated by that partition's model. Here, its %lld articles are deleted with their translations and overviews, and read and starred states are lost."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "它的来源会移到那里并重新收集，新文章由该分区的模型翻译。这里的 %lld 篇文章及其翻译和概览将被删除，已读和收藏状态也会丢失。"
+                }
+              }
+            }
           }
         }
       }
@@ -1760,6 +1894,17 @@
         }
       }
     },
+    "Move" : {
+      "comment" : "Destructive button of the confirmation of moving a category to the other partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移动"
+          }
+        }
+      }
+    },
     "Move Sources to “%@”" : {
       "comment" : "Button in the deletion dialog: move the deleted category's sources to the named category, then delete it. %@ is the other category's name.",
       "localizations" : {
@@ -1767,6 +1912,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "将来源移到“%@”"
+          }
+        }
+      }
+    },
+    "Move to Adult Partition…" : {
+      "comment" : "Button in a normal category's settings: moves the category to the adult partition, after unlocking it.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到成人分区…"
+          }
+        }
+      }
+    },
+    "Move to Normal Partition…" : {
+      "comment" : "Button in an adult category's settings: moves the category to the normal partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到普通分区…"
+          }
+        }
+      }
+    },
+    "Move “%@” to the adult partition?" : {
+      "comment" : "Title of the confirmation of moving a category; the argument is the category's name.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要把“%@”移到成人分区吗？"
+          }
+        }
+      }
+    },
+    "Move “%@” to the normal partition?" : {
+      "comment" : "Title of the confirmation of moving a category; the argument is the category's name.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要把“%@”移到普通分区吗？"
           }
         }
       }
@@ -2684,6 +2873,17 @@
         }
       }
     },
+    "Show Thumbnails in Lists" : {
+      "comment" : "Switch in Settings › Adult Partition, inside the adult partition: whether the adult partition's article lists show thumbnails.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在列表中显示缩略图"
+          }
+        }
+      }
+    },
     "Show in Library" : {
       "comment" : "Button in Add source: shows where an address already is.",
       "localizations" : {
@@ -2981,6 +3181,17 @@
         }
       }
     },
+    "The adult partition's models, list thumbnails and daily limit are set inside the adult partition." : {
+      "comment" : "Footer of Settings › Adult Partition when it is opened from the normal partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "成人分区的模型、列表缩略图和每日上限需在成人分区内设置。"
+          }
+        }
+      }
+    },
     "The backup model is used when the primary model fails for network, rate-limit or server reasons." : {
       "comment" : "First sentence of the backup model's form (ux S9).",
       "localizations" : {
@@ -2999,6 +3210,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法载入分类。"
+          }
+        }
+      }
+    },
+    "The category could not be moved. Nothing was changed." : {
+      "comment" : "Alert after a move of a category failed before anything was written.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法移动这个分类，没有做任何更改。"
           }
         }
       }
@@ -3691,6 +3913,17 @@
         }
       }
     },
+    "When off, article lists in the adult partition show no pictures and download none." : {
+      "comment" : "Footer under Show Thumbnails in Lists in Settings › Adult Partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭后，成人分区的文章列表不显示、也不下载缩略图。"
+          }
+        }
+      }
+    },
     "When you open the app and this long has passed since the last refresh, the library is refreshed. Pull down on Today to refresh at any time." : {
       "comment" : "Settings → Refresh: footer of Refresh Interval.",
       "localizations" : {
@@ -3748,6 +3981,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "收藏"
+          }
+        }
+      }
+    },
+    "and %lld more" : {
+      "comment" : "After the first ten names of the sources that stay when a category is moved: how many more there are.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等另外 %lld 个"
           }
         }
       }
@@ -3847,6 +4091,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重定向次数太多"
+          }
+        }
+      }
+    },
+    "“%@” was copied to the adult partition but could not be removed here. Move it again to finish." : {
+      "comment" : "Alert after a move copied the category to the adult partition and could not delete it here.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”已复制到成人分区，但无法从这里移除。请再移动一次以完成。"
+          }
+        }
+      }
+    },
+    "“%@” was copied to the normal partition but could not be removed here. Move it again to finish." : {
+      "comment" : "Alert after a move copied the category to the normal partition and could not delete it here.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”已复制到普通分区，但无法从这里移除。请再移动一次以完成。"
           }
         }
       }

@@ -20,6 +20,36 @@ enum CategoryDialogHost {
     case sheet
 }
 
+/// What moving a category to the other partition needs (RD19 decision 11),
+/// given by the app model to the adult workspace's category model only: it
+/// holds the normal library and the adult one.
+struct CategoryMover {
+    /// Reads what moving the category out of the library of `from` would
+    /// do; `nil` when it cannot be read or the category is gone.
+    let plan: @MainActor (_ category: UUID, _ from: Partition) async -> CategoryMove.Plan?
+    /// Runs the move, lets the old workspace go of what it moved, clears
+    /// the old image cache and reads both workspaces again.
+    let run: @MainActor (CategoryMove.Plan) async -> CategoryMove.Outcome
+}
+
+/// What a move has to say (RD19 decision 11), as an alert with OK.
+enum MoveMessage: Identifiable, Equatable {
+    /// Every source of the category is in the destination already.
+    case nothingToMove(name: String, to: Partition)
+    /// Nothing was changed.
+    case notMoved
+    /// The copy was made and the old category could not be removed.
+    case copiedNotRemoved(name: String, to: Partition)
+
+    var id: String {
+        switch self {
+        case .nothingToMove(let name, let to): "nothing.\(to.rawValue).\(name)"
+        case .notMoved: "notMoved"
+        case .copiedNotRemoved(let name, let to): "copied.\(to.rawValue).\(name)"
+        }
+    }
+}
+
 /// The category list and every category operation (spec N02), at app level
 /// so that one model writes categories. What is typed in a sheet lives here,
 /// so a container switch cannot lose it.
@@ -75,6 +105,15 @@ final class CategoryModel {
 
     /// Whether the workspace of this model was dropped.
     private(set) var isStopped = false
+    /// The move waiting for its confirmation (RD19 decision 11).
+    var pendingMove: CategoryMove.Plan?
+    /// What the last move has to say.
+    var moveMessage: MoveMessage?
+    /// Whether a move's plan is being read or the move runs.
+    private(set) var isMoving = false
+    /// Given by the app model to the adult workspace's model only: moves
+    /// run inside the adult partition, in both directions.
+    @ObservationIgnored var mover: CategoryMover?
 
     private let library: Library
     private let navigation: NavigationModel
@@ -113,6 +152,13 @@ final class CategoryModel {
         isStopped = true
         isShowingSaveError = false
         pendingDeletion = nil
+        pendingMove = nil
+        moveMessage = nil
+    }
+
+    /// The library's partition.
+    var partition: Partition {
+        library.partition
     }
 
     /// Whether a category save is queued or running. Meanwhile the open
@@ -295,6 +341,65 @@ final class CategoryModel {
                 sheet = nil
             }
         }
+    }
+
+    // MARK: - Moving to the other partition (RD19 decision 11)
+
+    /// Whether the open category sheet differs from the stored category.
+    func sheetHasChanges(_ id: UUID) -> Bool {
+        guard let stored = summary(id)?.category else { return false }
+        return draftName.trimmingCharacters(in: .whitespacesAndNewlines) != stored.name || draftIcon.rawValue != stored.iconName
+    }
+
+    /// Reads what moving the category `id` out of the library of `from`
+    /// would do, then asks for the confirmation; a category whose every
+    /// source stays says so at once. A plan that arrives after a lock
+    /// stopped this model is not presented.
+    func beginMove(_ id: UUID, from partition: Partition) {
+        guard let mover, !isMoving, !isStopped else { return }
+        isMoving = true
+        let to: Partition = partition == .normal ? .adult : .normal
+        Task {
+            let plan = await mover.plan(id, partition)
+            isMoving = false
+            guard !isStopped else { return }
+            guard let plan else {
+                moveMessage = .notMoved
+                return
+            }
+            if plan.movesNothing {
+                moveMessage = .nothingToMove(name: plan.category.name, to: to)
+            } else {
+                pendingMove = plan
+            }
+        }
+    }
+
+    /// "Move": runs the move. Success shows nothing.
+    func confirmMove(_ plan: CategoryMove.Plan) {
+        pendingMove = nil
+        guard let mover, !isMoving, !isStopped else { return }
+        isMoving = true
+        Task {
+            let outcome = await mover.run(plan)
+            isMoving = false
+            guard !isStopped else { return }
+            switch outcome {
+            case .moved:
+                break
+            case .nothingToMove:
+                moveMessage = .nothingToMove(name: plan.category.name, to: plan.to)
+            case .notMoved:
+                moveMessage = .notMoved
+            case .copiedNotRemoved:
+                moveMessage = .copiedNotRemoved(name: plan.category.name, to: plan.to)
+            }
+        }
+    }
+
+    /// Cancel: nothing is written.
+    func cancelMove() {
+        pendingMove = nil
     }
 
     // MARK: - Saving

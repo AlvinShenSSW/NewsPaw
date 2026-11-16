@@ -292,6 +292,18 @@ enum AccessibilityID {
     static let lockTimingPicker = "adult.lockTiming"
     static let turnOffAdultButton = "adult.turnOff"
 
+    // Adult partition isolation (RD19)
+    static let adultPrimaryModelRow = "adult.primaryModel"
+    static let adultBackupModelRow = "adult.backupModel"
+    static let adultBackupNeedsPrimary = "adult.backupNeedsPrimary"
+    static let showThumbnailsToggle = "adult.showThumbnails"
+    static let clearBrowsingDataButton = "adult.clearBrowsingData"
+    static let confirmClearBrowsingDataButton = "adult.confirmClearBrowsingData"
+    static let browsingDataCleared = "adult.browsingDataCleared"
+    static let adultSettingsElsewhere = "adult.settingsElsewhere"
+    static let moveCategoryButton = "editor.moveToOtherPartition"
+    static let confirmMoveButton = "move.confirm"
+
     /// A preset's row in the form's service picker.
     static func presetOption(_ rawValue: String) -> String {
         "slot.preset." + rawValue
@@ -346,6 +358,12 @@ enum UITestLaunchKey {
     /// A whole number stored as the daily automatic limit (RD14 decision
     /// 8); honoured only with `libraryDirectory`.
     static let dailyAutomaticLimit = "NEWSPAW_UITEST_DAILY_AUTOMATIC_LIMIT"
+    /// "1" makes the deletion of the next category move fail (RD19);
+    /// honoured only with `libraryDirectory`.
+    static let failNextMoveDeletion = "NEWSPAW_UITEST_FAIL_NEXT_MOVE_DELETION"
+    /// A number of seconds a category move waits between its copy and its
+    /// deletion (RD19); honoured only with `libraryDirectory`.
+    static let moveStepPause = "NEWSPAW_UITEST_MOVE_STEP_PAUSE"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.

@@ -44,23 +44,10 @@ struct ModelsView: View {
                     .foregroundStyle(Theme.secondaryText)
             }
             .listRowBackground(Theme.surface)
-            Section {
-                row(.primary)
-                    .accessibilityIdentifier(AccessibilityID.primaryModelRow)
-                row(.backup)
-                    .disabled(!models.hasPrimary)
-                    .accessibilityIdentifier(AccessibilityID.backupModelRow)
-            } header: {
-                Text("Models")
-                    .foregroundStyle(Theme.secondaryText)
-            } footer: {
-                if !models.hasPrimary {
-                    Text("Set up the primary model first")
-                        .foregroundStyle(Theme.secondaryText)
-                        .accessibilityIdentifier(AccessibilityID.backupNeedsPrimary)
-                }
-            }
-            .listRowBackground(Theme.surface)
+            ModelSlotsSection(
+                primaryID: AccessibilityID.primaryModelRow, backupID: AccessibilityID.backupModelRow,
+                backupNeedsPrimaryID: AccessibilityID.backupNeedsPrimary
+            )
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
@@ -72,8 +59,39 @@ struct ModelsView: View {
         .task { await models.reload() }
     }
 
+}
+
+/// The Models section of one library (ux S8, S10; RD13 decision 14): the
+/// primary and the backup model, each with its name and state, opening the
+/// form of the model in the environment. The backup waits for a primary.
+struct ModelSlotsSection: View {
+    @Environment(ModelSettingsModel.self) private var models
+    let primaryID: String
+    let backupID: String
+    let backupNeedsPrimaryID: String
+
+    var body: some View {
+        Section {
+            row(.primary)
+                .accessibilityIdentifier(primaryID)
+            row(.backup)
+                .disabled(!models.hasPrimary)
+                .accessibilityIdentifier(backupID)
+        } header: {
+            Text("Models")
+                .foregroundStyle(Theme.secondaryText)
+        } footer: {
+            if !models.hasPrimary {
+                Text("Set up the primary model first")
+                    .foregroundStyle(Theme.secondaryText)
+                    .accessibilityIdentifier(backupNeedsPrimaryID)
+            }
+        }
+        .listRowBackground(Theme.surface)
+    }
+
     private func row(_ role: ModelRole) -> some View {
-        NavigationLink(value: SettingsRoute.modelSlot(role)) {
+        NavigationLink(value: models.formRoute(role)) {
             VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
                 // An explicit colour is not dimmed by `disabled`: the
                 // backup's title is secondary while it cannot be set up.

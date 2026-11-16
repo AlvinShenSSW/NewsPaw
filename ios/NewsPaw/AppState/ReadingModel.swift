@@ -46,6 +46,11 @@ final class ReadingModel {
     private(set) var bodies: [UUID: ReadingBody] = [:]
     /// "Mark All as Read" waiting for its answer.
     var pendingMarkAll: MarkAllRequest?
+    /// Whether the rows of the lists show thumbnails: the library's "Show
+    /// Thumbnails in Lists" (RD19 decision 6), read at the workspace's
+    /// load and changed only after it was stored. Off, a row asks for no
+    /// thumbnail and draws none.
+    private(set) var showsThumbnails = true
 
     /// The thumbnails of list rows: the app's transport and this library's
     /// cache.
@@ -121,6 +126,30 @@ final class ReadingModel {
         sources.onReloaded = { [weak self] in self?.revalidateOpenArticles() }
     }
 
+    // MARK: - Thumbnails (RD19 decision 6)
+
+    /// Reads the library's "Show Thumbnails in Lists"; a value that cannot
+    /// be read leaves the one shown.
+    func loadSettings() async {
+        if let shows = try? await library.listThumbnails() {
+            showsThumbnails = shows
+        }
+    }
+
+    /// Stores "Show Thumbnails in Lists" and then shows it.
+    ///
+    /// - Returns: whether it was stored; the switch then keeps the stored
+    ///   value.
+    func setShowsThumbnails(_ shows: Bool) async -> Bool {
+        do {
+            try await library.setListThumbnails(shows)
+        } catch {
+            return false
+        }
+        showsThumbnails = shows
+        return true
+    }
+
     // MARK: - Lists
 
     /// The model of `kind`, made when first asked for.
@@ -190,6 +219,23 @@ final class ReadingModel {
         await refresh.refresh(kind.refreshScope)
         model.ownRefreshes -= 1
         await reload(model).value
+    }
+
+    /// Reads every living list's first page again, and returns when all
+    /// have been read: after a category was moved out of this library its
+    /// articles leave the lists before the image cache is cleared (RD19
+    /// decision 11).
+    func reloadAllLists() async {
+        let reads = lists.values.filter { $0.state != .notLoaded }.map { reload($0) }
+        for read in reads {
+            await read.value
+        }
+    }
+
+    /// The source of the article `id`, as last known: opened, or a row of a
+    /// list.
+    func source(ofArticle id: UUID) -> UUID? {
+        row(id)?.sourceID
     }
 
     /// Reads the list's first page afresh, in the queue.

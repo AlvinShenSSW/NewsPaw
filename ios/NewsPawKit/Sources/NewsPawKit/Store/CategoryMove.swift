@@ -29,8 +29,10 @@ public enum CategoryMove {
         public let staying: [Source]
         /// The articles of the moving sources, deleted in the old library.
         public let articleCount: Int
-        let from: Partition
-        let to: Partition
+        /// The partition the category leaves.
+        public let from: Partition
+        /// The partition it moves to.
+        public let to: Partition
 
         /// Whether the move would write nothing: every source of the
         /// category stays. A category without sources moves.

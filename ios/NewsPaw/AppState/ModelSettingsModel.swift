@@ -1,8 +1,11 @@
 import Foundation
 import NewsPawKit
 
-/// The model slots of the normal library and the slot form (ux S8, S9;
-/// RD13 decisions 3, 9 and 14). One operation runs at a time — a save, a
+/// The model slots of one library and the slot form (ux S8, S9, S10;
+/// RD13 decisions 3, 9 and 14): the normal library's, for Settings › Models
+/// & Translation in either partition, and the adult library's, for Settings
+/// › Adult Partition inside the adult partition (RD19 decision 2). Each
+/// sets up only the form of its own route. One operation runs at a time — a save, a
 /// removal, a Test or a list — and the form's controls are disabled
 /// meanwhile. What the form shows lives here, so it survives a container
 /// switch; it is set up when the form's route is pushed and dropped when the
@@ -85,14 +88,19 @@ final class ModelSettingsModel {
 
     private let models: LibraryModels
     private let navigation: NavigationModel
+    /// The Settings route of this model's form of a slot.
+    let formRoute: (ModelRole) -> SettingsRoute
     /// Told after a slot was saved or removed, or its key removed (RD14
     /// decisions 2 and 6): the translation of the models' library resumes.
     /// Set by the app model.
     @ObservationIgnored var onSlotsChanged: (@MainActor () -> Void)?
 
-    init(models: LibraryModels, navigation: NavigationModel) {
+    /// - Parameter formRoute: the Settings route of this model's form of a
+    ///   slot; a route of another form is not this model's.
+    init(models: LibraryModels, navigation: NavigationModel, formRoute: @escaping (ModelRole) -> SettingsRoute) {
         self.models = models
         self.navigation = navigation
+        self.formRoute = formRoute
     }
 
     // MARK: - Slots
@@ -114,8 +122,8 @@ final class ModelSettingsModel {
     /// closed. Its running Test or list is cancelled; a cancelled Test still
     /// writes its usage row and keeps no result.
     func settingsPathChanged(_ path: [SettingsRoute]) {
-        let pushed = path.compactMap { route -> ModelRole? in
-            if case .modelSlot(let role) = route { role } else { nil }
+        let pushed = path.compactMap { route in
+            ModelRole.allCases.first { formRoute($0) == route }
         }.last
         if let editingRole, pushed != editingRole {
             close()
@@ -163,7 +171,8 @@ final class ModelSettingsModel {
     /// (the tab tapped again while a save ran) is not popped twice, and
     /// another model's form opened since stays.
     private func leaveForm(_ role: ModelRole) {
-        navigation.settingsPath.removeAll { $0 == .modelSlot(role) }
+        let route = formRoute(role)
+        navigation.settingsPath.removeAll { $0 == route }
     }
 
     // MARK: - The form's state

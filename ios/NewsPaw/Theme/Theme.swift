@@ -82,6 +82,10 @@ extension EnvironmentValues {
     /// set once at the root, read by the root's tint and by every view
     /// that draws with the accent, sheets included.
     @Entry var accent: Color = Theme.accent
+    /// The adult library's model slots of the workspace shown (RD19
+    /// decision 2): set at the root inside the adult partition, `nil` in
+    /// the normal one. Settings › Adult Partition shows them and their form.
+    @Entry var partitionModelSettings: ModelSettingsModel?
 }
 
 extension View {

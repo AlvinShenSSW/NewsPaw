@@ -96,6 +96,10 @@ enum SettingsRoute: Hashable {
     case models
     /// The form of one model slot (ux S9), pushed on Models & Translation.
     case modelSlot(ModelRole)
+    /// The form of one of the adult partition's model slots (ux S9; RD19
+    /// decision 2), pushed on Settings › Adult Partition inside the adult
+    /// partition.
+    case adultModelSlot(ModelRole)
     case refresh
     /// Reading (ux S8; RD11): text size, line spacing, typeface.
     case reading
@@ -107,7 +111,10 @@ enum SettingsRoute: Hashable {
     /// Whether the route's screen is a form the owner types into, which
     /// has to stay clear of the keyboard in a pane too (`paneRoot`).
     var isFormOfTextFields: Bool {
-        if case .modelSlot = self { true } else { false }
+        switch self {
+        case .modelSlot, .adultModelSlot: true
+        default: false
+        }
     }
 }
 
@@ -209,6 +216,10 @@ final class NavigationModel {
     /// it shows are drawn, so that a model form is set up when it is pushed
     /// and closed when it is popped by any means. Set by the app model.
     @ObservationIgnored var onSettingsPathChanged: (@MainActor ([SettingsRoute]) -> Void)?
+    /// The source of an open article, as the reading model knows it, so
+    /// that a move closes the articles of the sources it took away (RD19
+    /// decision 11). Set by the workspace.
+    @ObservationIgnored var sourceOfArticle: @MainActor (UUID) -> UUID? = { _ in nil }
 
     /// The tab, as the tab bar reads and selects it. Selecting a tab whose
     /// stack has a list at its top enters that list.
@@ -479,6 +490,58 @@ final class NavigationModel {
         }
         if shown {
             closeLibraryList()
+        }
+    }
+
+    /// Closes every browser route, on the Library and the Starred stack:
+    /// an article's page goes and the article under it stays, a web-page
+    /// source's route goes, as another sidebar selection closes them (RD10
+    /// decision 3). Clear Browsing Data does this first, so that no adult
+    /// page writes during or after the clear (RD19 decision 5).
+    func closeBrowsers() {
+        if case .page = libraryPath.last {
+            libraryPath.removeLast()
+        } else if browserRoute(of: .library) != nil {
+            libraryPath = []
+        }
+        if case .page = starredPath.last {
+            starredPath.removeLast()
+        }
+    }
+
+    /// A category was moved to the other partition (RD19 decision 11):
+    /// every route that shows it, one of the moved `sources` or an article
+    /// of one is closed, on every stack — its list or a moved source's
+    /// (the Library stack goes to its root, All Unread on the panes), an
+    /// article of a moved source with any page above it, on the Library
+    /// and the Starred stack — and so is a sheet of the category or of a
+    /// moved source.
+    func close(showing sources: Set<UUID>, category: UUID) {
+        switch sheet {
+        case .categorySettings(category)?:
+            sheet = nil
+        case .sourceSettings(let id)? where sources.contains(id):
+            sheet = nil
+        default:
+            break
+        }
+        let showsMoved: (LibraryRoute) -> Bool = { route in
+            switch route {
+            case .category(let id): id == category
+            case .source(let id): sources.contains(id)
+            case .article(let id): self.sourceOfArticle(id).map(sources.contains) ?? false
+            case .allUnread, .page: false
+            }
+        }
+        if libraryPath.contains(where: { route in
+            if case .article = route { false } else { showsMoved(route) }
+        }) {
+            closeLibraryList()
+        } else if let index = libraryPath.firstIndex(where: showsMoved) {
+            libraryPath.removeSubrange(index...)
+        }
+        if let index = starredPath.firstIndex(where: showsMoved) {
+            starredPath.removeSubrange(index...)
         }
     }
 

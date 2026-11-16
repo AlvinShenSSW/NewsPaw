@@ -235,7 +235,6 @@ enum AccessibilityID {
     static let opmlUseNameButton = "opml.useName"
     static let opmlFeedsAdded = "opml.feedsAdded"
     static let opmlDoneButton = "opml.done"
-    static let opmlShareSheet = "opml.shareSheet"
     static let opmlSkippedPrefix = "opml.skipped."
 
     /// A folder of the preview or the summary, by name.

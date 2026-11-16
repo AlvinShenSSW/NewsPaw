@@ -14,7 +14,6 @@ struct ShareSheet: UIViewControllerRepresentable {
         controller.completionWithItemsHandler = { _, _, _, _ in
             onComplete()
         }
-        controller.view.accessibilityIdentifier = AccessibilityID.opmlShareSheet
         return controller
     }
 

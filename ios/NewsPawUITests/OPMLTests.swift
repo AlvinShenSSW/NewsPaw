@@ -234,13 +234,20 @@ final class OPMLTests: AdultTestCase {
         assertShareSheetShownAndClose()
     }
 
-    /// A5: the share sheet is on screen; it is closed again.
+    /// A5: the system share sheet is on screen, offering the exported file
+    /// and Save to Files; it is closed again. The sheet's view carries the
+    /// system's identifier `ActivityListView` (iOS 27 simulator).
     func assertShareSheetShownAndClose(file: StaticString = #filePath, line: UInt = #line) {
-        let sheet = element(AccessibilityID.opmlShareSheet)
+        let sheet = app.otherElements["ActivityListView"]
         XCTAssertTrue(sheet.waitForExistence(timeout: timeout), "no share sheet", file: file, line: line)
+        let caption = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'NewsPaw Feeds '")).firstMatch
+        XCTAssertTrue(caption.waitForExistence(timeout: timeout), "the sheet does not show the file", file: file, line: line)
+        // The file's name does not name the partition.
+        XCTAssertFalse(caption.label.localizedCaseInsensitiveContains("adult"), caption.label, file: file, line: line)
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Save to Files'")).firstMatch.exists,
+                      "no Save to Files", file: file, line: line)
         screenshot("share-sheet")
-        print("RD08 A5 | share sheet elements: \(app.buttons.allElementsBoundByIndex.prefix(30).map(\.label))")
-        let close = app.buttons.matching(NSPredicate(format: "label IN %@", ["Close", "关闭"])).firstMatch
+        let close = app.buttons.matching(NSPredicate(format: "identifier == 'header.closeButton' OR label IN %@", ["Close", "关闭"])).firstMatch
         if close.waitForExistence(timeout: 3) {
             close.tap()
         } else {

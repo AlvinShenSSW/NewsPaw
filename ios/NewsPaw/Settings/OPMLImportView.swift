@@ -137,6 +137,19 @@ private struct OPMLPreviewView: View {
         let importing = model.stage == .importing
         Form {
             if let plan = model.plan {
+                // At the top, where it is seen after Import.
+                if let failure = model.failure {
+                    Section {
+                        Label {
+                            OPMLWording.failure(failure)
+                        } icon: {
+                            Image(systemName: "exclamationmark.circle")
+                        }
+                        .foregroundStyle(Theme.secondaryText)
+                        .accessibilityIdentifier(AccessibilityID.opmlFailure)
+                    }
+                    .listRowBackground(Theme.surface)
+                }
                 Section {
                     LabeledContent {
                         Text(plan.addedFeeds, format: .number)
@@ -199,18 +212,6 @@ private struct OPMLPreviewView: View {
                 }
                 if !plan.skipped.isEmpty {
                     OPMLSkippedRow(count: plan.skipped.count)
-                }
-                if let failure = model.failure {
-                    Section {
-                        Label {
-                            OPMLWording.failure(failure)
-                        } icon: {
-                            Image(systemName: "exclamationmark.circle")
-                        }
-                        .foregroundStyle(Theme.secondaryText)
-                        .accessibilityIdentifier(AccessibilityID.opmlFailure)
-                    }
-                    .listRowBackground(Theme.surface)
                 }
             }
         }

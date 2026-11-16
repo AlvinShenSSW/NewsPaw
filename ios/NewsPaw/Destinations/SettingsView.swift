@@ -194,6 +194,21 @@ struct DataSettingsView: View {
                 // Only feeds and GitHub sources are written.
                 .disabled(isExporting || !sources.summaries.contains { $0.kind.isCollectedAsFeed })
                 .accessibilityIdentifier(AccessibilityID.exportOPMLButton)
+                // On the row, not on the list: the list carries the import's
+                // sheet and alert, and two of a kind on one view do not both
+                // present.
+                .sheet(item: $exported, onDismiss: OPMLExportFile.empty) { file in
+                    ShareSheet(url: file.url) {
+                        exported = nil
+                        OPMLExportFile.empty()
+                    }
+                    .ignoresSafeArea()
+                }
+                .alert(Text("Could not export"), isPresented: $exportFailed) {
+                    Button("OK") {}
+                } message: {
+                    Text("The file could not be written.")
+                }
             } header: {
                 Text(verbatim: "OPML")
                     .foregroundStyle(Theme.secondaryText)
@@ -241,18 +256,6 @@ struct DataSettingsView: View {
             Task { size = await reading.library.imageCache.size() }
         }
         .opmlImport(from: .settings)
-        .sheet(item: $exported, onDismiss: OPMLExportFile.empty) { file in
-            ShareSheet(url: file.url) {
-                exported = nil
-                OPMLExportFile.empty()
-            }
-            .ignoresSafeArea()
-        }
-        .alert(Text("Could not export"), isPresented: $exportFailed) {
-            Button("OK") {}
-        } message: {
-            Text("The file could not be written.")
-        }
     }
 
     /// "Export OPML": the library's file is built off the main actor and

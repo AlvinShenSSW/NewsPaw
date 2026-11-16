@@ -33,6 +33,8 @@ extension UTType {
 @MainActor @Observable
 final class OPMLImportModel {
     enum Stage: Equatable {
+        /// The file picker is up, or about to be.
+        case choosing
         /// The file is being read and planned; nothing is presented.
         case reading
         case preview
@@ -65,7 +67,7 @@ final class OPMLImportModel {
     var alert: Alert?
     var isShowingPreview = false
     var path: [OPMLImportRoute] = []
-    private(set) var stage = Stage.reading
+    private(set) var stage = Stage.choosing
     private(set) var plan: OPMLImportSummary?
     var choice: Choice?
     /// The "New Category…" draft.

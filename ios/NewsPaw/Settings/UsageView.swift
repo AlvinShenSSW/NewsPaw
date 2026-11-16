@@ -37,7 +37,13 @@ struct UsageView: View {
                     readFailure
                 }
             case .loaded(let snapshot):
-                usageSections(snapshot)
+                // Only the totals of the period selected: until its read
+                // ends (another period chosen, or the screen opened again
+                // on Today) none are drawn, as while loading. The limit does
+                // not depend on the period.
+                if snapshot.period == period {
+                    usageSections(snapshot)
+                }
                 limitSection {
                     limitRows(snapshot)
                 }
@@ -145,8 +151,7 @@ struct UsageView: View {
         Binding {
             usage.selectedLimit ?? Library.standardDailyAutomaticLimit
         } set: { value in
-            let period = period
-            Task { await usage.chooseLimit(value, period: period) }
+            Task { await usage.chooseLimit(value) }
         }
     }
 }

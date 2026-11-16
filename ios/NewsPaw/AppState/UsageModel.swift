@@ -64,6 +64,9 @@ final class UsageModel {
     @ObservationIgnored private let calendar: Calendar
     /// Counts the reads, so that only the latest one's result is shown.
     @ObservationIgnored private var reads = 0
+    /// The period of the latest read asked for: the one the screen shows,
+    /// which a stored limit reads again.
+    @ObservationIgnored private var requestedPeriod = UsagePeriod.today
     @ObservationIgnored private var isStopped = false
 
     /// - Parameter library: the library of the workspace this model belongs
@@ -98,6 +101,7 @@ final class UsageModel {
     /// after the workspace was dropped, is dropped.
     func load(_ period: UsagePeriod) async {
         guard !isStopped else { return }
+        requestedPeriod = period
         reads += 1
         let read = reads
         let instant = now()
@@ -117,10 +121,11 @@ final class UsageModel {
         content = result
     }
 
-    /// Stores `limit` at once (decision 5) and reads again; one write at a
-    /// time. A failure says so, and the stored value is read and shown
-    /// again.
-    func chooseLimit(_ limit: Int, period: UsagePeriod) async {
+    /// Stores `limit` at once (decision 5) and reads again — the period of
+    /// the latest read, which the screen may have changed while the write
+    /// waited; one write at a time. A failure says so, and the stored value
+    /// is read and shown again.
+    func chooseLimit(_ limit: Int) async {
         guard !isStopped, !isStoringLimit, limit != selectedLimit else { return }
         isStoringLimit = true
         pendingLimit = limit
@@ -135,7 +140,7 @@ final class UsageModel {
             isShowingSaveError = true
         }
         guard !isStopped else { return }
-        await load(period)
+        await load(requestedPeriod)
     }
 
     /// The workspace is dropped (RD18 decision 4): a read or a write in

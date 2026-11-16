@@ -887,7 +887,10 @@ struct TitleTranslatorTests {
         await fixture.translator.configure(TranslationConfiguration(locale: .simplifiedChinese, automatic: true))
         await fixture.eventually { fixture.service.requests.count == 1 }
         let manual = Task { await fixture.translator.translateIfWaiting(id) }
-        // The manual job waits for the worker, which holds the article.
+        // The manual job is queued while the worker holds the article; only
+        // then is the automatic request let go.
+        await fixture.eventually { await fixture.translator.manualJobsQueued == 1 }
+        #expect(fixture.service.requests.count == 1)
         service.release(request: 1)
         #expect(await manual.value == .notWaiting)
         await fixture.translator.settled()

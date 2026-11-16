@@ -88,6 +88,23 @@ struct BodySegmentsTests {
         #expect(BodySegments.pieces(of: String(repeating: "长", count: 20_000)).count == 14)
     }
 
+    @Test("a very long line is cut in time linear in its length (bounded by a ratio to a line a tenth as long)")
+    func longLineIsLinear() {
+        let unit = "The harbour council met in the old library on the hill. "
+        let short = String(repeating: unit, count: 200_000 / unit.count)
+        let long = String(repeating: unit, count: 2_000_000 / unit.count)
+        let clock = ContinuousClock()
+        var shortPieces: [String] = []
+        let reference = clock.measure { shortPieces = BodySegments.pieces(of: short) }
+        var longPieces: [String] = []
+        let measured = clock.measure { longPieces = BodySegments.pieces(of: long) }
+        #expect(longPieces.count >= 9 * shortPieces.count)
+        #expect(longPieces.allSatisfy { $0.count <= BodySegments.maximumCharacters })
+        // Linear: about ten times the reference; quadratic: about a
+        // hundred. The bound is wide for a slow runner.
+        #expect(measured < reference * 40 + .milliseconds(200), "\(measured) for ten times the text of \(reference)")
+    }
+
     // MARK: - Criterion 1: chunks
 
     @Test("criterion 1: chunks hold at most 20 texts and 1,500 characters, never split a text, and keep reading order")

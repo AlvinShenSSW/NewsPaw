@@ -179,7 +179,9 @@ public enum BodySegments {
     static func pieces(of line: String) -> [String] {
         var result: [String] = []
         var rest = Substring(line)
-        while rest.count > maximumCharacters {
+        // Whether more than the bound is left, walking at most the bound:
+        // `count` would walk the whole rest at every piece.
+        while rest.index(rest.startIndex, offsetBy: maximumCharacters, limitedBy: rest.endIndex).map({ $0 < rest.endIndex }) ?? false {
             let window = rest.prefix(maximumCharacters)
             var cut: String.Index?
             var index = window.endIndex

@@ -371,12 +371,10 @@ struct BodyTranslatorTests {
         await replacing.eventually { replacing.service.requests.count == 1 }
         let second = replacing.job(BodySegments.plan(BodyFixture.blocks(2, story: "Other"), locale: .japanese), article: other)
         await replacing.translator.start(second)
-        // The second job's request must not be sent before the first has
-        // ended: give it time to be sent wrongly, then end the first.
-        let deadline = ContinuousClock.now + .seconds(2)
-        while replacing.service.requests.count < 2, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        // The second job waits for the first to end before it sends: it is
+        // seen waiting, with the first one's request still held.
+        await replacing.eventually { await replacing.translator.waitingForPrevious == 1 }
+        #expect(replacing.service.requests.count == 1)
         held.release(request: 1)
         await replacing.translator.settled()
         #expect(replacing.end(of: first.id) == .cancelled)
@@ -594,6 +592,32 @@ struct BodyTranslatorTests {
         #expect(try await fixture.usage().map(\.outcome) == [.cancelled])
     }
 
+    @Test("rows written after a new plan read the store are not sent again: the next job reads them once the work before has ended")
+    func rowsLandingAfterANewPlan() async throws {
+        let points = HeldPoints<BodyTranslator.SuspensionPoint>()
+        points.hold(.acceptedWrite)
+        let fixture = try await BodyFixture.make()
+        defer { fixture.remove() }
+        await fixture.translator.setSuspensionHook { await points.arrive($0) }
+        let article = try await fixture.article()
+        let plan = BodySegments.plan(BodyFixture.blocks(4), locale: .simplifiedChinese)
+        let first = fixture.job(plan, article: article)
+        await fixture.translator.start(first)
+        // Chunk 1 is accepted; its rows are about to be written.
+        await fixture.eventually { points.reached(.acceptedWrite) }
+        // A new plan reads the store now: nothing is stored yet.
+        let waiting = try await fixture.waiting(plan, article)
+        #expect(waiting == plan.sentHashes)
+        let second = fixture.job(plan, article: article, sending: waiting)
+        await fixture.translator.start(second)
+        points.release(.acceptedWrite)
+        await fixture.translator.settled()
+        #expect(fixture.end(of: second.id) == .finished)
+        #expect(fixture.service.requests.map(BodyFixture.paragraphs) == [[1, 2], [3, 4]], "chunk 1 is not sent twice")
+        #expect(Set(fixture.translated.keys) == plan.sentHashes, "the rows read again are reported")
+        #expect(try await fixture.stored(article).values.allSatisfy { $0.state == .done })
+    }
+
     @Test("a reply that arrives after its work was cancelled stores nothing and is not reported")
     func replyAfterCancellation() async throws {
         let service = TranslationService()
@@ -646,6 +670,49 @@ struct BodyTranslatorTests {
             "original script", "plain text only", "returned as it is",
         ] {
             #expect(system.contains(phrase), "\(phrase)")
+        }
+    }
+}
+
+/// Holds a translator at one of its suspension points, the first time it
+/// gets there, until the test releases it.
+final class HeldPoints<Point: Hashable & Sendable>: Sendable {
+    private struct State {
+        var held: Set<Point> = []
+        var reached: Set<Point> = []
+        var released: Set<Point> = []
+        var waiting: [Point: CheckedContinuation<Void, Never>] = [:]
+    }
+
+    private let state = Mutex(State())
+
+    func hold(_ point: Point) {
+        state.withLock { _ = $0.held.insert(point) }
+    }
+
+    func reached(_ point: Point) -> Bool {
+        state.withLock { $0.reached.contains(point) }
+    }
+
+    func release(_ point: Point) {
+        let waiting = state.withLock { state in
+            state.released.insert(point)
+            return state.waiting.removeValue(forKey: point)
+        }
+        waiting?.resume()
+    }
+
+    func arrive(_ point: Point) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let now = state.withLock { state in
+                state.reached.insert(point)
+                guard state.held.contains(point), !state.released.contains(point) else { return true }
+                state.waiting[point] = continuation
+                return false
+            }
+            if now {
+                continuation.resume()
+            }
         }
     }
 }

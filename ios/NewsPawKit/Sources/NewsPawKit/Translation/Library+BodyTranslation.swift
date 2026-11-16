@@ -76,32 +76,34 @@ extension Library {
     }
 
     /// Writes one chunk's rows in one transaction, one statement each,
-    /// replacing the row of the same text, each guarded by the article's
-    /// existence.
+    /// replacing the row of the same text, unless the article is gone. A
+    /// failed row never replaces a done one: a paid translation is not lost
+    /// to a later failure of the same text.
     ///
     /// - Returns: false, with nothing written, when the article is gone.
     func storeBodyTranslations(_ records: [BodyTextRecord], ofArticle id: UUID, locale: ReadingLocale) async throws -> Bool {
         guard !records.isEmpty else { return true }
         let now = now()
         return try await write { db in
-            var written = false
+            guard try Bool.fetchOne(db, sql: "SELECT EXISTS (SELECT 1 FROM article WHERE id = ?)", arguments: [id.databaseKey]) == true
+            else { return false }
             for record in records {
                 try db.execute(
                     sql: """
                         INSERT INTO body_translation (article_id, locale, source_hash, text, state, error, model, updated_at)
-                        SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM article WHERE id = ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (article_id, locale, source_hash) DO UPDATE SET
                             text = excluded.text, state = excluded.state, error = excluded.error,
                             model = excluded.model, updated_at = excluded.updated_at
+                        WHERE body_translation.state <> 'done' OR excluded.state = 'done'
                         """,
                     arguments: [
                         id.databaseKey, locale.rawValue, record.hash, record.text, record.state.rawValue, record.failure?.rawValue,
-                        record.model, now, id.databaseKey,
+                        record.model, now,
                     ]
                 )
-                written = written || db.changesCount > 0
             }
-            return written
+            return true
         }
     }
 

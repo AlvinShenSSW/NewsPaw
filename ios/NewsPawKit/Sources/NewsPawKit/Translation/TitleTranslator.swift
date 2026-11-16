@@ -969,6 +969,11 @@ public actor TitleTranslator {
         sideWork
     }
 
+    /// Manual jobs waiting for the worker.
+    var manualJobsQueued: Int {
+        manualQueue.count
+    }
+
     // MARK: - Reporting
 
     private func block(_ ids: [UUID], _ reason: TranslationBlock) {

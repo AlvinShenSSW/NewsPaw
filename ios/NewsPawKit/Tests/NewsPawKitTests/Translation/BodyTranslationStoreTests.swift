@@ -131,6 +131,42 @@ struct BodyTranslationStoreTests {
         #expect(try await Self.rowCount(fixture.library) == 0)
     }
 
+    @Test("a failed row never replaces a done one; a done row replaces a failed one")
+    func failedNeverReplacesDone() async throws {
+        let fixture = try await TranslatorFixture.make(primary: false)
+        defer { fixture.remove() }
+        let article = try await fixture.article("A", in: try await fixture.source())
+        let hash = BodySegments.hash("One")
+        #expect(try await fixture.library.storeBodyTranslations([
+            BodyTextRecord(hash: hash, state: .done, text: "一", failure: nil, model: "m"),
+        ], ofArticle: article, locale: .simplifiedChinese))
+        #expect(try await fixture.library.storeBodyTranslations([
+            BodyTextRecord(hash: hash, state: .failed, text: nil, failure: .refused, model: nil),
+        ], ofArticle: article, locale: .simplifiedChinese), "the article is there: not reported gone")
+        #expect(try await fixture.library.bodyTranslations(ofArticle: article, locale: .simplifiedChinese)[hash]?.text == "一")
+        let other = BodySegments.hash("Two")
+        _ = try await fixture.library.storeBodyTranslations([
+            BodyTextRecord(hash: other, state: .failed, text: nil, failure: .refused, model: nil),
+        ], ofArticle: article, locale: .simplifiedChinese)
+        _ = try await fixture.library.storeBodyTranslations([
+            BodyTextRecord(hash: other, state: .done, text: "二", failure: nil, model: "m"),
+        ], ofArticle: article, locale: .simplifiedChinese)
+        #expect(try await fixture.library.bodyTranslations(ofArticle: article, locale: .simplifiedChinese)[other]?.text == "二")
+    }
+
+    @Test("the title row read for an excerpt's pre-fill is the one of the language asked for")
+    func titleRowByLocale() async throws {
+        let fixture = try await TranslatorFixture.make(primary: false)
+        defer { fixture.remove() }
+        let article = try await fixture.article("A", excerpt: "An excerpt.", in: try await fixture.source())
+        try await fixture.library.storeTranslations([
+            TranslationRecord(articleID: article, locale: .simplifiedChinese, state: .done, title: "甲", excerpt: "摘要", failure: nil, model: "m"),
+        ])
+        let translator = BodyTranslator(models: fixture.models)
+        #expect(try await translator.titleTranslation(ofArticle: article, locale: .simplifiedChinese)?.excerpt == "摘要")
+        #expect(try await translator.titleTranslation(ofArticle: article, locale: .japanese) == nil)
+    }
+
     @Test("a row of a state or reason this build does not know is read as nothing, or as malformed")
     func unknownValues() async throws {
         let fixture = try await TranslatorFixture.make(primary: false)

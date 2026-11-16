@@ -111,7 +111,9 @@ public actor BodyTranslator {
         let generation = generation
         currentJob = job.id
         current = Task {
+            self.waitingForPrevious += 1
             await previous?.value
+            self.waitingForPrevious -= 1
             let end = await self.work(job, generation: generation)
             self.report(.ended(job: job.id, end))
         }
@@ -144,6 +146,13 @@ public actor BodyTranslator {
         try await library.bodyTranslations(ofArticle: id, locale: locale)
     }
 
+    /// The article's title translation (RD14's row) in `locale`, from this
+    /// translator's library: what an excerpt shown as the body is pre-filled
+    /// from, read in the opening's own language.
+    public func titleTranslation(ofArticle id: UUID, locale: ReadingLocale) async throws -> StoredTranslation? {
+        try await library.translations(of: [id], locale: locale)[id]
+    }
+
     /// The article's title translation's state, model and time in `locale`,
     /// from this translator's library (Article Info).
     public func titleDetails(ofArticle id: UUID, locale: ReadingLocale) async throws -> TitleTranslationDetails? {
@@ -165,18 +174,31 @@ public actor BodyTranslator {
 
     private func work(_ job: BodyTranslationJob, generation: Int) async -> BodyTranslationEnd {
         guard isCurrent(generation) else { return .cancelled }
+        var chunks = job.chunks
         if let article = job.article {
             // The article must be this library's (RD14 decision 12's rule).
             let exists: Bool
+            let stored: [String: StoredBodyText]
             do {
                 exists = try await library.articleExists(article)
+                // Read once the work before has ended: rows it wrote after
+                // the app planned this job are not sent again.
+                stored = exists ? try await library.bodyTranslations(ofArticle: article, locale: job.locale) : [:]
             } catch {
                 return isCurrent(generation) ? .stopped(.read) : .cancelled
             }
             guard isCurrent(generation) else { return .cancelled }
             guard exists else { return .gone }
+            let sending = Set(chunks.flatMap { $0.map(\.hash) })
+            let done = stored.filter { sending.contains($0.key) && $0.value.state == .done }
+            if !done.isEmpty {
+                for (model, rows) in Dictionary(grouping: done, by: { $0.value.model ?? "" }) {
+                    report(.translated(job: job.id, Dictionary(uniqueKeysWithValues: rows.compactMap { key, row in row.text.map { (key, $0) } }), model: model))
+                }
+                chunks = chunks.map { $0.filter { done[$0.hash] == nil } }
+            }
         }
-        for chunk in job.chunks where !chunk.isEmpty {
+        for chunk in chunks where !chunk.isEmpty {
             guard isCurrent(generation) else { return .cancelled }
             let step = switch job.route {
             case .primary: await sendToPrimary(chunk, job: job, generation: generation)
@@ -325,6 +347,7 @@ public actor BodyTranslator {
             let records = part.indices.map { index in
                 BodyTextRecord(hash: part[index].hash, state: .done, text: entries[index], failure: nil, model: model)
             }
+            await suspend(.acceptedWrite)
             switch await write(records, article: article, locale: job.locale) {
             case .written:
                 break
@@ -392,6 +415,28 @@ public actor BodyTranslator {
     }
 
     // MARK: - For the tests
+
+    /// Where the race tests hold the translator: just before the `await`
+    /// whose window they test. Nothing holds it in the app.
+    enum SuspensionPoint: Sendable, Hashable {
+        /// An accepted chunk's rows are about to be written.
+        case acceptedWrite
+    }
+
+    private var suspensionHook: (@Sendable (SuspensionPoint) async -> Void)?
+
+    func setSuspensionHook(_ hook: @escaping @Sendable (SuspensionPoint) async -> Void) {
+        suspensionHook = hook
+    }
+
+    private func suspend(_ point: SuspensionPoint) async {
+        if let suspensionHook {
+            await suspensionHook(point)
+        }
+    }
+
+    /// Jobs waiting for the work before them to end.
+    private(set) var waitingForPrevious = 0
 
     /// Returns once the work running has ended and every event has been
     /// reported.

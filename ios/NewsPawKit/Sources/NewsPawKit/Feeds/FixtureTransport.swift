@@ -105,8 +105,9 @@ public final class FixtureTransport: Transport {
         /// `fixture:refuse-primary` in the first), "Markup story" (a
         /// paragraph holding Markdown, an HTML link and a `javascript:`
         /// address as text), "Many paragraphs story" (40 short paragraphs),
-        /// a Chinese article and "Short note" (an excerpt, no link). No
-        /// item links to an address that answers.
+        /// a Chinese article, "Short note" (an excerpt, no link) and
+        /// "Excerpt only story" (content that gives no block: its excerpt is
+        /// the body). No item links to an address that answers.
         public static let bodies = "https://bodies.example.invalid/rss.xml"
 
         /// A feed of articles whose bodies come from their pages (RD12):
@@ -610,6 +611,9 @@ public final class FixtureTransport: Transport {
     public static let markupParagraph = "Read **this in bold**, <a href=\"https://example.invalid/link\">an HTML link</a>, "
         + "[a Markdown link](https://example.invalid/markdown) and javascript:alert(1) here."
 
+    /// The excerpt of "Excerpt only story", whose content gives no block.
+    public static let excerptOnlyText = "The ferry timetable changes next week, the harbour office said."
+
     public static let chineseBodyTitle = "海港议会讨论新的渡轮时刻表"
     public static let chineseBodyParagraphs = [
         "海港议会昨晚在山上的旧图书馆开会，讨论新的渡轮时刻表。议员们一致认为，早班渡轮应该提前十分钟出发，以便学生按时到校。",
@@ -650,6 +654,11 @@ public final class FixtureTransport: Transport {
             "<item><title>Short note</title><guid>bodies-short</guid>"
                 + "<description>A short note about the harbour, only a few words long.</description>"
                 + "<pubDate>\(date(minutesAgo: 40))</pubDate></item>",
+            // Its content gives no block: the excerpt is put in as the body.
+            "<item><title>Excerpt only story</title><guid>bodies-excerpt-only</guid>"
+                + "<description>\(excerptOnlyText)</description>"
+                + "<content:encoded><![CDATA[<script>var hidden = 1;</script>]]></content:encoded>"
+                + "<pubDate>\(date(minutesAgo: 45))</pubDate></item>",
         ]
         return """
             <?xml version="1.0" encoding="UTF-8"?>

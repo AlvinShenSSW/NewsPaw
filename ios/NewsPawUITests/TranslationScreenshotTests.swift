@@ -48,9 +48,12 @@ final class TranslationScreenshotTests: TranslationTestCase {
 
         // The captures, at a limit of 0 so that nothing changes by itself.
         launchTranslating(models: "primary,backup", limit: 0, arguments: arguments)
+        // The top of the list: at the largest text size only its first rows
+        // are on screen.
         openCategoryList(Translation.category)
-        waitFor(articleRow(Translation.foreign(1)))
+        waitFor(articleRow(Translation.markup))
         capture("list")
+        _ = scrollList(to: Translation.foreign(1))
         openArticle(Translation.foreign(1), showing: Translation.translated(Translation.foreign(1)))
         capture("article")
         backToList()
@@ -74,18 +77,18 @@ final class TranslationScreenshotTests: TranslationTestCase {
         capture("translating-row")
         waitForAbsence(activityMark(Translation.slow))
 
-        openTranslationSettings()
+        // Not `openTranslationSettings()`: at the largest text size the model
+        // rows are below the screen and not yet made.
+        openSettings(row: AccessibilityID.modelsRow)
+        waitFor(app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier IN %@", [AccessibilityID.readingLanguagePicker, AccessibilityID.autoTranslateToggle]
+        )).firstMatch)
         capture("settings")
-        let original = app.switches[AccessibilityID.showOriginalTitlesToggle]
-        if !(original.exists && original.isHittable) {
-            app.swipeUp()
-        }
+        let original = scrollTo(app.switches[AccessibilityID.showOriginalTitlesToggle])
         flip(original)
         capture("settings-original-on")
-        // "Foreign story 01" was opened above, so it is read and left out
-        // of the Unread list.
         openCategoryList(Translation.category)
-        waitFor(articleRow(Translation.foreign(2)))
+        waitFor(articleRow(Translation.markup))
         capture("list-with-originals")
     }
 }

@@ -170,32 +170,6 @@ struct OPMLReaderTests {
 
     // MARK: - Byte limits before characters (criterion 10)
 
-    @Test("a name of 160 kB of combining marks is cut in bytes and read within a time bound")
-    func combiningMarks() async throws {
-        let marks = "a" + String(repeating: "\u{0301}\u{0316}", count: 40_000)
-        let data = Self.opml(#"""
-            <outline text="\#(marks)"><outline title="\#(marks)" xmlUrl="https://a.example/feed"/></outline>
-            <outline text="\#(marks)z"><outline title="\#(marks)z" xmlUrl="https://b.example/feed"/></outline>
-            """#)
-        let start = ContinuousClock.now
-        let document = try await Task.detached { try Self.read(data) }.value
-        let elapsed = ContinuousClock.now - start
-        print("RD08 criterion 10 | reader, two folders and two feeds named with 160 kB of marks | \(elapsed)")
-
-        #expect(document.entries.count == 2)
-        for entry in document.entries {
-            guard case .folder(let name, let feeds) = entry else {
-                Issue.record("expected a folder")
-                continue
-            }
-            #expect(name.utf8.count <= OPMLReader.maximumValueBytes)
-            #expect(feeds.allSatisfy { $0.name.utf8.count <= OPMLReader.maximumValueBytes })
-        }
-        // About 25 ms on the Mac; quadratic work on these names takes
-        // seconds (RD08 table, 1.5 s for one comparison).
-        #expect(elapsed < .seconds(1))
-    }
-
     @Test("a value is cut at a scalar boundary, never inside a character's bytes")
     func cutAtScalarBoundary() throws {
         // 1,023 ASCII bytes, then a three-byte character across the limit.

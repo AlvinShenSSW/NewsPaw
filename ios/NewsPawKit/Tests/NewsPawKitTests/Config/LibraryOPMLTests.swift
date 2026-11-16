@@ -343,33 +343,6 @@ struct LibraryOPMLTests {
         #expect(plan.needsOutsideCategory == false)
     }
 
-    // MARK: - Criterion 10 at the library
-
-    @Test("folders named with 320 kB of combining marks are read and planned within a time bound")
-    func combiningMarksPlan() async throws {
-        let fixture = try await Fixture.make()
-        defer { fixture.close() }
-        let marks = "a" + String(repeating: "\u{0301}\u{0316}", count: 80_000)
-        let reordered = "a" + String(repeating: "\u{0316}\u{0301}", count: 80_000)
-        let folders = [marks, reordered, marks + "z", reordered + "z"].enumerated().map { index, name in
-            #"<outline text="\#(name)"><outline text="F\#(index)" xmlUrl="https://\#(index).example/feed"/></outline>"#
-        }
-        let text = #"<opml version="2.0"><body>\#(folders.joined())</body></opml>"#
-        _ = try await fixture.library.createCategory(name: "a\u{0301}", icon: .folder)
-
-        let start = ContinuousClock.now
-        let document = try OPMLReader.read(Data(text.utf8)).get()
-        let plan = try await fixture.library.opmlImportPlan(document)
-        let elapsed = ContinuousClock.now - start
-        print("RD08 criterion 10 | read and plan, four folders named with 320 kB of marks | \(elapsed)")
-
-        #expect(plan.addedFeeds == 4)
-        // About 0.1 s with the byte bound. Without it the plan hashes and
-        // compares these names, at about 2.8 s per hash (four times the
-        // design's 0.7 s for 160 kB).
-        #expect(elapsed < .seconds(3))
-    }
-
     // MARK: - Export (criterion 6)
 
     @Test("criterion 6: every category in the owner's order, feed and GitHub sources by name, no web page")

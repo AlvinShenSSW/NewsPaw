@@ -111,7 +111,7 @@ Out of scope: fetching the article's page and "Full text from the original page"
 
 Invariants:
 
-- Nothing from an article is executed, and nothing of an article is given to a web view or to an HTML parser that builds a tree.
+- Nothing from an article is executed, and nothing of an article is given to a web view or to an HTML parser that builds a tree. (Amended by RD12 decision 1: the reading screen has no web view; the extractor's hidden one, under N12's static rule, reduces an article's page.)
 - A link or an image address that leaves the converter is `http` or `https`.
 - The converter is a pure function of the HTML and the base address, linear in the input: no request, no clock, no storage.
 - Body images are fetched by the same transport, under the same rules, and stored in the same partition's cache as thumbnails; nothing of one partition's images is written to the other's cache.

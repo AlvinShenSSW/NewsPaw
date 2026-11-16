@@ -554,6 +554,9 @@ final class AppModel {
 
     private func sceneWillDeactivate() {
         sceneIsActive = false
+        // A page load under way remembers no failure (RD12).
+        normal?.reading.appLeftFront()
+        adult?.reading.appLeftFront()
         absence.willDeactivate(at: now())
         applyCoverRule()
     }
@@ -693,8 +696,9 @@ final class AppModel {
 
     /// Whether the adult library's file exists, whether a pool is open on
     /// it, whether the library object, the adult workspace and its browser
-    /// model are gone from memory, and how many browser sessions the app
-    /// has made.
+    /// model are gone from memory, how many browser sessions the app has
+    /// made, and how many article pages the fixture transport was asked for
+    /// (RD12).
     func adultDebugReport() async -> String {
         guard let gate else { return "" }
         let file = gate.adultLibraryFileExists ? 1 : 0
@@ -704,7 +708,8 @@ final class AppModel {
             !adultWasShown ? "none" : object == nil ? "released" : "held"
         }
         return "file=\(file) pool=\(pool) library=\(library) workspace=\(state(lastAdultWorkspace)) "
-            + "browser=\(state(lastAdultBrowser)) sessions=\(BrowserModel.sessionsMade)"
+            + "browser=\(state(lastAdultBrowser)) sessions=\(BrowserModel.sessionsMade) "
+            + "pages=\((parts?.transport as? FixtureTransport)?.pageRequests ?? -1)"
     }
     #endif
 }

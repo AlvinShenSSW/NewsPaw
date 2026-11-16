@@ -5,7 +5,7 @@ import SwiftUI
 /// partition is off: a short explanation and one switch. While it is on:
 /// the lock timing and Turn Off the Adult Partition, whose questions the
 /// app model asks at the root. The models, thumbnails, the daily limit and
-/// Clear browsing data arrive with RD19 and RD14.
+/// Clear browsing data arrive with RD19.
 struct AdultPartitionView: View {
     @Environment(AppModel.self) private var model
 

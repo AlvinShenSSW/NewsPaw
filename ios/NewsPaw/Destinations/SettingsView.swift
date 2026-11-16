@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Settings (ux S8). Each later issue adds its own row, in the order of
 /// the ux table: Models & Translation, Refresh, Reading, Adult Partition,
-/// Data, then About.
+/// Data, Usage, then About.
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
 
@@ -29,6 +29,10 @@ struct SettingsView: View {
                     Label("Data", systemImage: "externaldrive")
                 }
                 .accessibilityIdentifier(AccessibilityID.dataRow)
+                NavigationLink(value: SettingsRoute.usage) {
+                    Label("Usage", systemImage: "chart.bar")
+                }
+                .accessibilityIdentifier(AccessibilityID.usageRow)
             }
             .listRowBackground(Theme.surface)
             Section {
@@ -85,6 +89,7 @@ struct SettingsDestination: View {
         case .reading: ReadingSettingsScreen()
         case .adultPartition: AdultPartitionView()
         case .data: DataSettingsView()
+        case .usage: UsageView()
         case .about: AboutView()
         }
     }

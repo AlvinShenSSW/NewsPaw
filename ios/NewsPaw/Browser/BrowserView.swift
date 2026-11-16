@@ -24,17 +24,24 @@ struct BrowserPane: View {
 
 /// The page, the failure state in its place, and the bars: the title in
 /// one line (the host while there is none) with the host under it and a
-/// progress line while a page loads; Back, Forward and More below. The
-/// places of Translate and reader mode stay empty until RD16 and RD12.
+/// progress line while a page loads; Back, Forward, Reader Mode and More
+/// below. The place of Translate stays empty until RD16. Reader mode's
+/// temporary article (RD12) stands in place of the page, with its own bar.
 struct BrowserView: View {
     @Environment(\.accent) private var accent
     let session: BrowserSession
     let close: (() -> Void)?
     @Environment(SourceModel.self) private var sources
+    @Environment(ReadingSettings.self) private var settings
     @Environment(\.openURL) private var openURL
+    @State private var isShowingReadingSettings = false
 
     var body: some View {
+        @Bindable var session = session
         WebViewHost(session: session)
+            // Beneath a temporary article the page stays alive, with its
+            // history (assumption A4), out of reach of VoiceOver.
+            .accessibilityHidden(session.temporaryArticle != nil)
             // The page runs behind the bottom bar only; the web view keeps
             // its content clear of it, so the end of a page scrolls above
             // the bar. It stays out from under the top bar: the title and
@@ -56,6 +63,13 @@ struct BrowserView: View {
                     failureView(failure)
                 }
             }
+            .overlay {
+                if let article = session.temporaryArticle {
+                    TemporaryArticleView(article: article) { url in
+                        session.openFromTemporaryArticle(url)
+                    }
+                }
+            }
             .overlay(alignment: .top) {
                 if session.isLoading {
                     ProgressView(value: session.progress)
@@ -69,10 +83,19 @@ struct BrowserView: View {
             .navigationTitle(Text(verbatim: session.displayTitle))
             .navigationSubtitle(Text(verbatim: session.host))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { toolbar }
+            .toolbar {
+                if let article = session.temporaryArticle {
+                    readerToolbar(article)
+                } else {
+                    toolbar
+                }
+            }
             // Pushed in the tab structure the tab bar would cover the bottom
             // bar.
             .toolbar(.hidden, for: .tabBar)
+            .alert(Text("This page has no readable article"), isPresented: $session.isShowingNoReadableArticle) {
+                Button("OK") {}
+            }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(AccessibilityID.browser)
     }
@@ -120,7 +143,7 @@ struct BrowserView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if let close {
+        if let close, session.temporaryArticle == nil {
             ToolbarItem(placement: .topBarLeading) {
                 Button("Close", systemImage: "xmark", action: close)
                     .accessibilityIdentifier(AccessibilityID.browserCloseButton)
@@ -138,7 +161,52 @@ struct BrowserView: View {
             .disabled(!session.forwardEnabled)
             .accessibilityIdentifier(AccessibilityID.browserForwardButton)
             Spacer()
+            readerButton
             moreMenu
+        }
+    }
+
+    /// Reader Mode (RD12 decision 7): activity while the page is fetched
+    /// again and extracted.
+    private var readerButton: some View {
+        Button {
+            session.openReaderMode()
+        } label: {
+            if session.isExtractingArticle {
+                ProgressView()
+            } else {
+                Label("Reader Mode", systemImage: "doc.plaintext")
+            }
+        }
+        .disabled(!session.readerModeEnabled || session.isExtractingArticle)
+        .accessibilityLabel(Text("Reader Mode"))
+        .accessibilityValue(session.isExtractingArticle ? Text("Loading") : Text(verbatim: ""))
+        .accessibilityIdentifier(AccessibilityID.browserReaderButton)
+    }
+
+    /// The temporary article's bar: Close, Share and "Aa"; no star and no
+    /// previous or next.
+    @ToolbarContentBuilder
+    private func readerToolbar(_ article: TemporaryArticle) -> some ToolbarContent {
+        ToolbarItemGroup(placement: .bottomBar) {
+            Button("Close", systemImage: "xmark") {
+                session.closeTemporaryArticle()
+            }
+            .accessibilityIdentifier(AccessibilityID.readerCloseButton)
+            Spacer()
+            ShareLink(item: article.address) {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+            .accessibilityIdentifier(AccessibilityID.readerShareButton)
+            Spacer()
+            Button("Reading Settings", systemImage: "textformat.size") {
+                isShowingReadingSettings = true
+            }
+            .accessibilityIdentifier(AccessibilityID.readerSettingsButton)
+            .popover(isPresented: $isShowingReadingSettings) {
+                ReadingSettingsPopover()
+                    .environment(settings)
+            }
         }
     }
 
@@ -170,6 +238,47 @@ struct BrowserView: View {
             }
         }
         .accessibilityIdentifier(AccessibilityID.browserMoreMenu)
+    }
+}
+
+/// A page as reader mode shows it (RD12 decision 7): the extraction's
+/// title, the page's host and the blocks in RD11's `BlocksView`, in the
+/// reading column, on the app's own background over the page. A link
+/// tapped in it is loaded by the session.
+private struct TemporaryArticleView: View {
+    let article: TemporaryArticle
+    let openLink: (URL) -> Void
+    @Environment(ReadingSettings.self) private var settings
+    @ScaledMetric(relativeTo: .title2) private var scaledTitleSize = 22.0
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Spacing.standard) {
+                Text(verbatim: article.title)
+                    .font(.system(size: min(scaledTitleSize * settings.textSize.factor, ReadingMetrics.maximumSize), weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier(AccessibilityID.readerTitle)
+                Text(verbatim: article.host)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryText)
+                    .accessibilityIdentifier(AccessibilityID.readerHost)
+                BlocksView(blocks: article.content.blocks, settings: settings, images: article.content.images, openLink: openLink)
+                if article.content.isCut {
+                    Text("The rest of this article is on the original page.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: 680, alignment: .leading)
+            .padding(Theme.Spacing.standard)
+            .frame(maxWidth: .infinity)
+        }
+        .background(Theme.background)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(AccessibilityID.readerArticle)
     }
 }
 

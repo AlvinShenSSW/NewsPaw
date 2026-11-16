@@ -35,6 +35,28 @@ struct BrowserFileNotice: Identifiable {
     let id = UUID()
 }
 
+/// What reader mode works with (RD12 decision 7): the app's transport and
+/// the workspace's extractor, and the body images of the workspace's
+/// library. No library: a reader-mode article writes nothing to one.
+struct BrowserReader {
+    let transport: any Transport
+    let extractor: any PageExtracting
+    let images: BodyImageLoader
+}
+
+/// A page shown as an article by reader mode (RD12 decision 7; ux S5): a
+/// state of its browser session, in memory only. It is never stored, has
+/// no star, read state, previous or next, and ends with its session.
+struct TemporaryArticle {
+    /// The extraction's title, the host when it has none.
+    let title: String
+    /// The page's host.
+    let host: String
+    /// The page's address: what Share shares.
+    let address: URL
+    let content: ReadingContent
+}
+
 /// The page the browser could not show (decision 7).
 struct BrowserFailure: Equatable {
     enum Kind: Equatable {
@@ -97,15 +119,18 @@ final class BrowserModel {
     @ObservationIgnored private let allowsPictureInPicture: Bool
     @ObservationIgnored private let navigation: NavigationModel
     @ObservationIgnored private let sources: SourceModel
+    /// What reader mode fetches and extracts with (RD12).
+    @ObservationIgnored let reader: BrowserReader
 
     init(
-        dataStore: WKWebsiteDataStore, navigation: NavigationModel, sources: SourceModel,
+        dataStore: WKWebsiteDataStore, navigation: NavigationModel, sources: SourceModel, reader: BrowserReader,
         addressMap: BrowserAddressMap = BrowserAddressMap(), schemeHandlers: [String: any WKURLSchemeHandler] = [:],
         allowsPictureInPicture: Bool = true
     ) {
         self.dataStore = dataStore
         self.navigation = navigation
         self.sources = sources
+        self.reader = reader
         self.addressMap = addressMap
         self.schemeHandlers = schemeHandlers
         self.allowsPictureInPicture = allowsPictureInPicture
@@ -299,8 +324,16 @@ final class BrowserSession: NSObject {
     private(set) var progress = 0.0
     private(set) var canGoBack = false
     private(set) var canGoForward = false
+    /// Reader mode is fetching and extracting the shown page (RD12).
+    private(set) var isExtractingArticle = false
+    /// The page shown as an article by reader mode, in place of the page.
+    private(set) var temporaryArticle: TemporaryArticle?
+    /// Whether "This page has no readable article" is shown.
+    var isShowingNoReadableArticle = false
 
     @ObservationIgnored private weak var model: BrowserModel?
+    /// Reader mode's fetch and extraction in flight.
+    @ObservationIgnored private var readerTask: Task<Void, Never>?
     @ObservationIgnored private let map: BrowserAddressMap
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     /// The main-frame navigation in progress and the address it started at.
@@ -395,6 +428,9 @@ final class BrowserSession: NSObject {
     /// The session's route left its stack: the page stops and lets go of
     /// the app.
     func end() {
+        cancelReaderMode()
+        temporaryArticle = nil
+        isShowingNoReadableArticle = false
         observations = []
         webView.stopLoading()
         webView.navigationDelegate = nil
@@ -464,6 +500,7 @@ final class BrowserSession: NSObject {
     /// the request it is given). Any other request is loaded by its address
     /// alone.
     func load(_ url: URL, sending navigation: URLRequest? = nil) {
+        cancelReaderMode()
         failure = nil
         starting = .browser
         loadingURL = url
@@ -484,6 +521,7 @@ final class BrowserSession: NSObject {
     /// Back: from the failure state, the page behind it; else the page
     /// before.
     func goBack() {
+        cancelReaderMode()
         if failureHidesAPage {
             failure = nil
             return
@@ -494,6 +532,7 @@ final class BrowserSession: NSObject {
     }
 
     func goForward() {
+        cancelReaderMode()
         failure = nil
         starting = .browser
         webView.goForward()
@@ -501,6 +540,7 @@ final class BrowserSession: NSObject {
 
     /// Reload: the shown page again; in the failure state, Try Again.
     func reload() {
+        cancelReaderMode()
         if failure != nil {
             tryAgain()
         } else {
@@ -515,6 +555,78 @@ final class BrowserSession: NSObject {
     func tryAgain() {
         guard let url = failure?.url ?? shownURL else { return }
         load(url, sending: failure?.request)
+    }
+
+    // MARK: - Reader mode (RD12 decision 7)
+
+    /// Whether Reader Mode may be tapped: a page with an `http` or `https`
+    /// address is shown, no other is being loaded over it, and it has not
+    /// failed.
+    var readerModeEnabled: Bool {
+        guard failure == nil, loadingURL == nil, let url = pageURL else { return false }
+        return BrowserPolicy.SchemeClass(url) == .web
+    }
+
+    /// Reader Mode: the shown address is fetched again through the app's
+    /// transport, without the owner's sign-in and without the page's
+    /// scripts, and extracted as an article's page is. On an article the
+    /// session shows it in place of the page; on anything else it says
+    /// "This page has no readable article". Nothing is remembered and
+    /// nothing is written to a library.
+    func openReaderMode() {
+        guard readerModeEnabled, readerTask == nil, temporaryArticle == nil, let url = pageURL, let model, !model.isStopped else { return }
+        let reader = model.reader
+        isExtractingArticle = true
+        readerTask = Task { [weak self] in
+            let article: ExtractedBody?
+            do {
+                article = try await BodyLoader.readerArticle(at: url, transport: reader.transport, extractor: reader.extractor)
+            } catch is CancellationError {
+                return
+            } catch {
+                article = nil
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.readerTask = nil
+            self.isExtractingArticle = false
+            guard let article else {
+                self.isShowingNoReadableArticle = true
+                return
+            }
+            self.showTemporaryArticle(article, of: url, images: reader.images)
+        }
+    }
+
+    private func showTemporaryArticle(_ article: ExtractedBody, of url: URL, images: BodyImageLoader) {
+        let host = BrowserAddress.host(of: url)
+        let title = article.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let content = ReadingContent(extracted: article, images: images) { [weak self] in
+            self?.model.map { !$0.isStopped } ?? false
+        }
+        // The page stays as it is beneath, with its history; its media
+        // stop.
+        webView.pauseAllMediaPlayback(completionHandler: nil)
+        temporaryArticle = TemporaryArticle(title: title.isEmpty ? host : title, host: host, address: url, content: content)
+    }
+
+    /// Close: the page again, as it was.
+    func closeTemporaryArticle() {
+        temporaryArticle = nil
+    }
+
+    /// A link tapped in the temporary article: loaded by the session,
+    /// which leaves reader mode.
+    func openFromTemporaryArticle(_ url: URL) {
+        temporaryArticle = nil
+        load(url)
+    }
+
+    /// A navigation, Back or Close while reader mode works: it stops, and
+    /// shows nothing.
+    private func cancelReaderMode() {
+        readerTask?.cancel()
+        readerTask = nil
+        isExtractingArticle = false
     }
 
     // MARK: - Policy
@@ -620,6 +732,8 @@ extension BrowserSession: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        // A navigation of the page's own cancels reader mode's work.
+        cancelReaderMode()
         let url = webView.url.map(map.toShown)
         provisional = (navigation, url)
         starting = nil

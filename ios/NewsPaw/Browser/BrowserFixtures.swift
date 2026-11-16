@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import NewsPawKit
 import WebKit
 
 /// The embedded browser's pages under the UI tests (RD10 "Fixtures"): a
@@ -191,6 +192,14 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
             }
         case ("nofeed.example.invalid", "/handlers"):
             send(task, html: Self.handlers)
+        case ("fulltext.example.invalid", "/pages/article"):
+            send(task, html: Self.ferryArticle)
+        case ("fulltext.example.invalid", "/pages/list"):
+            let items = (1...30).map {
+                "<li><h2><a href=\"/pages/story-\($0)\">Headline number \($0) from the harbour</a></h2>"
+                    + "<p>A one-sentence summary of story \($0), as list pages have them.</p></li>"
+            }
+            send(task, html: Self.page("Latest stories", "<ul>\(items.joined())</ul>"))
         case ("example.invalid", let path) where path.hasPrefix("/articles/"):
             let slug = String(path.dropFirst("/articles/".count))
             send(task, html: Self.page("Original of \(slug)", """
@@ -358,6 +367,36 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
             if (audio.paused) { audio.play().catch(function () {}); }
             if (context.state !== 'running') { context.resume().catch(function () {}); }
             document.title = 'Played ' + audio.currentTime.toFixed(1) + ' ' + context.currentTime.toFixed(1) + ' ' + context.state + ' ' + seen.join(',');
+        }, 200);
+        </script>
+        """)
+
+    /// The article page of the full-text feed as the browser shows it
+    /// (RD12): the transport serves the same address to reader mode. It
+    /// has a link to the list page and a Play button for a sound of silence
+    /// that does not start again by itself; its title reports how long the
+    /// sound has played and whether it is paused: `Ferry <seconds>
+    /// <playing|paused>` once played.
+    private static let ferryArticle = page("The ferry at dawn", """
+        <p><button type="button" onclick="play()">Play</button></p>
+        <p>\(FixtureTransport.fullTextParagraphs[0])</p>
+        <p>\(FixtureTransport.fullTextParagraphs[1])</p>
+        <p>\(FixtureTransport.fullTextParagraphs[2]) See also <a href="/pages/list">the latest stories</a> from the harbour.</p>
+        <p>\(FixtureTransport.fullTextParagraphs[3])</p>
+        <script>
+        var audio = null;
+        function silence(seconds) {
+            var rate = 8000, samples = rate * seconds, bytes = new ArrayBuffer(44 + samples * 2), view = new DataView(bytes);
+            function text(offset, value) { for (var i = 0; i < value.length; i++) { view.setUint8(offset + i, value.charCodeAt(i)); } }
+            text(0, 'RIFF'); view.setUint32(4, 36 + samples * 2, true); text(8, 'WAVE'); text(12, 'fmt ');
+            view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+            view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+            text(36, 'data'); view.setUint32(40, samples * 2, true);
+            return URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+        }
+        function play() { if (!audio) { audio = new Audio(silence(120)); } audio.play(); }
+        setInterval(function () {
+            if (audio) { document.title = 'Ferry ' + audio.currentTime.toFixed(1) + ' ' + (audio.paused ? 'paused' : 'playing'); }
         }, 200);
         </script>
         """)

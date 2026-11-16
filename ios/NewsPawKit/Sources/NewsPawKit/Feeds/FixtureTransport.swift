@@ -82,12 +82,37 @@ public final class FixtureTransport: Transport {
         /// `big/<number>.png` (2,400 × 1,600) and `tall.png` (1,080 ×
         /// 6,000, lines of text). Any other name does not answer.
         public static let readingImages = "https://reading.example.invalid/images/"
+        /// A feed of articles whose bodies come from their pages (RD12):
+        /// "Fetched story", "Scripted story", "List story", "Huge story",
+        /// "Stalled story" and "Plain text story" carry an excerpt and link
+        /// to the pages below of the same names; "Full feed story" carries
+        /// its full text and links to the article page; "Failing full
+        /// story" carries its full text and links to a page that does not
+        /// answer.
+        public static let fullText = "https://fulltext.example.invalid/rss.xml"
+        /// The pages of that feed, under this address: `article` (an
+        /// article whose text carries an edition number that changes with
+        /// every request, so that a second fetch shows; it is also a page
+        /// of the browser's fixtures), `scripted` (text that only its
+        /// script would build), `list` (an ordinary list page of thirty
+        /// headlines with summaries; also a page of the browser's
+        /// fixtures), `huge` (over the transport's size limit), `stalled`
+        /// (never answers) and `plain` (not HTML). Any other name does not
+        /// answer.
+        public static let fullTextPages = "https://fulltext.example.invalid/pages/"
+    }
+
+    /// How many requests for the full-text pages this transport was asked
+    /// for, whatever their answer (RD12): what the UI tests' report shows.
+    public var pageRequests: Int {
+        pageRequestCount.withLock { $0 }
     }
 
     /// How long `flaky.png` fails from the first request for it.
     static let flakyImageWindow = Duration.seconds(4)
 
     private let sequenceRequests = Mutex(0)
+    private let pageRequestCount = Mutex(0)
     private let stallingRequests = Mutex(0)
     /// When `flaky.png` was first asked for.
     private let flakyImageFirstRequest = Mutex<ContinuousClock.Instant?>(nil)
@@ -165,6 +190,11 @@ public final class FixtureTransport: Transport {
             return answer(Self.readingFeed, type: rss)
         case let address where address.hasPrefix(Address.readingImages):
             return try readingImage(String(address.dropFirst(Address.readingImages.count)), at: url)
+        case Address.fullText:
+            return answer(Self.fullTextFeed, type: rss)
+        case let address where address.hasPrefix(Address.fullTextPages):
+            pageRequestCount.withLock { $0 += 1 }
+            return try await fullTextPage(String(address.dropFirst(Address.fullTextPages.count)), at: url)
         default:
             throw TransportFailure.unreachable
         }
@@ -199,6 +229,30 @@ public final class FixtureTransport: Transport {
             return image(Self.bigImagePNG)
         case "tall.png":
             return image(Self.tallImagePNG)
+        default:
+            throw TransportFailure.unreachable
+        }
+    }
+
+    /// A page of the full-text feed (RD12).
+    private func fullTextPage(_ name: String, at url: URL) async throws -> TransportResponse {
+        func answer(_ body: String, type: String = "text/html; charset=utf-8") -> TransportResponse {
+            TransportResponse(finalURL: url, status: 200, headers: ["Content-Type": type], body: Data(body.utf8))
+        }
+        switch name {
+        case "article":
+            return answer(Self.fullTextArticle(edition: Int.random(in: 100_000...999_999)))
+        case "scripted":
+            return answer(Self.scriptedPage)
+        case "list":
+            return answer(Self.listPage)
+        case "huge":
+            throw TransportFailure.tooLarge
+        case "stalled":
+            try await Task.sleep(for: .seconds(3_600))
+            throw TransportFailure.timedOut
+        case "plain":
+            return answer("A page that is plain text, not HTML.", type: "text/plain; charset=utf-8")
         default:
             throw TransportFailure.unreachable
         }
@@ -372,6 +426,114 @@ public final class FixtureTransport: Transport {
             <?xml version="1.0" encoding="UTF-8"?>
             <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Reading Feed</title>\
             <link>https://example.invalid/readingfeed</link>
+            \(items.joined(separator: "\n"))
+            </channel></rss>
+            """
+    }()
+
+    // MARK: - The full-text feed and its pages (RD12)
+
+    /// The running text of the article page, a paragraph at a time.
+    public static let fullTextParagraphs = [
+        "The harbour office posts the tide tables for the week ahead every morning, and the pilots read them before the first "
+            + "ferry leaves the quay. When the water is deep enough the ferry casts off, and the gulls follow her past the breakwater.",
+        "In winter the crossing takes longer: the wind turns against the tide at the mouth of the bay, and the ferry has to keep "
+            + "to the deep channel, where the buoys are set closer together and the lights blink in a slower rhythm than in summer.",
+        "The island's school children make the crossing twice a day. They know the crew by name, and the crew knows which of them "
+            + "will sleep on the benches below deck and which will stand at the rail, whatever the weather, until the island is near.",
+        "Freight goes over on the early sailing: bread from the mainland bakery, letters and parcels for the post office, and on "
+            + "Tuesdays the vet's van, which drives straight off at the slipway and up the hill to the farms on the far side.",
+        "When a storm closes the crossing, the harbour master writes the news on the board outside the office, and the café on "
+            + "the quay stays open late for the passengers who wait for the next sailing, which may not come until the morning.",
+        "Nobody on the island remembers a year without the ferry. The boat has been replaced three times, but the timetable has "
+            + "hardly changed, and the first sailing still leaves at ten past seven, as it did when the grandparents were young.",
+    ]
+
+    /// The article page: a title, a heading, the paragraphs above with an
+    /// edition number, a link to the list page, a picture, and the
+    /// furniture of a news site around them.
+    static func fullTextArticle(edition: Int) -> String {
+        let paragraphs = fullTextParagraphs.enumerated().map { index, text in
+            index == 2
+                ? "<p>\(text) See also <a href=\"/pages/list\">the latest stories</a> from the harbour.</p>"
+                : "<p>\(text)</p>"
+        }
+        return """
+            <!DOCTYPE html>
+            <html><head><meta charset="utf-8"><title>The ferry at dawn - Harbour News</title>
+            <link rel="stylesheet" href="/style.css"><script src="/tracker.js"></script></head>
+            <body><header><nav><a href="/">Home</a> <a href="/pages/list">Latest</a></nav></header>
+            <main><article><h1>The ferry at dawn</h1>
+            <p class="edition">Edition \(edition): the morning sailing, reported from the quay as the first light came up over the water and the crew made the ferry ready for the day's first crossing.</p>
+            \(paragraphs.prefix(3).joined(separator: "\n"))
+            <figure><img src="\(Address.readingImages)photo.png" alt="The ferry, drawn as a blue disc" width="600" height="400">\
+            <figcaption>The ferry at the quay</figcaption></figure>
+            \(paragraphs.dropFirst(3).joined(separator: "\n"))
+            </article></main>
+            <aside><h2>Most read</h2><ul><li><a href="/a">A story</a></li><li><a href="/b">Another story</a></li></ul></aside>
+            <footer><p>Harbour News, the quay.</p></footer>
+            <script>document.querySelector('.edition').textContent = 'Rewritten by the page script';</script>
+            </body></html>
+            """
+    }
+
+    /// A page whose article only its script would write.
+    static let scriptedPage = """
+        <!DOCTYPE html>
+        <html><head><meta charset="utf-8"><title>Built by its script</title></head>
+        <body><div id="root"></div>
+        <script>
+        var html = '';
+        for (var i = 0; i < 8; i++) { html += '<p>' + 'A paragraph that only the page script writes, long enough to be an article on its own. '.repeat(4) + '</p>'; }
+        document.getElementById('root').innerHTML = html;
+        </script>
+        <noscript>This site needs JavaScript.</noscript>
+        </body></html>
+        """
+
+    /// An ordinary list page: thirty headlines with summaries.
+    static let listPage: String = {
+        let items = (1...30).map {
+            "<li><h2><a href=\"/pages/story-\($0)\">Headline number \($0) from the harbour, of ordinary length</a></h2>"
+                + "<p>A one-sentence summary of story \($0), with a comma, as list pages have them under each headline.</p></li>"
+        }.joined(separator: "\n")
+        return """
+            <!DOCTYPE html>
+            <html><head><meta charset="utf-8"><title>Latest stories - Harbour News</title></head>
+            <body><header><nav><a href="/">Home</a></nav></header>
+            <main><h1>Latest stories</h1><ul>\(items)</ul></main>
+            <footer><p>Harbour News, the quay.</p></footer></body></html>
+            """
+    }()
+
+    /// The full text of the feed's own full-text items: more than 1,000
+    /// characters, less than the article page.
+    static let fullFeedBody = fullTextParagraphs.prefix(4).map { "<p>Feed text. \($0)</p>" }.joined()
+
+    private static let fullTextFeed: String = {
+        func item(_ title: String, page: String, hoursAgo: Int, body: String? = nil) -> String {
+            let content = body.map { "<content:encoded><![CDATA[\($0)]]></content:encoded>" } ?? ""
+            return """
+                <item><title>\(title)</title><link>\(Address.fullTextPages)\(page)</link>\
+                <guid isPermaLink="false">fulltext-\(slug(title))</guid><author>Fixture Writer</author>\
+                <description>The excerpt of \(title.lowercased()), as the feed gives it.</description>\(content)\
+                <pubDate>\(date(hoursAgo: hoursAgo))</pubDate></item>
+                """
+        }
+        let items = [
+            item("Fetched story", page: "article", hoursAgo: 1),
+            item("Scripted story", page: "scripted", hoursAgo: 2),
+            item("List story", page: "list", hoursAgo: 3),
+            item("Huge story", page: "huge", hoursAgo: 4),
+            item("Stalled story", page: "stalled", hoursAgo: 5),
+            item("Plain text story", page: "plain", hoursAgo: 6),
+            item("Full feed story", page: "article", hoursAgo: 7, body: fullFeedBody),
+            item("Failing full story", page: "missing", hoursAgo: 8, body: fullFeedBody),
+        ]
+        return """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Full Text Feed</title>\
+            <link>https://fulltext.example.invalid/</link>
             \(items.joined(separator: "\n"))
             </channel></rss>
             """

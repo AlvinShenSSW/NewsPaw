@@ -19,10 +19,14 @@ enum OpenArticle {
 }
 
 /// The body of an open article, as the reading screen shows it (RD11
-/// decision 7).
+/// decision 7; RD12 decision 4).
 enum ReadingBody {
     /// Being read and converted.
     case loading
+    /// The article's page is being fetched and extracted: "Loading the
+    /// full text…" under the header, and below it the feed's content, or
+    /// nothing under "Always fetch the page".
+    case fetching(ReadingContent?)
     case loaded(ReadingContent)
     /// It could not be read from the library.
     case failed
@@ -71,8 +75,15 @@ final class ReadingModel {
     /// 1): the block at the top of its screen, kept in memory beside the
     /// body and let go with it, never stored.
     @ObservationIgnored private var positions: [UUID: Int] = [:]
+    /// How many times the body of each open article was replaced by its
+    /// page's (RD12): the reading screen then starts at the top.
+    private(set) var replacements: [UUID: Int] = [:]
     /// Whether the workspace of this model was dropped (RD18 decision 4).
     @ObservationIgnored private(set) var isStopped = false
+    /// Fetches, extracts and keeps bodies from the articles' pages, and
+    /// remembers the failures (RD12 decisions 5 and 6): this workspace's
+    /// own, on its library, its transport and its extractor.
+    @ObservationIgnored let pages: BodyLoader
 
     private struct SavedField: Hashable {
         var article: UUID
@@ -83,13 +94,22 @@ final class ReadingModel {
     @ObservationIgnored private let sources: SourceModel
     @ObservationIgnored private let refresh: RefreshModel
 
-    init(library: Library, transport: any Transport, navigation: NavigationModel, sources: SourceModel, refresh: RefreshModel) {
+    /// - Parameters:
+    ///   - extractor: the workspace's extractor, which reader mode in its
+    ///     browser shares: one extraction at a time per workspace.
+    ///   - isInFront: whether the app is in front, so that a failure while
+    ///     it is not is not remembered.
+    init(
+        library: Library, transport: any Transport, extractor: any PageExtracting, now: @escaping @Sendable () -> Date,
+        isInFront: @escaping @MainActor () -> Bool, navigation: NavigationModel, sources: SourceModel, refresh: RefreshModel
+    ) {
         self.library = library
         self.navigation = navigation
         self.sources = sources
         self.refresh = refresh
         loader = ThumbnailLoader(transport: transport, cache: library.imageCache)
         bodyImages = BodyImageLoader(transport: transport, cache: library.imageCache)
+        pages = BodyLoader(library: library, transport: transport, extractor: extractor, now: now, isInFront: isInFront)
         // After the lists are read again an open article may be gone: its
         // source deleted, or removed by the retention clean-up (RD11
         // decision 15).
@@ -311,6 +331,11 @@ final class ReadingModel {
         positions[id] = block
     }
 
+    /// Reads and converts the feed's body, then follows the body plan
+    /// (RD12 decision 4): the feed's content; or a usable stored
+    /// extraction; or, unless a failure of the page is remembered, the
+    /// page fetched and extracted while the loading line stands, and then
+    /// the extraction or, on failure, the feed's content as RD11 shows it.
     private func readBody(of row: ArticleRow) {
         guard !isStopped else { return }
         let id = row.id
@@ -320,34 +345,83 @@ final class ReadingModel {
         let images = bodyImages
         let baseURL = row.linkURL
         let excerpt = row.excerpt
+        let summary = sources.summary(row.sourceID)
         bodyTasks[id] = Task {
-            let body: ReadingBody
+            let mayLoad: @MainActor () -> Bool = { [weak self] in self.map { !$0.isStopped } ?? false }
+            let converted: ReadingContent.Converted
             do {
                 // One character more than the converter reads, so that it
                 // knows whether the input was cut.
                 let html = try await library.contentHTML(ofArticle: id, limit: ArticleBlocks.maximumInputCharacters + 1)
-                let converted = await ReadingContent.convert(html: html, excerpt: excerpt, baseURL: baseURL)
-                body = .loaded(ReadingContent(converted, images: images) { [weak self] in
-                    self.map { !$0.isStopped } ?? false
-                })
+                converted = await ReadingContent.convert(html: html, excerpt: excerpt, baseURL: baseURL)
             } catch {
-                body = .failed
-            }
-            // A cancelled task was replaced or dropped: what stands for the
-            // article now is not its to change.
-            guard !Task.isCancelled else { return }
-            guard self.navigation.openArticles.contains(id) else {
-                // Not open at this moment: nothing is kept, so that opening
-                // it again reads it again instead of waiting for a task that
-                // has ended.
-                self.bodies[id] = nil
-                self.bodyTasks[id] = nil
-                self.positions[id] = nil
+                self.settle(id, .failed)
                 return
             }
-            self.bodies[id] = body
-            self.bodyTasks[id] = nil
+            let feed = ReadingContent(converted, images: images, mayLoad: mayLoad)
+            // A source not known here is shown as its feed gives it.
+            let plan = BodyPlan.make(
+                kind: summary?.kind ?? .feed, mode: summary?.bodyMode ?? .feed, feedIsFullText: converted.isFullText, link: baseURL
+            )
+            guard case .fetch(let showsFeedMeanwhile) = plan, let link = baseURL else {
+                self.settle(id, .loaded(feed))
+                return
+            }
+            if let stored = await self.pages.storedBody(ofArticle: id, feed: converted.blocks) {
+                self.settle(id, .loaded(ReadingContent(extracted: stored, images: images, mayLoad: mayLoad)))
+                return
+            }
+            guard !Task.isCancelled else { return }
+            if self.pages.remembersFailure(ofArticle: id) {
+                self.settle(id, .loaded(feed))
+                return
+            }
+            guard self.show(id, .fetching(showsFeedMeanwhile ? feed : nil)) else { return }
+            let outcome: BodyLoader.Outcome
+            do {
+                outcome = try await self.pages.load(article: id, link: link, feed: converted.blocks)
+            } catch {
+                // Cancelled: the article was left, or the workspace dropped.
+                return
+            }
+            switch outcome {
+            case .extracted(let body, _):
+                guard self.settle(id, .loaded(ReadingContent(extracted: body, images: images, mayLoad: mayLoad))) else { return }
+                self.positions[id] = nil
+                self.replacements[id, default: 0] += 1
+            case .failed, .articleGone:
+                self.settle(id, .loaded(feed))
+            }
         }
+    }
+
+    /// Shows `body` for the open article `id` while its task goes on;
+    /// false, with nothing kept, when the task was cancelled or the article
+    /// is no longer open.
+    private func show(_ id: UUID, _ body: ReadingBody) -> Bool {
+        // A cancelled task was replaced or dropped: what stands for the
+        // article now is not its to change.
+        guard !Task.isCancelled else { return false }
+        guard navigation.openArticles.contains(id) else {
+            // Not open at this moment: nothing is kept, so that opening
+            // it again reads it again instead of waiting for a task that
+            // has ended.
+            bodyTasks[id]?.cancel()
+            bodies[id] = nil
+            bodyTasks[id] = nil
+            positions[id] = nil
+            return false
+        }
+        bodies[id] = body
+        return true
+    }
+
+    /// Shows `body` for the open article `id` as its task's last word.
+    @discardableResult
+    private func settle(_ id: UUID, _ body: ReadingBody) -> Bool {
+        guard show(id, body) else { return false }
+        bodyTasks[id] = nil
+        return true
     }
 
     private func dropBody(_ id: UUID) {
@@ -355,6 +429,13 @@ final class ReadingModel {
         bodyTasks[id] = nil
         bodies[id] = nil
         positions[id] = nil
+        replacements[id] = nil
+    }
+
+    /// A source's settings were saved: the failures of pages are forgotten
+    /// (RD12 decision 6), so that the next opening fetches again.
+    func sourceSettingsSaved() {
+        pages.forgetFailures()
     }
 
     /// Looks each open article up again; one that no longer exists becomes
@@ -377,7 +458,7 @@ final class ReadingModel {
     }
 
     /// The workspace is dropped (RD18 decision 4, as amended): the body
-    /// reads and conversions in flight are cancelled and their results
+    /// reads, page fetches and extractions in flight are cancelled and their results
     /// dropped, and from here on no body is read, no body image is asked
     /// for or read from the cache, the image viewer does not open, and an
     /// article found gone closes nothing. List reads and state changes that
@@ -385,6 +466,9 @@ final class ReadingModel {
     /// the source and category models' saves do.
     func stop() {
         isStopped = true
+        // No page fetch, extraction or stored extraction starts from here
+        // on (RD12 decision 8).
+        pages.stop()
         for task in bodyTasks.values {
             task.cancel()
         }

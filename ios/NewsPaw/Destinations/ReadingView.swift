@@ -110,7 +110,7 @@ private struct ArticleScreen: View {
             .padding(Theme.Spacing.standard)
             .frame(maxWidth: .infinity)
         }
-        .modifier(ReaderPosition(articleID: row.id, reading: reading))
+        .modifier(ReaderPosition(articleID: row.id, reading: reading, replacements: reading.replacements[row.id] ?? 0))
         .articleSwipes(
             layoutDirection: layoutDirection,
             next: { Task { await reading.openNext(on: list) } },
@@ -160,10 +160,10 @@ private struct ArticleScreen: View {
     private var articleBody: some View {
         switch reading.bodies[row.id] {
         case .loaded(let content):
-            BlocksView(blocks: content.blocks, settings: settings, images: content.images) { url in
-                // In the embedded browser above the article, never Safari.
-                navigation.openPage(url, on: list)
+            if content.isExtracted {
+                note(Text("Full text from the original page"), identifier: AccessibilityID.readingFullTextNote)
             }
+            blocks(content)
             if content.isCut {
                 note(
                     row.linkURL == nil
@@ -175,6 +175,22 @@ private struct ArticleScreen: View {
             } else if !content.isFullText {
                 note(Text("Only an excerpt is available"), identifier: AccessibilityID.readingExcerptNote)
                 openOriginalButton
+            }
+        case .fetching(let feed):
+            // Where the full-text line then stands (RD12 decision 4).
+            HStack(spacing: Theme.Spacing.small) {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityHidden(true)
+                Text("Loading the full text…")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(AccessibilityID.readingLoadingNote)
+            if let feed {
+                blocks(feed)
             }
         case .failed:
             note(Text("This article could not be shown."), identifier: AccessibilityID.readingBodyFailed)
@@ -189,6 +205,13 @@ private struct ArticleScreen: View {
             .accessibilityIdentifier(AccessibilityID.readingTryAgainButton)
         case .loading, nil:
             EmptyView()
+        }
+    }
+
+    private func blocks(_ content: ReadingContent) -> some View {
+        BlocksView(blocks: content.blocks, settings: settings, images: content.images) { url in
+            // In the embedded browser above the article, never Safari.
+            navigation.openPage(url, on: list)
         }
     }
 
@@ -281,14 +304,20 @@ private struct ArticleScreen: View {
 /// back with it (measured, and held by the UI test). The position is this
 /// modifier's own state, so that scrolling does not lay the screen out
 /// again.
+///
+/// When the body is replaced by the article's page (RD12), the screen goes
+/// back to its top, so that the new body is read from its start.
 private struct ReaderPosition: ViewModifier {
     let articleID: UUID
     let reading: ReadingModel
+    /// How many times the body was replaced.
+    let replacements: Int
     @State private var position: ScrollPosition
 
-    init(articleID: UUID, reading: ReadingModel) {
+    init(articleID: UUID, reading: ReadingModel, replacements: Int) {
         self.articleID = articleID
         self.reading = reading
+        self.replacements = replacements
         let start = reading.position(of: articleID)
         _position = State(initialValue: start.map { ScrollPosition(id: $0, anchor: .top) } ?? ScrollPosition(idType: Int.self))
     }
@@ -298,6 +327,9 @@ private struct ReaderPosition: ViewModifier {
             .scrollPosition($position, anchor: .top)
             .onChange(of: position.viewID(type: Int.self)) { _, block in
                 reading.readerMoved(to: block, in: articleID)
+            }
+            .onChange(of: replacements) {
+                position.scrollTo(edge: .top)
             }
     }
 }

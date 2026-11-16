@@ -141,6 +141,10 @@ enum AccessibilityID {
     static let readingCutNote = "reading.cutNote"
     static let readingBodyFailed = "reading.bodyFailed"
     static let readingTryAgainButton = "reading.tryAgain"
+    /// "Full text from the original page" under the header (RD12).
+    static let readingFullTextNote = "reading.fullTextNote"
+    /// "Loading the full text…" under the header (RD12).
+    static let readingLoadingNote = "reading.loadingNote"
     static let hideListButton = "reading.hideList"
 
     // The body's blocks, by their place in the body (RD11)
@@ -204,6 +208,16 @@ enum AccessibilityID {
     static let browserFailureReason = "browser.failureReason"
     static let browserTryAgainButton = "browser.tryAgain"
     static let browserFailureSafariButton = "browser.failureSafari"
+
+    // Reader mode (RD12)
+    static let browserReaderButton = "browser.reader"
+    /// The temporary article shown in place of the page.
+    static let readerArticle = "reader.article"
+    static let readerTitle = "reader.title"
+    static let readerHost = "reader.host"
+    static let readerCloseButton = "reader.close"
+    static let readerShareButton = "reader.share"
+    static let readerSettingsButton = "reader.settings"
 
     // Today (RD09)
     static let todayDate = "today.date"
@@ -316,9 +330,10 @@ enum DebugAccessibilityID {
     /// The element that reports the adult library's state (RD18 decision
     /// 4): its label is `file=<0|1> pool=<open|closed>
     /// library=<held|released> workspace=<none|held|released>
-    /// browser=<none|held|released>`. `pool` is whether connections are
-    /// open on the file; the other three are whether the objects are gone
-    /// from memory.
+    /// browser=<none|held|released> sessions=<number> pages=<number>`.
+    /// `pool` is whether connections are open on the file; the other three
+    /// are whether the objects are gone from memory; `pages` is how many
+    /// article pages the fixture transport has answered or refused (RD12).
     static let adultReport = "debug.adultReport"
 }
 #endif

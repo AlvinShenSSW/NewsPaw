@@ -18,6 +18,9 @@ final class SourceModel {
     /// The category chosen in the last successful Add source of this
     /// session.
     private(set) var lastUsedCategory: UUID?
+    /// The OPML import in progress, from its file choice to its summary
+    /// (RD08). One at a time.
+    private(set) var opmlImport: OPMLImportModel?
 
     // Source settings draft.
     var draftName = ""
@@ -63,6 +66,9 @@ final class SourceModel {
     /// Set by the UI tests: the next source save fails before reaching
     /// storage.
     var failNextSave = false
+    /// Set by the UI tests: "Import OPML" reads this fixture instead of
+    /// presenting the file picker (RD08 decision 8).
+    var opmlFixture: OPMLFixture?
     #endif
 
     init(
@@ -225,6 +231,10 @@ final class SourceModel {
     func addSourceClosed() {
         addSource?.cancel()
         addSource = nil
+        if opmlImport?.origin == .addSource {
+            opmlImport?.cancel()
+            opmlImport = nil
+        }
         if navigation.sheet == .addSource {
             navigation.sheet = nil
         }
@@ -239,6 +249,8 @@ final class SourceModel {
         pendingDeletion = nil
         addSource?.cancel()
         addSource = nil
+        opmlImport?.cancel()
+        opmlImport = nil
     }
 
     /// Saves what Add source chose. On success the sheet closes, the lists
@@ -289,6 +301,67 @@ final class SourceModel {
     func showFailingSources() {
         expanded.formUnion(failingSources.map(\.categoryID))
         navigation.showCategoryList()
+    }
+
+    // MARK: - OPML import (RD08)
+
+    /// "Import OPML" on `origin`: presents the file picker there. In a
+    /// debug build under the UI tests a fixture is read instead.
+    func beginOPMLImport(from origin: OPMLImportOrigin) {
+        guard !isStopped else { return }
+        opmlImport?.cancel()
+        let model = OPMLImportModel(origin: origin, sources: self)
+        opmlImport = model
+        #if DEBUG
+        if let opmlFixture, let url = try? opmlFixture.writeToTemporaryFile() {
+            model.fileChosen(url)
+            return
+        }
+        #endif
+        model.isPickingFile = true
+    }
+
+    /// Whether `model` is still the import this workspace holds: a result
+    /// for any other is dropped.
+    func isCurrent(_ model: OPMLImportModel) -> Bool {
+        !isStopped && opmlImport === model
+    }
+
+    /// The import ended: the picker was cancelled, the alert answered, or
+    /// the preview or the summary closed. Leaving the summary starts the
+    /// refresh the Today pull starts; from Add source it closes Add source
+    /// too.
+    func opmlImportEnded(_ model: OPMLImportModel) {
+        guard opmlImport === model else { return }
+        model.cancel()
+        opmlImport = nil
+        guard case .done = model.stage else { return }
+        let refresh = refresh
+        Task { await refresh.refresh(.library) }
+        if model.origin == .addSource {
+            addSourceClosed()
+        }
+    }
+
+    /// Writes an import in the save queue. The lists are read again as soon
+    /// as the write succeeds; a failure is the preview's to show, not the
+    /// save alert's.
+    func importOPML(_ document: OPMLDocument, outsideFeeds target: OPMLOutsideFeeds?)
+        async -> Result<OPMLImportSummary, OPMLImportModel.Failure> {
+        let summary = LockedValue<OPMLImportSummary?>(nil)
+        let failure = LockedValue<OPMLImportModel.Failure>(.storage)
+        let ok = await perform { library in
+            do {
+                summary.value = try await library.importOPML(document, outsideFeeds: target)
+            } catch LibraryError.unknownCategory {
+                failure.value = .categoryGone
+                throw LibraryError.unknownCategory
+            }
+        } showingError: { _ in false }
+        if ok, let summary = summary.value {
+            return .success(summary)
+        }
+        return .failure(failure.value)
     }
 
     // MARK: - Source settings

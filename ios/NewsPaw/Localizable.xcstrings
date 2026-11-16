@@ -302,6 +302,17 @@
         }
       }
     },
+    "Already in %@" : {
+      "comment" : "OPML import, a skipped entry. %@ is the category that holds the address.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已在“%@”中"
+          }
+        }
+      }
+    },
     "Already in “%@”" : {
       "comment" : "Second line of a declared feed that is already in the library. %@ is the category's name.",
       "localizations" : {
@@ -500,6 +511,17 @@
         }
       }
     },
+    "Choose the category for the feeds that are not in a folder." : {
+      "comment" : "OPML import preview, footer of the outside-feeds section.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为不在文件夹中的订阅源选择分类。"
+          }
+        }
+      }
+    },
     "Choosing a service fills in its address." : {
       "comment" : "Footer of the service picker in the model form.",
       "localizations" : {
@@ -617,6 +639,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法连接"
+          }
+        }
+      }
+    },
+    "Could not export" : {
+      "comment" : "OPML export failure alert title.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法导出"
+          }
+        }
+      }
+    },
+    "Could not import this file" : {
+      "comment" : "OPML import, alert title for a refused file.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法导入此文件"
           }
         }
       }
@@ -863,6 +907,17 @@
         }
       }
     },
+    "Entries already in the library, listed twice, or not an http or https address are not imported." : {
+      "comment" : "OPML import, footer under Skipped.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已在资料库中、重复列出或不是 http 或 https 地址的条目不会导入。"
+          }
+        }
+      }
+    },
     "Every 15 Minutes" : {
       "comment" : "Settings → Refresh, Refresh Interval.",
       "localizations" : {
@@ -896,6 +951,39 @@
         }
       }
     },
+    "Everything in this file is already in the library." : {
+      "comment" : "OPML import preview when nothing would be added.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此文件中的内容已全部在资料库中。"
+          }
+        }
+      }
+    },
+    "Existing Category" : {
+      "comment" : "OPML import, a folder that goes into a category the library already has.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已有分类"
+          }
+        }
+      }
+    },
+    "Export OPML" : {
+      "comment" : "Settings › Data row.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出 OPML"
+          }
+        }
+      }
+    },
     "Feed Content Only" : {
       "comment" : "Body option of a source.",
       "localizations" : {
@@ -914,6 +1002,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Feed · %@"
+          }
+        }
+      }
+    },
+    "Feeds" : {
+      "comment" : "OPML import preview, number of feeds outside any folder.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅源"
+          }
+        }
+      }
+    },
+    "Feeds Added" : {
+      "comment" : "OPML import summary, number of feeds added.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已添加的订阅源"
+          }
+        }
+      }
+    },
+    "Feeds to Add" : {
+      "comment" : "OPML import preview, number of feeds the import adds.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待添加的订阅源"
           }
         }
       }
@@ -942,6 +1063,17 @@
     },
     "Folder" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件夹"
+          }
+        }
+      }
+    },
+    "Folders" : {
+      "comment" : "OPML import preview, section of the file's folders.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1228,6 +1360,61 @@
         }
       }
     },
+    "Import" : {
+      "comment" : "OPML import preview, the button that writes the import.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入"
+          }
+        }
+      }
+    },
+    "Import Complete" : {
+      "comment" : "OPML import summary title.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入完成"
+          }
+        }
+      }
+    },
+    "Import OPML" : {
+      "comment" : "Add source row and Settings › Data row; the preview's title.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入 OPML"
+          }
+        }
+      }
+    },
+    "Import subscriptions from another reader: its folders become categories. Export writes this library's feeds; web pages are not included." : {
+      "comment" : "Settings › Data, footer of the OPML section.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从其他阅读器导入订阅：其文件夹会成为分类。导出会写入本资料库的订阅源，不包括网页来源。"
+          }
+        }
+      }
+    },
+    "Importing…" : {
+      "comment" : "OPML import, accessibility label of the progress shown while importing.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在导入…"
+          }
+        }
+      }
+    },
     "It was created by a newer version of the app. Update NewsPaw to open it." : {
       "comment" : "Library failure screen: the reason shown when the library was written by a newer version of the app.",
       "localizations" : {
@@ -1479,6 +1666,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "行距"
+          }
+        }
+      }
+    },
+    "Listed earlier in this file" : {
+      "comment" : "OPML import, a skipped entry whose address the file lists twice.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此文件中已列出过"
           }
         }
       }
@@ -1914,6 +2112,17 @@
         }
       }
     },
+    "Not an http or https address" : {
+      "comment" : "OPML import, a skipped entry with an address that is not http or https.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不是 http 或 https 地址"
+          }
+        }
+      }
+    },
     "Not set up" : {
       "comment" : "State of a model row that has not been set up.",
       "localizations" : {
@@ -2075,6 +2284,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要在其他应用中打开这个链接吗？"
+          }
+        }
+      }
+    },
+    "Outside Any Folder" : {
+      "comment" : "OPML import preview, section of the feeds not in a folder.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不在文件夹中"
           }
         }
       }
@@ -2354,6 +2574,17 @@
         }
       }
     },
+    "Required" : {
+      "comment" : "OPML import preview, the category row before a category is chosen.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "必选"
+          }
+        }
+      }
+    },
     "Resume" : {
       "comment" : "Context-menu item of a paused source.",
       "localizations" : {
@@ -2574,6 +2805,17 @@
         }
       }
     },
+    "Skipped" : {
+      "comment" : "OPML import, entries not imported; title of their list.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已跳过"
+          }
+        }
+      }
+    },
     "Smaller" : {
       "comment" : "Reading settings: label of the button that makes the reading text one step smaller.",
       "localizations" : {
@@ -2750,6 +2992,17 @@
         }
       }
     },
+    "That category no longer exists. Choose another." : {
+      "comment" : "OPML import, the chosen category was deleted meanwhile.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该分类已不存在，请另选一个。"
+          }
+        }
+      }
+    },
     "The address cannot contain a user name or password." : {
       "comment" : "Footer of the address field in the model form.",
       "localizations" : {
@@ -2860,6 +3113,17 @@
         }
       }
     },
+    "The category is created when you import. If a category or a folder of the file has this name, the feeds go there." : {
+      "comment" : "OPML import, footer of the new category name.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分类会在导入时创建。如果已有分类或文件中的文件夹使用此名称，订阅源会放入其中。"
+          }
+        }
+      }
+    },
     "The change could not be saved." : {
       "comment" : "Alert title when a category change could not be written to storage. The list then shows what is stored.",
       "localizations" : {
@@ -2867,6 +3131,116 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法保存这项更改。"
+          }
+        }
+      }
+    },
+    "The file could not be read." : {
+      "comment" : "OPML import refusal.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取此文件。"
+          }
+        }
+      }
+    },
+    "The file could not be written." : {
+      "comment" : "OPML export failure.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法写入文件。"
+          }
+        }
+      }
+    },
+    "The file declares a document type (<!DOCTYPE>), which is not accepted." : {
+      "comment" : "OPML import refusal.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件声明了文档类型（<!DOCTYPE>），不予接受。"
+          }
+        }
+      }
+    },
+    "The file has more than %lld folders." : {
+      "comment" : "OPML import refusal. %lld is the limit.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件中的文件夹超过 %lld 个。"
+          }
+        }
+      }
+    },
+    "The file is larger than 5 MB." : {
+      "comment" : "OPML import refusal.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件大于 5 MB。"
+          }
+        }
+      }
+    },
+    "The file is not an OPML file." : {
+      "comment" : "OPML import refusal.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此文件不是 OPML 文件。"
+          }
+        }
+      }
+    },
+    "The file is not well-formed XML (line %lld)." : {
+      "comment" : "OPML import refusal. %lld is the line the parser stopped at.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件不是格式正确的 XML（第 %lld 行）。"
+          }
+        }
+      }
+    },
+    "The file is not well-formed XML." : {
+      "comment" : "OPML import refusal.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件不是格式正确的 XML。"
+          }
+        }
+      }
+    },
+    "The file lists more than %lld feeds." : {
+      "comment" : "OPML import refusal. %lld is the limit.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件列出的订阅源超过 %lld 个。"
+          }
+        }
+      }
+    },
+    "The file lists no feeds and no folders." : {
+      "comment" : "OPML import refusal.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件中没有订阅源，也没有文件夹。"
           }
         }
       }
@@ -2906,6 +3280,17 @@
         }
       }
     },
+    "The import could not be saved. Nothing was added." : {
+      "comment" : "OPML import, a storage failure while writing.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入未能保存，未添加任何内容。"
+          }
+        }
+      }
+    },
     "The key could not be removed." : {
       "comment" : "Alert when the keychain refuses to remove a model key.",
       "localizations" : {
@@ -2924,6 +3309,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法保存这个 Key。"
+          }
+        }
+      }
+    },
+    "The library could not be read." : {
+      "comment" : "OPML import, a storage failure while planning.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取资料库。"
           }
         }
       }
@@ -2957,6 +3353,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "模型会保留，需要重新填入 Key 才能再次使用。"
+          }
+        }
+      }
+    },
+    "The new feeds are updated when you close this screen." : {
+      "comment" : "OPML import summary footer.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭此页面后会更新新添加的订阅源。"
           }
         }
       }

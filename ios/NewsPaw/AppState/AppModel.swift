@@ -118,6 +118,9 @@ final class AppModel {
     /// The article page size of the UI tests, which every workspace's
     /// reading model takes.
     @ObservationIgnored private var articlePageSize: Int?
+    /// The OPML fixture of the UI tests, which every workspace's source
+    /// model takes (RD08 decision 8).
+    @ObservationIgnored private var opmlFixture: OPMLFixture?
     @ObservationIgnored private var adultWasShown = false
     @ObservationIgnored private weak var lastAdultWorkspace: Workspace?
     @ObservationIgnored private weak var lastAdultBrowser: BrowserModel?
@@ -149,6 +152,9 @@ final class AppModel {
     func start() async {
         guard case .loading = status else { return }
         observeScene()
+        // An OPML export left by a session that ended with its share sheet
+        // open (RD08 decision 7).
+        OPMLExportFile.empty()
         // The one transport the app makes requests through. Under a UI-test
         // library directory it is the fixture transport, never the real one.
         // The one clock of the library and of Today's status line.
@@ -242,7 +248,9 @@ final class AppModel {
             #if DEBUG
             if options.libraryDirectory != nil {
                 articlePageSize = options.articlePageSize
+                opmlFixture = options.opmlFixture
             }
+            workspace.sources.opmlFixture = opmlFixture
             if let size = articlePageSize {
                 workspace.reading.pageSize = size
             }
@@ -304,6 +312,7 @@ final class AppModel {
             if let size = articlePageSize {
                 workspace.reading.pageSize = size
             }
+            workspace.sources.opmlFixture = opmlFixture
             #endif
             await workspace.load()
             // From here to the end of the case nothing suspends before the

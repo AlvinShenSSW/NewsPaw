@@ -31,6 +31,10 @@ struct DebugLaunchOptions {
     /// The rows a list page holds, so that a UI test reaches the next page
     /// after a few rows. Applied only together with `libraryDirectory`.
     let articlePageSize: Int?
+    /// The OPML document "Import OPML" reads instead of presenting the file
+    /// picker (RD08 decision 8). Applied only together with
+    /// `libraryDirectory`.
+    let opmlFixture: OPMLFixture?
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -65,6 +69,7 @@ struct DebugLaunchOptions {
         } else {
             articlePageSize = nil
         }
+        opmlFixture = environment[UITestLaunchKey.opmlFixture].flatMap(OPMLFixture.init(rawValue:))
     }
 
     /// Accepts only a name that stays inside the temporary directory.

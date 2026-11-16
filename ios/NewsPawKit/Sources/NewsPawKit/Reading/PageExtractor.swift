@@ -2,16 +2,21 @@ import Foundation
 import WebKit
 
 /// What the extractor found in a page (RD12 decision 1): the article's HTML,
-/// cut to `PageExtractor.maximumOutputCharacters`, and its title. Both are
+/// cut to `PageExtractor.maximumOutputCharacters` (and then said to be cut),
+/// and its title. Both are
 /// untrusted: the HTML is nothing but input for `ArticleBlocks.make`, as a
 /// feed's HTML is.
 public struct PageExtraction: Sendable, Hashable {
     public var html: String
     public var title: String
+    /// Whether the extractor cut the HTML at its output limit: the body is
+    /// then incomplete, as one the converter cut.
+    public var isCut: Bool
 
-    public init(html: String, title: String) {
+    public init(html: String, title: String, isCut: Bool = false) {
         self.html = html
         self.title = title
+        self.isCut = isCut
     }
 }
 
@@ -148,9 +153,13 @@ public final class PageExtractor: PageExtracting {
             discarded: { [weak self] in self?.webViewsHeld -= 1 }
         )
         let extraction = try await run.extract(html: html, address: address)
+        let isCut = extraction.html.unicodeScalars.count > Self.maximumOutputCharacters
         return PageExtraction(
-            html: String(String.UnicodeScalarView(extraction.html.unicodeScalars.prefix(Self.maximumOutputCharacters))),
-            title: extraction.title
+            html: isCut
+                ? String(String.UnicodeScalarView(extraction.html.unicodeScalars.prefix(Self.maximumOutputCharacters)))
+                : extraction.html,
+            title: extraction.title,
+            isCut: isCut
         )
     }
 

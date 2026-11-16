@@ -232,6 +232,28 @@ final class FullTextTests: FullTextTestCase {
         XCTAssertFalse(alert(FullText.noArticle).exists)
     }
 
+    /// Reader mode's work for one address is dropped, result and alert
+    /// alike, once the page changes its address without a navigation
+    /// (`history.pushState`).
+    func testReaderModeDroppedWhenThePageMoves() {
+        launchWithFullTextFeed()
+        openAndSettle("Fetched story", fullText: true)
+        openOriginalPage()
+        tapLink("a story that moves")
+        waitForPage("Moving page")
+        let before = pagesRequested
+        waitForEnabled(readerButton, true)
+        readerButton.tap()
+        waitForValue(readerButton, "Loading")
+        expectPages(before + 1, "reader mode on the moving page")
+        waitFor(app.webViews.buttons["Move along"]).tap()
+        waitForEnabled(readerButton, true)
+        // The page's answer (an article, after 4 s) comes and goes unseen.
+        XCTAssertFalse(readerTitle.waitForExistence(timeout: 6), "the old address's article was shown over the moved page")
+        XCTAssertFalse(alert(FullText.noArticle).exists)
+        waitForPage("Moving page")
+    }
+
     // MARK: - Helpers
 
     /// Leaves the open article: back to the list (tab structure), or

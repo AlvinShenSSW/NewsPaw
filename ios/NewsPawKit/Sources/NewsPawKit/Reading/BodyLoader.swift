@@ -106,7 +106,9 @@ public final class BodyLoader {
     /// usable against `feed`; `nil` otherwise or when it cannot be read.
     public func storedBody(ofArticle id: UUID, feed: [ArticleBlock]) async -> ExtractedBody? {
         guard !isStopped, let stored = try? await library.extraction(ofArticle: id), !Task.isCancelled else { return nil }
-        let blocks = await Self.convert(html: stored.html, baseURL: stored.address)
+        var blocks = await Self.convert(html: stored.html, baseURL: stored.address)
+        // Cut by the extractor when it was fetched: still incomplete.
+        blocks.isCut = blocks.isCut || stored.isCut
         guard !isStopped, BodyPlan.isUsable(blocks.blocks, over: feed) else { return nil }
         return ExtractedBody(blocks: blocks, title: "", address: stored.address)
     }
@@ -150,7 +152,7 @@ public final class BodyLoader {
         }
         try checkGoing()
         do {
-            try await library.storeExtraction(html: body.html, address: body.address, ofArticle: id)
+            try await library.storeExtraction(html: body.html, address: body.address, isCut: body.extractorCut, ofArticle: id)
             return .extracted(body.extracted, stored: true)
         } catch LibraryError.unknownArticle {
             return .articleGone
@@ -207,7 +209,11 @@ public final class BodyLoader {
         let html: String
         let title: String
         let address: URL
+        /// Cut by the converter or by the extractor.
         let blocks: ArticleBlocks
+        /// Whether the extractor cut the HTML: kept with a stored
+        /// extraction, since its HTML no longer shows it.
+        let extractorCut: Bool
 
         var extracted: ExtractedBody {
             ExtractedBody(blocks: blocks, title: title, address: address)
@@ -260,8 +266,13 @@ public final class BodyLoader {
             throw PageFailure.extraction(.scriptFailed)
         }
         try Task.checkCancellation()
-        let blocks = await convert(html: extraction.html, baseURL: response.finalURL)
-        return ReadPage(html: extraction.html, title: extraction.title, address: response.finalURL, blocks: blocks)
+        var blocks = await convert(html: extraction.html, baseURL: response.finalURL)
+        // The extractor's cut lands exactly at the converter's limit, where
+        // the converter sees nothing cut.
+        blocks.isCut = blocks.isCut || extraction.isCut
+        return ReadPage(
+            html: extraction.html, title: extraction.title, address: response.finalURL, blocks: blocks, extractorCut: extraction.isCut
+        )
     }
 
     /// The answer's whole body as text when it is HTML (`FeedDiscovery`'s

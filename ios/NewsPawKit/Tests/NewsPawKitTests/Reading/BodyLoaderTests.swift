@@ -87,6 +87,32 @@ struct BodyLoaderTests {
         #expect(again?.address == final)
     }
 
+    @Test("an extraction the extractor cut is a cut body when fetched, when stored and when read back; one not cut is not")
+    func extractorCutIsKept() async throws {
+        let setup = try await Self.setup()
+        defer { setup.fixture.remove() }
+        let loader = Self.loader(setup, transport: Self.answering(), extractor: StubExtractor(cut: true))
+        let outcome = try await loader.load(article: setup.article, link: Self.link, feed: Self.excerpt)
+        guard case .extracted(let body, stored: true) = outcome else {
+            Issue.record("\(outcome)")
+            return
+        }
+        // The HTML itself closes cleanly: only the extractor knows it cut.
+        #expect(!ArticleBlocks.make(html: Self.articleHTML, baseURL: Self.link).isCut)
+        #expect(body.blocks.isCut)
+        #expect(try await setup.library.extraction(ofArticle: setup.article)?.isCut == true)
+        #expect(await loader.storedBody(ofArticle: setup.article, feed: Self.excerpt)?.blocks.isCut == true)
+        // Reader mode's call gives the same mark.
+        let reader = try await BodyLoader.readerArticle(at: Self.link, transport: Self.answering(), extractor: StubExtractor(cut: true))
+        #expect(reader.blocks.isCut)
+
+        // Not cut: stored without the mark, read back whole.
+        let whole = Self.loader(setup, transport: Self.answering(), extractor: StubExtractor())
+        _ = try await whole.load(article: setup.article, link: Self.link, feed: Self.excerpt)
+        #expect(try await setup.library.extraction(ofArticle: setup.article)?.isCut == false)
+        #expect(await whole.storedBody(ofArticle: setup.article, feed: Self.excerpt)?.blocks.isCut == false)
+    }
+
     @Test("criterion 10: an envelope of an unknown version, another origin or unreadable text reads as absent")
     func envelopeVersions() async throws {
         let setup = try await Self.setup()
@@ -102,6 +128,9 @@ struct BodyLoaderTests {
         let good = #"{"v":1,"html":"<p>x</p>","address":"https://example.invalid/a"}"#
         try await store(origin: "extracted", blocks: good)
         #expect(try await setup.library.extraction(ofArticle: setup.article)?.html == "<p>x</p>")
+        #expect(try await setup.library.extraction(ofArticle: setup.article)?.isCut == false)
+        try await store(origin: "extracted", blocks: #"{"v":1,"html":"<p>x</p>","address":"https://example.invalid/a","cut":true}"#)
+        #expect(try await setup.library.extraction(ofArticle: setup.article)?.isCut == true)
         for (origin, blocks) in [
             ("extracted", #"{"v":2,"html":"<p>x</p>","address":"https://example.invalid/a"}"#),
             ("extracted", #"{"html":"<p>x</p>","address":"https://example.invalid/a"}"#),
@@ -417,13 +446,19 @@ final class StubExtractor: PageExtracting {
     private let html: String?
     private let failure: ExtractionFailure?
     private let waits: Bool
+    /// Whether the answer says the extractor cut it.
+    private let cut: Bool
     /// Whether it answers rather than throws when its task is cancelled
     /// while it waits: an extraction that ended as the article was left.
     private let answersWhenCancelled: Bool
     private var release: CheckedContinuation<Void, Never>?
     private var released = false
 
-    init(html: String? = nil, failing failure: ExtractionFailure? = nil, waits: Bool = false, answersWhenCancelled: Bool = false) {
+    init(
+        html: String? = nil, failing failure: ExtractionFailure? = nil, waits: Bool = false, answersWhenCancelled: Bool = false,
+        cut: Bool = false
+    ) {
+        self.cut = cut
         self.html = html
         self.failure = failure
         self.waits = waits
@@ -452,7 +487,7 @@ final class StubExtractor: PageExtracting {
         if !answersWhenCancelled {
             try Task.checkCancellation()
         }
-        return PageExtraction(html: html ?? BodyLoaderTests.articleHTML, title: "One")
+        return PageExtraction(html: html ?? BodyLoaderTests.articleHTML, title: "One", isCut: cut)
     }
 
     func finish() {

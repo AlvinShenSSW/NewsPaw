@@ -10,13 +10,18 @@ public struct StoredExtraction: Sendable, Hashable {
     /// relative links.
     public let address: URL
     public let fetchedAt: Date
+    /// The extractor cut the HTML at its limit: the body is incomplete.
+    public let isCut: Bool
 }
 
-/// What `article_body.blocks` holds for an extraction: `{"v":1,"html":…,"address":…}`.
+/// What `article_body.blocks` holds for an extraction:
+/// `{"v":1,"html":…,"address":…}`, with `"cut":true` when the extractor cut
+/// the HTML at its limit (absent, it was not cut).
 struct ExtractionEnvelope: Codable, Equatable {
     var v: Int
     var html: String
     var address: String
+    var cut: Bool?
 
     static let version = 1
 }
@@ -41,7 +46,7 @@ extension Library {
               envelope.v == ExtractionEnvelope.version,
               let address = URL(string: envelope.address), address.isCollectableAddress
         else { return nil }
-        return StoredExtraction(html: envelope.html, address: address, fetchedAt: fetchedAt)
+        return StoredExtraction(html: envelope.html, address: address, fetchedAt: fetchedAt, isCut: envelope.cut == true)
     }
 
     /// Keeps `html`, extracted from the page that answered at `address`,
@@ -50,8 +55,10 @@ extension Library {
     ///
     /// - Throws: `unknownArticle` when the library no longer holds the
     ///   article; then nothing is written.
-    public func storeExtraction(html: String, address: URL, ofArticle id: UUID) async throws {
-        let envelope = ExtractionEnvelope(v: ExtractionEnvelope.version, html: html, address: address.absoluteString)
+    public func storeExtraction(html: String, address: URL, isCut: Bool = false, ofArticle id: UUID) async throws {
+        let envelope = ExtractionEnvelope(
+            v: ExtractionEnvelope.version, html: html, address: address.absoluteString, cut: isCut ? true : nil
+        )
         let text = try String(decoding: JSONEncoder().encode(envelope), as: UTF8.self)
         let now = now()
         try await write { db in

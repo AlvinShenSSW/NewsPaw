@@ -273,6 +273,12 @@ struct PageExtractorTests {
         #expect(page.unicodeScalars.count < PageExtractor.maximumInputCharacters)
         let extraction = try await extractor.extract(html: page, address: address)
         #expect(extraction.html.unicodeScalars.count == PageExtractor.maximumOutputCharacters)
+        // Said to be cut: what is left may close cleanly, and the converter,
+        // whose limit is the same, would then see nothing cut.
+        #expect(extraction.isCut)
+        // A page within the limit is not.
+        let short = try await extractor.extract(html: "<html><body><article>" + Self.paragraphs(4) + "</article></body></html>", address: address)
+        #expect(!short.isCut)
     }
 
     @Test("a page that names the document's methods does not change the calls the evaluation makes itself")

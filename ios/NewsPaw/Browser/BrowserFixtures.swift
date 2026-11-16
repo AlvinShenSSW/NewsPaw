@@ -194,6 +194,11 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
             send(task, html: Self.handlers)
         case ("fulltext.example.invalid", "/pages/article"):
             send(task, html: Self.ferryArticle)
+        case ("fulltext.example.invalid", "/pages/moving"):
+            send(task, html: Self.page("Moving page", """
+                <p>A page that changes its address without a navigation when asked.</p>
+                <p><button type="button" onclick="history.pushState({}, '', '/pages/moved')">Move along</button></p>
+                """))
         case ("fulltext.example.invalid", "/pages/stalled"):
             send(task, html: Self.page("Stalled page", "<p>A page whose address the fixture transport never answers.</p>"))
         case ("fulltext.example.invalid", "/pages/list"):
@@ -388,6 +393,7 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         <p>\(FixtureTransport.fullTextParagraphs[2]) See also <a href="/pages/list">the latest stories</a> from the harbour.</p>
         <p>\(FixtureTransport.fullTextParagraphs[3])</p>
         <p><a href="/pages/stalled">a story that never loads</a></p>
+        <p><a href="/pages/moving">a story that moves</a></p>
         <script>
         var audio = null;
         function silence(seconds) {

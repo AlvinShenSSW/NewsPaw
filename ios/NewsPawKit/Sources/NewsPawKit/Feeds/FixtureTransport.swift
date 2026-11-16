@@ -97,7 +97,8 @@ public final class FixtureTransport: Transport {
         /// of the browser's fixtures), `scripted` (text that only its
         /// script would build), `list` (an ordinary list page of thirty
         /// headlines with summaries; also a page of the browser's
-        /// fixtures), `huge` (over the transport's size limit), `stalled`
+        /// fixtures), `moving` (the article after 4 seconds; the browser's
+        /// page of it changes its address on a tap), `huge` (over the transport's size limit), `stalled`
         /// (never answers) and `plain` (not HTML). Any other name does not
         /// answer.
         public static let fullTextPages = "https://fulltext.example.invalid/pages/"
@@ -132,6 +133,8 @@ public final class FixtureTransport: Transport {
 
     /// How long the full-text feed's article page takes to answer.
     static let articlePageAnswer = Duration.milliseconds(1_500)
+    /// How long the moving page takes to answer: an article, after a while.
+    static let movingPageAnswer = Duration.seconds(4)
 
     /// How long `flaky.png` fails from the first request for it.
     static let flakyImageWindow = Duration.seconds(4)
@@ -299,6 +302,11 @@ public final class FixtureTransport: Transport {
             // Not at once, as a real page: the excerpt and the loading line
             // are on screen, and report their place, before the full text.
             try await Task.sleep(for: Self.articlePageAnswer)
+            return answer(Self.fullTextArticle(edition: Int.random(in: 100_000...999_999)))
+        case "moving":
+            // The browser's page of this address changes its address on a
+            // tap; reader mode's work for it is still running then.
+            try await Task.sleep(for: Self.movingPageAnswer)
             return answer(Self.fullTextArticle(edition: Int.random(in: 100_000...999_999)))
         case "scripted":
             return answer(Self.scriptedPage)

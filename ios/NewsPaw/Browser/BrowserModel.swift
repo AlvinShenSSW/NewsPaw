@@ -336,8 +336,10 @@ final class BrowserSession: NSObject {
     var isShowingNoReadableArticle = false
 
     @ObservationIgnored private weak var model: BrowserModel?
-    /// Reader mode's fetch and extraction in flight.
+    /// Reader mode's fetch and extraction in flight, and the address it
+    /// works for.
     @ObservationIgnored private var readerTask: Task<Void, Never>?
+    @ObservationIgnored private var readerAddress: URL?
     @ObservationIgnored private let map: BrowserAddressMap
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     /// The main-frame navigation in progress and the address it started at.
@@ -427,6 +429,7 @@ final class BrowserSession: NSObject {
         } else {
             pageURL = url
         }
+        dropReaderModeIfMoved()
     }
 
     /// The session's route left its stack: the page stops and lets go of
@@ -581,6 +584,7 @@ final class BrowserSession: NSObject {
         guard readerModeEnabled, readerTask == nil, temporaryArticle == nil, let url = pageURL, let model, !model.isStopped else { return }
         let reader = model.reader
         isExtractingArticle = true
+        readerAddress = url
         readerTask = Task { [weak self] in
             let article: ExtractedBody?
             do {
@@ -590,8 +594,11 @@ final class BrowserSession: NSObject {
             } catch {
                 article = nil
             }
-            guard let self, !Task.isCancelled else { return }
+            // Work for an address the page has left (a same-document
+            // change, `history.pushState`) shows nothing, alert included.
+            guard let self, !Task.isCancelled, self.pageURL == url else { return }
             self.readerTask = nil
+            self.readerAddress = nil
             self.isExtractingArticle = false
             guard let article else {
                 self.isShowingNoReadableArticle = true
@@ -625,12 +632,21 @@ final class BrowserSession: NSObject {
         load(url)
     }
 
-    /// A navigation, Back or Close while reader mode works: it stops, and
-    /// shows nothing.
+    /// A navigation, Back, Close, or a change of the page's address while
+    /// reader mode works: it stops, and shows nothing.
     private func cancelReaderMode() {
         readerTask?.cancel()
         readerTask = nil
+        readerAddress = nil
         isExtractingArticle = false
+    }
+
+    /// The page's address is no longer the one reader mode works for: a
+    /// same-document change (an anchor, `history.pushState`) commits no
+    /// navigation, so it is caught here. The work is dropped.
+    private func dropReaderModeIfMoved() {
+        guard readerTask != nil, let readerAddress, pageURL != readerAddress else { return }
+        cancelReaderMode()
     }
 
     // MARK: - Policy
@@ -746,6 +762,7 @@ extension BrowserSession: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        defer { dropReaderModeIfMoved() }
         let started = provisional?.navigation === navigation ? provisional : nil
         if started != nil {
             provisional = nil

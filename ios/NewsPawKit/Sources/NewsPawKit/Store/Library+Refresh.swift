@@ -20,25 +20,27 @@ extension Library {
     /// as a feed (`feed`, `github`) that are not paused, in a stable order.
     /// Paused, web-page and other kinds are never included.
     public func refreshTargets(_ scope: RefreshScope) async throws -> [UUID] {
-        try await read { db in
-            let kinds = SourceKind.allCases.filter(\.isCollectedAsFeed).map(\.rawValue)
-            var sql = "SELECT id FROM source WHERE kind IN (\(kinds.map { _ in "?" }.joined(separator: ", "))) AND paused = 0"
-            var arguments: [any DatabaseValueConvertible] = kinds
-            switch scope {
-            case .library:
-                break
-            case .category(let id):
-                sql += " AND category_id = ?"
-                arguments.append(id.databaseKey)
-            case .source(let id):
-                sql += " AND id = ?"
-                arguments.append(id.databaseKey)
-            }
-            sql += " ORDER BY name, id"
-            return try String.fetchAll(db, sql: sql, arguments: StatementArguments(arguments)).map { text in
-                guard let id = UUID(uuidString: text) else { throw LibraryError.storage("Not an identifier: \(text)") }
-                return id
-            }
+        try await read { db in try Self.refreshTargets(scope, in: db) }
+    }
+
+    private static func refreshTargets(_ scope: RefreshScope, in db: Database) throws -> [UUID] {
+        let kinds = SourceKind.allCases.filter(\.isCollectedAsFeed).map(\.rawValue)
+        var sql = "SELECT id FROM source WHERE kind IN (\(kinds.map { _ in "?" }.joined(separator: ", "))) AND paused = 0"
+        var arguments: [any DatabaseValueConvertible] = kinds
+        switch scope {
+        case .library:
+            break
+        case .category(let id):
+            sql += " AND category_id = ?"
+            arguments.append(id.databaseKey)
+        case .source(let id):
+            sql += " AND id = ?"
+            arguments.append(id.databaseKey)
+        }
+        sql += " ORDER BY name, id"
+        return try String.fetchAll(db, sql: sql, arguments: StatementArguments(arguments)).map { text in
+            guard let id = UUID(uuidString: text) else { throw LibraryError.storage("Not an identifier: \(text)") }
+            return id
         }
     }
 
@@ -52,12 +54,32 @@ extension Library {
 
     /// Records the end of a counted whole-library refresh.
     func setLastRefreshAt(_ date: Date) async throws {
+        try await write { db in try Self.writeLastRefreshAt(date, in: db) }
+    }
+
+    /// Records the end of a whole-library run that collected `targets`,
+    /// unless the library has a source to collect that is not among them:
+    /// one added while the run went on — a category moved in from the other
+    /// partition (RD19, review round 1), or a source added — was not
+    /// collected by it, so the run does not count as a refresh of the whole
+    /// library, and the next entry refreshes it (RD06's rule). Checked and
+    /// written in one transaction.
+    ///
+    /// - Returns: whether the time was recorded.
+    @discardableResult
+    func setLastRefreshAt(_ date: Date, collected targets: Set<UUID>) async throws -> Bool {
         try await write { db in
-            try db.execute(
-                sql: "INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-                arguments: [Self.lastRefreshKey, date]
-            )
+            guard try Set(Self.refreshTargets(.library, in: db)).isSubset(of: targets) else { return false }
+            try Self.writeLastRefreshAt(date, in: db)
+            return true
         }
+    }
+
+    private static func writeLastRefreshAt(_ date: Date, in db: Database) throws {
+        try db.execute(
+            sql: "INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            arguments: [lastRefreshKey, date]
+        )
     }
 
     /// Whether entering the app should refresh the whole library, by the

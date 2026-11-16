@@ -391,6 +391,52 @@ struct CategoryMoveTests {
         #expect(try await fixture.destination.sources().filter { $0.categoryID == fixture.category }.count == 2)
     }
 
+    // MARK: - Review round 1: a refresh already running in the destination
+
+    /// A whole-library refresh of the destination took its targets before
+    /// the move and ends after it: it does not record its time, so the next
+    /// entry refreshes, and that refresh collects the moved sources.
+    @Test("criterion 11: a destination refresh that began before the move does not hide the moved sources from the next entry")
+    @MainActor
+    func olderRefreshKeepsTheInvalidation() async throws {
+        let fixture = try await Fixture.make(toAdult: false, twin: false)
+        defer { fixture.remove() }
+        // The destination has a source of its own, whose fetch is held.
+        let elsewhere = try #require(try await fixture.destination.categories().first)
+        let own = Sample.source(in: elsewhere.id, url: "https://own.example.invalid/feed", name: "Own", at: Date())
+        try await fixture.destination.insert(own)
+        let go = Signal()
+        let transport = CountingTransport { url in
+            await go.wait()
+            return CountingTransport.feed(url)
+        }
+        let refresher = Refresher(library: fixture.destination, transport: transport)
+        let older = Task { try await refresher.refresh(.library) }
+        let deadline = ContinuousClock.now + .seconds(60)
+        while transport.inFlight < 1, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(transport.inFlight == 1)
+
+        #expect(await CategoryMove.run(try await fixture.plan(), from: fixture.old, to: fixture.destination)
+            == .moved(staying: 0, categoryRemoved: true))
+        #expect(try await fixture.destination.lastRefreshAt() == nil)
+
+        go.fire()
+        let results = try await older.value
+        #expect(results.keys.contains(own.id))
+        #expect(!results.keys.contains(fixture.beta.id), "the older run took its targets before the move")
+        // The older run did not record its time: the next entry is due.
+        #expect(try await fixture.destination.lastRefreshAt() == nil)
+        #expect(try await fixture.destination.refreshIsDue(every: .sixtyMinutes))
+
+        // The next entry's refresh collects the moved feed source and counts.
+        let next = try await refresher.refresh(.library)
+        #expect(next.keys.contains(fixture.beta.id))
+        #expect(transport.requests(for: fixture.beta.url) == 1)
+        #expect(try await fixture.destination.lastRefreshAt() != nil)
+    }
+
     enum CancelPoint: String, CustomTestStringConvertible, Sendable {
         case insideCopy
         case betweenSteps

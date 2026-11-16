@@ -37,9 +37,11 @@ final class BodyTranslationScreenshotTests: BodyTranslationTestCase {
         // The progress line while chunk 4 stalls.
         openBody(Body.long)
         let stalled = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
-            self.progressLine.exists && self.block(at: 5).exists && self.block(at: 5).label.hasPrefix("译[")
+            self.progressLine.exists && self.block(at: 0).exists && self.block(at: 0).label.hasPrefix("译[")
         }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [stalled], timeout: 60), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [stalled], timeout: 30), .completed)
+        // Chunks 2 and 3 arrive at once; chunk 4 stalls for a minute.
+        Thread.sleep(forTimeInterval: 2)
         capture("progress")
         leaveArticle()
 

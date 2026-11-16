@@ -16,13 +16,14 @@ extension Library {
     /// The key of the recorded refresh time in `setting`.
     static let lastRefreshKey = "last_refresh_at"
 
-    /// The sources a refresh of `scope` collects: those of kind `feed` that
-    /// are not paused, in a stable order. Paused, web-page and other kinds
-    /// are never included.
+    /// The sources a refresh of `scope` collects: those of a kind collected
+    /// as a feed (`feed`, `github`) that are not paused, in a stable order.
+    /// Paused, web-page and other kinds are never included.
     public func refreshTargets(_ scope: RefreshScope) async throws -> [UUID] {
         try await read { db in
-            var sql = "SELECT id FROM source WHERE kind = ? AND paused = 0"
-            var arguments: [any DatabaseValueConvertible] = [SourceKind.feed.rawValue]
+            let kinds = SourceKind.allCases.filter(\.isCollectedAsFeed).map(\.rawValue)
+            var sql = "SELECT id FROM source WHERE kind IN (\(kinds.map { _ in "?" }.joined(separator: ", "))) AND paused = 0"
+            var arguments: [any DatabaseValueConvertible] = kinds
             switch scope {
             case .library:
                 break

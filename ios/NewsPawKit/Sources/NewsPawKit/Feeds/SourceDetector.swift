@@ -12,6 +12,9 @@ public struct FeedCandidate: Sendable, Hashable {
     /// The address to store: the requested normal form, or its https twin
     /// when the fetch ended there (RD05 decision 3).
     public let address: String
+    /// The kind of source Save stores: `github` for one of a repository's
+    /// built feeds (RD07 decision 9), else `feed`.
+    public let kind: SourceKind
     public let format: ParsedFeed.Format
     /// The feed's own title.
     public let title: String?
@@ -26,8 +29,9 @@ public struct FeedCandidate: Sendable, Hashable {
     /// What Save stores.
     let fetched: FetchedFeed
 
-    init(address: String, fetched: FetchedFeed, pageAddress: String?) {
+    init(address: String, fetched: FetchedFeed, pageAddress: String?, kind: SourceKind = .feed) {
         self.address = address
+        self.kind = kind
         self.fetched = fetched
         let feed = fetched.feed
         format = feed.format
@@ -85,6 +89,20 @@ public struct PageDetection: Sendable, Hashable {
     public let declaredCount: Int
 }
 
+/// A GitHub repository whose feeds were checked (RD07 decision 6).
+public struct GitHubDetection: Sendable, Hashable {
+    public let repository: GitHubRepository
+    /// The typed address's normal form: what "This page itself" saves.
+    public let address: String
+    /// Releases, Tags and Commits, in that order, each at its built address.
+    public let candidates: [DeclaredCandidate]
+
+    /// Which of the repository's feeds `candidate` is.
+    public func feed(of candidate: DeclaredCandidate) -> GitHubFeed? {
+        GitHubFeed.allCases.first { repository.feedAddress($0) == candidate.address }
+    }
+}
+
 /// Why the typed address could not be read.
 public struct DetectionFailure: Sendable, Hashable {
     /// The requested normal form.
@@ -108,6 +126,9 @@ public enum Detection: Sendable, Hashable {
     case feed(FeedCandidate)
     /// The address is a document that is not a feed.
     case page(PageDetection)
+    /// The address is a GitHub repository with at least one feed that can
+    /// be offered (RD07).
+    case github(GitHubDetection)
     /// The address could not be read.
     case failed(DetectionFailure)
 }
@@ -120,6 +141,11 @@ public enum Detection: Sendable, Hashable {
 /// fetched once, at most `maximumConcurrentCandidates` at a time, the whole
 /// phase within `candidateLimit`. Nothing else the page mentions is
 /// requested.
+///
+/// A GitHub repository address (RD07) is not looked up and its page is not
+/// fetched: its three built feed addresses go through the same candidate
+/// phase instead. When all three are gone, the address takes the path
+/// above.
 public struct SourceDetector: Sendable {
     /// Candidate fetches in flight at once.
     public static let maximumConcurrentCandidates = 4
@@ -145,6 +171,14 @@ public struct SourceDetector: Sendable {
         case .success(let address): parsed = address
         }
         let requested = parsed.normalForm
+        if let repository = GitHubRepository(normalForm: requested) {
+            if let detection = try await detectRepository(repository, typed: requested, in: library) {
+                return detection
+            }
+            // All three gone: not a public repository. The ordinary path
+            // runs on the typed address (RD07 decision 4).
+            try Task.checkCancellation()
+        }
         if let existing = try await library.existingSource(atAddress: requested) {
             return .duplicate(existing)
         }
@@ -181,6 +215,29 @@ public struct SourceDetector: Sendable {
         }
     }
 
+    /// Checks the repository's three feeds, built and never read from a
+    /// page, looked up ignoring ASCII case (RD07 decisions 2–6). `nil` when
+    /// all three are gone.
+    private func detectRepository(_ repository: GitHubRepository, typed: String, in library: Library) async throws -> Detection? {
+        let feeds = GitHubFeed.allCases.map { DeclaredFeed(address: repository.feedAddress($0), title: nil) }
+        let candidates = try await check(
+            feeds, declaredOn: repository.pageAddress, kind: .github, ignoringCase: true, in: library
+        )
+        if candidates.allSatisfy({ $0.state == .failed(.gone) }) {
+            return nil
+        }
+        let offerable = candidates.contains { candidate in
+            if case .failed = candidate.state { false } else { true }
+        }
+        guard offerable else {
+            // The built addresses are https: the hint about http does not
+            // apply.
+            guard case .failed(let reason) = candidates[0].state else { return nil }
+            return .failed(failure(reason, address: typed, addedScheme: false))
+        }
+        return .github(GitHubDetection(repository: repository, address: typed, candidates: candidates))
+    }
+
     private func failure(_ reason: CollectionFailure, address: String, addedScheme: Bool) -> DetectionFailure {
         let offersWebPage = switch reason {
         case .httpStatus, .tooLarge, .tooManyRedirects: true
@@ -193,11 +250,19 @@ public struct SourceDetector: Sendable {
 
     /// Looks each declared feed up, then fetches the ones not in the
     /// library, within the overall limit.
-    private func check(_ feeds: [DeclaredFeed], declaredOn page: String, in library: Library) async throws -> [DeclaredCandidate] {
+    ///
+    /// - Parameters:
+    ///   - kind: the kind a usable candidate is saved as.
+    ///   - ignoringCase: whether the lookup ignores ASCII case (a
+    ///     repository's built feeds); a declared feed is looked up exactly.
+    private func check(
+        _ feeds: [DeclaredFeed], declaredOn page: String, kind: SourceKind = .feed, ignoringCase: Bool = false,
+        in library: Library
+    ) async throws -> [DeclaredCandidate] {
         var states: [DeclaredCandidate.State?] = Array(repeating: nil, count: feeds.count)
         var pending: [Int] = []
         for (index, feed) in feeds.enumerated() {
-            if let existing = try await library.existingSource(atAddress: feed.address) {
+            if let existing = try await library.existingSource(atAddress: feed.address, ignoringCase: ignoringCase) {
                 states[index] = .alreadyAdded(existing)
             } else {
                 pending.append(index)
@@ -221,7 +286,9 @@ public struct SourceDetector: Sendable {
                     next += 1
                     running += 1
                     group.addTask {
-                        let state = try? await Self.fetchCandidate(address, declaredOn: page, with: fetcher, in: library)
+                        let state = try? await Self.fetchCandidate(
+                            address, declaredOn: page, kind: kind, with: fetcher, in: library
+                        )
                         return (index, state)
                     }
                 }
@@ -255,7 +322,7 @@ public struct SourceDetector: Sendable {
     /// Fetches one declared feed. `nil` when cancelled: by the limit, it is
     /// not checked.
     private static func fetchCandidate(
-        _ address: String, declaredOn page: String, with fetcher: FeedFetcher, in library: Library
+        _ address: String, declaredOn page: String, kind: SourceKind, with fetcher: FeedFetcher, in library: Library
     ) async throws -> DeclaredCandidate.State {
         let result = try await fetcher.fetch(address)
         try Task.checkCancellation()
@@ -268,7 +335,7 @@ public struct SourceDetector: Sendable {
                 }
                 stored = upgraded
             }
-            return .usable(FeedCandidate(address: stored, fetched: fetched, pageAddress: page))
+            return .usable(FeedCandidate(address: stored, fetched: fetched, pageAddress: page, kind: kind))
         case .notAFeed:
             return .failed(.notAFeed)
         case .failed(let reason):

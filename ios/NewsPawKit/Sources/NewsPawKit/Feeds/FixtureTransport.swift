@@ -101,6 +101,27 @@ public final class FixtureTransport: Transport {
         /// (never answers) and `plain` (not HTML). Any other name does not
         /// answer.
         public static let fullTextPages = "https://fulltext.example.invalid/pages/"
+        /// A GitHub repository whose three feeds answer with items (RD07);
+        /// its Releases feed adds, at every answer, one undated release no
+        /// earlier answer had, in this process or another. Its address is on
+        /// GitHub's host because recognition is bound to it; nothing is
+        /// requested from that host, and the items' links are under
+        /// `example.invalid`.
+        public static let gitHubProject = "https://github.com/NewsPaw-Fixture/Project"
+        /// A repository with no tag: Releases and Tags without entries,
+        /// Commits with items.
+        public static let gitHubUntagged = "https://github.com/NewsPaw-Fixture/Untagged"
+        /// A repository whose Tags feed answers after the candidate limit on
+        /// a transport's first request for it, at once afterwards.
+        public static let gitHubSlow = "https://github.com/NewsPaw-Fixture/Slow"
+    }
+
+    /// The feed addresses of the fixture repositories, as detection builds
+    /// them.
+    private enum GitHubFeedAddress {
+        static func of(_ repository: String, _ feed: String) -> String {
+            "https://github.com/newspaw-fixture/\(repository)/\(feed).atom"
+        }
     }
 
     /// How many requests for the full-text pages this transport was asked
@@ -117,6 +138,7 @@ public final class FixtureTransport: Transport {
 
     private let sequenceRequests = Mutex(0)
     private let pageRequestCount = Mutex(0)
+    private let slowTagsRequests = Mutex(0)
     private let stallingRequests = Mutex(0)
     /// When `flaky.png` was first asked for.
     private let flakyImageFirstRequest = Mutex<ContinuousClock.Instant?>(nil)
@@ -130,6 +152,7 @@ public final class FixtureTransport: Transport {
             TransportResponse(finalURL: url, status: status, headers: ["Content-Type": type], body: Data(body.utf8))
         }
         let rss = "application/rss+xml; charset=utf-8"
+        let atomType = "application/atom+xml; charset=utf-8"
         let html = "text/html; charset=utf-8"
         switch url.absoluteString {
         case Address.feed:
@@ -192,6 +215,31 @@ public final class FixtureTransport: Transport {
             return answer(Self.longCountingFeed(fresh: String(UUID().uuidString.prefix(8))), type: rss)
         case Address.reading:
             return answer(Self.readingFeed, type: rss)
+        case GitHubFeedAddress.of("project", "releases"):
+            return answer(Self.gitHubReleases(repository: "project", fresh: String(UUID().uuidString.prefix(8)).lowercased()), type: atomType)
+        case GitHubFeedAddress.of("project", "tags"):
+            return answer(Self.gitHubTags(repository: "project"), type: atomType)
+        case GitHubFeedAddress.of("project", "commits"):
+            return answer(Self.gitHubCommits(repository: "project"), type: atomType)
+        case GitHubFeedAddress.of("untagged", "releases"):
+            return answer(Self.gitHubEmpty(repository: "untagged", title: "Release notes from Untagged"), type: atomType)
+        case GitHubFeedAddress.of("untagged", "tags"):
+            return answer(Self.gitHubEmpty(repository: "untagged", title: "Tags from Untagged"), type: atomType)
+        case GitHubFeedAddress.of("untagged", "commits"):
+            return answer(Self.gitHubCommits(repository: "untagged"), type: atomType)
+        case GitHubFeedAddress.of("slow", "releases"):
+            return answer(Self.gitHubReleases(repository: "slow", fresh: nil), type: atomType)
+        case GitHubFeedAddress.of("slow", "tags"):
+            let number = slowTagsRequests.withLock { count in
+                count += 1
+                return count
+            }
+            if number == 1 {
+                try await Task.sleep(for: Self.slowAnswer)
+            }
+            return answer(Self.gitHubTags(repository: "slow"), type: atomType)
+        case GitHubFeedAddress.of("slow", "commits"):
+            return answer(Self.gitHubCommits(repository: "slow"), type: atomType)
         case let address where address.hasPrefix(Address.readingImages):
             return try readingImage(String(address.dropFirst(Address.readingImages.count)), at: url)
         case Address.fullText:
@@ -549,6 +597,101 @@ public final class FixtureTransport: Transport {
             </channel></rss>
             """
     }()
+    // MARK: - GitHub repositories (RD07)
+
+    /// One entry shaped like those of a repository's Atom feeds: the
+    /// author's avatar as `media:thumbnail`, `updated` and no `published`.
+    private static func gitHubEntry(
+        id: String, link: String, title: String, hoursAgo: Int?, content: String?
+    ) -> String {
+        let updated = hoursAgo.map { "<updated>\(isoDate(hoursAgo: $0))</updated>" } ?? ""
+        let body = content.map { "<content type=\"html\">\($0)</content>" } ?? "<content></content>"
+        return """
+              <entry>
+                <id>\(id)</id>
+                \(updated)
+                <link rel="alternate" type="text/html" href="\(link)"/>
+                <title>\(title)</title>
+                \(body)
+                <author><name>fixture-maintainer</name></author>
+                <media:thumbnail height="30" width="30" url="https://example.invalid/avatars/fixture-maintainer.png"/>
+              </entry>
+            """
+    }
+
+    private static func gitHubDocument(repository: String, title: String, entries: [String]) -> String {
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" xml:lang="en-US">
+          <id>tag:github.com,2008:https://example.invalid/newspaw-fixture/\(repository)/releases</id>
+          <link type="text/html" rel="alternate" href="https://example.invalid/newspaw-fixture/\(repository)"/>
+          <title>\(title)</title>
+          <updated>\(isoDate(hoursAgo: 0))</updated>
+        \(entries.joined(separator: "\n"))
+        </feed>
+        """
+    }
+
+    /// The fixed releases, newest first.
+    private static let gitHubVersions: [(tag: String, hoursAgo: Int, notes: String)] = [
+        ("v2.1.0", 72, "&lt;p&gt;Adds a lantern to the reading lamp.&lt;/p&gt;"),
+        ("v2.0.1", 240, "&lt;p&gt;Fixes the wick.&lt;/p&gt;"),
+        ("v2.0.0", 720, "&lt;p&gt;A tag message without a published release.&lt;/p&gt;"),
+    ]
+
+    /// Releases: the fixed ones, after one undated `fresh` one when given.
+    private static func gitHubReleases(repository: String, fresh: String?) -> String {
+        let base = "https://example.invalid/newspaw-fixture/\(repository)/releases/tag/"
+        var entries = gitHubVersions.map { version in
+            gitHubEntry(
+                id: "tag:github.com,2008:Repository/1000/\(version.tag)", link: base + version.tag, title: version.tag,
+                hoursAgo: version.hoursAgo, content: version.notes
+            )
+        }
+        if let fresh {
+            entries.insert(gitHubEntry(
+                id: "tag:github.com,2008:Repository/1000/nightly-\(fresh)", link: base + "nightly-\(fresh)",
+                title: "nightly-\(fresh)", hoursAgo: nil, content: "&lt;p&gt;A nightly build.&lt;/p&gt;"
+            ), at: 0)
+        }
+        return gitHubDocument(repository: repository, title: "Release notes from \(repository)", entries: entries)
+    }
+
+    /// Tags: Releases' identities and links, no content.
+    private static func gitHubTags(repository: String) -> String {
+        let base = "https://example.invalid/newspaw-fixture/\(repository)/releases/tag/"
+        let entries = gitHubVersions.map { version in
+            gitHubEntry(
+                id: "tag:github.com,2008:Repository/1000/\(version.tag)", link: base + version.tag, title: version.tag,
+                hoursAgo: version.hoursAgo, content: nil
+            )
+        }
+        return gitHubDocument(repository: repository, title: "Tags from \(repository)", entries: entries)
+    }
+
+    /// Commits: titles between line breaks and spaces, the message as
+    /// content.
+    private static func gitHubCommits(repository: String) -> String {
+        let commits = [("Polish the reading lamp", 5), ("Trim the wick", 30), ("Start the project", 800)]
+        let entries = commits.enumerated().map { index, commit in
+            let sha = String(repeating: String(index + 1), count: 40)
+            return gitHubEntry(
+                id: "tag:github.com,2008:Grit::Commit/\(sha)",
+                link: "https://example.invalid/newspaw-fixture/\(repository)/commit/\(sha)",
+                title: "\n        \(commit.0)\n    ", hoursAgo: commit.1,
+                content: "&lt;pre style=&#39;white-space:pre-wrap;width:81ex&#39;&gt;\(commit.0)&lt;/pre&gt;"
+            )
+        }
+        return gitHubDocument(repository: repository, title: "Recent Commits to \(repository):main", entries: entries)
+    }
+
+    private static func gitHubEmpty(repository: String, title: String) -> String {
+        gitHubDocument(repository: repository, title: title, entries: [])
+    }
+
+    private static func isoDate(hoursAgo hours: Int) -> String {
+        ISO8601DateFormatter().string(from: fixtureNow.addingTimeInterval(-3600 * Double(hours)))
+    }
 
     private static func channel(title: String, items: [String]) -> String {
         """

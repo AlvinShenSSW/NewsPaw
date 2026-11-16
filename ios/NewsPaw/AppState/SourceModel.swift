@@ -154,18 +154,19 @@ final class SourceModel {
     }
 
     /// Whether a refresh of `category` would collect anything: it has a
-    /// feed that is not paused.
+    /// source collected as a feed (a feed, a GitHub repository) that is not
+    /// paused.
     func hasRefreshTarget(in category: UUID) -> Bool {
-        sources(in: category).contains { $0.kind == .feed && !$0.paused }
+        sources(in: category).contains { $0.kind.isCollectedAsFeed && !$0.paused }
     }
 
     /// Whether a list's Refresh would collect anything: its category's or
     /// its source's targets, or the library's for All Unread and Starred.
     func hasRefreshTarget(for list: ArticleListKind) -> Bool {
         switch list {
-        case .allUnread, .starred: summaries.contains { $0.kind == .feed && !$0.paused }
+        case .allUnread, .starred: summaries.contains { $0.kind.isCollectedAsFeed && !$0.paused }
         case .category(let id): hasRefreshTarget(in: id)
-        case .source(let id): summary(id).map { $0.kind == .feed && !$0.paused } ?? false
+        case .source(let id): summary(id).map { $0.kind.isCollectedAsFeed && !$0.paused } ?? false
         }
     }
 

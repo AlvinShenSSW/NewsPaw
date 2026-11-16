@@ -31,12 +31,18 @@ extension Library {
 
     /// The source stored at `address` (a normal form), with its category's
     /// name, for the duplicate message.
-    public func existingSource(atAddress address: String) async throws -> ExistingSource? {
+    ///
+    /// - Parameter ignoringCase: whether letters are compared ignoring ASCII
+    ///   case, as for a GitHub repository's built feed addresses, which
+    ///   GitHub answers in any case (RD07 decision 3). Every other lookup is
+    ///   exact.
+    public func existingSource(atAddress address: String, ignoringCase: Bool = false) async throws -> ExistingSource? {
         try await read { db in
             guard let row = try Row.fetchOne(db, sql: """
                 SELECT source.id AS id, source.name AS name, category.id AS category_id, category.name AS category_name
                 FROM source JOIN category ON category.id = source.category_id
-                WHERE source.url = ?
+                WHERE source.url = ?\(ignoringCase ? " COLLATE NOCASE" : "")
+                ORDER BY source.rowid LIMIT 1
                 """, arguments: [address])
             else { return nil }
             return ExistingSource(
@@ -46,9 +52,10 @@ extension Library {
         }
     }
 
-    /// Adds a feed source with the articles, validators and success time of
-    /// the fetch that detected it, in one transaction and under one clock
-    /// reading; no request is made.
+    /// Adds a feed source — of the candidate's kind, `feed` or `github` —
+    /// with the articles, validators and success time of the fetch that
+    /// detected it, in one transaction and under one clock reading; no
+    /// request is made.
     ///
     /// - Returns: the new source's identifier.
     /// - Throws: `unknownCategory`, `duplicateAddress`, `emptyName`,
@@ -60,7 +67,7 @@ extension Library {
         let fetched = candidate.fetched
         let now = now()
         let source = Source(
-            id: UUID(), categoryID: categoryID, kind: .feed, url: address, name: name, siteURL: candidate.siteURL,
+            id: UUID(), categoryID: categoryID, kind: candidate.kind, url: address, name: name, siteURL: candidate.siteURL,
             paused: false, autoTranslate: .inherit, bodyMode: .auto, translatePage: false,
             etag: fetched.validators.etag, lastModified: fetched.validators.lastModified,
             lastSuccessAt: now, lastError: nil, updatedAt: now
@@ -68,7 +75,8 @@ extension Library {
         try await write { db in
             try Self.insertNew(source, in: db)
             _ = try Self.insertArticles(
-                fetched.feed.items, sourceKey: source.id.databaseKey, categoryKey: categoryID.databaseKey, now: now, in: db
+                Self.itemsToStore(fetched.feed.items, kind: source.kind), sourceKey: source.id.databaseKey,
+                categoryKey: categoryID.databaseKey, now: now, in: db
             )
         }
         return source.id

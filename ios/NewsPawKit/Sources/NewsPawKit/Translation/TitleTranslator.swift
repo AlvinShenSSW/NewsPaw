@@ -611,8 +611,9 @@ public actor TitleTranslator {
         }
         switch await attempt(part, role: .backup, automatic: automatic, locale: locale) {
         case .accepted(let entries, let model):
-            await storeAccepted(part, entries: entries, model: model, locale: locale, automatic: automatic)
-            return .stored
+            // Not stored: the articles are blocked for storage (and, when
+            // automatic, sending pauses) by `storeAccepted`.
+            return await storeAccepted(part, entries: entries, model: model, locale: locale, automatic: automatic) ? .stored : .notStored
         case .content(let reason, let model):
             return await storeFailed(part, failure: reason, model: model, locale: locale, automatic: automatic) ? .failed(reason) : .notStored
         case .service, .setUp:
@@ -685,7 +686,9 @@ public actor TitleTranslator {
             case .noModelSetUp, .keyNeeded, .keyRejected, .modelNotFound: return superseded ? .superseded : .setUp(failure)
             }
         } catch {
-            // The slot could not be read.
+            // The slot could not be read, or the usage row of this automatic
+            // request could not be written (`UsageNotRecorded`): the count
+            // of the daily limit cannot be trusted, so sending pauses.
             return .storage
         }
         if Task.isCancelled {

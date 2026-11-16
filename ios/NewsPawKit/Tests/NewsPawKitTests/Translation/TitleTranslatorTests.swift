@@ -377,6 +377,11 @@ struct TitleTranslatorTests {
         #expect(await fixture.translator.pausedBy == nil, "\(name)")
         #expect(fixture.blocked[id] == nil, "\(name)")
         #expect(fixture.service.requests.map(\.host).last == repaired, "\(name)")
+        // No pause on the repaired slot that the app's coming to the front
+        // or a refresh's end would have to end (the gate's G2).
+        await fixture.resume(.cameToFront)
+        await fixture.resume(.refreshEnded)
+        #expect(await fixture.translator.pausedBy == nil, "\(name)")
         let row = try await fixture.rawTranslation(id)
         #expect(row?.state == "done", "\(name): no failed row; translated on the new slot")
         #expect(try await fixture.translation(id)?.title == "T:Story one", "\(name)")
@@ -647,6 +652,49 @@ struct TitleTranslatorTests {
         #expect(fixture.service.requests.count == 1, "not sent again, not to the backup")
         #expect(await fixture.translator.pausedBy == .storage)
         #expect(fixture.blocked == Dictionary(uniqueKeysWithValues: ids.map { ($0, .storage) }))
+    }
+
+    @Test("an automatic request whose usage row cannot be written pauses sending for storage: the daily limit is not passed by uncounted requests")
+    func usageNotRecordedPauses() async throws {
+        let fixture = try await TranslatorFixture.make()
+        defer { fixture.remove() }
+        try await fixture.library.setDailyAutomaticLimit(1)
+        // 25 articles: two requests (20 and 5) without the pause.
+        let ids = try await fixture.englishArticles(25, in: try await fixture.source())
+        try await fixture.library.pool.write { db in
+            try db.execute(sql: "CREATE TRIGGER fail_usage BEFORE INSERT ON usage BEGIN SELECT RAISE(FAIL, 'refused by the test'); END;")
+        }
+        await fixture.start()
+        #expect(fixture.service.requests.count == 1, "at most one uncounted automatic request")
+        #expect(try await fixture.usage().isEmpty)
+        #expect(await fixture.translator.pausedBy == .storage)
+        #expect(Set(fixture.blocked.keys) == Set(ids))
+        #expect(fixture.blocked.values.allSatisfy { $0 == .storage })
+
+        // A request the owner asks for goes on as before, uncounted.
+        #expect(await fixture.translator.retry(ids[0], backup: false) == .stored)
+        #expect(fixture.service.requests.count == 2)
+    }
+
+    @Test("an accepted backup reply that cannot be stored is not reported as stored, and the pause stays")
+    func backupReplyNotStored() async throws {
+        let service = TranslationService { host, _, _ in host == Self.primary ? .status(503) : .texts(TranslationService.marked) }
+        let fixture = try await TranslatorFixture.make(service: service, backup: true)
+        defer { fixture.remove() }
+        let id = try await fixture.article("A story", in: try await fixture.source())
+        try await fixture.library.pool.write { db in
+            try db.execute(sql: "CREATE TRIGGER fail_translation BEFORE INSERT ON translation BEGIN SELECT RAISE(FAIL, 'refused by the test'); END;")
+        }
+        await fixture.start()
+        #expect(fixture.service.requests.map(\.host) == [Self.primary, Self.backup])
+        #expect(await fixture.translator.pausedBy == .storage)
+
+        // A manual retry: the primary fails, the backup answers, the store
+        // fails: said as a storage failure, and the pause is not ended.
+        #expect(await fixture.translator.retry(id, backup: false) == .notStored(.storage))
+        #expect(fixture.service.requests.map(\.host) == [Self.primary, Self.backup, Self.primary, Self.backup])
+        #expect(await fixture.translator.pausedBy == .storage)
+        #expect(try await fixture.translation(id) == nil)
     }
 
     @Test("stopping cancels the request in flight and stores nothing; nothing starts afterwards")

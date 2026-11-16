@@ -183,6 +183,9 @@ final class CategoryMoveTests: IsolationTestCase {
         capture("move-copied-not-removed")
         message.buttons["OK"].tap()
         waitForAbsence(message)
+        // The sheet stays open after a failure; it is closed by hand.
+        waitFor(button(AccessibilityID.cancelButton)).tap()
+        waitForAbsence(app.textFields[AccessibilityID.nameField])
         // Still here, with its source.
         expand("Velvet")
         waitFor(sourceRow("Fixture Feed"))

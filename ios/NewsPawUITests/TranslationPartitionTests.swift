@@ -1,9 +1,10 @@
 import XCTest
 
-/// RD14 criterion 13 in the app: the adult workspace has no translation of
-/// its own until RD19, shows its originals, and sends nothing through the
-/// normal library's models, which are set up and translate the normal
-/// partition's rows.
+/// RD14 criterion 13 in the app, and RD19 criterion 4's first half: the
+/// adult workspace translates only through the adult library's own models
+/// (RD19); with none set up it shows its originals and sends nothing
+/// through the normal library's models, which are set up and translate the
+/// normal partition's rows.
 final class TranslationPartitionTests: AdultTestCase {
     static let feed = "https://translation.example.invalid/rss.xml"
     static let source = "Translation Feed"

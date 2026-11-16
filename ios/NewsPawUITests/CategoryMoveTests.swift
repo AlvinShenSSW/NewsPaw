@@ -46,6 +46,8 @@ final class CategoryMoveTests: IsolationTestCase {
         // The body's picture is in the adult cache.
         waitForImageCache(zero: false)
         openCategoryList("Velvet")
+        // Read at its first opening: listed under All.
+        chooseFilter("All")
         if !usesTabs {
             // The panes: the article open beside the list.
             openArticle("Picture story")

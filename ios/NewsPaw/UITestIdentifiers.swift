@@ -372,12 +372,13 @@ enum DebugAccessibilityID {
     /// 4): its label is `file=<0|1> pool=<open|closed>
     /// library=<held|released> workspace=<none|held|released>
     /// browser=<none|held|released> sessions=<number> pages=<number>
-    /// translationRequests=<number>`. `pool` is whether connections are open
+    /// translationRequests=<number> adultStore=<listed|absent>`. `pool` is whether connections are open
     /// on the file; the other three are whether the objects are gone from
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
     /// requests the translator fixture has answered in this process (RD14
-    /// criterion 13).
+    /// criterion 13); `adultStore` is whether WebKit lists the adult
+    /// browser's own website data store (RD19).
     static let adultReport = "debug.adultReport"
 }
 #endif

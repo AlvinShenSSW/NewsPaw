@@ -47,6 +47,13 @@ class IsolationTestCase: AdultTestCase {
 
     // MARK: - Settings › Adult Partition
 
+    /// Settings, at its root, also from a pushed article or page: on the
+    /// tab structure they hide the tab bar.
+    override func openSettings() {
+        leaveBrowser()
+        super.openSettings()
+    }
+
     /// Settings › Adult Partition, from inside the adult partition (it
     /// opens without asking) or with the stand-in's next answer.
     func openAdultSettings() {
@@ -155,6 +162,8 @@ class IsolationTestCase: AdultTestCase {
     func openStoragePage(of article: String, in category: String) -> String {
         leaveBrowser()
         openCategoryList(category)
+        // Read since its first opening: listed under All.
+        chooseFilter("All")
         openArticle(article)
         waitFor(button(AccessibilityID.openOriginalButton)).tap()
         waitForPage("Original of \(article.lowercased().replacingOccurrences(of: " ", with: "-"))")

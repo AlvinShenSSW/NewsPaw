@@ -141,6 +141,8 @@ final class AppModel {
     /// once, and a pause between its steps.
     @ObservationIgnored private var failNextMoveDeletion = false
     @ObservationIgnored private var moveStepPause: Duration?
+    /// The adult browser's store under this UI-test library directory.
+    @ObservationIgnored private var uiTestAdultStore: UUID?
     #endif
 
     /// One unlock from the choice to its end.
@@ -256,6 +258,7 @@ final class AppModel {
             let adultBrowserData: any AdultBrowserData
             if let name = options.libraryDirectory?.lastPathComponent {
                 let identifier = BrowserDataStores.uiTestAdultIdentifier(directoryName: name)
+                uiTestAdultStore = identifier
                 await BrowserDataStores.removeUITestStores(keeping: identifier)
                 browser = BrowserSetup(
                     dataStore: BrowserDataStores.uiTestStore(for: .normal, directoryName: name), addressMap: BrowserFixtures.map,
@@ -894,8 +897,9 @@ final class AppModel {
     /// it, whether the library object, the adult workspace and its browser
     /// model are gone from memory, how many browser sessions the app has
     /// made, how many article pages the fixture transport was asked for
-    /// (RD12), and how many requests the translator fixture has answered
-    /// (RD14).
+    /// (RD12), how many requests the translator fixture has answered
+    /// (RD14), and whether WebKit lists the adult browser's own store
+    /// (RD19 assumption A2).
     func adultDebugReport() async -> String {
         guard let gate else { return "" }
         let file = gate.adultLibraryFileExists ? 1 : 0
@@ -907,7 +911,13 @@ final class AppModel {
         return "file=\(file) pool=\(pool) library=\(library) workspace=\(state(lastAdultWorkspace)) "
             + "browser=\(state(lastAdultBrowser)) sessions=\(BrowserModel.sessionsMade) "
             + "pages=\((parts?.transport as? FixtureTransport)?.pageRequests ?? -1) "
-            + "translationRequests=\(FixtureModelHTTP.translationRequests)"
+            + "translationRequests=\(FixtureModelHTTP.translationRequests) "
+            + "adultStore=\(await adultStoreIsListed() ? "listed" : "absent")"
+    }
+
+    private func adultStoreIsListed() async -> Bool {
+        guard let uiTestAdultStore else { return false }
+        return await WKWebsiteDataStore.allDataStoreIdentifiers.contains(uiTestAdultStore)
     }
     #endif
 }

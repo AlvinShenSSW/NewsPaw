@@ -191,6 +191,9 @@ final class AdultIsolationTests: IsolationTestCase {
         waitFor(adultRow)
         XCTAssertFalse(app.alerts.firstMatch.waitForExistence(timeout: 2), "the deletion said: \(alertTexts())")
         waitForReport("file=0", Self.closed, Self.dropped)
+        // Assumption A2: whether WebKit removed the store, or refused it as
+        // in use (its data removed); either counts as removed.
+        record("A2 after Delete with an article and its page open", report)
 
         turnOnAdult()
         enterAdult()

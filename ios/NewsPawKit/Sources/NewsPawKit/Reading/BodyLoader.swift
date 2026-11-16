@@ -1,13 +1,16 @@
 import Foundation
 
-/// An article reduced from its page, ready to lay out: its blocks and the
-/// address that answered.
+/// An article reduced from its page, ready to lay out: its blocks, the
+/// address that answered and when it was fetched.
 public struct ExtractedBody: Sendable, Hashable {
     public let blocks: ArticleBlocks
     /// The extraction's title, as Readability read it; empty for a stored
     /// one, whose envelope does not keep it.
     public let title: String
     public let address: URL
+    /// When the page was fetched: the stored row's time, or this fetch's
+    /// (Article Info shows it; RD15 decision 12).
+    public let fetchedAt: Date
 }
 
 /// Why a page gave no body (RD12 decision 6).
@@ -110,7 +113,7 @@ public final class BodyLoader {
         // Cut by the extractor when it was fetched: still incomplete.
         blocks.isCut = blocks.isCut || stored.isCut
         guard !isStopped, BodyPlan.isUsable(blocks.blocks, over: feed) else { return nil }
-        return ExtractedBody(blocks: blocks, title: "", address: stored.address)
+        return ExtractedBody(blocks: blocks, title: "", address: stored.address, fetchedAt: stored.fetchedAt)
     }
 
     /// Whether a lasting failure of the article's page is remembered: the
@@ -152,12 +155,12 @@ public final class BodyLoader {
         }
         try checkGoing()
         do {
-            try await library.storeExtraction(html: body.html, address: body.address, isCut: body.extractorCut, ofArticle: id)
-            return .extracted(body.extracted, stored: true)
+            let fetchedAt = try await library.storeExtraction(html: body.html, address: body.address, isCut: body.extractorCut, ofArticle: id)
+            return .extracted(body.extracted(at: fetchedAt), stored: true)
         } catch LibraryError.unknownArticle {
             return .articleGone
         } catch {
-            return .extracted(body.extracted, stored: false)
+            return .extracted(body.extracted(at: now()), stored: false)
         }
     }
 
@@ -199,7 +202,7 @@ public final class BodyLoader {
         guard ArticleBlocks.isArticle(page.blocks.blocks) else {
             throw PageFailure.notUsable
         }
-        return page.extracted
+        return page.extracted(at: Date())
     }
 
     // MARK: - The fetch and the extraction
@@ -215,8 +218,8 @@ public final class BodyLoader {
         /// extraction, since its HTML no longer shows it.
         let extractorCut: Bool
 
-        var extracted: ExtractedBody {
-            ExtractedBody(blocks: blocks, title: title, address: address)
+        func extracted(at fetchedAt: Date) -> ExtractedBody {
+            ExtractedBody(blocks: blocks, title: title, address: address, fetchedAt: fetchedAt)
         }
     }
 

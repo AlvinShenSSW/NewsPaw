@@ -61,4 +61,40 @@ struct FixtureModelHTTPTests {
         #expect(ContinuousClock.now - start >= .seconds(2))
         #expect(FixtureModelHTTP.translationRequests - before >= 6)
     }
+
+    @Test("RD15: stall-once stalls its first request until cancelled and answers later ones; fail-once answers 503 once; refuse-primary refuses on the primary only")
+    func bodyWords() async throws {
+        let fixture = try await ModelsFixture.make(http: FixtureModelHTTP())
+        defer { fixture.remove() }
+        try await fixture.save(address: FixtureModelHTTP.Address.translate)
+        try await fixture.save(.backup, address: FixtureModelHTTP.Address.translateBackup)
+        let instructions = TranslationPrompt.body(into: .simplifiedChinese)
+        let models = fixture.models
+        let before = FixtureModelHTTP.translationRequests
+        let stalled = Task {
+            try await models.send(texts: ["a fixture:stall-once b"], instructions: instructions, purpose: .body, role: .primary)
+        }
+        let deadline = ContinuousClock.now + .seconds(60)
+        while FixtureModelHTTP.translationRequests == before, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        stalled.cancel()
+        await #expect(throws: CancellationError.self) { try await stalled.value }
+        let start = ContinuousClock.now
+        let again = try await models.send(texts: ["a fixture:stall-once b"], instructions: instructions, purpose: .body, role: .primary)
+        #expect(again.texts == ["译[zh-Hans]：a fixture:stall-once b"])
+        #expect(ContinuousClock.now - start < .seconds(30))
+
+        await #expect(throws: ModelFailure.serverError) {
+            try await models.send(texts: ["a fixture:fail-once b"], instructions: instructions, purpose: .body, role: .primary)
+        }
+        let later = try await models.send(texts: ["a fixture:fail-once b"], instructions: instructions, purpose: .body, role: .primary)
+        #expect(later.texts == ["译[zh-Hans]：a fixture:fail-once b"])
+
+        await #expect(throws: ModelFailure.refused) {
+            try await models.send(texts: ["a fixture:refuse-primary b"], instructions: instructions, purpose: .body, role: .primary)
+        }
+        let backup = try await models.send(texts: ["a fixture:refuse-primary b"], instructions: instructions, purpose: .body, role: .backup)
+        #expect(backup.texts == ["译[zh-Hans]：a fixture:refuse-primary b"])
+    }
 }

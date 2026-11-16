@@ -190,4 +190,38 @@ struct PreferencesTests {
             #expect(!preferences.showOriginalTitles)
         }
     }
+
+    @Test("RD15: articles are translated when opened and open in Translation by default; both round-trip under their names")
+    func bodySettings() throws {
+        try withSuite { defaults in
+            let preferences = Preferences(defaults)
+            #expect(preferences.translatesBodyOnOpen)
+            #expect(preferences.readingDisplayMode == .translation)
+            preferences.translatesBodyOnOpen = false
+            #expect(!Preferences(defaults).translatesBodyOnOpen)
+            #expect(defaults.object(forKey: "translate_body_on_open") as? Bool == false)
+            for mode in ReadingDisplayMode.allCases {
+                preferences.readingDisplayMode = mode
+                #expect(Preferences(defaults).readingDisplayMode == mode)
+            }
+            #expect(defaults.string(forKey: "reading_display_mode") == "side_by_side")
+            #expect(ReadingDisplayMode.allCases.map(\.rawValue) == ["translation", "original", "side_by_side"])
+            #expect(ReadingDisplayMode.allCases.map(\.next) == [.original, .sideBySide, .translation])
+        }
+    }
+
+    @Test("RD15: a stored display mode outside the set reads as Translation, and a stored value that is no truth value as on")
+    func bodySettingsOutsideTheirSets() throws {
+        try withSuite { defaults in
+            defaults.set("columns", forKey: "reading_display_mode")
+            defaults.set("yes", forKey: "translate_body_on_open")
+            let preferences = Preferences(defaults)
+            #expect(preferences.readingDisplayMode == .translation)
+            #expect(preferences.translatesBodyOnOpen)
+            defaults.set(2, forKey: "reading_display_mode")
+            defaults.set(0, forKey: "translate_body_on_open")
+            #expect(preferences.readingDisplayMode == .translation)
+            #expect(preferences.translatesBodyOnOpen)
+        }
+    }
 }

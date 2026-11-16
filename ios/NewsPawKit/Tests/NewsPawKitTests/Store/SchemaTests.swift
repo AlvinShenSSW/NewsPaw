@@ -231,7 +231,7 @@ struct SchemaTests {
             }
             return (migrations, columns, indexes)
         }
-        #expect(migrations == ["v1", "v2", "v3", "v4", "v5", "v6"])
+        #expect(migrations == ["v1", "v2", "v3", "v4", "v5", "v6", "v7"])
         #expect(columns == Self.expectedColumns["article"]! + [ColumnInfo("content_html", "TEXT", notNull: false)])
         // v4 adds the order index (RD09).
         #expect(indexes == ["article_url": ["url"], "article_order": ["<expression>", "first_seen_at"]])
@@ -248,7 +248,7 @@ struct SchemaTests {
         let library = try await LibraryStore(directory: directory).openNormal()
 
         let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
-        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6"])
+        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6", "v7"])
         #expect(after.rows["setting"] == [])
         for table in ["category", "source", "article_body", "seen"] {
             #expect(after.rows[table] == before.rows[table], "rows of \(table)")
@@ -302,7 +302,7 @@ struct SchemaTests {
         let library = try await LibraryStore(directory: directory).openNormal()
 
         let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
-        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6"])
+        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6", "v7"])
         for table in ["category", "source", "article", "article_body", "seen"] {
             #expect(after.rows[table] == before.rows[table], "rows of \(table)")
         }
@@ -319,7 +319,7 @@ struct SchemaTests {
             try db.execute(sql: "CREATE TABLE test_after_v3 (note TEXT)")
         }
         let before = try await buildDatabase(in: directory, migrator: newer)
-        #expect(before.appliedMigrations == ["test_after_v3", "v1", "v2", "v3", "v4", "v5", "v6"])
+        #expect(before.appliedMigrations == ["test_after_v3", "v1", "v2", "v3", "v4", "v5", "v6", "v7"])
 
         try await expectRefusal(in: directory, migrator: Schema.migrator)
 
@@ -358,14 +358,14 @@ struct SchemaTests {
         let library = try await LibraryStore(directory: directory).openNormal()
 
         let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
-        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6"])
+        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6", "v7"])
         for table in ["category", "source", "article", "article_body", "seen", "setting"] {
             #expect(after.rows[table] == before.rows[table], "rows of \(table)")
         }
         #expect(after.integrity == ["ok"])
         // The only schema change of v4 is the order index; v5's tables and
         // index (RD13) and v6's table (RD14) are left out here.
-        let added = after.schema.filter { !before.schema.contains($0) && !["model_slot", "usage", "translation"].contains($0[2]) }
+        let added = after.schema.filter { !before.schema.contains($0) && !["model_slot", "usage", "translation", "body_translation"].contains($0[2]) }
         #expect(added == [["index", "article_order", "article",
                            "CREATE INDEX article_order ON article(COALESCE(published_at, first_seen_at), first_seen_at)"]])
         #expect(before.schema.allSatisfy { after.schema.contains($0) })

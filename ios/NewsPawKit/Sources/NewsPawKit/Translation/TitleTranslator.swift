@@ -52,6 +52,9 @@ public enum ManualTranslationOutcome: Sendable, Hashable {
     case gone
     /// The translator was stopped, or the work was cancelled.
     case cancelled
+    /// `translateIfWaiting` found the article with a row by the time it
+    /// ran: nothing was sent.
+    case notWaiting
 }
 
 /// What starts a resumption (decision 7), and which pauses it ends
@@ -101,6 +104,9 @@ public actor TitleTranslator {
     private struct ManualJob {
         let id: UUID
         let backup: Bool
+        /// Sent only when the article has no row in the reading language
+        /// when the job runs (`translateIfWaiting`).
+        var onlyIfWaiting = false
         let reply: CheckedContinuation<ManualTranslationOutcome, Never>
     }
 
@@ -244,6 +250,19 @@ public actor TitleTranslator {
         guard !isStopped else { return .cancelled }
         return await withCheckedContinuation { continuation in
             manualQueue.append(ManualJob(id: id, backup: backup, reply: continuation))
+            startWorker()
+        }
+    }
+
+    /// Translates an article whose body is being translated (RD15 decision
+    /// 10): a manual job, served first, not counted and not limited, as
+    /// `retry` to the primary, but one that sends nothing when the article
+    /// has a row in the reading language by the time it runs — after an
+    /// automatic request that held it, for one.
+    public func translateIfWaiting(_ id: UUID) async -> ManualTranslationOutcome {
+        guard !isStopped else { return .cancelled }
+        return await withCheckedContinuation { continuation in
+            manualQueue.append(ManualJob(id: id, backup: false, onlyIfWaiting: true, reply: continuation))
             startWorker()
         }
     }
@@ -812,6 +831,11 @@ public actor TitleTranslator {
             return .notStored(.storage)
         }
         guard let input = inputs.first else { return .gone }
+        // Read after the worker took the job: a row stored by any earlier
+        // request is seen here.
+        if job.onlyIfWaiting, input.hasTranslation {
+            return .notWaiting
+        }
         let judgement = TextLanguage.judge(title: input.title, excerpt: input.excerpt, reading: locale)
         switch judgement.decision {
         case .keep:

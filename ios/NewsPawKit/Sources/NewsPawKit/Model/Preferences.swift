@@ -67,11 +67,29 @@ public enum ReadingTypeface: String, Sendable, CaseIterable {
     case serif
 }
 
+/// How the reading screen shows a body (spec N05; RD15 decision 11): the
+/// translation, the original, or each translated block followed by its
+/// original. The raw values are what is stored.
+public enum ReadingDisplayMode: String, Sendable, CaseIterable {
+    case translation
+    case original
+    case sideBySide = "side_by_side"
+
+    public static let standard = ReadingDisplayMode.translation
+
+    /// The next mode in ux's order (Translation, Original, Side by Side),
+    /// for `T`.
+    public var next: ReadingDisplayMode {
+        let all = Self.allCases
+        return all[(all.firstIndex(of: self)! + 1) % all.count]
+    }
+}
+
 /// The settings kept in the system preferences store (spec section 4): the
-/// two refresh settings and the three translation settings (RD14), under the
-/// names the configuration file uses; the three reading settings (RD11) and
-/// the two device settings of the adult partition (RD18), which the
-/// configuration file never carries. A stored value outside its set reads
+/// two refresh settings and the four translation settings (RD14, RD15),
+/// under the names the configuration file uses; the four reading settings
+/// (RD11, RD15) and the two device settings of the adult partition (RD18),
+/// which the configuration file never carries. A stored value outside its set reads
 /// as the default. Nothing about a partition's content is kept here.
 ///
 /// Sendable by hand: its one stored property is a `UserDefaults`, which the
@@ -87,6 +105,8 @@ public struct Preferences: @unchecked Sendable {
     static let readingLocaleKey = "reading_locale"
     static let autoTranslateTitlesKey = "auto_translate_titles"
     static let showOriginalTitlesKey = "show_original_titles"
+    static let translateBodyOnOpenKey = "translate_body_on_open"
+    static let readingDisplayModeKey = "reading_display_mode"
 
     private let defaults: UserDefaults
 
@@ -177,6 +197,26 @@ public struct Preferences: @unchecked Sendable {
         get { truthValue(Self.showOriginalTitlesKey) ?? false }
         nonmutating set {
             defaults.set(newValue, forKey: Self.showOriginalTitlesKey)
+        }
+    }
+
+    /// Whether an article's body is translated when it opens (spec N06;
+    /// RD15 decision 1): on until turned off; off, it waits for Translate.
+    public var translatesBodyOnOpen: Bool {
+        get { truthValue(Self.translateBodyOnOpenKey) ?? true }
+        nonmutating set {
+            defaults.set(newValue, forKey: Self.translateBodyOnOpenKey)
+        }
+    }
+
+    /// The display mode an article opens in (RD15 decision 1): a device
+    /// setting, never exported. Another stored value reads as the default.
+    public var readingDisplayMode: ReadingDisplayMode {
+        get {
+            (defaults.object(forKey: Self.readingDisplayModeKey) as? String).flatMap(ReadingDisplayMode.init(rawValue:)) ?? .standard
+        }
+        nonmutating set {
+            defaults.set(newValue.rawValue, forKey: Self.readingDisplayModeKey)
         }
     }
 

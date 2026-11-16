@@ -6,8 +6,9 @@ import GRDB
 /// merged, and each keeps its name for good. Adding a value to one of the
 /// closed sets stored as text (`kind`, `overview`, `auto_translate`,
 /// `body_mode`, `origin`, from `v5` `role`, `preset`, `test_outcome`,
-/// `purpose`, `outcome`, and from `v6` `translation.state` and
-/// `translation.error`) also ships with a migration, even an empty one, so
+/// `purpose`, `outcome`, from `v6` `translation.state` and
+/// `translation.error`, and from `v7` `body_translation.state` and
+/// `body_translation.error`) also ships with a migration, even an empty one, so
 /// that an older build refuses the database as newer.
 enum Schema {
     /// The migrator the app opens libraries with.
@@ -19,6 +20,7 @@ enum Schema {
         registerV4(in: &migrator)
         registerV5(in: &migrator)
         registerV6(in: &migrator)
+        registerV7(in: &migrator)
         return migrator
     }
 
@@ -179,6 +181,32 @@ enum Schema {
                     PRIMARY KEY (article_id, locale)
                 );
                 ALTER TABLE usage ADD COLUMN automatic INTEGER NOT NULL DEFAULT 0;
+                """)
+        }
+    }
+
+    /// `v7`: the translations of article bodies (RD15 decision 2), one row
+    /// per text sent, keyed by its article, the reading language and the
+    /// SHA-256 of the text as sent (lower-case hex), so that a body that
+    /// changes keeps the rows of its unchanged texts. `state` is `done` or
+    /// `failed`; `text` the accepted translation, cleaned (null with
+    /// `failed`); `error` the stored reason of a failed row (RD14's
+    /// `TranslationFailure` values); `model` the model's name (null with
+    /// `failed`). Rows go with their article.
+    static func registerV7(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v7") { db in
+            try db.execute(sql: """
+                CREATE TABLE body_translation (
+                    article_id TEXT NOT NULL REFERENCES article(id) ON DELETE CASCADE,
+                    locale TEXT NOT NULL,
+                    source_hash TEXT NOT NULL,
+                    text TEXT,
+                    state TEXT NOT NULL,
+                    error TEXT,
+                    model TEXT,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (article_id, locale, source_hash)
+                );
                 """)
         }
     }

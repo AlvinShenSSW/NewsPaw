@@ -21,7 +21,7 @@ struct ReadabilityCheck {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try #require(WKContentRuleListStore(url: directory))
-        let extractor = PageExtractor(deadline: PageExtractor.standardDeadline, ruleListStore: store)
+        let extractor = PageExtractor(deadline: PageExtractorTests.roomyDeadline, ruleListStore: store)
         let address = try #require(URL(string: "https://example.invalid/articles/synthetic"))
 
         let extraction = try await extractor.extract(html: try Fixture.text("article", "html"), address: address)

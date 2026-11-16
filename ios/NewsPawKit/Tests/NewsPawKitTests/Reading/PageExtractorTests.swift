@@ -10,10 +10,17 @@ import WebKit
 @Suite("Page extractor", .serialized)
 @MainActor
 struct PageExtractorTests {
+    /// The deadline of the tests that are not about the deadline. The
+    /// first extraction of a run starts a web content process, which took
+    /// more than 10 seconds on the iOS 26.5 simulator with the whole suite
+    /// running beside it; the deadline itself is tested with an injected
+    /// one.
+    static let roomyDeadline = Duration.seconds(60)
+
     /// An extractor whose rule list is compiled into a store of its own,
     /// removed with `directory`.
     static func extractor(
-        deadline: Duration = PageExtractor.standardDeadline, usesRuleList: Bool = true
+        deadline: Duration = roomyDeadline, usesRuleList: Bool = true
     ) throws -> (extractor: PageExtractor, directory: URL) {
         let directory = try makeTemporaryDirectory()
         let store = try #require(WKContentRuleListStore(url: directory))
@@ -315,10 +322,10 @@ struct PageExtractorTests {
         let store = try #require(WKContentRuleListStore(url: directory))
         let address = try #require(URL(string: "https://example.invalid/one"))
         let page = "<html><body><article>" + Self.paragraphs(4) + "</article></body></html>"
-        _ = try await PageExtractor(deadline: .seconds(10), ruleListStore: store).extract(html: page, address: address)
+        _ = try await PageExtractor(deadline: Self.roomyDeadline, ruleListStore: store).extract(html: page, address: address)
         let identifiers = await store.availableIdentifiers()
         #expect(identifiers == [PageExtractor.ruleListIdentifier])
-        _ = try await PageExtractor(deadline: .seconds(10), ruleListStore: store).extract(html: page, address: address)
+        _ = try await PageExtractor(deadline: Self.roomyDeadline, ruleListStore: store).extract(html: page, address: address)
         #expect(await store.availableIdentifiers() == [PageExtractor.ruleListIdentifier])
     }
 

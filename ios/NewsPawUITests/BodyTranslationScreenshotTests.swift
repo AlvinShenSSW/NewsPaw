@@ -43,7 +43,8 @@ final class BodyTranslationScreenshotTests: BodyTranslationTestCase {
         // Chunks 2 and 3 arrive at once; chunk 4 stalls for a minute.
         Thread.sleep(forTimeInterval: 2)
         capture("progress")
-        leaveArticle()
+        // On the panes the next row's article replaces it.
+        backToList()
 
         // The banner after a refusal, with the backup's step.
         openBody(Body.refused)
@@ -64,10 +65,12 @@ final class BodyTranslationScreenshotTests: BodyTranslationTestCase {
         waitFor(button(AccessibilityID.readingMoreMenu)).tap()
         capture("more-menu")
         waitFor(button(AccessibilityID.articleInfoButton)).tap()
-        waitFor(element(AccessibilityID.articleInfoTranslation))
+        // Its first row: at the largest text size the body's translation
+        // is below the sheet's fold.
+        waitFor(element(AccessibilityID.articleInfoBody))
         capture("article-info")
         waitFor(button(AccessibilityID.articleInfoDoneButton)).tap()
-        waitForAbsence(element(AccessibilityID.articleInfoTranslation))
+        waitForAbsence(element(AccessibilityID.articleInfoBody))
 
         // The settings rows.
         openSettings(row: AccessibilityID.modelsRow)

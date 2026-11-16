@@ -14,11 +14,11 @@ public enum ModelSettingsError: Error, Sendable, Hashable {
     case keyNotRemoved
 }
 
-/// Whether a saved slot has a usable key (decision 3).
 /// An automatic request was sent and its usage row could not be written
 /// (RD14 decision 8): the daily automatic limit would not count it.
 public struct UsageNotRecorded: Error, Sendable, Hashable {}
 
+/// Whether a saved slot has a usable key (decision 3).
 public enum StoredKeyState: Sendable, Hashable {
     /// "Key needed": no reference, or no item for it.
     case missing

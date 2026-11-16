@@ -180,6 +180,13 @@ final class NavigationModel {
     }
     /// Whether the slide-over sidebar is open (panes below 1100 pt only).
     private(set) var isSlideOverOpen = false
+    /// Whether the first run is shown in place of the containers (RD21):
+    /// the slide-over's host is not mounted then, so it never opens, and
+    /// every dialog stays on the root or the sheet. Set by the app model.
+    @ObservationIgnored var isShowingFirstRun = false
+    /// "Show in Library" was chosen during the first run: the category list
+    /// is shown when it ends.
+    @ObservationIgnored private var showsCategoryListAfterFirstRun = false
     /// The sheet presented from the root.
     var sheet: AppSheet?
     /// The window's current layout, set by the shell, so that "Show in
@@ -522,6 +529,12 @@ final class NavigationModel {
     /// the tab structure; the sidebar pane from 1100 pt; the slide-over,
     /// opened, below 1100 pt.
     func showCategoryList() {
+        // During the first run there is no library to show: it is shown
+        // when the first run ends.
+        guard !isShowingFirstRun else {
+            showsCategoryListAfterFirstRun = true
+            return
+        }
         guard let layout else { return }
         if layout.structure == .tabs {
             currentTab = .library
@@ -576,7 +589,21 @@ final class NavigationModel {
     /// Opens the slide-over sidebar. The cover's own presentation animation
     /// is switched off; the panel animates itself.
     func openSlideOver() {
+        guard !isShowingFirstRun else { return }
         setSlideOver(true)
+    }
+
+    /// The first run has ended (RD21 decision 8): the shell shows Today at
+    /// its root, or the category list where it is when "Show in Library"
+    /// was chosen during the first run.
+    func firstRunEnded() {
+        isShowingFirstRun = false
+        let showsCategoryList = showsCategoryListAfterFirstRun
+        showsCategoryListAfterFirstRun = false
+        showAtRoot(of: .today, layout: nil)
+        if showsCategoryList {
+            showCategoryList()
+        }
     }
 
     /// Closes the slide-over sidebar at once.

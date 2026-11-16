@@ -197,6 +197,46 @@ final class FirstRunTests: FirstRunTestCase {
         waitForOrder(["World", "AI"])
     }
 
+    /// Fix round 2: "Show in Library" from Add source's duplicate message
+    /// during the first run closes the sheet and leaves step 3 as it was —
+    /// no slide-over or tab opens behind it, so every dialog stays on a
+    /// mounted host — and the first run then ends on the category list
+    /// where it is: the Library tab, the slide-over below 1100 pt, the
+    /// sidebar pane from 1100 pt; the source's category expanded.
+    func testShowInLibraryDuringTheFirstRun() {
+        launchFirstRun()
+        waitForStep(1)
+        skipButton.tap()
+        waitForStep(2)
+        skipButton.tap()
+        waitForStep(3)
+        addSourceButton.tap()
+        detect(Fixture.feed)
+        waitFor(element(AccessibilityID.confirmAddress))
+        saveIntoNewCategory("News")
+        waitForAbsence(app.textFields[AccessibilityID.addressField])
+
+        addSourceButton.tap()
+        detect("feed.example.invalid/rss.xml")
+        waitFor(element(AccessibilityID.duplicateMessage))
+        button(AccessibilityID.showInLibraryButton).tap()
+        waitForAbsence(app.textFields[AccessibilityID.addressField])
+        waitForStep(3)
+        assertNoContainers()
+        XCTAssertFalse(element(AccessibilityID.slideOverPanel).exists)
+
+        doneButton.tap()
+        waitForAbsence(firstRun)
+        waitFor(sourceRow("Fixture Feed"))
+        if app.tabBars.firstMatch.exists {
+            XCTAssertTrue(app.tabBars.buttons["Library"].isSelected)
+        } else if window.width >= 1100 {
+            XCTAssertTrue(element(AccessibilityID.sidebarPane).exists)
+        } else {
+            XCTAssertTrue(element(AccessibilityID.slideOverPanel).exists)
+        }
+    }
+
     // MARK: - When it shows (criterion 8)
 
     /// Done with nothing ticked writes the flag: the next launch shows the

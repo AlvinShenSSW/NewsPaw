@@ -285,6 +285,7 @@ final class AppModel {
             self.preferences = preferences
             if decidesFirstRun {
                 showsFirstRun = Self.startsFirstRun(preferences: preferences, categories: workspace.categories)
+                workspace.navigation.isShowingFirstRun = showsFirstRun
             }
             // The gate: the only way to the adult library from here on.
             let gate = AdultGate(
@@ -324,12 +325,14 @@ final class AppModel {
 
     /// The first run ended, by Done or by Skip on its last step (decision
     /// 8): the flag is written, the shell shows Today with nothing pushed
-    /// or presented, and a library with a feed-like source is refreshed at
-    /// once, since the launch's entry refresh ran on the empty library.
+    /// or presented — or the category list where it is, when "Show in
+    /// Library" was chosen during the first run — and a library with a
+    /// feed-like source is refreshed at once, since the launch's entry
+    /// refresh ran on the empty library.
     func finishFirstRun() {
         guard showsFirstRun, let normal else { return }
         preferences?.firstRunIsDone = true
-        normal.navigation.showAtRoot(of: .today, layout: nil)
+        normal.navigation.firstRunEnded()
         showsFirstRun = false
         if normal.sources.hasFeedLikeSource {
             let refresh = normal.refresh

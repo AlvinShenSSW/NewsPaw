@@ -210,6 +210,36 @@ final class AdultIsolationTests: IsolationTestCase {
         XCTAssertEqual(openStoragePage(of: "Plain story", in: "Velvet"), "none", "the page wrote again after Clear")
     }
 
+    /// The same page open when the app is left: the lock ends it (its view
+    /// may keep its web view, RD18 A4); Clear from the normal partition
+    /// waits for its document to be gone; after the unlock the `/storage`
+    /// page finds nothing.
+    func testClearAfterALockLeavesNothingOfAPageThatKeepsWriting() {
+        launchAtFullWidth(authentication: ["passed", "passed", "passed", "passed"])
+        turnOnAdult()
+        enterAdult()
+        createCategory("Velvet")
+        addSource(Fixture.articles, to: "Velvet")
+        openCategoryList("Velvet")
+        openArticle("Plain story")
+        waitFor(button(AccessibilityID.openOriginalButton)).tap()
+        waitForPage("Original of plain-story")
+        tapLink("Writer page")
+        waitForPage("Writer: writing")
+        // Home with "Immediately": the lock comes with the page on screen.
+        leaveAndReturn()
+        waitForPartition(Wording.normal)
+        waitForReport(Self.closed, Self.dropped)
+        Thread.sleep(forTimeInterval: 2)
+        // Clear from the normal partition (it asks first), then a wait of
+        // many times the page's interval.
+        openAdultSettings()
+        clearBrowsingData()
+        Thread.sleep(forTimeInterval: 3)
+        enterAdult()
+        XCTAssertEqual(openStoragePage(of: "Plain story", in: "Velvet"), "none", "the page wrote again after Clear")
+    }
+
     // MARK: - Criterion 7
 
     /// Delete removes the adult browser's data with the rest: after

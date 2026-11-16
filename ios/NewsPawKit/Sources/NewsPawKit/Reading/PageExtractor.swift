@@ -224,6 +224,14 @@ public final class PageExtractor: PageExtracting {
         }
     }
 
+    /// Whether an extraction's web view may go ahead with a navigation: the
+    /// load of the string alone, which is the first navigation asked for
+    /// and is in the main frame, and nothing after it in any frame (a
+    /// link, a `meta` refresh, a form, a frame's content).
+    static func mayNavigate(isMainFrame: Bool, navigationsBefore: Int) -> Bool {
+        isMainFrame && navigationsBefore == 0
+    }
+
     /// The body of the one evaluation. Every call it makes on the document
     /// is taken from a prototype, so that a page cannot replace it by
     /// naming an element (`<img name="cloneNode">`).
@@ -261,7 +269,8 @@ private final class ExtractionRun: NSObject, WKNavigationDelegate {
     private let discarded: () -> Void
     private var webView: WKWebView?
     private var navigation: WKNavigation?
-    private var navigationsLeft = 1
+    /// How many navigations were asked for, allowed or not.
+    private var navigationsAsked = 0
     private var continuation: CheckedContinuation<PageExtraction, any Error>?
     private var timer: Task<Void, Never>?
     private var isOver = false
@@ -360,12 +369,10 @@ private final class ExtractionRun: NSObject, WKNavigationDelegate {
     // MARK: - WKNavigationDelegate
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
-        // The load of the string, and nothing after it, in any frame.
-        guard navigationsLeft > 0, action.targetFrame?.isMainFrame == true, !isOver else {
-            return .cancel
-        }
-        navigationsLeft -= 1
-        return .allow
+        let before = navigationsAsked
+        navigationsAsked += 1
+        let allowed = !isOver && PageExtractor.mayNavigate(isMainFrame: action.targetFrame?.isMainFrame == true, navigationsBefore: before)
+        return allowed ? .allow : .cancel
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

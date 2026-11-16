@@ -102,6 +102,17 @@ struct PageExtractorTests {
             + "\(server.connections) connections, preconnect \(preconnect.connections)")
     }
 
+    @Test("criterion 4: the extraction navigates once: the load of the string, and nothing after it in any frame")
+    func oneNavigation() {
+        #expect(PageExtractor.mayNavigate(isMainFrame: true, navigationsBefore: 0))
+        // A frame's content, a `meta` refresh, a link, a form: anything after.
+        #expect(!PageExtractor.mayNavigate(isMainFrame: false, navigationsBefore: 0))
+        for before in [1, 2, 17] {
+            #expect(!PageExtractor.mayNavigate(isMainFrame: true, navigationsBefore: before))
+            #expect(!PageExtractor.mayNavigate(isMainFrame: false, navigationsBefore: before))
+        }
+    }
+
     // MARK: - Criterion 5: what comes out
 
     @Test("criterion 5: a page whose text only its script would build is not an article")

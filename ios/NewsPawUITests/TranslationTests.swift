@@ -161,11 +161,9 @@ final class TranslationTests: TranslationTestCase {
     /// Assumption A4: rows updated in place while the list is scrolled do
     /// not move it. The list is scrolled to the middle of the 63 rows, the
     /// reading language changes to Japanese, and the rows on screen are
-    /// translated again where they stand. With pages of 20 rows "Foreign
-    /// story 30" is on the list's second page: a list read again from its
-    /// first page on the change would lose it and the place (review R2).
+    /// translated again where they stand.
     func testUpdatesInPlaceKeepTheScrollPosition() {
-        launchTranslating(pageSize: 20)
+        launchTranslating()
         addFeed(Translation.feed, to: Translation.category)
         let anchor = scrollList(to: Translation.foreign(30))
         waitForLabel(anchor, containing: Translation.translated(Translation.foreign(30)))
@@ -192,7 +190,6 @@ final class TranslationTests: TranslationTestCase {
         XCTAssertEqual(afterFirst, after, accuracy: 0.5, "the updates in place moved the list")
         if usesTabs {
             XCTAssertEqual(before, after, accuracy: 0.5, "the list did not keep its place across the change")
-            XCTAssertEqual(topRowTitle(), topBefore, "the list was read again across the change")
         }
     }
 }

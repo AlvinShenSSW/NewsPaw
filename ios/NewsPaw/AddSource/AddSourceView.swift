@@ -185,7 +185,7 @@ struct AddressStepView: View {
                 }
             }
             .listRowBackground(Theme.surface)
-        case .page, .feed, .invalidAddress, nil:
+        case .page, .feed, .github, .invalidAddress, nil:
             EmptyView()
         }
     }

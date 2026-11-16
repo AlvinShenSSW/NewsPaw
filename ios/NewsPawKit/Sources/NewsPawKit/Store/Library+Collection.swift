@@ -14,14 +14,15 @@ struct CollectionTarget: Sendable, Hashable {
 /// `last_modified`, `last_success_at`, `last_error` — and nothing the owner
 /// can edit.
 extension Library {
-    /// The feed source `id`, or `nil` when there is none or it is another
-    /// kind. Columns are read one by one so that a kind this build does not
-    /// know is "not a feed", not a decoding error.
+    /// The source `id` when it is collected as a feed (`feed`, `github`), or
+    /// `nil` when there is none or it is another kind. Columns are read one
+    /// by one so that a kind this build does not know is "not a feed", not a
+    /// decoding error.
     func collectionTarget(_ id: UUID) async throws -> CollectionTarget? {
         try await read { db in
             guard let row = try Row.fetchOne(
                 db, sql: "SELECT kind, url, etag, last_modified FROM source WHERE id = ?", arguments: [id.databaseKey]
-            ), (row["kind"] as String?) == SourceKind.feed.rawValue
+            ), Self.isCollectedAsFeed(row["kind"])
             else { return nil }
             return CollectionTarget(sourceID: id, url: row["url"], etag: row["etag"], lastModified: row["last_modified"])
         }
@@ -41,7 +42,8 @@ extension Library {
         return try await write { db in
             guard let row = try Row.fetchOne(
                 db, sql: "SELECT category_id, kind, url FROM source WHERE id = ?", arguments: [sourceKey]
-            ), (row["kind"] as String?) == SourceKind.feed.rawValue, (row["url"] as String?) == target.url
+            ), Self.isCollectedAsFeed(row["kind"]), let kind = SourceKind(rawValue: row["kind"]),
+                (row["url"] as String?) == target.url
             else { return .nothingDone }
             let categoryKey: String = row["category_id"]
 
@@ -54,7 +56,7 @@ extension Library {
                 return .notModified
             case .feed(let fetched):
                 let inserted = try Self.insertArticles(
-                    fetched.feed.items, sourceKey: sourceKey, categoryKey: categoryKey, now: now, in: db
+                    Self.itemsToStore(fetched.feed.items, kind: kind), sourceKey: sourceKey, categoryKey: categoryKey, now: now, in: db
                 )
                 try db.execute(
                     sql: "UPDATE source SET etag = ?, last_modified = ?, last_success_at = ?, last_error = NULL WHERE id = ?",
@@ -74,6 +76,24 @@ extension Library {
                 try db.execute(sql: "UPDATE source SET last_error = ? WHERE id = ?", arguments: [failure.code, sourceKey])
                 return .failed(failure)
             }
+        }
+    }
+
+    /// Whether a stored kind is collected as a feed; a kind this build does
+    /// not know is not.
+    private static func isCollectedAsFeed(_ storedKind: String?) -> Bool {
+        storedKind.flatMap(SourceKind.init(rawValue:))?.isCollectedAsFeed == true
+    }
+
+    /// The items as a source of `kind` stores them: a GitHub source's items
+    /// without their image, which is only ever the author's avatar (RD07
+    /// decision 11); any other kind's unchanged.
+    static func itemsToStore(_ items: [ParsedItem], kind: SourceKind) -> [ParsedItem] {
+        guard kind == .github else { return items }
+        return items.map { item in
+            var item = item
+            item.imageURL = nil
+            return item
         }
     }
 

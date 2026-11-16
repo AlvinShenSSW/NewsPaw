@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic feed shaped like a repository's releases.atom. Invented names and text; links under example.invalid. -->
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" xml:lang="en-US">
+  <id>tag:github.com,2008:https://example.invalid/lantern-works/lantern/releases</id>
+  <link type="text/html" rel="alternate" href="https://example.invalid/lantern-works/lantern/releases"/>
+  <link type="application/atom+xml" rel="self" href="https://example.invalid/lantern-works/lantern/releases.atom"/>
+  <title>Release notes from lantern</title>
+  <updated>2026-11-03T09:30:00Z</updated>
+  <entry>
+    <id>tag:github.com,2008:Repository/40000001/v3.2.0</id>
+    <updated>2026-11-03T09:30:00Z</updated>
+    <link rel="alternate" type="text/html" href="https://example.invalid/lantern-works/lantern/releases/tag/v3.2.0"/>
+    <title>v3.2.0</title>
+    <content type="html">&lt;h2&gt;What&#39;s Changed&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Brighter wicks in &lt;a href=&quot;https://example.invalid/lantern-works/lantern/pull/42&quot;&gt;#42&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;script&gt;document.title = &quot;release script ran&quot;&lt;/script&gt;
+&lt;p&gt;Thanks to everyone who tested the glass.&lt;/p&gt;</content>
+    <author>
+      <name>lamplighter</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://example.invalid/avatars/lamplighter.png?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/40000001/v3.1.1</id>
+    <updated>2026-10-12T16:05:00Z</updated>
+    <link rel="alternate" type="text/html" href="https://example.invalid/lantern-works/lantern/releases/tag/v3.1.1"/>
+    <title>v3.1.1</title>
+    <content type="html">&lt;p&gt;Fixes a flicker when the oil runs low.&lt;/p&gt;</content>
+    <author>
+      <name>lamplighter</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://example.invalid/avatars/lamplighter.png?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/40000001/v3.1.0</id>
+    <updated>2026-09-20T08:00:00Z</updated>
+    <link rel="alternate" type="text/html" href="https://example.invalid/lantern-works/lantern/releases/tag/v3.1.0"/>
+    <title>v3.1.0</title>
+    <content type="html">&lt;p&gt;Adds a dimmer.&lt;/p&gt;</content>
+    <author>
+      <name>lamplighter</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://example.invalid/avatars/lamplighter.png?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/40000001/v3.0.0</id>
+    <updated>2026-08-01T12:00:00Z</updated>
+    <link rel="alternate" type="text/html" href="https://example.invalid/lantern-works/lantern/releases/tag/v3.0.0"/>
+    <title>v3.0.0</title>
+    <content type="html">&lt;p&gt;A tag message without a published release.&lt;/p&gt;</content>
+    <author>
+      <name>wickmaker</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://example.invalid/avatars/wickmaker.png?s=60&amp;v=4"/>
+  </entry>
+</feed>

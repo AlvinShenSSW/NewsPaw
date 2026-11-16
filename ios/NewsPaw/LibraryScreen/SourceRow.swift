@@ -9,8 +9,9 @@ import SwiftUI
 /// activity indicator takes the place of the count or mark (RD06). A tap on
 /// a feed-like source opens its article list (RD09 decision 11), a tap on a
 /// web page the embedded browser at its address (RD10): pushed in Library,
-/// selected like a category in the sidebar. The menu offers Refresh (a feed
-/// that is not paused), Source settings, Pause or Resume, and Delete.
+/// selected like a category in the sidebar. The menu offers Refresh (a
+/// source collected as a feed — a feed or a GitHub repository — that is not
+/// paused), Source settings, Pause or Resume, and Delete.
 struct SourceRow: View {
     let source: SourceSummary
     let rowContent: CategoryRows.RowContent
@@ -82,7 +83,7 @@ struct SourceRow: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier(AccessibilityID.sourceRow(source.name))
             .contextMenu {
-                if source.kind == .feed, !source.paused {
+                if source.kind.isCollectedAsFeed, !source.paused {
                     Button("Refresh", systemImage: "arrow.clockwise") {
                         Task { await refresh.refresh(.source(source.id)) }
                     }

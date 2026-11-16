@@ -119,6 +119,55 @@ struct FixtureTransportTests {
         #expect(try await fetch(transport, FixtureTransport.Address.translationWord("other")) == .failed(.unreachable))
     }
 
+    @Test("the fixture repositories detect as the UI tests expect (RD07)")
+    func gitHubRepositories() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let transport = FixtureTransport()
+        let detector = SourceDetector(transport: transport, candidateLimit: FixtureTransport.candidateLimit)
+        guard case .github(let project) = try await detector.detect(FixtureTransport.Address.gitHubProject, in: fixture.library) else {
+            Issue.record("not a repository")
+            return
+        }
+        let feeds = project.candidates.compactMap { candidate -> FeedCandidate? in
+            if case .usable(let feed) = candidate.state { feed } else { nil }
+        }
+        #expect(feeds.map(\.itemCount) == [4, 3, 3])
+        #expect(feeds[0].latestItems.map(\.title) == ["v2.1.0", "v2.0.1", "v2.0.0"])
+        #expect(feeds[2].latestItems.map(\.title) == ["Polish the reading lamp", "Trim the wick", "Start the project"])
+        // Every answer of Releases adds one release no earlier answer had.
+        guard case .github(let again) = try await detector.detect(FixtureTransport.Address.gitHubProject, in: fixture.library),
+              case .usable(let releases) = again.candidates[0].state
+        else {
+            Issue.record("not a repository")
+            return
+        }
+        #expect(releases.fetched.feed.items[0].externalID != feeds[0].fetched.feed.items[0].externalID)
+        #expect(feeds.flatMap(\.fetched.feed.items).allSatisfy { $0.url?.hasPrefix("https://example.invalid/") == true })
+
+        guard case .github(let untagged) = try await detector.detect(FixtureTransport.Address.gitHubUntagged, in: fixture.library) else {
+            Issue.record("not a repository")
+            return
+        }
+        let counts = untagged.candidates.compactMap { candidate -> Int? in
+            if case .usable(let feed) = candidate.state { feed.itemCount } else { nil }
+        }
+        #expect(counts == [0, 0, 3])
+
+        // Tags is slow on the transport's first request only.
+        guard case .github(let slow) = try await detector.detect(FixtureTransport.Address.gitHubSlow, in: fixture.library) else {
+            Issue.record("not a repository")
+            return
+        }
+        #expect(slow.candidates[1].state == .notChecked)
+        guard case .github(let second) = try await detector.detect(FixtureTransport.Address.gitHubSlow, in: fixture.library),
+              case .usable = second.candidates[1].state
+        else {
+            Issue.record("Tags is not usable at the second detection")
+            return
+        }
+    }
+
     @Test("the reading feed's bodies convert as the UI tests expect: every block kind, an excerpt, a hostile body, cut bodies, pictures, an empty body")
     func readingFeed() async throws {
         let transport = FixtureTransport()

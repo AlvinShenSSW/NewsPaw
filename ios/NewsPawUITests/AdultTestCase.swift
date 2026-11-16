@@ -176,13 +176,24 @@ class AdultTestCase: BrowserTestCase {
         return waitFor(partitionSwitch).label
     }
 
+    /// Waits until the switch is offered and reads `label`. It checks in a
+    /// plain loop, not in a waiter's predicate: a check navigates and waits
+    /// (`switchIsOffered()`), and inside a predicate that made one
+    /// evaluation so long under load that the waiter's time ran out with
+    /// the label already right (#165). It checks once more at the deadline.
     func waitForPartition(_ label: String, file: StaticString = #filePath, line: UInt = #line) {
-        let shown = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
-            self.switchIsOffered() && self.partitionSwitch.label == label
-        }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [shown], timeout: timeout), .completed,
-                       "the switch reads \(partitionSwitch.exists ? partitionSwitch.label : "nothing"), expected \(label)",
-                       file: file, line: line)
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            if switchIsOffered(), partitionSwitch.label == label {
+                return
+            }
+            if Date() >= deadline {
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        XCTFail("the switch reads \(partitionSwitch.exists ? partitionSwitch.label : "nothing"), expected \(label)",
+                file: file, line: line)
     }
 
     /// A choice of the switch's open menu, by its identifier or, where the

@@ -97,7 +97,7 @@ public final class FixtureTransport: Transport {
         /// of the browser's fixtures), `scripted` (text that only its
         /// script would build), `list` (an ordinary list page of thirty
         /// headlines with summaries; also a page of the browser's
-        /// fixtures), `moving` (the article after 4 seconds; the browser's
+        /// fixtures), `moving` (the article after 8 seconds; the browser's
         /// page of it changes its address on a tap), `huge` (over the transport's size limit), `stalled`
         /// (never answers) and `plain` (not HTML). Any other name does not
         /// answer.
@@ -134,7 +134,7 @@ public final class FixtureTransport: Transport {
     /// How long the full-text feed's article page takes to answer.
     static let articlePageAnswer = Duration.milliseconds(1_500)
     /// How long the moving page takes to answer: an article, after a while.
-    static let movingPageAnswer = Duration.seconds(4)
+    static let movingPageAnswer = Duration.seconds(8)
 
     /// How long `flaky.png` fails from the first request for it.
     static let flakyImageWindow = Duration.seconds(4)

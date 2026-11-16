@@ -245,11 +245,12 @@ final class FullTextTests: FullTextTestCase {
         waitForEnabled(readerButton, true)
         readerButton.tap()
         waitForValue(readerButton, "Loading")
-        expectPages(before + 1, "reader mode on the moving page")
+        // Well before the page's answer (an article, after 8 s).
         waitFor(app.webViews.buttons["Move along"]).tap()
         waitForEnabled(readerButton, true)
-        // The page's answer (an article, after 4 s) comes and goes unseen.
-        XCTAssertFalse(readerTitle.waitForExistence(timeout: 6), "the old address's article was shown over the moved page")
+        XCTAssertEqual(pagesRequested, before + 1, "reader mode asked for the moving page once")
+        // The answer comes and goes unseen.
+        XCTAssertFalse(readerTitle.waitForExistence(timeout: 10), "the old address's article was shown over the moved page")
         XCTAssertFalse(alert(FullText.noArticle).exists)
         waitForPage("Moving page")
     }

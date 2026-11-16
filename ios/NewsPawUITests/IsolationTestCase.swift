@@ -219,13 +219,16 @@ class IsolationTestCase: AdultTestCase {
 
     // MARK: - Moving
 
-    /// The category's settings sheet: from the category list's row.
+    /// The category's settings sheet: from its list's own menu (the row's
+    /// context menu did not always open after the row was expanded).
     func openCategorySheet(_ name: String) {
         leaveBrowser()
         if usesTabs, !app.tabBars.firstMatch.exists {
             backToList()
         }
-        openCategorySettings(name)
+        openCategoryList(name)
+        openListSettings(source: false)
+        waitFor(app.textFields[AccessibilityID.nameField])
     }
 
     var moveButton: XCUIElement { button(AccessibilityID.moveCategoryButton) }

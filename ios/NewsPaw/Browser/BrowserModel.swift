@@ -36,8 +36,9 @@ struct BrowserFileNotice: Identifiable {
 }
 
 /// What reader mode works with (RD12 decision 7): the app's transport and
-/// the workspace's extractor, and the body images of the workspace's
-/// library. No library: a reader-mode article writes nothing to one.
+/// the workspace's extractor, and a body image loader that reads the
+/// workspace library's image cache and never stores to it. No library: a
+/// reader-mode article writes nothing.
 struct BrowserReader {
     let transport: any Transport
     let extractor: any PageExtracting
@@ -254,13 +255,16 @@ final class BrowserModel {
 
     /// Whether `session` may raise a question or a notice now: only while
     /// its stack is the one on screen, no sheet (nor the slide-over's cover)
-    /// is open and nothing else of the browser is shown. One raised
+    /// is open, nothing else of the browser is shown, and its page is not
+    /// beneath reader mode's temporary article (RD12). One raised
     /// otherwise is dropped. In the tab structure a stack, and with it a
     /// session, stays alive behind another tab; its page must not put a
     /// question over a screen that is not the browser's.
     private func mayRaise(from session: BrowserSession) -> Bool {
         isOnScreen(session) && navigation.sheet == nil && !navigation.isSlideOverOpen
             && question == nil && fileNotice == nil && !isShowingNoApp
+            // The page beneath a temporary article is not on screen.
+            && session.temporaryArticle == nil
     }
 
     /// Whether `session` is the session of the selected tab's stack.

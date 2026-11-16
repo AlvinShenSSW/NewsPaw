@@ -19,7 +19,7 @@ struct BrowserScanTests {
     /// evaluate its one script in its own content world.
     static let extractorAllowances = [
         #"^\s*configuration\.userContentController\.add\(ruleList\)$"#,
-        #"^\s*webView\.callAsyncJavaScript\(script, arguments: \[:\], in: nil, in: \.world\(name: PageExtractor\.contentWorld\)\)"#,
+        #"^\s*webView\.callAsyncJavaScript\(script, arguments: \[:\], in: nil, in: \.world\(name: PageExtractor\.contentWorld\)\) \{ \[weak self\] result in$"#,
     ]
 
     /// What would give a page an interface to the app or run the app's
@@ -142,6 +142,11 @@ struct BrowserScanTests {
             #expect(try Self.findings(Self.interfacePatterns, in: [extractor, (path: path, text: planted)]).count == 2, "\(path)")
         }
         #expect(try Self.findings(Self.interfacePatterns, in: [(path: Self.extractorFile, text: extractor.text + "\n" + planted)]).count == 2)
+        // A second call written on the line of an allowed one fails too.
+        for line in calls {
+            let doubled = String(line) + " webView.evaluateJavaScript(\"1\")"
+            #expect(try Self.findings(Self.interfacePatterns, in: [(path: Self.extractorFile, text: doubled)]).count == 1, "\(doubled)")
+        }
         // Any other interface call in the extractor's file still fails.
         for line in [
             "        configuration.userContentController.add(handler, name: \"app\")",

@@ -378,7 +378,9 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
     /// has a link to the list page and a Play button for a sound of silence
     /// that does not start again by itself; its title reports how long the
     /// sound has played and whether it is paused: `Ferry <seconds>
-    /// <playing|paused>` once played.
+    /// <playing|paused>` once played. While hidden (beneath reader mode's
+    /// temporary article) it asks for another app every 200 ms, which must
+    /// not put the browser's question over the temporary article.
     private static let ferryArticle = page("The ferry at dawn", """
         <p><button type="button" onclick="play()">Play</button></p>
         <p>\(FixtureTransport.fullTextParagraphs[0])</p>
@@ -400,6 +402,7 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         function play() { if (!audio) { audio = new Audio(silence(120)); } audio.play(); }
         setInterval(function () {
             if (audio) { document.title = 'Ferry ' + audio.currentTime.toFixed(1) + ' ' + (audio.paused ? 'paused' : 'playing'); }
+            if (document.hidden) { location.href = 'newspaw-unknown-scheme://beneath'; }
         }, 200);
         </script>
         """)

@@ -72,7 +72,12 @@ final class Workspace: Identifiable {
         )
         let browser = BrowserModel(
             dataStore: setup.dataStore, navigation: navigation, sources: sources,
-            reader: BrowserReader(transport: parts.transport, extractor: extractor, images: reading.bodyImages),
+            // Reader mode's images are fetched like a body's and not kept:
+            // a temporary article writes nothing (RD12 decision 7).
+            reader: BrowserReader(
+                transport: parts.transport, extractor: extractor,
+                images: BodyImageLoader(transport: parts.transport, cache: library.imageCache, stores: false)
+            ),
             addressMap: setup.addressMap, schemeHandlers: setup.schemeHandlers,
             allowsPictureInPicture: setup.allowsPictureInPicture
         )

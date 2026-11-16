@@ -432,6 +432,12 @@ final class ReadingModel {
         replacements[id] = nil
     }
 
+    /// The app is leaving the front: a page load under way remembers no
+    /// failure (RD12, post-implementation record).
+    func appLeftFront() {
+        pages.appLeftFront()
+    }
+
     /// A source's settings were saved: the failures of pages are forgotten
     /// (RD12 decision 6), so that the next opening fetches again.
     func sourceSettingsSaved() {

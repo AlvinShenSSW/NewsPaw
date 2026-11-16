@@ -234,14 +234,21 @@ struct PageExtractorTests {
         #expect(extractor.webViewsHeld == 0)
     }
 
-    @Test("a cancelled extraction ends at once and discards its web view")
+    @Test("an extraction cancelled in flight ends at once and discards its web view")
     func cancellation() async throws {
         let (extractor, directory) = try Self.extractor()
         defer { try? FileManager.default.removeItem(at: directory) }
         let address = try #require(URL(string: "https://example.invalid/cancelled"))
-        let task = Task { try await extractor.extract(html: "<html><body>" + Self.paragraphs(4) + "</body></html>", address: address) }
+        // Long enough that the extraction is still running when cancelled.
+        let page = "<html><body><article>" + String(repeating: "<b>x</b>", count: 40_000) + Self.paragraphs(40) + "</article></body></html>"
+        let task = Task { try await extractor.extract(html: page, address: address) }
+        for _ in 0..<1_000 where extractor.webViewsMade == 0 {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(extractor.webViewsMade == 1, "no web view was made before the cancellation")
         task.cancel()
         await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(extractor.webViewsMade == 1)
         #expect(extractor.webViewsHeld == 0)
     }
 

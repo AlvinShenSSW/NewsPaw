@@ -368,6 +368,30 @@ struct BodyImageLoaderTests {
         #expect(files(of: adult).count == 2)
     }
 
+    @Test("RD12: a loader that does not store fetches and answers, and leaves the cache directory untouched")
+    func nonStoringLoaderWritesNothing() async throws {
+        let (root, cache) = try makeCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let transport = Images.answering(Images.png(width: 600, height: 400))
+        let loader = BodyImageLoader(transport: transport, cache: cache, stores: false)
+        let data = try #require(await loader.image(for: url("reader.png")))
+        #expect(try Images.decode(data).type == UTType.jpeg.identifier)
+        #expect(!FileManager.default.fileExists(atPath: cache.directory.path), "the cache directory was created")
+        // Asked again: fetched again, still nothing written.
+        #expect(await loader.image(for: url("reader.png")) == data)
+        #expect(transport.received.count == 2)
+        #expect(!FileManager.default.fileExists(atPath: cache.directory.path))
+
+        // What the cache already holds is answered from it, and nothing is
+        // added beside it.
+        let stored = try #require(await BodyImageLoader(transport: transport, cache: cache).image(for: url("kept.png")))
+        #expect(files(of: cache).count == 1)
+        #expect(await loader.image(for: url("kept.png")) == stored)
+        #expect(transport.received.count == 3, "the stored image was answered without a request")
+        _ = await loader.image(for: url("other.png"))
+        #expect(files(of: cache).count == 1)
+    }
+
     private func waitUntil(_ condition: @Sendable () -> Bool) async throws {
         for _ in 0..<500 where !condition() {
             try await Task.sleep(for: .milliseconds(10))

@@ -260,6 +260,26 @@ struct BodyLoaderTests {
         #expect(extraction.outcome == .failed(.extraction(.processEnded), remembered: false))
     }
 
+    @Test("criterion 3: a failure of a load during which the app left the front is not remembered, though the app is in front again")
+    func leftTheFrontDuringTheLoad() async throws {
+        let setup = try await Self.setup()
+        defer { setup.fixture.remove() }
+        let extractor = StubExtractor(failing: .timedOut, waits: true)
+        let loader = Self.loader(setup, transport: Self.answering(), extractor: extractor)
+        let task = Task { try await loader.load(article: setup.article, link: Self.link, feed: Self.excerpt) }
+        await extractor.started.wait()
+        loader.appLeftFront()
+        extractor.finish()
+        #expect(try await task.value == .failed(.extraction(.timedOut), remembered: false))
+        #expect(!loader.remembersFailure(ofArticle: setup.article))
+
+        // A load that starts after the absence remembers as before.
+        let second = StubExtractor(failing: .timedOut)
+        let again = Self.loader(setup, transport: Self.answering(), extractor: second)
+        again.appLeftFront()
+        #expect(try await again.load(article: setup.article, link: Self.link, feed: Self.excerpt) == .failed(.extraction(.timedOut), remembered: true))
+    }
+
     @Test("criterion 3: the memory ends after an hour and when a source's settings are saved")
     func memoryEnds() async throws {
         let setup = try await Self.setup()

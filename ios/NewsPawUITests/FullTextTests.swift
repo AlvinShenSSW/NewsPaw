@@ -171,6 +171,8 @@ final class FullTextTests: FullTextTestCase {
         Thread.sleep(forTimeInterval: 2)
         XCTAssertEqual(barTexts().first { $0.hasPrefix("Ferry") }, paused, "the page's media played on beneath the temporary article")
         record("RD12 A4 page title under the temporary article", paused)
+        // The page beneath puts no question over it.
+        XCTAssertFalse(alert(BrowserTestCase.Wording.question).waitForExistence(timeout: 2), "the page beneath raised a question")
 
         // "Aa".
         button(AccessibilityID.readerSettingsButton).tap()

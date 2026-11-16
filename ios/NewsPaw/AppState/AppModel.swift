@@ -554,6 +554,9 @@ final class AppModel {
 
     private func sceneWillDeactivate() {
         sceneIsActive = false
+        // A page load under way remembers no failure (RD12).
+        normal?.reading.appLeftFront()
+        adult?.reading.appLeftFront()
         absence.willDeactivate(at: now())
         applyCoverRule()
     }

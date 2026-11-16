@@ -58,7 +58,8 @@ public enum PageFailure: Error, Sendable, Hashable {
 ///
 /// Failures are never stored. Those that say something about the page are
 /// remembered for an hour in this object's memory, unless the app was not
-/// in front when they happened; the memory is emptied by `forgetFailures()`
+/// in front when they happened or left the front at any moment of the load
+/// (`appLeftFront()`); the memory is emptied by `forgetFailures()`
 /// (a source's settings saved) and with the object (a relaunch).
 @MainActor
 public final class BodyLoader {
@@ -85,6 +86,10 @@ public final class BodyLoader {
     private var failures: [UUID: Date] = [:]
     /// Set when the workspace is dropped: nothing starts from here on.
     private(set) var isStopped = false
+    /// How many times the app has left the front: a load during which it
+    /// did remembers no failure, since a deadline counts the time the app
+    /// was suspended and a process may be ended meanwhile.
+    private var departures = 0
 
     public init(
         library: Library, transport: any Transport, extractor: any PageExtracting,
@@ -126,6 +131,7 @@ public final class BodyLoader {
     ///   remembered.
     public func load(article id: UUID, link: URL, feed: [ArticleBlock]) async throws -> Outcome {
         guard !isStopped else { throw CancellationError() }
+        let departuresAtStart = departures
         let body: ReadPage
         do {
             body = try await Self.readPage(at: link, transport: transport, extractor: extractor) { [weak self] in
@@ -136,7 +142,7 @@ public final class BodyLoader {
             }
         } catch let failure as PageFailure {
             try checkGoing()
-            let remembered = failure.isLasting && isInFront()
+            let remembered = failure.isLasting && isInFront() && departures == departuresAtStart
             if remembered {
                 failures[id] = now()
             }
@@ -151,6 +157,12 @@ public final class BodyLoader {
         } catch {
             return .extracted(body.extracted, stored: false)
         }
+    }
+
+    /// The app is leaving the front (the scene will deactivate): a load
+    /// under way now remembers no failure.
+    public func appLeftFront() {
+        departures += 1
     }
 
     /// Empties the memory of failures: a source's settings were saved.

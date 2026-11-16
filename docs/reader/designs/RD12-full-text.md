@@ -180,3 +180,10 @@ Version 1 → 2, 2026-11-15: one debate round with an independent critic (Claude
 | F17 (P3) | Decision 9's sentences |
 | F19, F20 (P3) | The envelope loses the byline; a stored extraction is checked when read; `maxElemsToParse` dropped |
 | F21, F22 (P3) | Decision 7 ("Aa", keys, media); decisions 4 and 5 (where the line stands; the task belongs to the model) |
+
+## Post-implementation record
+
+2026-11-16, internal review round 1 of the pull request. Two refinements, within the design's decisions:
+
+- **Decision 7, "writes nothing".** The images of a temporary article are fetched through the transport like a body's, by a body image loader that reads the partition's image cache and never stores to it (`BodyImageLoader(stores: false)`). The first build used the reading model's loader, which stored them in the partition's cache. The article's own body images (RD11) are stored as before. A cache hit still refreshes that item's modification time, which is how the cache orders what it removes first.
+- **Decision 6, the memory of failures.** A failure of a page load during which the app left the front at any moment (the scene began to deactivate) is not remembered, even if the app is in front again when the failure comes. The extractor's 10-second deadline counts time the app was suspended, so such a load could otherwise come back as a timeout remembered for an hour.

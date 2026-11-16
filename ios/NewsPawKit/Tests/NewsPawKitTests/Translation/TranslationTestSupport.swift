@@ -36,6 +36,15 @@ final class TranslationService: ModelHTTP {
 
     private let state = Mutex(State())
     private let rule: Mutex<Rule>
+
+    /// Requests held until released by number (the first is 1).
+    private struct Holds {
+        var held: Set<Int> = []
+        var released: Set<Int> = []
+        var waiting: [Int: CheckedContinuation<Void, Never>] = [:]
+    }
+
+    private let holds = Mutex(Holds())
     /// How long each request takes.
     let delay: Duration
 
@@ -46,6 +55,19 @@ final class TranslationService: ModelHTTP {
 
     func answer(with rule: @escaping Rule) {
         self.rule.withLock { $0 = rule }
+    }
+
+    /// Request `number` waits, once it has arrived, until `release(_:)`.
+    func hold(request number: Int) {
+        holds.withLock { _ = $0.held.insert(number) }
+    }
+
+    func release(request number: Int) {
+        let waiting = holds.withLock { holds in
+            holds.released.insert(number)
+            return holds.waiting.removeValue(forKey: number)
+        }
+        waiting?.resume()
     }
 
     /// "T:" before each text.
@@ -81,6 +103,18 @@ final class TranslationService: ModelHTTP {
             return state.requests.count
         }
         defer { state.withLock { $0.inFlight -= 1 } }
+        if holds.withLock({ $0.held.contains(number) }) {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                let now = holds.withLock { holds in
+                    guard !holds.released.contains(number) else { return true }
+                    holds.waiting[number] = continuation
+                    return false
+                }
+                if now {
+                    continuation.resume()
+                }
+            }
+        }
         if delay > .zero {
             try await Task.sleep(for: delay)
         } else {

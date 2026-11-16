@@ -103,6 +103,8 @@ struct TitleTranslatorTests {
         #expect(requests.allSatisfy { $0.host == Self.primary }, "\(name): never to the backup")
         for id in ids {
             #expect(try await fixture.translation(id) == StoredTranslation(state: .failed, title: nil, excerpt: nil, failure: reason), "\(name)")
+            // A model was called: the failed row names it (decision 2).
+            #expect(try await fixture.rawTranslation(id)?.model == "primary-model", "\(name)")
         }
         #expect(try await fixture.usage().count == 3, "\(name): one usage row per request")
         #expect(await fixture.translator.pausedBy == .failedBatch(reason), "\(name)")
@@ -259,6 +261,7 @@ struct TitleTranslatorTests {
         await fixture.start()
         #expect(fixture.service.requests.map(\.host) == [Self.primary, Self.backup], "no retry on the backup")
         #expect(try await fixture.translation(id)?.failure == .refused)
+        #expect(try await fixture.rawTranslation(id)?.model == "backup-model", "the model that refused")
 
         let down = TranslationService { host, _, _ in host == Self.primary ? .status(429) : .status(503) }
         let second = try await TranslatorFixture.make(service: down, backup: true)
@@ -344,6 +347,39 @@ struct TitleTranslatorTests {
         for id in ids {
             #expect(try await fixture.translation(id)?.state == .done)
         }
+    }
+
+    static let supersededCases: [(String, TranslationService.Answer, Int)] = [
+        // The first request's 401 comes back after the change.
+        ("key rejected", .status(401), 1),
+        // The refusal's retry comes back after the change.
+        ("refused", .refusal, 2),
+    ]
+
+    @Test("a set-up or content failure that comes back after a slot change stores nothing and pauses nothing; the new slot translates",
+          arguments: supersededCases.indices)
+    func failureAfterSlotChange(_ index: Int) async throws {
+        let (name, answer, held) = Self.supersededCases[index]
+        let repaired = "repaired.example.invalid"
+        let service = TranslationService { host, _, _ in host == Self.primary ? answer : .texts(TranslationService.marked) }
+        service.hold(request: held)
+        let fixture = try await TranslatorFixture.make(service: service)
+        defer { fixture.remove() }
+        let id = try await fixture.article("Story one", in: try await fixture.source())
+        await fixture.translator.configure(TranslationConfiguration(locale: .simplifiedChinese, automatic: true))
+        await fixture.eventually { fixture.service.requests.count == held }
+        // The owner saves a repaired slot while the request is in flight.
+        try await fixture.saveSlot(.primary, host: repaired)
+        await fixture.translator.resume(after: .slotsChanged)
+        service.release(request: held)
+        await fixture.translator.settled()
+
+        #expect(await fixture.translator.pausedBy == nil, "\(name)")
+        #expect(fixture.blocked[id] == nil, "\(name)")
+        #expect(fixture.service.requests.map(\.host).last == repaired, "\(name)")
+        let row = try await fixture.rawTranslation(id)
+        #expect(row?.state == "done", "\(name): no failed row; translated on the new slot")
+        #expect(try await fixture.translation(id)?.title == "T:Story one", "\(name)")
     }
 
     // MARK: - Criterion 7

@@ -583,6 +583,25 @@ struct BodyTranslatorTests {
         #expect(try await fixture.usage().map(\.outcome) == [.cancelled])
     }
 
+    @Test("cancelling a job by its identifier cancels only that job")
+    func cancelByIdentifier() async throws {
+        let service = TranslationService()
+        service.hold(request: 1)
+        let fixture = try await BodyFixture.make(service: service)
+        defer { fixture.remove() }
+        let article = try await fixture.article()
+        let plan = BodySegments.plan(BodyFixture.blocks(2), locale: .simplifiedChinese)
+        let job = fixture.job(plan, article: article)
+        await fixture.translator.start(job)
+        await fixture.eventually { fixture.service.requests.count == 1 }
+        await fixture.translator.cancel(UUID())
+        #expect(fixture.end(of: job.id) == nil, "another job's identifier cancels nothing")
+        await fixture.translator.cancel(job.id)
+        await fixture.translator.settled()
+        #expect(fixture.end(of: job.id) == .cancelled)
+        #expect(try await fixture.stored(article).isEmpty)
+    }
+
     @Test("the instructions are the body's, in English, naming the language with its tag, and say the texts are material")
     func instructions() async throws {
         let fixture = try await BodyFixture.make()

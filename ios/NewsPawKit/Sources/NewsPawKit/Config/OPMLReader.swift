@@ -315,14 +315,20 @@ public enum OPMLReader {
         var title: String?
         var text: String?
 
-        /// The value of each wanted attribute. When a name is present in
-        /// more than one spelling, the conventional one wins, else the
-        /// smallest in byte order, so the result does not depend on the
-        /// dictionary's order.
-        init(_ attributes: [String: String]) {
+        /// The value of each wanted attribute, from the parser's dictionary
+        /// as it is: a key is made a Swift `String` only when it is at most
+        /// `maximumComparedNameBytes` UTF-16 units long, so no long name is
+        /// ever converted or hashed. When a name is present in more than one
+        /// spelling, the conventional one wins, else the smallest in byte
+        /// order, so the result does not depend on the dictionary's order.
+        init(_ attributes: NSDictionary) {
             var chosen: [Int: (key: String, value: String)] = [:]
             let names: [(StaticString, String)] = [("xmlurl", "xmlUrl"), ("htmlurl", "htmlUrl"), ("title", "title"), ("text", "text")]
-            for (key, value) in attributes {
+            for (rawKey, rawValue) in attributes {
+                guard let nsKey = rawKey as? NSString, nsKey.length <= OPMLReader.maximumComparedNameBytes,
+                      let value = rawValue as? String
+                else { continue }
+                let key = nsKey as String
                 for (slot, (lowercase, conventional)) in names.enumerated() where Self.prefers(key, over: chosen[slot]?.key, lowercase, conventional) {
                     chosen[slot] = (key, value)
                 }
@@ -351,7 +357,15 @@ public enum OPMLReader {
         var hasChildElement = false
     }
 
-    private final class Delegate: NSObject, XMLParserDelegate {
+    /// The conformance to `XMLParserDelegate`, and nothing else. The reader
+    /// inherits it, so that it can implement the start-element callback
+    /// with an `NSDictionary` (see `Delegate.startElement`); declared on the
+    /// reader itself, that method would be a compiler warning or error.
+    private class DelegateBase: NSObject, XMLParserDelegate {}
+
+    /// The reader's callbacks, each exposed to Objective-C by its selector:
+    /// the parser asks whether its delegate responds to each one.
+    private final class Delegate: DelegateBase {
         var entries: [OPMLEntry] = []
         var refusal: OPMLRefusal?
         var rootIsOPML = false
@@ -372,8 +386,18 @@ public enum OPMLReader {
             parser.abortParsing()
         }
 
-        func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
-                    qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+        /// The start-element callback, under its Objective-C selector and
+        /// with the attributes as the parser's `NSDictionary`. Declared with
+        /// `[String: String]`, as the protocol spells it, the bridge would
+        /// convert every attribute name to a Swift `String` and hash it at
+        /// every start tag, before any bound here (RD08 review R1: 100 names
+        /// of 49 kB of combining marks took 14.5 s; 0.06 s this way). The
+        /// class inherits its conformance from `DelegateBase`, so the
+        /// compiler does not take this method for a mistyped protocol
+        /// requirement; the parser finds it by its selector.
+        @objc(parser:didStartElement:namespaceURI:qualifiedName:attributes:)
+        func startElement(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
+                          qualifiedName qName: String?, attributes attributeDict: NSDictionary) {
             guard refusal == nil else { return }
             depth += 1
             if depth == 1 {
@@ -442,7 +466,7 @@ public enum OPMLReader {
             top = TopOutline(depth: depth, name: name)
         }
 
-        func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+        @objc func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
             guard refusal == nil else { return }
             defer { depth -= 1 }
             if ignoredBelow == depth {
@@ -463,28 +487,28 @@ public enum OPMLReader {
 
         // A document type the prolog walk did not see: the second guard.
 
-        func parser(_ parser: XMLParser, foundInternalEntityDeclarationWithName name: String, value: String?) {
+        @objc func parser(_ parser: XMLParser, foundInternalEntityDeclarationWithName name: String, value: String?) {
             refuse(.hasDocumentType, parser)
         }
 
-        func parser(_ parser: XMLParser, foundExternalEntityDeclarationWithName name: String, publicID: String?, systemID: String?) {
+        @objc func parser(_ parser: XMLParser, foundExternalEntityDeclarationWithName name: String, publicID: String?, systemID: String?) {
             refuse(.hasDocumentType, parser)
         }
 
-        func parser(_ parser: XMLParser, foundUnparsedEntityDeclarationWithName name: String, publicID: String?,
+        @objc func parser(_ parser: XMLParser, foundUnparsedEntityDeclarationWithName name: String, publicID: String?,
                     systemID: String?, notationName: String?) {
             refuse(.hasDocumentType, parser)
         }
 
-        func parser(_ parser: XMLParser, foundNotationDeclarationWithName name: String, publicID: String?, systemID: String?) {
+        @objc func parser(_ parser: XMLParser, foundNotationDeclarationWithName name: String, publicID: String?, systemID: String?) {
             refuse(.hasDocumentType, parser)
         }
 
-        func parser(_ parser: XMLParser, foundElementDeclarationWithName elementName: String, model: String) {
+        @objc func parser(_ parser: XMLParser, foundElementDeclarationWithName elementName: String, model: String) {
             refuse(.hasDocumentType, parser)
         }
 
-        func parser(_ parser: XMLParser, foundAttributeDeclarationWithName attributeName: String, forElement elementName: String,
+        @objc func parser(_ parser: XMLParser, foundAttributeDeclarationWithName attributeName: String, forElement elementName: String,
                     type: String?, defaultValue: String?) {
             refuse(.hasDocumentType, parser)
         }

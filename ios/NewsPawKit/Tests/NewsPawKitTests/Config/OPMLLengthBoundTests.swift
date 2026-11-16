@@ -61,5 +61,30 @@ struct OPMLLengthBoundTests {
         // the RD08 evidence): the plan hashes and compares these names.
         #expect(elapsed < .seconds(5))
     }
+
+    @Test("attribute names of 49 kB of combining marks, on an outline and on another element, are read within a time bound",
+          arguments: ["outline", "x"])
+    func longAttributeNames(element: String) async throws {
+        // One letter and mixed-class marks: one Character of about 49 kB,
+        // under the parser's own 50,000-byte limit on a name. A hundred of
+        // them on one tag, about 4.9 MB.
+        let name = "a" + String(repeating: "\u{0301}\u{0316}", count: 49_000 / 4)
+        let attributes = (0..<100).map { " \(name)z\($0)=\"1\"" }.joined()
+        let tag = element == "outline"
+            ? #"<outline text="Long" xmlUrl="https://long.example/feed""# + attributes + "/>"
+            : "<x" + attributes + "/>"
+        let data = Data((#"<opml version="2.0"><body><outline text="A" xmlUrl="https://a.example/feed"/>"# + tag + "</body></opml>").utf8)
+        #expect(data.count <= OPMLReader.maximumBytes)
+
+        let start = ContinuousClock.now
+        let result = await Task.detached { OPMLReader.read(data) }.value
+        let elapsed = ContinuousClock.now - start
+        print("RD08 criterion 10 | 100 attribute names of 49 kB of marks on <\(element)> | \(data.count) bytes | \(elapsed)")
+
+        #expect((try? result.get())?.feedCount == (element == "outline" ? 2 : 1), "\(result)")
+        // Tens of milliseconds when no attribute name is hashed; 13 to 22 s
+        // when the delegate takes a Swift dictionary (review R1).
+        #expect(elapsed < .seconds(5))
+    }
 }
 }

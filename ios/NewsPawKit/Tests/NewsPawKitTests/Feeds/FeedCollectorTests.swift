@@ -393,14 +393,15 @@ struct FeedCollectorTests {
         #expect(try await fixture.articles().isEmpty)
     }
 
-    @Test("a source that does not exist, or is not a feed, ends in nothing done without a request")
+    @Test("a source that does not exist, or is not collected as a feed, ends in nothing done without a request")
     func nothingDone() async throws {
         let fixture = try await CollectionFixture.make()
         defer { fixture.remove() }
         let transport = feedResponse(try FeedFixture.data("rss2.xml"))
         let collector = FeedCollector(transport: transport)
         #expect(try await collector.collect(UUID(), in: fixture.library) == .nothingDone)
-        for kind in ["webpage", "github", "huggingface", "a-kind-from-a-later-version"] {
+        // A GitHub source is collected as a feed since RD07 (decision 10).
+        for kind in ["webpage", "huggingface", "a-kind-from-a-later-version"] {
             let other = try await fixture.addSource(url: "https://\(kind).example.invalid/")
             try await fixture.library.pool.write { db in
                 try db.execute(sql: "UPDATE source SET kind = ? WHERE id = ?", arguments: [kind, other.id.databaseKey])
@@ -408,6 +409,68 @@ struct FeedCollectorTests {
             #expect(try await collector.collect(other.id, in: fixture.library) == .nothingDone, "\(kind)")
         }
         #expect(transport.received.isEmpty)
+    }
+
+    // MARK: - GitHub sources (RD07 criteria 10 and 11)
+
+    /// The collection fixture's source made a GitHub source at a
+    /// repository's Releases feed.
+    private func gitHubFixture() async throws -> CollectionFixture {
+        let fixture = try await CollectionFixture.make(url: "https://github.com/lantern-works/lantern/releases.atom")
+        try await fixture.library.pool.write { db in
+            try db.execute(sql: "UPDATE source SET kind = 'github' WHERE id = ?", arguments: [fixture.source.id.databaseKey])
+        }
+        return fixture
+    }
+
+    @Test("a GitHub source: collected with a conditional request, new articles, identity kept, a failure recorded, no image")
+    func gitHubSource() async throws {
+        let fixture = try await gitHubFixture()
+        defer { fixture.remove() }
+        let releases = try FeedFixture.data("github-releases.atom")
+        let tags = try FeedFixture.data("github-tags.atom")
+        let answers = Mutex<[TransportResponse]>([
+            TransportResponse(finalURL: fixtureBase, status: 200, headers: ["ETag": #"W/"r1""#], body: tags),
+            TransportResponse(finalURL: fixtureBase, status: 304, headers: [:], body: Data()),
+            TransportResponse(finalURL: fixtureBase, status: 200, headers: ["ETag": #"W/"r2""#], body: releases),
+            TransportResponse(finalURL: fixtureBase, status: 500, headers: [:], body: Data()),
+        ])
+        let transport = FakeTransport { _ in answers.withLock { $0.removeFirst() } }
+        let collector = FeedCollector(transport: transport)
+
+        #expect(try await collector.collect(fixture.source.id, in: fixture.library) == .collected(newArticles: 2, complete: true))
+        #expect(try await fixture.storedSource().etag == #"W/"r1""#)
+        fixture.clock.advance(seconds: 60)
+        #expect(try await collector.collect(fixture.source.id, in: fixture.library) == .notModified)
+        fixture.clock.advance(seconds: 60)
+        // Releases lists the two tags already stored and two more.
+        #expect(try await collector.collect(fixture.source.id, in: fixture.library) == .collected(newArticles: 2, complete: true))
+        fixture.clock.advance(seconds: 60)
+        #expect(try await collector.collect(fixture.source.id, in: fixture.library) == .failed(.httpStatus(500)))
+
+        let requests = transport.received
+        #expect(requests.map(\.url.absoluteString) == Array(repeating: "https://github.com/lantern-works/lantern/releases.atom", count: 4))
+        #expect(requests[0].etag == nil)
+        #expect(requests[1].etag == #"W/"r1""#)
+        #expect(requests[2].etag == #"W/"r1""#)
+        #expect(requests[3].etag == #"W/"r2""#)
+        let articles = try await fixture.articles()
+        #expect(articles.count == 4)
+        #expect(Set(articles.map(\.externalID)).count == 4)
+        #expect(articles.allSatisfy { $0.imageURL == nil })
+        let source = try await fixture.storedSource()
+        #expect(source.kind == .github)
+        #expect(source.lastError == "http:500")
+    }
+
+    @Test("a feed source reading the same bytes keeps the image")
+    func feedKeepsTheImage() async throws {
+        let fixture = try await CollectionFixture.make(url: "https://github.com/lantern-works/lantern/releases.atom")
+        defer { fixture.remove() }
+        let collector = FeedCollector(transport: feedResponse(try FeedFixture.data("github-releases.atom")))
+        #expect(try await collector.collect(fixture.source.id, in: fixture.library) == .collected(newArticles: 4, complete: true))
+        let articles = try await fixture.articles()
+        #expect(articles.allSatisfy { $0.imageURL?.hasPrefix("https://example.invalid/avatars/") == true })
     }
 
     /// Runs a collection whose fetch waits until `meanwhile` has run.

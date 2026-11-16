@@ -63,6 +63,16 @@ enum SourceWording {
         }
     }
 
+    /// A repository's feed's name (RD07): the title of its row in Add
+    /// source, and part of the kind and of the suggested name.
+    static func gitHubFeed(_ feed: GitHubFeed) -> String {
+        switch feed {
+        case .releases: String(localized: "Releases", comment: "One of a GitHub repository's feeds: its releases (every tag, with the release notes).")
+        case .tags: String(localized: "Tags", comment: "One of a GitHub repository's feeds: its tags, without notes.")
+        case .commits: String(localized: "Commits", comment: "One of a GitHub repository's feeds: the commits of its default branch.")
+        }
+    }
+
     static func group(_ group: SuggestedSourceGroup) -> Text {
         switch group {
         case .world: Text("World")

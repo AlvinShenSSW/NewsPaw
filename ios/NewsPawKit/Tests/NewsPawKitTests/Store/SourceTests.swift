@@ -150,6 +150,42 @@ struct SourceTests {
         #expect(try await fixture.library.existingSource(atAddress: "http://example.com/") == nil)
     }
 
+    @Test("the lookup ignoring ASCII case finds an address stored in another case; the exact lookup does not (RD07)")
+    func existingIgnoringCase() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let library = fixture.library
+        let id = try await library.addWebPageSource(
+            address: "https://github.com/Lantern-Works/Lantern/releases.atom", name: "Pasted", categoryID: fixture.category
+        )
+        let lower = "https://github.com/lantern-works/lantern/releases.atom"
+        #expect(try await library.existingSource(atAddress: lower) == nil)
+        #expect(try await library.existingSource(atAddress: lower, ignoringCase: true)?.sourceID == id)
+        #expect(try await library.existingSource(atAddress: "https://github.com/lantern-works/lantern/tags.atom", ignoringCase: true) == nil)
+    }
+
+    @Test("a GitHub candidate is stored as kind github; its items without images")
+    func addGitHubFeed() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let address = "https://github.com/lantern-works/lantern/releases.atom"
+        let data = try FeedFixture.data("github-releases.atom")
+        let feed = try #require(parse(data, base: URL(string: address)!))
+        let fetched = FetchedFeed(feed: feed, validators: Validators(etag: "\"v1\"", lastModified: nil), finalURL: URL(string: address)!)
+        let library = fixture.library
+        try await library.addFeedSource(
+            FeedCandidate(address: address, fetched: fetched, pageAddress: "https://github.com/Lantern-Works/Lantern", kind: .github),
+            name: "Lantern-Works/Lantern", categoryID: fixture.category
+        )
+        let source = try #require(try await library.sources().first)
+        #expect(source.kind == .github)
+        #expect(source.etag == "\"v1\"")
+        let articles = try await library.articles()
+        #expect(articles.count == 4)
+        #expect(articles.allSatisfy { $0.imageURL == nil })
+        #expect(feed.items.allSatisfy { $0.imageURL != nil }, "the parsed items carried the avatar")
+    }
+
     // MARK: - The other partition (criterion 6)
 
     @Test("an address held by the adult library is a new address in the normal one, and the reverse")

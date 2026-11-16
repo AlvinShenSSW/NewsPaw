@@ -141,6 +141,9 @@ struct ConfirmStepView: View {
         switch model.detection {
         case .feed(let candidate): candidate.address
         case .page(let page): page.address
+        // The repository as typed, without www., .git or a deeper path
+        // (RD07 decision 7).
+        case .github(let repository): repository.repository.pageAddress
         case .failed(let failure): failure.address
         case .duplicate, .invalidAddress, nil: model.addressText
         }
@@ -150,7 +153,9 @@ struct ConfirmStepView: View {
     private var kind: some View {
         switch model.choice {
         case .feed:
-            if let feed = model.chosenFeed {
+            if let gitHubFeed = model.chosenGitHubFeed {
+                Text("GitHub · \(SourceWording.gitHubFeed(gitHubFeed))")
+            } else if let feed = model.chosenFeed {
                 Text("Feed · \(SourceWording.format(feed.format))")
             }
         case .webPage:
@@ -160,15 +165,35 @@ struct ConfirmStepView: View {
         }
     }
 
+    /// A repository's feed's name, when the detection is a repository.
+    private func gitHubFeed(of candidate: DeclaredCandidate) -> GitHubFeed? {
+        guard case .github(let repository) = model.detection else { return nil }
+        return repository.feed(of: candidate)
+    }
+
     @ViewBuilder
     private func candidateRow(_ candidate: DeclaredCandidate) -> some View {
+        // A repository's rows are titled Releases, Tags and Commits (RD07
+        // decision 7); a page's by the feed's or the link's title.
+        let gitHubTitle = gitHubFeed(of: candidate).map(SourceWording.gitHubFeed)
+        let fallbackTitle = gitHubTitle ?? candidate.declaredTitle ?? candidate.address
         switch candidate.state {
         case .usable(let feed):
-            let detail = feed.newestItemAt.map { newest in
-                Text("\(SourceWording.format(feed.format)) · latest item \(SourceWording.relative(newest))")
-            } ?? Text(verbatim: SourceWording.format(feed.format))
+            let detail: Text = if gitHubTitle != nil {
+                if let newest = feed.newestItemAt {
+                    Text("Latest item \(SourceWording.relative(newest))")
+                } else if feed.itemCount == 0 {
+                    Text("No items yet")
+                } else {
+                    Text(verbatim: SourceWording.format(feed.format))
+                }
+            } else {
+                feed.newestItemAt.map { newest in
+                    Text("\(SourceWording.format(feed.format)) · latest item \(SourceWording.relative(newest))")
+                } ?? Text(verbatim: SourceWording.format(feed.format))
+            }
             choiceRow(
-                Text(verbatim: feed.title ?? candidate.declaredTitle ?? candidate.address), detail,
+                Text(verbatim: gitHubTitle ?? feed.title ?? candidate.declaredTitle ?? candidate.address), detail,
                 selected: model.choice == .feed(candidate.address), enabled: true,
                 identifier: AccessibilityID.candidateChoice(candidate.address)
             ) {
@@ -176,20 +201,20 @@ struct ConfirmStepView: View {
             }
         case .notChecked:
             choiceRow(
-                Text(verbatim: candidate.declaredTitle ?? candidate.address), Text("Could not check in time"),
+                Text(verbatim: fallbackTitle), Text("Could not check in time"),
                 selected: false, enabled: true, identifier: AccessibilityID.candidateChoice(candidate.address)
             ) {
                 model.choose(.feed(candidate.address))
             }
         case .failed(let reason):
             choiceRow(
-                Text(verbatim: candidate.declaredTitle ?? candidate.address),
+                Text(verbatim: fallbackTitle),
                 Text("Could not read this address · \(SourceWording.reason(reason))"),
                 selected: false, enabled: false, identifier: AccessibilityID.candidateChoice(candidate.address)
             ) {}
         case .alreadyAdded(let existing):
             choiceRow(
-                Text(verbatim: candidate.declaredTitle ?? candidate.address), Text("Already in “\(existing.categoryName)”"),
+                Text(verbatim: fallbackTitle), Text("Already in “\(existing.categoryName)”"),
                 selected: false, enabled: false, identifier: AccessibilityID.candidateChoice(candidate.address)
             ) {}
         }

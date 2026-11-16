@@ -140,9 +140,10 @@ public actor TitleTranslator {
 
     private var pause: Pause?
     private var pauseGeneration = 0
-    /// Counts the slot changes this translator was told of: a set-up or
-    /// content failure of a request sent before the latest one belongs to
-    /// the old slots and is dropped (`Attempt.superseded`).
+    /// Counts the slot changes this translator was told of: a failure of
+    /// the model (set-up, content or service) to a request sent before the
+    /// latest one belongs to the old slots and is dropped
+    /// (`Attempt.superseded`).
     private var slotsGeneration = 0
     private var pauseTimer: Task<Void, Never>?
     /// Passes and slot reads started and not ended.
@@ -517,9 +518,11 @@ public actor TitleTranslator {
         /// The day's count could not be read: nothing was sent.
         case storage
         case cancelled
-        /// A set-up or content failure that came back after the slots
-        /// changed: it belongs to the old slots, so nothing is stored or
-        /// paused, and the articles wait (the change asked for them again).
+        /// A set-up, content or service failure that came back after the
+        /// slots changed: it belongs to the old slots, so nothing is stored,
+        /// blocked, paused or sent to the backup, and the articles wait (the
+        /// change asked for them again). An accepted reply of the old slots
+        /// is still stored: it is good text.
         case superseded
     }
 
@@ -682,7 +685,7 @@ public actor TitleTranslator {
             case .cutOff: return superseded ? .superseded : .content(.cutOff, model: slotModel)
             case .malformed: return superseded ? .superseded : .content(.malformed, model: slotModel)
             case .badRequest: return superseded ? .superseded : .content(.badRequest, model: slotModel)
-            case .limited, .serverError, .unreachable: return .service(failure)
+            case .limited, .serverError, .unreachable: return superseded ? .superseded : .service(failure)
             case .noModelSetUp, .keyNeeded, .keyRejected, .modelNotFound: return superseded ? .superseded : .setUp(failure)
             }
         } catch {

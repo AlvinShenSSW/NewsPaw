@@ -349,21 +349,28 @@ struct TitleTranslatorTests {
         }
     }
 
-    static let supersededCases: [(String, TranslationService.Answer, Int)] = [
+    /// The answer of the old primary, the request held until after the
+    /// change, and whether a backup is set up.
+    static let supersededCases: [(String, TranslationService.Answer, Int, Bool)] = [
         // The first request's 401 comes back after the change.
-        ("key rejected", .status(401), 1),
+        ("key rejected", .status(401), 1, false),
         // The refusal's retry comes back after the change.
-        ("refused", .refusal, 2),
+        ("refused", .refusal, 2, false),
+        // Service failures: neither a pause nor the backup.
+        ("503", .status(503), 1, false),
+        ("503 with a backup", .status(503), 1, true),
+        ("network", .failure(.unreachable), 1, false),
+        ("network with a backup", .failure(.unreachable), 1, true),
     ]
 
-    @Test("a set-up or content failure that comes back after a slot change stores nothing and pauses nothing; the new slot translates",
+    @Test("a set-up, content or service failure that comes back after a slot change stores, blocks and pauses nothing; the new slot translates",
           arguments: supersededCases.indices)
     func failureAfterSlotChange(_ index: Int) async throws {
-        let (name, answer, held) = Self.supersededCases[index]
+        let (name, answer, held, backup) = Self.supersededCases[index]
         let repaired = "repaired.example.invalid"
         let service = TranslationService { host, _, _ in host == Self.primary ? answer : .texts(TranslationService.marked) }
         service.hold(request: held)
-        let fixture = try await TranslatorFixture.make(service: service)
+        let fixture = try await TranslatorFixture.make(service: service, backup: backup)
         defer { fixture.remove() }
         let id = try await fixture.article("Story one", in: try await fixture.source())
         await fixture.translator.configure(TranslationConfiguration(locale: .simplifiedChinese, automatic: true))
@@ -377,6 +384,7 @@ struct TitleTranslatorTests {
         #expect(await fixture.translator.pausedBy == nil, "\(name)")
         #expect(fixture.blocked[id] == nil, "\(name)")
         #expect(fixture.service.requests.map(\.host).last == repaired, "\(name)")
+        #expect(fixture.service.requests(to: Self.backup).isEmpty, "\(name): the old slot's failure goes to no backup")
         // No pause on the repaired slot that the app's coming to the front
         // or a refresh's end would have to end (the gate's G2).
         await fixture.resume(.cameToFront)

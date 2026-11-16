@@ -57,7 +57,10 @@ final class TranslationService: ModelHTTP {
         self.rule.withLock { $0 = rule }
     }
 
-    /// Request `number` waits, once it has arrived, until `release(_:)`.
+    /// Request `number` waits, once it has arrived, until `release(_:)` or
+    /// until its task is cancelled (it then throws `CancellationError`, as
+    /// a cancelled request does). Tests that need a request in flight hold
+    /// it instead of giving it a delay that a slow runner could outlast.
     func hold(request number: Int) {
         holds.withLock { _ = $0.held.insert(number) }
     }
@@ -104,16 +107,21 @@ final class TranslationService: ModelHTTP {
         }
         defer { state.withLock { $0.inFlight -= 1 } }
         if holds.withLock({ $0.held.contains(number) }) {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                let now = holds.withLock { holds in
-                    guard !holds.released.contains(number) else { return true }
-                    holds.waiting[number] = continuation
-                    return false
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    let now = holds.withLock { holds in
+                        guard !holds.released.contains(number) else { return true }
+                        holds.waiting[number] = continuation
+                        return false
+                    }
+                    if now {
+                        continuation.resume()
+                    }
                 }
-                if now {
-                    continuation.resume()
-                }
+            } onCancel: {
+                release(request: number)
             }
+            try Task.checkCancellation()
         }
         if delay > .zero {
             try await Task.sleep(for: delay)
@@ -348,14 +356,19 @@ final class TranslatorFixture: @unchecked Sendable {
         await translator.settled()
     }
 
-    /// Waits, five seconds at most, until `condition` holds: for what the
+    /// How long `eventually` waits at most: a bound a stalled runner does
+    /// not reach (CI saw a first request take over five seconds); a passing
+    /// test returns as soon as its condition holds.
+    static let eventualBound = Duration.seconds(120)
+
+    /// Waits, `eventualBound` at most, until `condition` holds: for what the
     /// translator does from a task of its own (a pause's timer, a request
-    /// that is being cancelled).
+    /// that is being cancelled, the first request after `configure`).
     func eventually(_ condition: @escaping () async throws -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async rethrows {
-        let deadline = ContinuousClock.now + .seconds(5)
+        let deadline = ContinuousClock.now + Self.eventualBound
         while try await !condition() {
             guard ContinuousClock.now < deadline else {
-                Issue.record("the condition did not hold within five seconds", sourceLocation: sourceLocation)
+                Issue.record("the condition did not hold within \(Self.eventualBound)", sourceLocation: sourceLocation)
                 return
             }
             try? await Task.sleep(for: .milliseconds(5))

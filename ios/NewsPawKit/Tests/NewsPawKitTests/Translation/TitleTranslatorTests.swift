@@ -556,13 +556,15 @@ struct TitleTranslatorTests {
 
     @Test("a reply that arrives after the locale changed is stored under the locale it was asked for")
     func localeChangeDuringRequest() async throws {
-        let service = TranslationService(delay: .milliseconds(200))
+        let service = TranslationService()
+        service.hold(request: 1)
         let fixture = try await TranslatorFixture.make(service: service)
         defer { fixture.remove() }
         let id = try await fixture.article("A story", in: try await fixture.source())
         await fixture.translator.configure(TranslationConfiguration(locale: .simplifiedChinese, automatic: true))
         await fixture.eventually { fixture.service.requests.count == 1 }
         await fixture.translator.configure(TranslationConfiguration(locale: .japanese, automatic: true))
+        service.release(request: 1)
         await fixture.translator.settled()
         #expect(try await fixture.translation(id, .simplifiedChinese)?.state == .done)
         #expect(try await fixture.translation(id, .japanese)?.state == .done)
@@ -631,7 +633,8 @@ struct TitleTranslatorTests {
 
     @Test("an article deleted while its request is in flight loses only its own result")
     func deletedDuringRequest() async throws {
-        let service = TranslationService(delay: .milliseconds(200))
+        let service = TranslationService()
+        service.hold(request: 1)
         let fixture = try await TranslatorFixture.make(service: service)
         defer { fixture.remove() }
         let source = try await fixture.source()
@@ -641,6 +644,7 @@ struct TitleTranslatorTests {
         try await fixture.library.pool.write { db in
             try db.execute(sql: "DELETE FROM article WHERE id = ?", arguments: [ids[1].databaseKey])
         }
+        service.release(request: 1)
         await fixture.translator.settled()
         #expect(try await fixture.translation(ids[0])?.state == .done)
         #expect(try await fixture.translation(ids[2])?.state == .done)
@@ -707,7 +711,9 @@ struct TitleTranslatorTests {
 
     @Test("stopping cancels the request in flight and stores nothing; nothing starts afterwards")
     func stopping() async throws {
-        let service = TranslationService(delay: .seconds(5))
+        // Held until the stop cancels it.
+        let service = TranslationService()
+        service.hold(request: 1)
         let fixture = try await TranslatorFixture.make(service: service)
         defer { fixture.remove() }
         let id = try await fixture.article("A story", in: try await fixture.source())

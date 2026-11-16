@@ -367,6 +367,7 @@ struct ArticleShortcuts: View {
     let list: ArticleListKind
     @Environment(ReadingModel.self) private var reading
     @Environment(NavigationModel.self) private var navigation
+    @Environment(TranslationModel.self) private var translation: TranslationModel?
 
     var body: some View {
         if !navigation.pageIsOpen(on: list) {
@@ -394,6 +395,13 @@ struct ArticleShortcuts: View {
             }
             shortcut("Refresh", "r") {
                 Task { await reading.refresh(list) }
+            }
+            // RD15 decision 11: cycles the open article's display mode,
+            // when its body has the mode menu.
+            shortcut("Change Display Mode", "t") {
+                if let id = navigation.openArticle(on: list) {
+                    translation?.body.cycleMode(of: .article(id))
+                }
             }
         }
         .opacity(0)

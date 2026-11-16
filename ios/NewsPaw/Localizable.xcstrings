@@ -324,6 +324,17 @@
         }
       }
     },
+    "Article Info" : {
+      "comment" : "Reading screen, More menu, and the title of its sheet: where the body came from and how it was translated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文章信息"
+          }
+        }
+      }
+    },
     "Australia" : {
       "comment" : "Group of suggested sources.",
       "localizations" : {
@@ -386,6 +397,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正文"
+          }
+        }
+      }
+    },
+    "Body Translation" : {
+      "comment" : "Article Info: the section about the translation of the article body.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正文翻译"
           }
         }
       }
@@ -463,6 +485,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分类设置"
+          }
+        }
+      }
+    },
+    "Change Display Mode" : {
+      "comment" : "Keyboard shortcut T: cycles the reading screen between translation, original and side by side.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换显示方式"
           }
         }
       }
@@ -577,6 +610,17 @@
         }
       }
     },
+    "Converted on this device" : {
+      "comment" : "Article Info: the text was converted from Traditional to Simplified Chinese on the device, without a model.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在本机转换"
+          }
+        }
+      }
+    },
     "Copy" : {
       "comment" : "Button: copies a source's address.",
       "localizations" : {
@@ -595,6 +639,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "复制链接"
+          }
+        }
+      }
+    },
+    "Copy Translation" : {
+      "comment" : "Reading screen, More menu: copies the translated title and body as plain text.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝译文"
           }
         }
       }
@@ -731,6 +786,17 @@
         }
       }
     },
+    "Default Display Mode" : {
+      "comment" : "Settings, Reading: the display mode an article opens in.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认显示方式"
+          }
+        }
+      }
+    },
     "Delete" : {
       "comment" : "Context-menu item of a source; the last button before the adult partition's data is deleted.",
       "localizations" : {
@@ -830,6 +896,17 @@
         }
       }
     },
+    "Display Mode" : {
+      "comment" : "Reading screen bottom bar: the menu of translation, original and side by side.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示方式"
+          }
+        }
+      }
+    },
     "Done" : {
       "comment" : "Button: ends edit mode of the category list.",
       "localizations" : {
@@ -925,6 +1002,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Feed · %@"
+          }
+        }
+      }
+    },
+    "Fetched %@" : {
+      "comment" : "Article Info: when the original page was fetched; the argument is a date and time.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "获取于 %@"
           }
         }
       }
@@ -1037,6 +1125,17 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "From the feed" : {
+      "comment" : "Article Info: the body is the one the feed gave.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来自订阅源"
           }
         }
       }
@@ -2145,6 +2244,17 @@
         }
       }
     },
+    "Original" : {
+      "comment" : "A display mode: the original text only.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原文"
+          }
+        }
+      }
+    },
     "Paint palette" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -2174,6 +2284,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分区：普通"
+          }
+        }
+      }
+    },
+    "Partly translated" : {
+      "comment" : "Article Info: some paragraphs of the body are not translated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分已翻译"
           }
         }
       }
@@ -2706,6 +2827,17 @@
         }
       }
     },
+    "Side by Side" : {
+      "comment" : "A display mode: each translated paragraph followed by its original.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对照"
+          }
+        }
+      }
+    },
     "Simplified Chinese" : {
       "comment" : "A reading language: Simplified Chinese.",
       "localizations" : {
@@ -2724,6 +2856,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "较小"
+          }
+        }
+      }
+    },
+    "Some text could not be translated" : {
+      "comment" : "Reading screen banner: shown before the reason when part of the body is translated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分文字没有翻译成功"
           }
         }
       }
@@ -3203,6 +3346,17 @@
         }
       }
     },
+    "The translation could not be read." : {
+      "comment" : "Reading screen banner: the stored translation could not be read.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取译文。"
+          }
+        }
+      }
+    },
     "This address is already in “%@” as “%@”." : {
       "comment" : "Add source outcome. The first %@ is the category's name, the second the source's name.",
       "localizations" : {
@@ -3394,13 +3548,24 @@
         }
       }
     },
-    "Titles and summaries are translated into this language." : {
-      "comment" : "Footer under the reading language.",
+    "Title Translation" : {
+      "comment" : "Article Info: the section about the translation of the title.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "标题和摘要会翻译成这种语言。"
+            "value" : "标题翻译"
+          }
+        }
+      }
+    },
+    "Titles, summaries and articles are translated into this language." : {
+      "comment" : "Settings, Models & Translation: footer of the reading language.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标题、摘要和正文会翻译成这种语言。"
           }
         }
       }
@@ -3423,6 +3588,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已达到今天的自动上限，可手动翻译，或在设置里调高"
+          }
+        }
+      }
+    },
+    "Translate" : {
+      "comment" : "Reading screen bottom bar: translates the article now.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译"
+          }
+        }
+      }
+    },
+    "Translate Articles When Opened" : {
+      "comment" : "Settings, Models & Translation: switch; when on, an article body is translated as it opens.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开文章时翻译正文"
           }
         }
       }
@@ -3456,6 +3643,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开时翻译"
+          }
+        }
+      }
+    },
+    "Translated by %@" : {
+      "comment" : "Article Info: the models that translated; the argument is a list of model names.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %@ 翻译"
+          }
+        }
+      }
+    },
+    "Translating %lld of %lld" : {
+      "comment" : "Reading screen progress line: chunks of the body translated so far, of all chunks.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在翻译 %1$lld / %2$lld 段"
           }
         }
       }
@@ -3691,6 +3900,17 @@
         }
       }
     },
+    "When this is off, an article is translated when you tap Translate." : {
+      "comment" : "Settings, Models & Translation: footer of the translation switches.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭后，点按“翻译”才会翻译文章。"
+          }
+        }
+      }
+    },
     "When you open the app and this long has passed since the last refresh, the library is refreshed. Pull down on Today to refresh at any time." : {
       "comment" : "Settings → Refresh: footer of Refresh Interval.",
       "localizations" : {
@@ -3759,6 +3979,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "连接不上"
+          }
+        }
+      }
+    },
+    "displayMode.translation" : {
+      "comment" : "A display mode: the translated text. A key of its own: \"Translation\" alone is the settings section.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "译文"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translation"
           }
         }
       }

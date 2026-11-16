@@ -94,12 +94,22 @@ private struct ArticleScreen: View {
     @Environment(TranslationModel.self) private var translation: TranslationModel?
     @Environment(\.layoutDirection) private var layoutDirection
     @State private var isShowingSettings = false
+    @State private var isShowingInfo = false
     /// The title's size: 22 pt at the default Dynamic Type size, scaled
     /// with it and, as the body is, by the text-size setting.
     @ScaledMetric(relativeTo: .title2) private var scaledTitleSize = 22.0
 
     /// The column of ux section 5.
     private static let maximumColumnWidth = 680.0
+
+    /// The body's translation (RD15): only in a workspace with translation.
+    private var body_: BodyTranslationModel? {
+        translation?.body
+    }
+
+    private var key: BodyKey {
+        .article(row.id)
+    }
 
     var body: some View {
         ScrollView {
@@ -111,7 +121,14 @@ private struct ArticleScreen: View {
             .padding(Theme.Spacing.standard)
             .frame(maxWidth: .infinity)
         }
-        .modifier(ReaderPosition(articleID: row.id, reading: reading))
+        // "Translating k of n" under the navigation bar while work runs
+        // (assumption A4).
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let progress = body_?.progress(of: key) {
+                BodyProgressLine(progress: progress)
+            }
+        }
+        .modifier(ReaderPosition(articleID: row.id, reading: reading, mode: body_?.mode(of: key)))
         // A body replaced by the article's page (RD12) starts at the top,
         // header and all: the scroll view and its position are made anew.
         // (Kept, the position would hold the old body's block at the top
@@ -125,15 +142,32 @@ private struct ArticleScreen: View {
             previous: isPushed ? nil : { reading.openPrevious(on: list) }
         )
         .toolbar { bars }
+        .sheet(isPresented: $isShowingInfo) {
+            ArticleInfoView(row: row, content: content, key: key)
+                .environment(translation)
+        }
         .onAppear {
             reading.loadBody(of: row)
             // The reading screen asks for its article as a row does (RD14
             // decision 7).
             translation?.articleOpened(row)
+            // Leaving the screen stops the body's work; coming back
+            // resumes it (RD15 decision 9).
+            body_?.screenAppeared(key)
         }
         .onDisappear {
             reading.readingScreenClosed(row.id)
             translation?.articleClosed(row.id)
+            body_?.screenDisappeared(key)
+        }
+    }
+
+    /// The body shown now, settled or interim.
+    private var content: ReadingContent? {
+        switch reading.bodies[row.id] {
+        case .loaded(let content): content
+        case .fetching(let feed): feed
+        default: nil
         }
     }
 
@@ -145,14 +179,18 @@ private struct ArticleScreen: View {
     @ViewBuilder
     private var header: some View {
         let translated = translation == nil ? nil : row.translatedTitle
-        Text(verbatim: translated ?? row.displayTitle)
+        // Each line carries its language for VoiceOver (RD15 decision 13):
+        // the translation the reading language, the original the
+        // recognizer's.
+        let originalLanguage = translation == nil ? nil : BodySegments.language(of: row.displayTitle)
+        Text(HeaderText.attributed(translated ?? row.displayTitle, language: translated != nil ? body_?.readingLocale.rawValue : originalLanguage))
             .font(.system(size: min(scaledTitleSize * settings.textSize.factor, ReadingMetrics.maximumSize), weight: .bold))
             .foregroundStyle(Theme.text)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)
             .accessibilityIdentifier(AccessibilityID.readingTitle)
         if translated != nil {
-            Text(verbatim: row.displayTitle)
+            Text(HeaderText.attributed(row.displayTitle, language: originalLanguage))
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -183,6 +221,12 @@ private struct ArticleScreen: View {
         case .loaded(let content):
             if content.isExtracted {
                 note(Text("Full text from the original page"), identifier: AccessibilityID.readingFullTextNote)
+            }
+            // The banner is the first content above the body (ux S4).
+            if let body_, let banner = body_.banner(of: key, hasBackup: translation?.hasBackup ?? false) {
+                BodyBannerView(banner: banner) { step in
+                    take(step, body: body_)
+                }
             }
             blocks(content)
             if content.isCut {
@@ -230,9 +274,28 @@ private struct ArticleScreen: View {
     }
 
     private func blocks(_ content: ReadingContent) -> some View {
-        BlocksView(blocks: content.blocks, settings: settings, images: content.images) { url in
+        BlocksView(blocks: content.blocks, settings: settings, images: content.images, translation: blockTranslation) { url in
             // In the embedded browser above the article, never Safari.
             navigation.openPage(url, on: list)
+        }
+    }
+
+    /// What the blocks show of the body's translation.
+    private var blockTranslation: BlockTranslation? {
+        guard let body_, body_.openings[key]?.plan != nil else { return nil }
+        let key = key
+        return BlockTranslation(
+            mode: body_.mode(of: key), language: body_.readingLocale.rawValue,
+            text: { body_.translatedText(of: $0, in: key) }, originalLanguage: { body_.originalLanguage(of: $0, in: key) }
+        )
+    }
+
+    /// A banner step.
+    private func take(_ step: TranslationWording.Step, body: BodyTranslationModel) {
+        switch step {
+        case .retry: body.translate(key)
+        case .retryWithBackup: body.retryWithBackup(key)
+        case .openSettings: navigation.openModelSettings()
         }
     }
 
@@ -277,6 +340,19 @@ private struct ArticleScreen: View {
         }
         ToolbarItem(placement: .topBarTrailing) {
             Menu("More", systemImage: "ellipsis.circle") {
+                if let body_ {
+                    Button("Copy Translation", systemImage: "doc.on.doc") {
+                        if let text = body_.copyText(of: key, title: row.translatedTitle ?? row.displayTitle) {
+                            UIPasteboard.general.string = text
+                        }
+                    }
+                    .disabled(!body_.hasTranslation(key))
+                    .accessibilityIdentifier(AccessibilityID.copyTranslationButton)
+                }
+                Button("Article Info", systemImage: "info.circle") {
+                    isShowingInfo = true
+                }
+                .accessibilityIdentifier(AccessibilityID.articleInfoButton)
                 Button("Previous Article", systemImage: "chevron.up") {
                     reading.openPrevious(on: list)
                 }
@@ -288,6 +364,14 @@ private struct ArticleScreen: View {
             .accessibilityIdentifier(AccessibilityID.readingMoreMenu)
         }
         ToolbarItemGroup(placement: .bottomBar) {
+            // Display mode first (ux S4): Translate, or the mode menu.
+            if let body_, body_.control(for: key) != .none {
+                BodyControlView(
+                    control: body_.control(for: key), mode: body_.mode(of: key),
+                    translate: { body_.translate(key) }, setMode: { body_.setMode($0, of: key) }
+                )
+                Spacer()
+            }
             Button(ArticleActionWording.star(isStarred: row.isStarred), systemImage: row.isStarred ? "star.fill" : "star") {
                 reading.setStarred(row.id, !row.isStarred)
             }
@@ -325,14 +409,20 @@ private struct ArticleScreen: View {
 /// back with it (measured, and held by the UI test). The position is this
 /// modifier's own state, so that scrolling does not lay the screen out
 /// again.
-private struct ReaderPosition: ViewModifier {
+///
+/// A change of display mode sets the block that was at the top back at the
+/// top (RD15 decision 11, assumption A3).
+struct ReaderPosition: ViewModifier {
     let articleID: UUID
     let reading: ReadingModel
+    /// The body's display mode; `nil` without translation.
+    var mode: ReadingDisplayMode?
     @State private var position: ScrollPosition
 
-    init(articleID: UUID, reading: ReadingModel) {
+    init(articleID: UUID, reading: ReadingModel, mode: ReadingDisplayMode? = nil) {
         self.articleID = articleID
         self.reading = reading
+        self.mode = mode
         let start = reading.position(of: articleID)
         _position = State(initialValue: start.map { ScrollPosition(id: $0, anchor: .top) } ?? ScrollPosition(idType: Int.self))
     }
@@ -343,5 +433,27 @@ private struct ReaderPosition: ViewModifier {
             .onChange(of: position.viewID(type: Int.self)) { _, block in
                 reading.readerMoved(to: block, in: articleID)
             }
+            .onChange(of: mode) {
+                keepTopBlock()
+            }
+    }
+
+    /// The block at the top stays there across a switch. Nothing is done
+    /// at the article's top (no block reported).
+    private func keepTopBlock() {
+        guard let block = reading.position(of: articleID) else { return }
+        position.scrollTo(id: block, anchor: .top)
+    }
+}
+
+/// A header line as an attributed string carrying its language for
+/// VoiceOver (RD15 decision 13): built from the plain string, never parsed.
+enum HeaderText {
+    static func attributed(_ text: String, language: String?) -> AttributedString {
+        var attributed = AttributedString(text)
+        if let language {
+            attributed.languageIdentifier = language
+        }
+        return attributed
     }
 }

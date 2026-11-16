@@ -159,6 +159,37 @@ enum AccessibilityID {
     static let readingLoadingNote = "reading.loadingNote"
     static let hideListButton = "reading.hideList"
 
+    // Body translation (RD15)
+    /// "Translating k of n" under the navigation bar.
+    static let bodyProgress = "translation.bodyProgress"
+    /// The banner above the body, and its steps.
+    static let bodyBanner = "translation.banner"
+    static let bodyBannerRetry = "translation.banner.retry"
+    static let bodyBannerRetryBackup = "translation.banner.retryBackup"
+    static let bodyBannerOpenSettings = "translation.banner.openSettings"
+    /// The bar's Translate button and its display-mode menu.
+    static let translateButton = "translation.translate"
+    static let displayModeMenu = "translation.displayMode"
+    static let copyTranslationButton = "reading.copyTranslation"
+    static let articleInfoButton = "reading.articleInfo"
+    static let articleInfo = "articleInfo"
+    static let articleInfoBody = "articleInfo.body"
+    static let articleInfoTitle = "articleInfo.title"
+    static let articleInfoTranslation = "articleInfo.translation"
+    static let articleInfoDoneButton = "articleInfo.done"
+    static let defaultDisplayModePicker = "readingSettings.displayMode"
+    static let translateBodyOnOpenToggle = "translation.bodyOnOpen"
+
+    /// A display mode's option in the mode menu and in Settings › Reading.
+    static func displayModeOption(_ rawValue: String) -> String {
+        "displayMode." + rawValue
+    }
+
+    /// The original under a translated block in Side by Side.
+    static func readingOriginalBlock(_ index: Int) -> String {
+        "reading.original." + String(index)
+    }
+
     // The body's blocks, by their place in the body (RD11)
     static let readingBlockPrefix = "reading.block."
 
@@ -354,12 +385,13 @@ enum DebugAccessibilityID {
     /// 4): its label is `file=<0|1> pool=<open|closed>
     /// library=<held|released> workspace=<none|held|released>
     /// browser=<none|held|released> sessions=<number> pages=<number>
-    /// translationRequests=<number>`. `pool` is whether connections are open
+    /// translationRequests=<number> bodyRequests=<number>`. `pool` is whether connections are open
     /// on the file; the other three are whether the objects are gone from
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
     /// requests the translator fixture has answered in this process (RD14
-    /// criterion 13).
+    /// criterion 13); `bodyRequests` is how many usage rows of body
+    /// requests the normal library holds (RD15 decision 16).
     static let adultReport = "debug.adultReport"
 }
 #endif

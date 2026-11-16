@@ -49,6 +49,9 @@ struct BrowserReader {
 /// state of its browser session, in memory only. It is never stored, has
 /// no star, read state, previous or next, and ends with its session.
 struct TemporaryArticle {
+    /// This opening: its translation lasts while it is open (RD15 decision
+    /// 14), and a new opening is translated again.
+    let id = UUID()
     /// The extraction's title, the host when it has none.
     let title: String
     /// The page's host.

@@ -742,7 +742,8 @@ final class AppModel {
         return "file=\(file) pool=\(pool) library=\(library) workspace=\(state(lastAdultWorkspace)) "
             + "browser=\(state(lastAdultBrowser)) sessions=\(BrowserModel.sessionsMade) "
             + "pages=\((parts?.transport as? FixtureTransport)?.pageRequests ?? -1) "
-            + "translationRequests=\(FixtureModelHTTP.translationRequests)"
+            + "translationRequests=\(FixtureModelHTTP.translationRequests) "
+            + "bodyRequests=\((try? await normal?.reading.library.usageCount(purpose: .body)) ?? -1)"
     }
     #endif
 }

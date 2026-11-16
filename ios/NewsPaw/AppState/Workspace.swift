@@ -100,6 +100,11 @@ final class Workspace: Identifiable {
             ? TranslationModel(models: parts.models, settings: parts.translationSettings, reading: reading, now: parts.now)
             : nil
         reading.translationLocale = { [weak translation] in translation?.settings.readingLocale }
+        // The bodies the reading model settles and lets go (RD15).
+        reading.onBodySettled = { [weak translation] id, content in translation?.body.bodySettled(id, content: content) }
+        reading.onBodyDropped = { [weak translation] id in translation?.body.bodyDropped(id) }
+        let sharedReadingSettings = parts.readingSettings
+        translation?.body.defaultMode = { sharedReadingSettings.defaultDisplayMode }
         modelSettings.onSlotsChanged = parts.slotsChanged
         categories.onReload = { [weak sources] in await sources?.reload() }
         categories.sourcesOf = { [weak sources] id in Set(sources?.sources(in: id).map(\.id) ?? []) }

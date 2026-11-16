@@ -10,10 +10,16 @@ import SwiftUI
 ///
 /// It sits inside the caller's vertical scroll view. A tapped link goes to
 /// `openLink` and nowhere else; a tapped image opens the full-screen viewer.
+///
+/// With a translation (RD15 decision 11), a translated text block shows its
+/// translation in its own kind and place (Translation), or its translation
+/// followed by its original in the secondary colour (Side by Side); other
+/// blocks show their originals, as every block does in Original.
 struct BlocksView: View {
     let blocks: [ArticleBlock]
     let settings: ReadingSettings
     let images: BodyImageSession
+    var translation: BlockTranslation?
     let openLink: (URL) -> Void
 
     @ScaledMetric(relativeTo: .body) private var scaledBodySize = 17.0
@@ -28,7 +34,10 @@ struct BlocksView: View {
             ForEach(blocks.indices, id: \.self) { index in
                 BlockRow(
                     block: blocks[index], index: index, metrics: metrics, images: images,
-                    spaceAbove: index == 0 ? 0 : metrics.blockSpacing
+                    spaceAbove: index == 0 ? 0 : metrics.blockSpacing,
+                    translated: translation?.mode == .original ? nil : translation?.text(index),
+                    mode: translation?.mode ?? .original, language: translation?.language,
+                    originalLanguage: translation?.originalLanguage(index)
                 ) { image in
                     viewed = image
                 }
@@ -47,6 +56,17 @@ struct BlocksView: View {
     }
 }
 
+/// How a body's blocks show its translation (RD15 decisions 11 and 13).
+struct BlockTranslation {
+    let mode: ReadingDisplayMode
+    /// The reading language's tag: what a translated text is read in.
+    let language: String
+    /// A text block's translation, or `nil` while it shows its original.
+    let text: (Int) -> String?
+    /// The recognizer's language of a block's original, for VoiceOver.
+    let originalLanguage: (Int) -> String?
+}
+
 /// One block where it stands: behind its quote bars, indented by its lists,
 /// with its marker.
 private struct BlockRow: View {
@@ -56,9 +76,15 @@ private struct BlockRow: View {
     let images: BodyImageSession
     /// The space between this block and the one before it.
     let spaceAbove: Double
+    /// The block's translation, when it is shown (not in Original).
+    let translated: String?
+    let mode: ReadingDisplayMode
+    let language: String?
+    let originalLanguage: String?
     let view: (ViewedImage) -> Void
     /// The block is an image that is not drawn: it takes no room at all.
     @State private var isUndrawn = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let quoteBarWidth = 3.0
     private static let quoteStep = 12.0
@@ -70,6 +96,9 @@ private struct BlockRow: View {
                 .accessibilityHidden(true)
         } else {
             row.padding(.top, spaceAbove)
+                // A block that becomes translated fades in (ux section 5),
+                // not under Reduce Motion.
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: translated)
         }
     }
 
@@ -135,9 +164,9 @@ private struct BlockRow: View {
         switch block.kind {
         case .paragraph(let runs):
             let size = block.isCaption ? metrics.captionSize : metrics.bodySize
-            text(runs, size: size, weight: .regular, isSecondary: block.isCaption || block.quoteDepth > 0)
+            shown(runs, size: size, weight: .regular, isSecondary: block.isCaption || block.quoteDepth > 0)
         case .heading(let level, let runs):
-            text(runs, size: metrics.headingSize(level: level), weight: .semibold, isSecondary: block.quoteDepth > 0)
+            shown(runs, size: metrics.headingSize(level: level), weight: .semibold, isSecondary: block.quoteDepth > 0)
                 .accessibilityAddTraits(.isHeader)
         case .image(let image):
             BodyImageView(image: image, index: index, session: images, view: view) {
@@ -169,10 +198,54 @@ private struct BlockRow: View {
         }
     }
 
-    private func text(_ runs: [InlineRun], size: Double, weight: Font.Weight, isSecondary: Bool) -> some View {
+    /// A text block as the mode shows it: its translation; its translation
+    /// over its original in the secondary colour; or its original.
+    @ViewBuilder
+    private func shown(_ runs: [InlineRun], size: Double, weight: Font.Weight, isSecondary: Bool) -> some View {
+        if let translated, mode == .translation {
+            translation(translated, size: size, weight: weight, isSecondary: isSecondary)
+                .transition(.opacity)
+        } else if let translated, mode == .sideBySide {
+            VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
+                translation(translated, size: size, weight: weight, isSecondary: isSecondary)
+                text(runs, size: size, weight: weight, isSecondary: true, identifier: AccessibilityID.readingOriginalBlock(index))
+            }
+            .transition(.opacity)
+        } else {
+            text(runs, size: size, weight: weight, isSecondary: isSecondary)
+        }
+    }
+
+    /// A model's text: built from the plain string, never parsed, so no
+    /// Markdown, HTML, link or style reaches the screen (decision 13). It
+    /// carries the reading language for VoiceOver and, for Chinese and
+    /// Japanese, for its forms.
+    private func translation(_ text: String, size: Double, weight: Font.Weight, isSecondary: Bool) -> some View {
+        var attributed = AttributedString(text)
+        if let language {
+            attributed.languageIdentifier = language
+        }
+        let typesets = language == ReadingLocale.simplifiedChinese.rawValue || language == ReadingLocale.japanese.rawValue
+        return Text(attributed)
+            .font(metrics.font(size: size, weight: weight))
+            .lineHeight(.exact(points: metrics.lineHeight(size: size, isMostlyCJK: ArticleBlocks.isMostlyCJK(text))))
+            .typesettingLanguage(Locale.Language(identifier: language ?? "en"), isEnabled: typesets)
+            .foregroundStyle(isSecondary ? Theme.secondaryText : Theme.text)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier(AccessibilityID.readingBlock(index))
+    }
+
+    private func text(
+        _ runs: [InlineRun], size: Double, weight: Font.Weight, isSecondary: Bool, identifier: String? = nil
+    ) -> some View {
         let plain = runs.map(\.text).joined()
         let isMostlyCJK = ArticleBlocks.isMostlyCJK(plain)
-        return Text(Self.attributed(runs))
+        var attributed = Self.attributed(runs)
+        if let originalLanguage {
+            attributed.languageIdentifier = originalLanguage
+        }
+        return Text(attributed)
             .font(metrics.font(size: size, weight: weight))
             .lineHeight(.exact(points: metrics.lineHeight(size: size, isMostlyCJK: isMostlyCJK)))
             // A block with kana is drawn in the Japanese forms of its
@@ -181,7 +254,7 @@ private struct BlockRow: View {
             .foregroundStyle(isSecondary ? Theme.secondaryText : Theme.text)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier(AccessibilityID.readingBlock(index))
+            .accessibilityIdentifier(identifier ?? AccessibilityID.readingBlock(index))
     }
 
     /// The runs as one attributed string: bold, italic and code as inline

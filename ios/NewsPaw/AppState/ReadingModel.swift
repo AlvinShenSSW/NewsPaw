@@ -61,6 +61,12 @@ final class ReadingModel {
     /// workspace without translation, whose rows show originals. Set by
     /// the workspace.
     @ObservationIgnored var translationLocale: @MainActor () -> ReadingLocale? = { nil }
+    /// Told when an open article's body is settled (never the interim body
+    /// shown while its page is fetched) and when it is let go: the body's
+    /// translation plans and drops it (RD15 decision 15). Set by the
+    /// workspace.
+    @ObservationIgnored var onBodySettled: @MainActor (UUID, ReadingContent) -> Void = { _, _ in }
+    @ObservationIgnored var onBodyDropped: @MainActor (UUID) -> Void = { _ in }
 
     /// The model of each list shown: the Library side's current list and
     /// Starred. Created when a view asks for it, so not observed.
@@ -418,6 +424,7 @@ final class ReadingModel {
             bodies[id] = nil
             bodyTasks[id] = nil
             positions[id] = nil
+            onBodyDropped(id)
             return false
         }
         bodies[id] = body
@@ -429,6 +436,9 @@ final class ReadingModel {
     private func settle(_ id: UUID, _ body: ReadingBody) -> Bool {
         guard show(id, body) else { return false }
         bodyTasks[id] = nil
+        if case .loaded(let content) = body {
+            onBodySettled(id, content)
+        }
         return true
     }
 
@@ -438,6 +448,7 @@ final class ReadingModel {
         bodies[id] = nil
         positions[id] = nil
         replacements[id] = nil
+        onBodyDropped(id)
     }
 
     /// The app is leaving the front: a page load under way remembers no

@@ -84,6 +84,8 @@ public actor BodyTranslator {
     /// writes and reports nothing more after an `await`.
     private var generation = 0
     private var current: Task<Void, Never>?
+    /// The job of `current`.
+    private var currentJob: UUID?
 
     public init(models: LibraryModels) {
         self.models = models
@@ -107,6 +109,7 @@ public actor BodyTranslator {
         previous?.cancel()
         generation += 1
         let generation = generation
+        currentJob = job.id
         current = Task {
             await previous?.value
             let end = await self.work(job, generation: generation)
@@ -119,6 +122,13 @@ public actor BodyTranslator {
     public func cancel() {
         generation += 1
         current?.cancel()
+    }
+
+    /// Cancels job `id` if it is the work running (or waiting to run).
+    public func cancel(_ id: UUID) {
+        if currentJob == id {
+            cancel()
+        }
     }
 
     /// The workspace is dropped: the work running is cancelled and nothing

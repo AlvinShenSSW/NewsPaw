@@ -317,8 +317,9 @@ struct ArticleBlocksBoundedWorkTests {
     /// A shape may take at most this many times as long as the reference
     /// of its size. On the development Mac the highest ratio is 2.0 to 2.4
     /// (one letter under combining marks in a `pre`), whatever the load;
-    /// most shapes take less than their reference. A quadratic step takes
-    /// hundreds of times as long.
+    /// most shapes take less than their reference. A quadratic step over
+    /// only the first 30,000 of one shape's 200,000 list items made it 75
+    /// times as long.
     static let allowedRatio = 10.0
     /// The reference's time counts as at least this much: below it a ratio
     /// measures the clock, not the work.

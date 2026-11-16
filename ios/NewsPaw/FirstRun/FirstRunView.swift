@@ -196,7 +196,12 @@ struct FirstRunHeader<Leading: View>: View {
                     .accessibilityIdentifier(AccessibilityID.firstRunText)
             }
             .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 0, leading: Theme.Spacing.tight, bottom: 0, trailing: Theme.Spacing.tight))
+            // In line with the section headers below, and clear of the
+            // row's rounded corners, which clip what reaches them.
+            .listRowInsets(EdgeInsets(
+                top: 0, leading: Theme.Spacing.standard + Theme.Spacing.tight,
+                bottom: 0, trailing: Theme.Spacing.standard + Theme.Spacing.tight
+            ))
         }
     }
 }

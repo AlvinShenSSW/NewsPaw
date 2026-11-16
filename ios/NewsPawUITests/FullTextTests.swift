@@ -18,7 +18,8 @@ final class FullTextTests: FullTextTestCase {
         openArticle("Fetched story")
         waitFor(loadingNote)
         waitFor(block(containing: "The excerpt of fetched story"))
-        openAndSettle("Fetched story", fullText: true)
+        waitFor(fullTextNote)
+        waitForAbsence(loadingNote)
         // The replaced body starts at the top: the header and the line are
         // on screen.
         XCTAssertTrue(readingTitle.isHittable, "the title scrolled away when the body was replaced")

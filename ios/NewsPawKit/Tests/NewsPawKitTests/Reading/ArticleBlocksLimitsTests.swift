@@ -172,11 +172,21 @@ struct ArticleBlocksLimitsTests {
 extension TimedAndHeavySuites {
 /// RD11 criterion 3: bounded work. Each shape the debate measured against
 /// the tree builder (SwiftSoup 2.14.3: 3 to 16 seconds, or 0.5 to 1.9 GB,
-/// for 16 to 240 KB) converts within one second on a detached task, with at
-/// most 3,000 blocks. The times are printed: `criterion 3 | shape | …`.
-/// The shapes are sized so that the slowest takes about a quarter of a
-/// second in a debug build on the development Mac: the bound has to hold
-/// on a slower runner too.
+/// for 16 to 240 KB) converts on a detached task, with at most 3,000
+/// blocks, in time proportional to its size. The times are printed:
+/// `criterion 3 | shape | …`.
+///
+/// The bound is relative (#170). Each shape is measured alternately with a
+/// reference, ordinary paragraphs of the same number of characters that are
+/// read whole, and its best time must stay within `allowedRatio` times the
+/// reference's best. A slow or stalled runner slows both alike: an absolute
+/// bound of one second failed twice on the hosted runner (1.04 and 1.54 s)
+/// for shapes that take 0.1 to 0.4 s on the development Mac, with nothing
+/// changed in the converter. A converter that is slow on the reference too
+/// is caught by the absolute `ceiling`, the second line: 5 s for up to
+/// 2,000,000 characters, where the tree builder took 3 to 16 s for an
+/// eighth of that or less; and by "the time of ordinary paragraphs grows in
+/// proportion to their number" below.
 @Suite("Article blocks: bounded work", .serialized)
 struct ArticleBlocksBoundedWorkTests {
     struct Shape: CustomTestStringConvertible, Sendable {
@@ -304,33 +314,82 @@ struct ArticleBlocksBoundedWorkTests {
         Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
     }
 
-    @Test("each shape converts within one second", arguments: shapes)
-    func withinOneSecond(_ shape: Shape) async {
+    /// A shape may take at most this many times as long as the reference
+    /// of its size. On the development Mac the highest ratio is 2.0 to 2.4
+    /// (one letter under combining marks in a `pre`), whatever the load;
+    /// most shapes take less than their reference. A quadratic step takes
+    /// hundreds of times as long.
+    static let allowedRatio = 10.0
+    /// The reference's time counts as at least this much: below it a ratio
+    /// measures the clock, not the work.
+    static let referenceFloor = Duration.milliseconds(20)
+    /// Whatever the reference took: the slowest shape takes 0.2 to 0.4 s
+    /// on the development Mac and took up to 1.54 s on a stalled hosted
+    /// runner.
+    static let ceiling = Duration.seconds(5)
+
+    /// About 930 characters of ordinary text with bold and links: 2,000,000
+    /// characters of it are 2,150 paragraphs, under the block limit, so the
+    /// whole input is read.
+    private static let referenceParagraph = "<p>" + String(
+        repeating: "Some <b>bold</b> and <a href=\"https://example.com/a\">a link</a>, then text that goes on for a while to make a paragraph of ordinary length. ",
+        count: 7
+    ) + "</p>\n"
+
+    /// Ordinary paragraphs of as many characters as the converter reads of
+    /// `html` (its first 2,000,000), rounded up to a whole paragraph.
+    static func reference(for html: String) -> String {
+        let characters = min(html.unicodeScalars.count, ArticleBlocks.maximumInputCharacters)
+        let unit = referenceParagraph.unicodeScalars.count
+        return String(repeating: referenceParagraph, count: max(1, (characters + unit - 1) / unit))
+    }
+
+    private static func convert(_ html: String) async -> (Duration, ArticleBlocks) {
+        await Task.detached { () -> (Duration, ArticleBlocks) in
+            let clock = ContinuousClock()
+            var converted = ArticleBlocks(blocks: [], isCut: false)
+            let time = clock.measure {
+                converted = ArticleBlocks.make(html: html, baseURL: base)
+            }
+            return (time, converted)
+        }.value
+    }
+
+    @Test("each shape converts in time proportional to its size, as ordinary paragraphs of that size do", arguments: shapes)
+    func proportionalToSize(_ shape: Shape) async {
         let html = shape.html()
-        // The best of three: other suites run beside this one, and load only
-        // ever adds time.
+        let reference = Self.reference(for: html)
+        // The best of up to five rounds, the reference and the shape one
+        // after the other in each: other suites run beside this one, and load
+        // only ever adds time. A round in which the bound holds ends it.
         var best = Duration.seconds(3_600)
+        var referenceBest = Duration.seconds(3_600)
         var result = ArticleBlocks(blocks: [], isCut: false)
-        for _ in 0..<3 {
-            let (time, converted) = await Task.detached { () -> (Duration, ArticleBlocks) in
-                let clock = ContinuousClock()
-                var converted = ArticleBlocks(blocks: [], isCut: false)
-                let time = clock.measure {
-                    converted = ArticleBlocks.make(html: html, baseURL: base)
-                }
-                return (time, converted)
-            }.value
+        var referenceResult = ArticleBlocks(blocks: [], isCut: false)
+        func ratio() -> Double {
+            Self.seconds(best) / Self.seconds(max(referenceBest, Self.referenceFloor))
+        }
+        for _ in 0..<5 {
+            let (referenceTime, referenceConverted) = await Self.convert(reference)
+            referenceBest = min(referenceBest, referenceTime)
+            referenceResult = referenceConverted
+            let (time, converted) = await Self.convert(html)
             best = min(best, time)
             result = converted
-            if best < .milliseconds(500) {
+            if ratio() <= Self.allowedRatio, best < Self.ceiling {
                 break
             }
         }
         print(String(
-            format: "criterion 3 | %@ | %d bytes | %.3f s | %d blocks | cut: %@",
-            shape.name, html.utf8.count, Self.seconds(best), result.blocks.count, result.isCut ? "yes" : "no"
+            format: "criterion 3 | %@ | %d bytes | %.3f s | %d blocks | cut: %@ | reference %.3f s | ratio %.2f",
+            shape.name, html.utf8.count, Self.seconds(best), result.blocks.count, result.isCut ? "yes" : "no",
+            Self.seconds(referenceBest), ratio()
         ))
-        #expect(best < .seconds(1), "\(shape.name): \(Self.seconds(best)) s")
+        #expect(ratio() <= Self.allowedRatio, "\(shape.name): \(Self.seconds(best)) s, \(ratio()) times the reference's \(Self.seconds(referenceBest)) s")
+        #expect(best < Self.ceiling, "\(shape.name): \(Self.seconds(best)) s")
+        // The reference is read whole: what it measures is the input's size.
+        #expect(!referenceResult.isCut || reference.unicodeScalars.count > ArticleBlocks.maximumInputCharacters)
+        #expect(referenceResult.blocks.count < ArticleBlocks.maximumBlocks)
         #expect(result.blocks.count <= ArticleBlocks.maximumBlocks)
         // No block holds more than its limit of text.
         #expect(result.blocks.allSatisfy { ($0.plainText?.utf8.count ?? 0) <= ArticleBlocks.maximumBlockBytes })

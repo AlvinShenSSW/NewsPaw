@@ -183,14 +183,16 @@ private struct ArticleScreen: View {
         // the translation the reading language, the original the
         // recognizer's.
         let originalLanguage = translation == nil ? nil : BodySegments.language(of: row.displayTitle)
-        Text(HeaderText.attributed(translated ?? row.displayTitle, language: translated != nil ? body_?.readingLocale.rawValue : originalLanguage))
+        Text(verbatim: translated ?? row.displayTitle)
+            .speechLanguage(translated != nil ? body_?.readingLocale.rawValue : originalLanguage)
             .font(.system(size: min(scaledTitleSize * settings.textSize.factor, ReadingMetrics.maximumSize), weight: .bold))
             .foregroundStyle(Theme.text)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)
             .accessibilityIdentifier(AccessibilityID.readingTitle)
         if translated != nil {
-            Text(HeaderText.attributed(row.displayTitle, language: originalLanguage))
+            Text(verbatim: row.displayTitle)
+                .speechLanguage(originalLanguage)
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -428,32 +430,42 @@ struct ReaderPosition: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        content
-            .scrollPosition($position, anchor: .top)
-            .onChange(of: position.viewID(type: Int.self)) { _, block in
-                reading.readerMoved(to: block, in: articleID)
-            }
-            .onChange(of: mode) {
-                keepTopBlock()
-            }
+        ScrollViewReader { proxy in
+            content
+                .scrollPosition($position, anchor: .top)
+                .onChange(of: position.viewID(type: Int.self)) { _, block in
+                    // While a switch settles, the blocks passing the top are
+                    // not the reader's place.
+                    if !isSwitching {
+                        reading.readerMoved(to: block, in: articleID)
+                    }
+                }
+                .onChange(of: mode) {
+                    keepTopBlock(proxy)
+                }
+        }
     }
+
+    @State private var isSwitching = false
 
     /// The block at the top stays there across a switch. Nothing is done
-    /// at the article's top (no block reported).
-    private func keepTopBlock() {
+    /// at the article's top (no block reported). The lazy stack lays out
+    /// the blocks above with their new heights over a few passes, so the
+    /// block is scrolled to again after them. Measured (assumption A3,
+    /// iPhone): between Translation and Original the block stays within
+    /// 7 pt; into Side by Side the block's original stays where the block
+    /// was and its translation is laid out above it, off the top.
+    private func keepTopBlock(_ proxy: ScrollViewProxy) {
         guard let block = reading.position(of: articleID) else { return }
-        position.scrollTo(id: block, anchor: .top)
-    }
-}
-
-/// A header line as an attributed string carrying its language for
-/// VoiceOver (RD15 decision 13): built from the plain string, never parsed.
-enum HeaderText {
-    static func attributed(_ text: String, language: String?) -> AttributedString {
-        var attributed = AttributedString(text)
-        if let language {
-            attributed.languageIdentifier = language
+        isSwitching = true
+        proxy.scrollTo(block, anchor: .top)
+        Task { @MainActor in
+            for delay in [0, 50, 150, 300, 500] {
+                try? await Task.sleep(for: .milliseconds(delay))
+                proxy.scrollTo(block, anchor: .top)
+            }
+            isSwitching = false
+            reading.readerMoved(to: block, in: articleID)
         }
-        return attributed
     }
 }

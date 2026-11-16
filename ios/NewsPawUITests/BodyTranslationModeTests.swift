@@ -44,7 +44,7 @@ final class BodyTranslationModeTests: BodyTranslationTestCase {
 
         // Settings › Reading's default applies to the next opening.
         openSettings(row: AccessibilityID.readingSettingsRow)
-        let sideBySide = scrollTo(app.buttons.matching(identifier: AccessibilityID.displayModeOption("side_by_side")).firstMatch)
+        let sideBySide = scrollTo(option("Side by Side"))
         sideBySide.tap()
         let chosen = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: sideBySide)
         XCTAssertEqual(XCTWaiter.wait(for: [chosen], timeout: timeout), .completed)
@@ -81,13 +81,19 @@ final class BodyTranslationModeTests: BodyTranslationTestCase {
         record("A3 after the arrivals", "block \(before.index ?? -1) at \(arrived), top block \(topBlock().index ?? -1)")
         XCTAssertEqual(arrived, before.minY, accuracy: lineHeight, "the arrivals moved the block at the top")
 
-        for mode in ["original", "side_by_side", "translation", "side_by_side", "original"] {
+        // Each switch: the block at the top keeps its place. In Side by
+        // Side a block is its translation and its original; what is
+        // compared is whichever of the two stays nearer.
+        for mode in ["original", "translation", "side_by_side", "translation", "side_by_side", "original"] {
             let top = topBlock()
+            let index = top.index ?? 0
             chooseMode(mode)
             Thread.sleep(forTimeInterval: 1)
-            let after = position(of: top.index ?? 0)
-            record("A3 switch to \(mode)", "block \(top.index ?? -1) from \(top.minY) to \(after); top block now \(topBlock().index ?? -1)")
-            XCTAssertEqual(after, top.minY, accuracy: lineHeight, "the switch to \(mode) moved block \(top.index ?? -1)")
+            let (translation, original) = positions(of: index)
+            let drift = min(abs(translation - top.minY), abs(original - top.minY))
+            record("A3 switch to \(mode)", "block \(index) from \(top.minY) to translation \(translation), original \(original); "
+                + "top block now \(topBlock().index ?? -1)")
+            XCTAssertLessThanOrEqual(drift, lineHeight, "the switch to \(mode) moved block \(index): \(translation), \(original), was \(top.minY)")
         }
     }
 
@@ -101,8 +107,14 @@ final class BodyTranslationModeTests: BodyTranslationTestCase {
         XCTAssertEqual(modeValue, "Translation")
         for expected in ["Original", "Side by Side", "Translation"] {
             app.typeKey("t", modifierFlags: [])
-            let changed = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in self.modeValue == expected }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: timeout), .completed, "T gave \(modeValue), not \(expected)")
+            Thread.sleep(forTimeInterval: 1)
+            XCTAssertEqual(modeValue, expected)
+            // What each mode shows of block 0.
+            switch expected {
+            case "Original": waitForBlock(0, Body.markupParagraph)
+            case "Side by Side": waitFor(element(AccessibilityID.readingOriginalBlock(0)))
+            default: waitForAbsence(element(AccessibilityID.readingOriginalBlock(0)))
+            }
         }
     }
 
@@ -118,15 +130,17 @@ final class BodyTranslationModeTests: BodyTranslationTestCase {
     }
 
     /// The first block whose bottom is below the scroll view's top, and its
-    /// top.
+    /// top (in Side by Side, of its text or its original, whichever is
+    /// lower there).
     func topBlock() -> (index: Int?, minY: CGFloat) {
         let top = scrollTop
-        let blocks = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@", AccessibilityID.readingBlockPrefix))
+        let prefixes = [AccessibilityID.readingBlockPrefix, "reading.original."]
+        let texts = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@ OR identifier BEGINSWITH %@", prefixes[0], prefixes[1]))
             .allElementsBoundByIndex
             .filter { $0.exists && !$0.frame.isEmpty && $0.frame.maxY > top + 1 }
             .sorted { $0.frame.minY < $1.frame.minY }
-        guard let first = blocks.first, let index = Int(first.identifier.dropFirst(AccessibilityID.readingBlockPrefix.count)) else {
+        guard let first = texts.first, let number = first.identifier.split(separator: ".").last, let index = Int(number) else {
             return (nil, 0)
         }
         return (index, first.frame.minY)
@@ -135,5 +149,12 @@ final class BodyTranslationModeTests: BodyTranslationTestCase {
     func position(of index: Int) -> CGFloat {
         let target = block(at: index)
         return target.exists ? target.frame.minY : .infinity
+    }
+
+    /// The top of a block's text and of its original under it (Side by
+    /// Side); `infinity` for one that is not there.
+    func positions(of index: Int) -> (CGFloat, CGFloat) {
+        let original = element(AccessibilityID.readingOriginalBlock(index))
+        return (position(of: index), original.exists ? original.frame.minY : .infinity)
     }
 }

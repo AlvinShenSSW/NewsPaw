@@ -75,7 +75,7 @@ final class BodyTranslationScreenshotTests: BodyTranslationTestCase {
         _ = scrollTo(app.switches[AccessibilityID.translateBodyOnOpenToggle])
         capture("settings-models")
         openSettings(row: AccessibilityID.readingSettingsRow)
-        _ = scrollTo(app.buttons.matching(identifier: AccessibilityID.displayModeOption("side_by_side")).firstMatch)
+        _ = scrollTo(app.buttons.matching(NSPredicate(format: "label IN %@", Self.modeNames("side_by_side"))).firstMatch)
         capture("settings-reading")
     }
 }

@@ -15,9 +15,10 @@ final class BodyTranslationTests: BodyTranslationTestCase {
         // Chunk 4 stalls on its first request.
         waitForProgress("Translating 3 of 8")
         waitForBlock(0, startingWith: Translation.translated(Body.paragraph(1, of: Body.long)))
+        XCTAssertFalse(banner.exists)
+        _ = scrollArticle(to: block(at: 6))
         waitForBlock(5, startingWith: Translation.translated(Body.paragraph(6, of: Body.long)))
         XCTAssertTrue(block(at: 6).label.hasPrefix(Body.paragraph(7, of: Body.long)), block(at: 6).label)
-        XCTAssertFalse(banner.exists)
         // Work runs: the mode menu, not Translate.
         XCTAssertTrue(modeMenu.exists)
         XCTAssertFalse(translateButton.exists)
@@ -212,9 +213,11 @@ final class BodyTranslationTests: BodyTranslationTestCase {
         // the translator's model.
         launchTranslating()
         openCategoryList(Body.category)
-        openBody(Body.markup)
-        waitForBlock(0, Translation.translated(Body.markupParagraph))
-        waitForTitle(Translation.translated(Body.markup))
+        // A full text of four chunks.
+        openBody(Body.many)
+        waitForBlock(0, startingWith: Translation.translated("Short paragraph 1."))
+        waitForAbsence(progressLine)
+        waitForTitle(Translation.translated(Body.many))
         waitFor(button(AccessibilityID.readingMoreMenu)).tap()
         waitFor(button(AccessibilityID.articleInfoButton)).tap()
         XCTAssertEqual(waitFor(element(AccessibilityID.articleInfoBody)).label, "From the feed")
@@ -266,9 +269,12 @@ final class BodyTranslationTests: BodyTranslationTestCase {
         waitForEnabled(reader, true)
         reader.tap()
         let title = element(AccessibilityID.readerTitle)
-        let translatedTitle = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", Translation.translated("The ferry at dawn")), object: title)
+        // The extraction's title: "The ferry at dawn - Harbour News".
+        let translatedTitle = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label BEGINSWITH %@", Translation.translated("The ferry at dawn")), object: title
+        )
         XCTAssertEqual(XCTWaiter.wait(for: [translatedTitle], timeout: 60), .completed, title.exists ? title.label : "no title")
-        XCTAssertEqual(element(AccessibilityID.readingOriginalTitle).label, "The ferry at dawn")
+        XCTAssertTrue(element(AccessibilityID.readingOriginalTitle).label.hasPrefix("The ferry at dawn"))
         waitFor(block(containing: "译[zh-Hans]：The harbour office posts the tide tables"))
         let firstOpening = bodyRequests
         XCTAssertGreaterThan(firstOpening, afterArticle, "reader mode's requests are usage rows")
@@ -281,7 +287,7 @@ final class BodyTranslationTests: BodyTranslationTestCase {
         waitForEnabled(reader, true)
         reader.tap()
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label == %@", Translation.translated("The ferry at dawn")), object: title
+            predicate: NSPredicate(format: "label BEGINSWITH %@", Translation.translated("The ferry at dawn")), object: title
         )], timeout: 60), .completed)
         expectBodyRequests(firstOpening + (firstOpening - afterArticle), "opened again: translated again")
     }

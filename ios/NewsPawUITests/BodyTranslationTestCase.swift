@@ -147,16 +147,48 @@ class BodyTranslationTestCase: TranslationTestCase {
         }
     }
 
-    /// Chooses a display mode from the bar's menu.
+    /// The names of a display mode, in English and Simplified Chinese.
+    static func modeNames(_ rawValue: String) -> [String] {
+        switch rawValue {
+        case "translation": ["Translation", "译文"]
+        case "original": ["Original", "原文"]
+        default: ["Side by Side", "对照"]
+        }
+    }
+
+    /// The open mode menu's item of a mode, by its name.
+    func modeItem(_ rawValue: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label IN %@ AND identifier != %@", Self.modeNames(rawValue), AccessibilityID.displayModeMenu))
+            .firstMatch
+    }
+
+    /// Chooses a display mode from the bar's menu (assumption A6).
     func chooseMode(_ rawValue: String, file: StaticString = #filePath, line: UInt = #line) {
         waitFor(modeMenu, file: file, line: line).tap()
-        let item = app.buttons.matching(identifier: AccessibilityID.displayModeOption(rawValue)).firstMatch
+        let item = modeItem(rawValue)
         waitFor(item, file: file, line: line).tap()
         waitForAbsence(item, file: file, line: line)
     }
 
-    /// The display mode the menu says, by its value.
+    /// The mode the open menu marks as chosen, by its English name; the
+    /// menu is opened and closed again.
+    func chosenMode(file: StaticString = #filePath, line: UInt = #line) -> String {
+        waitFor(modeMenu, file: file, line: line).tap()
+        let chosen = ["translation", "original", "side_by_side"].first { mode in
+            let item = modeItem(mode)
+            return item.waitForExistence(timeout: 3) && item.isSelected
+        }
+        // Closed without choosing: a tap on the byline.
+        element(AccessibilityID.readingByline).tap()
+        return chosen.map { Self.modeNames($0)[0] } ?? "none"
+    }
+
+    /// The display mode the menu says, by its value; else the chosen item
+    /// of the open menu.
     var modeValue: String {
-        (modeMenu.value as? String) ?? ""
+        if let value = modeMenu.value as? String, !value.isEmpty {
+            return value
+        }
+        return chosenMode()
     }
 }

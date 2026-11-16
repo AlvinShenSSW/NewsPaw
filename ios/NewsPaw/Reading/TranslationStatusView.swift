@@ -117,6 +117,7 @@ struct BodyControlView: View {
                 .pickerStyle(.inline)
             } label: {
                 Label("Display Mode", systemImage: DisplayModeWording.symbol(mode))
+                    .accessibilityValue(Text(verbatim: DisplayModeWording.title(mode)))
             }
             .accessibilityValue(Text(verbatim: DisplayModeWording.title(mode)))
             .accessibilityIdentifier(AccessibilityID.displayModeMenu)

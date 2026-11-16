@@ -216,23 +216,20 @@ private struct BlockRow: View {
         }
     }
 
-    /// A model's text: built from the plain string, never parsed, so no
-    /// Markdown, HTML, link or style reaches the screen (decision 13). It
-    /// carries the reading language for VoiceOver and, for Chinese and
-    /// Japanese, for its forms.
+    /// A model's text: drawn verbatim, never parsed, so no Markdown, HTML,
+    /// link or style reaches the screen (decision 13). It carries the
+    /// reading language for VoiceOver and, for Chinese and Japanese, for
+    /// its forms.
     private func translation(_ text: String, size: Double, weight: Font.Weight, isSecondary: Bool) -> some View {
-        var attributed = AttributedString(text)
-        if let language {
-            attributed.languageIdentifier = language
-        }
         let typesets = language == ReadingLocale.simplifiedChinese.rawValue || language == ReadingLocale.japanese.rawValue
-        return Text(attributed)
+        return Text(verbatim: text)
             .font(metrics.font(size: size, weight: weight))
             .lineHeight(.exact(points: metrics.lineHeight(size: size, isMostlyCJK: ArticleBlocks.isMostlyCJK(text))))
             .typesettingLanguage(Locale.Language(identifier: language ?? "en"), isEnabled: typesets)
             .foregroundStyle(isSecondary ? Theme.secondaryText : Theme.text)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .speechLanguage(language)
             .accessibilityIdentifier(AccessibilityID.readingBlock(index))
     }
 
@@ -241,11 +238,7 @@ private struct BlockRow: View {
     ) -> some View {
         let plain = runs.map(\.text).joined()
         let isMostlyCJK = ArticleBlocks.isMostlyCJK(plain)
-        var attributed = Self.attributed(runs)
-        if let originalLanguage {
-            attributed.languageIdentifier = originalLanguage
-        }
-        return Text(attributed)
+        return Text(Self.attributed(runs))
             .font(metrics.font(size: size, weight: weight))
             .lineHeight(.exact(points: metrics.lineHeight(size: size, isMostlyCJK: isMostlyCJK)))
             // A block with kana is drawn in the Japanese forms of its
@@ -254,6 +247,7 @@ private struct BlockRow: View {
             .foregroundStyle(isSecondary ? Theme.secondaryText : Theme.text)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .speechLanguage(originalLanguage)
             .accessibilityIdentifier(identifier ?? AccessibilityID.readingBlock(index))
     }
 
@@ -328,5 +322,21 @@ private struct ListRowLayout: Layout {
             x += column
         }
         block.place(at: CGPoint(x: x, y: bounds.minY), anchor: .topLeading, proposal: ProposedViewSize(width: max(bounds.maxX - x, 0), height: nil))
+    }
+}
+
+extension View {
+    /// The language VoiceOver reads this text in (RD15 decision 13): the
+    /// environment's locale, which SwiftUI passes to the accessibility
+    /// element as its speech language (assumption A1, measured on the iOS
+    /// 27 simulator: a `languageIdentifier` on the attributed string did not
+    /// reach it). Nothing changes without a language.
+    @ViewBuilder
+    func speechLanguage(_ language: String?) -> some View {
+        if let language {
+            environment(\.locale, Locale(identifier: language))
+        } else {
+            self
+        }
     }
 }

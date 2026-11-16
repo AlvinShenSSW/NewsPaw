@@ -290,16 +290,16 @@ private struct TemporaryArticleView: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.standard) {
                 // ux S4's header in every mode: the translated title large,
                 // the original small.
-                Text(HeaderText.attributed(
-                    translatedTitle ?? article.title, language: translatedTitle != nil ? body_?.readingLocale.rawValue : originalLanguage
-                ))
+                Text(verbatim: translatedTitle ?? article.title)
+                    .speechLanguage(translatedTitle != nil ? body_?.readingLocale.rawValue : originalLanguage)
                     .font(.system(size: min(scaledTitleSize * settings.textSize.factor, ReadingMetrics.maximumSize), weight: .bold))
                     .foregroundStyle(Theme.text)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier(AccessibilityID.readerTitle)
                 if translatedTitle != nil {
-                    Text(HeaderText.attributed(article.title, language: originalLanguage))
+                    Text(verbatim: article.title)
+                        .speechLanguage(originalLanguage)
                         .font(.subheadline)
                         .foregroundStyle(Theme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)

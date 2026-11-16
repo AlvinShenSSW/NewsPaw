@@ -70,14 +70,16 @@ struct FixtureModelHTTPTests {
         try await fixture.save(.backup, address: FixtureModelHTTP.Address.translateBackup)
         let instructions = TranslationPrompt.body(into: .simplifiedChinese)
         let models = fixture.models
-        let before = FixtureModelHTTP.translationRequests
         let stalled = Task {
             try await models.send(texts: ["a fixture:stall-once b"], instructions: instructions, purpose: .body, role: .primary)
         }
-        let deadline = ContinuousClock.now + .seconds(60)
-        while FixtureModelHTTP.translationRequests == before, ContinuousClock.now < deadline {
+        // Until the request is in its stall (other suites send to the
+        // fixture in parallel, so its request count says nothing).
+        let deadline = ContinuousClock.now + .seconds(120)
+        while !FixtureModelHTTP.hasStalled, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(5))
         }
+        #expect(FixtureModelHTTP.hasStalled)
         stalled.cancel()
         await #expect(throws: CancellationError.self) { try await stalled.value }
         let start = ContinuousClock.now

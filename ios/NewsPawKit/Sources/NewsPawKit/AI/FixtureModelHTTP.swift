@@ -58,6 +58,14 @@ public final class FixtureModelHTTP: ModelHTTP {
     /// `Word.failOnce`, has arrived in this process.
     private static let onceWords = Mutex<Set<String>>([])
 
+    /// Whether the stalling request has begun its wait (for the package
+    /// test, which other tests' requests would confuse with the count).
+    private static let stallStarted = Mutex(false)
+
+    static var hasStalled: Bool {
+        stallStarted.withLock { $0 }
+    }
+
     /// Whether this is the first request of the process carrying `word`.
     private static func firstTime(_ word: String) -> Bool {
         onceWords.withLock { $0.insert(word).inserted }
@@ -110,6 +118,7 @@ public final class FixtureModelHTTP: ModelHTTP {
                 try await Task.sleep(for: Self.slowAnswer)
             }
             if texts.contains(where: { $0.contains(Word.stallOnce) }), Self.firstTime(Word.stallOnce) {
+                Self.stallStarted.withLock { $0 = true }
                 try await Task.sleep(for: Self.stallingAnswer)
             }
             if texts.contains(where: { $0.contains(Word.failOnce) }), Self.firstTime(Word.failOnce) {

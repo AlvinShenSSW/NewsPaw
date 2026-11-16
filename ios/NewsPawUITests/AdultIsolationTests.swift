@@ -1,0 +1,249 @@
+import XCTest
+
+/// RD19 criteria 3 to 8 in the app: each partition's own models and keys,
+/// Settings › Adult Partition by entry point, the adult browser's own
+/// website data with Clear and Delete, and the thumbnails switch.
+final class AdultIsolationTests: IsolationTestCase {
+    // MARK: - Criterion 5
+
+    /// Opened from the normal partition, Settings › Adult Partition shows
+    /// no slot, thumbnail or limit row and says where they are; inside the
+    /// adult partition it shows the adult models with RD13's form, the
+    /// thumbnails switch, lock timing, Clear Browsing Data and Turn Off.
+    func testSettingsByEntryPoint() {
+        launchAtFullWidth(authentication: ["passed", "passed", "passed"])
+        turnOnAdult()
+        // From the normal partition (just turned on; opened again it asks).
+        XCTAssertFalse(adultPrimaryRow.exists)
+        XCTAssertFalse(adultBackupRow.exists)
+        XCTAssertFalse(thumbnailsToggle.exists)
+        waitFor(element(AccessibilityID.lockTimingPicker))
+        XCTAssertTrue(scrollTo(clearBrowsingButton).isEnabled)
+        let elsewhere = scrollTo(element(AccessibilityID.adultSettingsElsewhere))
+        XCTAssertEqual(elsewhere.label, Isolation.elsewhere)
+        tapAdultRow()
+        waitFor(turnOffButton)
+        XCTAssertFalse(adultPrimaryRow.exists)
+        XCTAssertFalse(thumbnailsToggle.exists)
+
+        enterAdult()
+        openAdultSettings()
+        waitFor(adultPrimaryRow)
+        XCTAssertTrue(adultPrimaryRow.label.contains("Not set up"), adultPrimaryRow.label)
+        XCTAssertFalse(adultBackupRow.isEnabled, "the backup waits for a primary")
+        XCTAssertEqual(scrollTo(thumbnailsToggle).value as? String, "1")
+        scrollTo(element(AccessibilityID.lockTimingPicker))
+        scrollTo(clearBrowsingButton)
+        scrollTo(turnOffButton)
+        XCTAssertFalse(element(AccessibilityID.adultSettingsElsewhere).exists)
+
+        // The S9 form on the adult library: Load List, Test, Save, Remove.
+        app.swipeDown()
+        waitFor(adultPrimaryRow).tap()
+        waitFor(button(AccessibilityID.saveButton))
+        fillForm(address: Isolation.translateAddress, model: "nothing-yet", key: "sk-adult-form-key-4567")
+        reveal(button(AccessibilityID.loadListButton)).tap()
+        waitFor(element(AccessibilityID.modelListRow(Isolation.translator))).tap()
+        waitForAbsence(element(AccessibilityID.modelListRow(Isolation.translator)))
+        runTest(expecting: "Passed")
+        tapSave()
+        waitForAbsence(button(AccessibilityID.saveButton))
+        waitFor(adultPrimaryRow)
+        XCTAssertTrue(adultPrimaryRow.label.contains(Isolation.translator), adultPrimaryRow.label)
+        XCTAssertTrue(adultBackupRow.isEnabled)
+        adultPrimaryRow.tap()
+        reveal(button(AccessibilityID.removeModelButton)).tap()
+        waitFor(dialogButton("Remove Model")).tap()
+        waitForAbsence(button(AccessibilityID.saveButton))
+        waitForLabel(waitFor(adultPrimaryRow), containing: "Not set up")
+    }
+
+    // MARK: - Criteria 3 and 4
+
+    /// With a normal fixture slot and no adult slot, adult rows show
+    /// originals and nothing is sent; with an adult slot set up in S10
+    /// with the same address, model and key, the adult rows are
+    /// translated; removing the adult key leaves the normal one, which
+    /// still shows its dots and four characters.
+    func testEachPartitionTranslatesWithItsOwnModels() {
+        let application = XCUIApplication()
+        application.launchEnvironment[UITestLaunchKey.translationModels] = "primary"
+        launch(application, authentication: ["passed", "passed", "passed"])
+        rotate(.portrait)
+        requireFullWidth()
+        turnOnAdult()
+        enterAdult()
+        createCategory("Velvet")
+        addSource(Isolation.translationFeed, to: "Velvet")
+        openCategoryList("Velvet")
+        let row = waitFor(articleRow(Isolation.firstForeign))
+        let before = translationRequests
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertFalse(row.label.contains("译["), "an adult row was translated without an adult slot: \(row.label)")
+        XCTAssertEqual(translationRequests, before, "a request was sent from the adult partition: \(report)")
+
+        // The adult slot, set up in S10 with the normal slot's own values.
+        openAdultSettings()
+        waitFor(adultPrimaryRow).tap()
+        waitFor(button(AccessibilityID.saveButton))
+        fillForm(address: Isolation.translateAddress, model: Isolation.translator, key: Isolation.normalFixtureKey)
+        runTest(expecting: "Passed")
+        tapSave()
+        waitForAbsence(button(AccessibilityID.saveButton))
+        openCategoryList("Velvet")
+        waitForLabel(waitFor(articleRow(Isolation.firstForeign)), containing: "译[zh-Hans]：\(Isolation.firstForeign)")
+        XCTAssertGreaterThan(translationRequests, before)
+
+        // The adult key is removed: the slot stays at "Key needed".
+        openAdultSettings()
+        waitFor(adultPrimaryRow).tap()
+        reveal(button(AccessibilityID.removeKeyButton)).tap()
+        waitFor(dialogButton("Remove Key")).tap()
+        reveal(element(AccessibilityID.keyNeeded))
+        button(AccessibilityID.cancelButton).tap()
+        waitForAbsence(button(AccessibilityID.saveButton))
+
+        // The normal key is still there, and still used.
+        tapLock()
+        waitForPartition(Wording.normal)
+        openSettings()
+        waitFor(element(AccessibilityID.modelsRow)).tap()
+        waitFor(element(AccessibilityID.primaryModelRow)).tap()
+        let stored = reveal(element(AccessibilityID.storedKey))
+        XCTAssertEqual(stored.label, "Key ending in 0123")
+        button(AccessibilityID.cancelButton).tap()
+        waitForAbsence(button(AccessibilityID.saveButton))
+        createCategory("World")
+        addSource(Isolation.translationFeed, to: "World")
+        openCategoryList("World")
+        waitForLabel(waitFor(articleRow(Isolation.firstForeign)), containing: "译[zh-Hans]：\(Isolation.firstForeign)")
+    }
+
+    // MARK: - Criterion 6 and assumption A3
+
+    /// Page data written in one partition's browser are absent from the
+    /// other's in both directions; the adult data survive a lock and an
+    /// unlock; Clear removes the adult data and leaves the normal data.
+    func testEachBrowserKeepsItsOwnData() {
+        launchAtFullWidth(authentication: ["passed", "passed", "passed", "passed"])
+        createCategory("World")
+        addSource(Fixture.articles, to: "World")
+        let first = openStoragePage(of: "Plain story", in: "World")
+        record("A3 normal storage page", first)
+        XCTAssertEqual(first, "none")
+        storeMark(adult: false)
+
+        turnOnAdult()
+        enterAdult()
+        createCategory("Velvet")
+        addSource(Fixture.articles, to: "Velvet")
+        XCTAssertEqual(openStoragePage(of: "Plain story", in: "Velvet"), "none", "the normal mark is in the adult browser")
+        storeMark(adult: true)
+        capture("storage-adult")
+
+        // A lock and an unlock: the adult data are kept.
+        leaveBrowser()
+        tapLock()
+        waitForPartition(Wording.normal)
+        waitForReport(Self.closed, Self.dropped)
+        enterAdult()
+        XCTAssertEqual(openStoragePage(of: "Plain story", in: "Velvet"), "adult", "the adult data did not survive the lock")
+
+        // The normal browser does not have them.
+        leaveBrowser()
+        tapLock()
+        waitForPartition(Wording.normal)
+        XCTAssertEqual(openStoragePage(of: "Plain story", in: "World"), "normal")
+
+        // Clear, inside the adult partition, with the page open on its stack.
+        leaveBrowser()
+        enterAdult()
+        openStoragePage(of: "Plain story", in: "Velvet")
+        leaveBrowser()
+        openAdultSettings()
+        clearBrowsingData()
+        capture("clear-done")
+        XCTAssertEqual(openStoragePage(of: "Plain story", in: "Velvet"), "none", "Clear left the adult data")
+        leaveBrowser()
+        tapLock()
+        waitForPartition(Wording.normal)
+        XCTAssertEqual(openStoragePage(of: "Plain story", in: "World"), "normal", "Clear removed the normal data")
+    }
+
+    // MARK: - Criterion 7
+
+    /// Delete removes the adult browser's data with the rest: after
+    /// turning on again the page finds nothing.
+    func testDeleteRemovesTheAdultBrowserData() {
+        launchAtFullWidth(authentication: ["passed", "passed", "passed", "passed"])
+        turnOnAdult()
+        enterAdult()
+        createCategory("Velvet")
+        addSource(Fixture.articles, to: "Velvet")
+        openStoragePage(of: "Plain story", in: "Velvet")
+        storeMark(adult: true)
+        // The page stays open on the Library stack: Delete comes from
+        // Settings.
+        openAdultSettings()
+        turnOffButton.tap()
+        answerAlert(Wording.turnOffQuestion, with: "Delete Data")
+        answerAlert(Wording.deleteQuestion, with: "Delete")
+        waitFor(adultRow)
+        XCTAssertFalse(app.alerts.firstMatch.waitForExistence(timeout: 2), "the deletion said: \(alertTexts())")
+        waitForReport("file=0", Self.closed, Self.dropped)
+
+        turnOnAdult()
+        enterAdult()
+        createCategory("Velvet")
+        addSource(Fixture.articles, to: "Velvet")
+        XCTAssertEqual(openStoragePage(of: "Plain story", in: "Velvet"), "none", "the adult browser's data outlived Delete")
+    }
+
+    // MARK: - Criterion 8
+
+    /// With the switch off adult rows show no thumbnail and none is
+    /// fetched (the adult Settings › Data reads zero after the row was on
+    /// screen); turned on, the thumbnail is fetched; the normal partition is
+    /// unaffected; the value survives a relaunch.
+    func testThumbnailsSwitch() {
+        launchAtFullWidth(authentication: ["passed", "passed", "passed"])
+        turnOnAdult()
+        enterAdult()
+        openAdultSettings()
+        setThumbnails(false)
+        createCategory("Velvet")
+        addSource(Fixture.articles, to: "Velvet")
+        openCategoryList("Velvet")
+        waitFor(articleRow("Image story"))
+        capture("thumbnails-off")
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertEqual(imageCacheSize(), zero, "a thumbnail was fetched with the switch off")
+
+        // The normal partition shows its thumbnails.
+        tapLock()
+        waitForPartition(Wording.normal)
+        createCategory("World")
+        addSource(Fixture.articles, to: "World")
+        openCategoryList("World")
+        waitFor(articleRow("Image story"))
+        waitForImageCache(zero: false)
+
+        // On again in the adult partition: the thumbnail is fetched.
+        enterAdult()
+        XCTAssertEqual(imageCacheSize(), zero)
+        openAdultSettings()
+        setThumbnails(true)
+        openCategoryList("Velvet")
+        waitFor(articleRow("Image story"))
+        waitForImageCache(zero: false)
+
+        // Off survives a relaunch.
+        openAdultSettings()
+        setThumbnails(false)
+        app.terminate()
+        launchAtFullWidth(authentication: ["passed"])
+        enterAdult()
+        openAdultSettings()
+        XCTAssertEqual(scrollTo(thumbnailsToggle).value as? String, "0")
+    }
+}

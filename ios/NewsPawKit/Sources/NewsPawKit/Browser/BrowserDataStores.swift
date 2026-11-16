@@ -61,6 +61,10 @@ public enum BrowserDataStores {
     /// store's: the UI tests' stores of earlier launches. A store that
     /// cannot be removed now is left for a later launch.
     public static func removeUITestStores(keeping kept: UUID) async {
+        // WebKit sets itself up with its first store: asked for the
+        // identifiers before that, a new process crashed (iOS 27.0
+        // simulator, `fetchAllDataStoreIdentifiers` on a null run loop).
+        _ = WKWebsiteDataStore(forIdentifier: kept)
         for identifier in await WKWebsiteDataStore.allDataStoreIdentifiers
         where identifier != kept && identifier != adultIdentifier {
             try? await WKWebsiteDataStore.remove(forIdentifier: identifier)

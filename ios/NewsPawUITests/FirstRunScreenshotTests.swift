@@ -34,7 +34,10 @@ final class FirstRunScreenshotTests: FirstRunTestCase {
         launchFirstRun(arguments: arguments)
         waitForStep(1)
         capture("step1")
-        continueButton.tap()
+        // Skip keeps the standard reading language (Simplified Chinese), so
+        // that the fixture's English rows are the foreign ones below,
+        // whatever the simulator's language preselects.
+        skipButton.tap()
         waitForStep(2)
         capture("step2")
         continueButton.tap()

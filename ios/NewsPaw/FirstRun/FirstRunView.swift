@@ -130,6 +130,16 @@ private struct FirstRunStepFrame: ViewModifier {
                 .frame(maxWidth: 640 - 2 * Theme.Spacing.standard)
                 .padding(.horizontal, Theme.Spacing.standard)
                 .padding(.vertical, Theme.Spacing.small)
+                // An opaque bar of the screen's background, across the
+                // whole width and down to the screen's edge: the list ends
+                // above it and nothing shows under or beside the button.
+                .frame(maxWidth: .infinity)
+                .background(Theme.groupedBackground.ignoresSafeArea(edges: .bottom))
+                .overlay(alignment: .top) {
+                    Theme.hairline
+                        .frame(height: 1)
+                        .accessibilityHidden(true)
+                }
             }
             .background(Theme.groupedBackground)
             .navigationTitle(title)
@@ -142,7 +152,9 @@ private struct FirstRunStepFrame: ViewModifier {
                 if let back {
                     ToolbarItem(placement: .topBarLeading) {
                         Button(action: back) {
-                            Label("Back", systemImage: "chevron.backward")
+                            // Its own string: the catalog's "Back" is the
+                            // browser's (后退); a step goes back (返回).
+                            Label("FirstRun.Back", systemImage: "chevron.backward")
                         }
                         .disabled(isBusy)
                         .accessibilityIdentifier(AccessibilityID.firstRunBack)

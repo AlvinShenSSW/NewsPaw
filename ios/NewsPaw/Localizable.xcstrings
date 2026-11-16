@@ -214,6 +214,17 @@
         }
       }
     },
+    "Add your sources, and pick categories to start with." : {
+      "comment" : "First run, step 3: what the step is for.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加你的来源，再选几个分类作为开始。"
+          }
+        }
+      }
+    },
     "Added" : {
       "comment" : "Mark on a suggested source that is already in the library.",
       "localizations" : {
@@ -391,7 +402,7 @@
       }
     },
     "Back" : {
-      "comment" : "The embedded browser's bottom-bar button that returns to the page before (RD10); the first run's bar button that returns to the step before (RD21).",
+      "comment" : "The embedded browser's bottom-bar button that returns to the page before (RD10).",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -529,17 +540,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择"
-          }
-        }
-      }
-    },
-    "Choose categories to start with, then add your sources." : {
-      "comment" : "First run, step 3: what the step is for.",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选几个分类作为开始，然后添加来源。"
           }
         }
       }
@@ -980,6 +980,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "胶片"
+          }
+        }
+      }
+    },
+    "FirstRun.Back" : {
+      "comment" : "First run: the bar button that returns to the step before. Its own key: the catalog's \"Back\" is the browser's.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "返回"
           }
         }
       }

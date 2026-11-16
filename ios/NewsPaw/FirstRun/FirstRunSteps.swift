@@ -77,11 +77,11 @@ struct FirstRunModelStep: View {
     }
 }
 
-/// Step 3 (decision 6): the six suggested categories, all off, each with
-/// its icon; one that exists already by its name shows "Added" and cannot
-/// be unticked. Then "Add a Source…", which opens Add source with its
-/// suggested sources. The ticked categories are created by the first run
-/// when "Add a Source…" or Done is tapped.
+/// Step 3 (decision 6), in ux S12's order: "Add a Source…", which opens
+/// Add source with its suggested sources, then the six suggested
+/// categories, all off, each with its icon; one that exists already by its
+/// name shows "Added" and cannot be unticked. The ticked categories are
+/// created by the first run when "Add a Source…" or Done is tapped.
 struct FirstRunSourcesStep: View {
     @Environment(\.accent) private var accent
     @Environment(CategoryModel.self) private var categories
@@ -95,19 +95,7 @@ struct FirstRunSourcesStep: View {
 
     var body: some View {
         List {
-            FirstRunHeader(step: .sources, text: Text("Choose categories to start with, then add your sources."))
-            Section {
-                ForEach(SuggestedSourceGroup.allCases, id: \.self) { group in
-                    row(group)
-                }
-            } header: {
-                Text("Suggested Categories")
-                    .foregroundStyle(Theme.secondaryText)
-            } footer: {
-                Text("Ticked categories are added when you add a source or tap Done. You can rename them later.")
-                    .foregroundStyle(Theme.secondaryText)
-            }
-            .listRowBackground(Theme.surface)
+            FirstRunHeader(step: .sources, text: Text("Add your sources, and pick categories to start with."))
             Section {
                 Button(action: addSource) {
                     Label("Add a Source…", systemImage: "plus")
@@ -119,6 +107,18 @@ struct FirstRunSourcesStep: View {
                 .accessibilityIdentifier(AccessibilityID.firstRunAddSource)
             } header: {
                 Text("Add Your Own")
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            .listRowBackground(Theme.surface)
+            Section {
+                ForEach(SuggestedSourceGroup.allCases, id: \.self) { group in
+                    row(group)
+                }
+            } header: {
+                Text("Suggested Categories")
+                    .foregroundStyle(Theme.secondaryText)
+            } footer: {
+                Text("Ticked categories are added when you add a source or tap Done. You can rename them later.")
                     .foregroundStyle(Theme.secondaryText)
             }
             .listRowBackground(Theme.surface)

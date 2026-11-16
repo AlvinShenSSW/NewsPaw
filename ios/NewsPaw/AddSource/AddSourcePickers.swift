@@ -4,6 +4,7 @@ import SwiftUI
 /// The category picker of Add source: this library's categories and "New
 /// Category…".
 struct CategoryPickerView: View {
+    @Environment(\.accent) private var accent
     @Bindable var model: AddSourceModel
     @Environment(CategoryModel.self) private var categories
 
@@ -22,7 +23,7 @@ struct CategoryPickerView: View {
                             Spacer(minLength: Theme.Spacing.small)
                             if selected {
                                 Image(systemName: "checkmark")
-                                    .foregroundStyle(Theme.accent)
+                                    .foregroundStyle(accent)
                                     .accessibilityHidden(true)
                             }
                         }

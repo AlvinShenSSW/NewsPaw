@@ -36,4 +36,13 @@ struct BrowserConfigurationTests {
         #expect(configuration.urlSchemeHandler(forURLScheme: "newspaw") == nil)
         #expect(configuration.userContentController.userScripts.isEmpty)
     }
+
+    #if os(iOS)
+    @Test("RD18 decision 13: Picture in Picture is off only where it is asked to be")
+    func pictureInPicture() {
+        #expect(BrowserConfiguration.make(dataStore: .nonPersistent()).allowsPictureInPictureMediaPlayback)
+        let adult = BrowserConfiguration.make(dataStore: .nonPersistent(), allowsPictureInPicture: false)
+        #expect(!adult.allowsPictureInPictureMediaPlayback)
+    }
+    #endif
 }

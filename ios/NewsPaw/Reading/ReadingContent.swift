@@ -33,12 +33,15 @@ struct ReadingContent {
         return Converted(blocks: blocks, isCut: converted.isCut, isFullText: ArticleBlocks.isFullText(blocks))
     }
 
+    /// - Parameter mayLoad: whether the opening's images may still be
+    ///   loaded or viewed: false once the reading model is stopped (RD18
+    ///   decision 4).
     @MainActor
-    init(_ converted: Converted, images: BodyImageLoader) {
+    init(_ converted: Converted, images: BodyImageLoader, mayLoad: @escaping @MainActor () -> Bool) {
         blocks = converted.blocks
         isCut = converted.isCut
         isFullText = converted.isFullText
-        self.images = BodyImageSession(loader: images)
+        self.images = BodyImageSession(loader: images, mayLoad: mayLoad)
     }
 }
 
@@ -49,13 +52,20 @@ struct ReadingContent {
 @MainActor
 final class BodyImageSession {
     let loader: BodyImageLoader
+    /// False once the workspace of the opening was dropped: no image is
+    /// asked for or read from the cache, and the viewer does not open.
+    var mayLoad: Bool {
+        mayLoadNow()
+    }
+    private let mayLoadNow: @MainActor () -> Bool
     private(set) var failed: Set<URL> = []
     private(set) var undrawn: Set<URL> = []
     /// The pixel size of each image that arrived.
     private(set) var sizes: [URL: CGSize] = [:]
 
-    init(loader: BodyImageLoader) {
+    init(loader: BodyImageLoader, mayLoad: @escaping @MainActor () -> Bool) {
         self.loader = loader
+        mayLoadNow = mayLoad
     }
 
     func markFailed(_ url: URL) {

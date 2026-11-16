@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import Synchronization
 
 /// One partition's data: the only way to reach the rows of one database file
 /// (spec N02, N04, section 6). Obtain it from a `LibraryStore`, which gives
@@ -19,12 +20,34 @@ public final class Library: Sendable {
 
     let pool: DatabasePool
     let now: @Sendable () -> Date
+    /// Whether `close()` has closed the pool.
+    private let closed = Mutex(false)
 
     init(partition: Partition, pool: DatabasePool, cacheDirectory: URL, now: @escaping @Sendable () -> Date) {
         self.partition = partition
         self.pool = pool
         self.imageCache = ImageCache(directory: cacheDirectory)
         self.now = now
+    }
+
+    /// Closes the library's connections (RD18: at every lock of the adult
+    /// partition, and before its file is deleted). It returns once the
+    /// reads and the write in flight have ended; every later use of this
+    /// object fails with `LibraryError.storage` and touches no file
+    /// (measured, RD18 assumption A3). Closing twice is closing once.
+    func close() throws {
+        guard !isClosed else { return }
+        do {
+            try pool.close()
+        } catch {
+            throw LibraryError.wrapping(error)
+        }
+        closed.withLock { $0 = true }
+    }
+
+    /// Whether the library's connections have been closed.
+    var isClosed: Bool {
+        closed.withLock { $0 }
     }
 
     /// Runs `updates` in one write transaction and maps its errors to

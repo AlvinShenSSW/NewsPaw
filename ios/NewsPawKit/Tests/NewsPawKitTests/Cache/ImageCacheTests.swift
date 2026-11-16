@@ -35,6 +35,27 @@ struct ImageCacheTests {
         #expect(await cache.size() == 300)
     }
 
+    @Test("RD18: a closed cache stores nothing, replaces nothing and creates no directory; what it holds is still read")
+    func closedCacheStoresNothing() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directory = root.appending(path: "cache")
+        let fresh = ImageCache(directory: directory, limit: 1_000)
+        await fresh.close()
+
+        #expect(!(await fresh.store(bytes(10), for: "https://example.invalid/a.png")))
+        #expect(!FileManager.default.fileExists(atPath: directory.path))
+
+        let used = ImageCache(directory: directory, limit: 1_000)
+        #expect(await used.store(bytes(10, 1), for: "https://example.invalid/a.png"))
+        await used.close()
+        #expect(!(await used.store(bytes(20, 2), for: "https://example.invalid/b.png")))
+        #expect(!(await used.store(bytes(30, 3), for: "https://example.invalid/a.png")))
+        #expect(files(in: directory) == [sha256Hex("https://example.invalid/a.png")])
+        #expect(await used.data(for: "https://example.invalid/a.png") == bytes(10, 1))
+        #expect(await used.size() == 10)
+    }
+
     @Test("the least recently used go first, and a read makes an item the most recently used")
     func leastRecentlyUsed() async throws {
         let root = try makeTemporaryDirectory()

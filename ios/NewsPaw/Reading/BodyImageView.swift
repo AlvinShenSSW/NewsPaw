@@ -149,7 +149,7 @@ struct BodyImageView: View {
             phase = .failed
             return
         }
-        guard shownWidth > 0 else { return }
+        guard shownWidth > 0, session.mayLoad else { return }
         if case .loaded(let decoded) = phase, abs(decoded.size.width - min(shownWidth, maximumWidth)) < 1 {
             return
         }
@@ -162,7 +162,7 @@ struct BodyImageView: View {
             // or that the stack lays out and discards at once (seen at the
             // first layout: every block twice), makes no request.
             try? await Task.sleep(for: Self.patience)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, session.mayLoad else { return }
             switch await session.loader.load(url) {
             case .image(let stored):
                 data = stored
@@ -219,9 +219,12 @@ struct BodyImageView: View {
         let url = image.url
         let alternativeText = image.alternativeText
         let loader = session.loader
+        let session = session
         Task {
-            guard let data = await loader.image(for: url),
-                  let decoded = await Self.decode(data, maximumPixelSize: BodyImageLoader.maximumSide)
+            guard session.mayLoad,
+                  let data = await loader.image(for: url),
+                  let decoded = await Self.decode(data, maximumPixelSize: BodyImageLoader.maximumSide),
+                  session.mayLoad
             else { return }
             view(ViewedImage(image: UIImage(cgImage: decoded), alternativeText: alternativeText))
         }

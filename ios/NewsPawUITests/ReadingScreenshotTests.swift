@@ -82,7 +82,7 @@ final class ReadingScreenshotTests: ReadingTestCase {
         guard ProcessInfo.processInfo.environment["NEWSPAW_ANIMATION_CHECK"] == "1" else {
             throw XCTSkip("set TEST_RUNNER_NEWSPAW_ANIMATION_CHECK=1 to check the swipes with animations on")
         }
-        extraEnvironment = [UITestLaunchKey.keepAnimations: "1"]
+        keepsAnimations = true
         launchWithReadingFeed(isPad ? .landscapeLeft : .portrait)
         openArticle("Every block")
         sleep(1)

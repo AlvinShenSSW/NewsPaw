@@ -16,6 +16,8 @@ public final class FixtureTransport: Transport {
     public static let candidateLimit = Duration.seconds(1)
     /// How long the slow declared feed takes to answer.
     static let slowAnswer = Duration.seconds(3)
+    /// How long the stalling feed takes to answer after its first answer.
+    static let stallingAnswer = Duration.seconds(45)
 
     /// The addresses of the table, in normal form.
     public enum Address {
@@ -59,6 +61,11 @@ public final class FixtureTransport: Transport {
         /// had, so that each request adds a row at the top of its list
         /// (RD09).
         public static let longCounting = "https://longcounting.example.invalid/rss.xml"
+        /// A feed that answers at once the first time, so that it can be
+        /// added, and only after `stallingAnswer` every time after, each
+        /// answer with one item no earlier answer had: a collection of it
+        /// is still running long after it was started (RD18 criterion 5).
+        public static let stalling = "https://stalling.example.invalid/rss.xml"
         /// A feed whose items cover what the reading screen lays out (RD11):
         /// "Every block", "Line heights", "Short note" (an excerpt), "Hostile
         /// story", "Cut story" (more blocks than are shown), "Cut linkless
@@ -103,6 +110,7 @@ public final class FixtureTransport: Transport {
 
     private let sequenceRequests = Mutex(0)
     private let slowTagsRequests = Mutex(0)
+    private let stallingRequests = Mutex(0)
     /// When `flaky.png` was first asked for.
     private let flakyImageFirstRequest = Mutex<ContinuousClock.Instant?>(nil)
 
@@ -165,6 +173,15 @@ public final class FixtureTransport: Transport {
             return answer(Self.articlesFeed, type: rss)
         case Address.articleImage:
             return TransportResponse(finalURL: url, status: 200, headers: ["Content-Type": "image/png"], body: Self.articleImagePNG)
+        case Address.stalling:
+            let number = stallingRequests.withLock { count in
+                count += 1
+                return count
+            }
+            if number > 1 {
+                try await Task.sleep(for: Self.stallingAnswer)
+            }
+            return answer(Self.rss(title: "Stalling Feed", items: ["Stalling story \(UUID().uuidString)"]), type: rss)
         case Address.longCounting:
             return answer(Self.longCountingFeed(fresh: String(UUID().uuidString.prefix(8))), type: rss)
         case Address.reading:

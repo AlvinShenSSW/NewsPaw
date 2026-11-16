@@ -50,6 +50,7 @@ enum ArticleActionWording {
 /// element whose label holds the unread state, title, source and time, and
 /// "Starred" when starred.
 struct ArticleRowView: View {
+    @Environment(\.accent) private var accent
     let row: ArticleRow
     @Environment(ReadingModel.self) private var reading
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -63,7 +64,7 @@ struct ArticleRowView: View {
     var body: some View {
         HStack(alignment: .top, spacing: Theme.Spacing.small) {
             Circle()
-                .fill(row.isRead ? Color.clear : Theme.accent)
+                .fill(row.isRead ? Color.clear : accent)
                 .frame(width: 8, height: 8)
                 .padding(.top, dotOffset)
             let layout = typeSize.isAccessibilitySize
@@ -105,7 +106,7 @@ struct ArticleRowView: View {
                 if row.isStarred {
                     Image(systemName: "star.fill")
                         .font(.caption)
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(accent)
                 }
             }
         }

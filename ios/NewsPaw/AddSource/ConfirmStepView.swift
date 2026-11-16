@@ -4,6 +4,7 @@ import SwiftUI
 /// The second step: what was found, the choice when there is more than
 /// one, the name, the category, the kind and a preview; Save.
 struct ConfirmStepView: View {
+    @Environment(\.accent) private var accent
     @Bindable var model: AddSourceModel
     @FocusState private var isNameFocused: Bool
 
@@ -236,7 +237,7 @@ struct ConfirmStepView: View {
                 Spacer(minLength: Theme.Spacing.small)
                 if selected {
                     Image(systemName: "checkmark")
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(accent)
                         .accessibilityHidden(true)
                 }
             }

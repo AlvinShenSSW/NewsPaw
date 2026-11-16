@@ -250,6 +250,18 @@ enum AccessibilityID {
     static let modelListPrefix = "modelList."
     static let modelListCancelButton = "slot.modelListCancel"
 
+    // Adult partition (RD18)
+    static let partitionSwitch = "partition.switch"
+    static let partitionNormalChoice = "partition.normal"
+    static let partitionAdultChoice = "partition.adult"
+    static let lockButton = "partition.lock"
+    static let cover = "partition.cover"
+    static let adultPartitionRow = "settings.adultPartition"
+    static let adultPartitionToggle = "adult.toggle"
+    static let adultExplanation = "adult.explanation"
+    static let lockTimingPicker = "adult.lockTiming"
+    static let turnOffAdultButton = "adult.turnOff"
+
     /// A preset's row in the form's service picker.
     static func presetOption(_ rawValue: String) -> String {
         "slot.preset." + rawValue
@@ -279,12 +291,34 @@ enum UITestLaunchKey {
     /// A whole number of days added to the app's clock; honoured only with
     /// `libraryDirectory`.
     static let clockOffsetDays = "NEWSPAW_UITEST_CLOCK_OFFSET_DAYS"
+    /// The stand-in authenticator's answers, in order, separated by commas:
+    /// `passed`, `cancelled`, `interrupted`, `failed`, `unavailable`. An
+    /// answer followed by `@inactive` is given once the scene is inactive
+    /// (the system's prompt answers then); by `@reactivated`, once it has
+    /// been inactive and is active again. Honoured only with
+    /// `libraryDirectory`.
+    static let authenticationAnswers = "NEWSPAW_UITEST_AUTH_ANSWERS"
+    /// "1" turns the adult partition's feature switch off for this launch;
+    /// honoured only with `libraryDirectory`.
+    static let adultFeatureOff = "NEWSPAW_UITEST_ADULT_FEATURE_OFF"
     /// A number of rows a list page holds, so that the next page is a few
     /// rows away; honoured only with `libraryDirectory`.
     static let articlePageSize = "NEWSPAW_UITEST_ARTICLE_PAGE_SIZE"
-    /// "1" keeps the app's animations on under the UI tests, for the
-    /// checks that are made by hand on a transition; honoured only with
+    /// "1" leaves the app's animations on under a UI test, for the checks
+    /// that look at a transition (RD11 criterion 9, RD18 criterion 9); the
+    /// harness is slow around context menus then. Honoured only with
     /// `libraryDirectory`.
     static let keepAnimations = "NEWSPAW_UITEST_KEEP_ANIMATIONS"
+}
+
+/// Identifiers of what exists only in a debug build under the UI tests.
+enum DebugAccessibilityID {
+    /// The element that reports the adult library's state (RD18 decision
+    /// 4): its label is `file=<0|1> pool=<open|closed>
+    /// library=<held|released> workspace=<none|held|released>
+    /// browser=<none|held|released>`. `pool` is whether connections are
+    /// open on the file; the other three are whether the objects are gone
+    /// from memory.
+    static let adultReport = "debug.adultReport"
 }
 #endif

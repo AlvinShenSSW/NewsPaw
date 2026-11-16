@@ -11,11 +11,15 @@ import UIKit
 final class RefreshModel {
     /// Every collection of the library goes through it.
     let engine: Refresher
+    /// The two settings, shared with every workspace (RD18 decision 3) and
+    /// read at each use.
     var interval: RefreshInterval {
-        didSet { preferences.refreshInterval = interval }
+        get { settings.interval }
+        set { settings.interval = newValue }
     }
     var retention: Retention {
-        didSet { preferences.retention = retention }
+        get { settings.retention }
+        set { settings.retention = newValue }
     }
     /// The end of the last counted whole-library refresh.
     private(set) var lastRefreshAt: Date?
@@ -31,19 +35,20 @@ final class RefreshModel {
     @ObservationIgnored var onRunEnded: (@MainActor () -> Void)?
 
     @ObservationIgnored private let library: Library
-    @ObservationIgnored private let preferences: Preferences
+    @ObservationIgnored private let settings: RefreshSettings
     @ObservationIgnored private var runs = 0
     @ObservationIgnored private var backgroundTask = UIBackgroundTaskIdentifier.invalid
     @ObservationIgnored private var reloading = false
     @ObservationIgnored private var reloadAgain = false
+    /// Whether the workspace of this model was dropped (RD18 decision 4):
+    /// from then on it starts no run.
+    @ObservationIgnored private var isStopped = false
 
-    init(library: Library, transport: any Transport, preferences: Preferences, now: @escaping @Sendable () -> Date) {
+    init(library: Library, transport: any Transport, settings: RefreshSettings, now: @escaping @Sendable () -> Date) {
         self.library = library
-        self.preferences = preferences
+        self.settings = settings
         self.now = now
         engine = Refresher(library: library, transport: transport)
-        interval = preferences.refreshInterval
-        retention = preferences.retention
         engine.onCollectionEnded = { [weak self] _ in
             Task { await self?.reloadLists() }
         }
@@ -59,10 +64,16 @@ final class RefreshModel {
     /// Entering the app (decision 3): clean up, then refresh the whole
     /// library when a refresh is due. Silent: a failure is tried again at
     /// the next entry.
+    ///
+    /// An entry that a lock overtakes ends at its next step: a dropped
+    /// workspace starts no run.
     func entered() async {
+        guard !isStopped else { return }
         let deleted = (try? await library.cleanUp(keeping: retention)) ?? 0
+        guard !isStopped else { return }
         if deleted > 0 {
             await reloadLists()
+            guard !isStopped else { return }
         }
         guard (try? await library.refreshIsDue(every: interval)) == true else { return }
         await run(.library, ownerStarted: false)
@@ -77,6 +88,7 @@ final class RefreshModel {
     }
 
     private func run(_ scope: RefreshScope, ownerStarted: Bool) async {
+        guard !isStopped else { return }
         beginBackgroundTime()
         defer { endBackgroundTimeIfIdle() }
         var storageFailed = false
@@ -88,12 +100,21 @@ final class RefreshModel {
         } catch {
             storageFailed = true
         }
-        if storageFailed, ownerStarted {
+        if storageFailed, ownerStarted, !isStopped {
             onStorageError?()
         }
         await load()
         await reloadLists()
         onRunEnded?()
+    }
+
+    /// The workspace is dropped (RD18 decision 4): the run in flight is
+    /// cancelled, and none is started afterwards — not by an entry that is
+    /// still on its way, and not by Update Now or a pull of a view that
+    /// something keeps. What a run has stored stays in the library.
+    func stop() {
+        isStopped = true
+        engine.cancelAll()
     }
 
     // MARK: - Background time (decision 6)

@@ -28,7 +28,19 @@ final class SourceModel {
     var draftTranslatePage = false
     /// The source whose deletion is being confirmed.
     var pendingDeletion: SourceSummary?
-    var isShowingSaveError = false
+    /// Whether "The change could not be saved." is shown. A stopped model
+    /// never raises it, whoever asks: its own saves, the refresh model or
+    /// the reading model of the same dropped workspace (RD18).
+    var isShowingSaveError = false {
+        didSet {
+            if isStopped, isShowingSaveError {
+                isShowingSaveError = false
+            }
+        }
+    }
+
+    /// Whether the workspace of this model was dropped.
+    private(set) var isStopped = false
 
     let library: Library
     let transport: any Transport
@@ -216,6 +228,17 @@ final class SourceModel {
         if navigation.sheet == .addSource {
             navigation.sheet = nil
         }
+    }
+
+    /// The workspace is dropped (RD18 decision 4): the detection in flight
+    /// is cancelled and Add source's state, which holds this model, let
+    /// go; from here on nothing this model does is shown.
+    func stop() {
+        isStopped = true
+        isShowingSaveError = false
+        pendingDeletion = nil
+        addSource?.cancel()
+        addSource = nil
     }
 
     /// Saves what Add source chose. On success the sheet closes, the lists

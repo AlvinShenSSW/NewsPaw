@@ -23,6 +23,9 @@ final class TranslationScreenshotTests: TranslationTestCase {
         case "largest-text": arguments = Self.largestText
         default: break
         }
+        // The alert's buttons, found by their label: the system orders them
+        // (Cancel first when there are two).
+        let (retry, cancel) = variant == "zh" ? ("重试", "取消") : ("Retry", "Cancel")
         var count = 0
         func capture(_ name: String) {
             count += 1
@@ -58,7 +61,7 @@ final class TranslationScreenshotTests: TranslationTestCase {
         warningMark(Translation.refused).tap()
         waitFor(app.alerts.firstMatch)
         capture("refused-question")
-        app.alerts.firstMatch.buttons.allElementsBoundByIndex.last?.tap()
+        alertButton(cancel).tap()
         waitForAbsence(app.alerts.firstMatch)
 
         openCategoryList("Slow")
@@ -66,7 +69,7 @@ final class TranslationScreenshotTests: TranslationTestCase {
         waitFor(app.alerts.firstMatch)
         capture("limit-question")
         // Retry: the slow word keeps the row translating for two seconds.
-        app.alerts.firstMatch.buttons.firstMatch.tap()
+        alertButton(retry).tap()
         waitFor(activityMark(Translation.slow))
         capture("translating-row")
         waitForAbsence(activityMark(Translation.slow))

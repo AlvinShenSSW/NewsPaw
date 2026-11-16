@@ -110,7 +110,12 @@ private struct ArticleScreen: View {
             .padding(Theme.Spacing.standard)
             .frame(maxWidth: .infinity)
         }
-        .modifier(ReaderPosition(articleID: row.id, reading: reading, replacements: reading.replacements[row.id] ?? 0))
+        .modifier(ReaderPosition(articleID: row.id, reading: reading))
+        // A body replaced by the article's page (RD12) starts at the top,
+        // header and all: the scroll view and its position are made anew.
+        // (Kept, the position would hold the old body's block at the top
+        // of the screen, and the new body's block of that number with it.)
+        .id(reading.replacements[row.id] ?? 0)
         .articleSwipes(
             layoutDirection: layoutDirection,
             next: { Task { await reading.openNext(on: list) } },
@@ -304,20 +309,14 @@ private struct ArticleScreen: View {
 /// back with it (measured, and held by the UI test). The position is this
 /// modifier's own state, so that scrolling does not lay the screen out
 /// again.
-///
-/// When the body is replaced by the article's page (RD12), the screen goes
-/// back to its top, so that the new body is read from its start.
 private struct ReaderPosition: ViewModifier {
     let articleID: UUID
     let reading: ReadingModel
-    /// How many times the body was replaced.
-    let replacements: Int
     @State private var position: ScrollPosition
 
-    init(articleID: UUID, reading: ReadingModel, replacements: Int) {
+    init(articleID: UUID, reading: ReadingModel) {
         self.articleID = articleID
         self.reading = reading
-        self.replacements = replacements
         let start = reading.position(of: articleID)
         _position = State(initialValue: start.map { ScrollPosition(id: $0, anchor: .top) } ?? ScrollPosition(idType: Int.self))
     }
@@ -327,9 +326,6 @@ private struct ReaderPosition: ViewModifier {
             .scrollPosition($position, anchor: .top)
             .onChange(of: position.viewID(type: Int.self)) { _, block in
                 reading.readerMoved(to: block, in: articleID)
-            }
-            .onChange(of: replacements) {
-                position.scrollTo(edge: .top)
             }
     }
 }

@@ -15,6 +15,10 @@ final class FullTextTests: FullTextTestCase {
         launchWithFullTextFeed()
         XCTAssertEqual(pagesRequested, 0)
         openAndSettle("Fetched story", fullText: true)
+        // The replaced body starts at the top: the header and the line are
+        // on screen.
+        XCTAssertTrue(readingTitle.isHittable, "the title scrolled away when the body was replaced")
+        XCTAssertTrue(fullTextNote.isHittable, "the full-text line scrolled away when the body was replaced")
         let first = edition()
         XCTAssertFalse(first.isEmpty)
         XCTAssertFalse(excerptNote.exists)

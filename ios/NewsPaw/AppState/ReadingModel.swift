@@ -503,21 +503,30 @@ final class ReadingModel {
         }
     }
 
-    /// The reading language changed: every living list and every open
-    /// article is read again in it, so that no translation of the old one
-    /// is shown.
+    /// The reading language changed: the translations of the new one are
+    /// read for the rows of every living list and every open article, and
+    /// applied where the rows stand (none where there is none), so that no
+    /// translation of the old one is shown. The lists are not read again:
+    /// their rows past the first page and the reader's place stay. Through
+    /// the queue, with the rows as they stand when it is this work's turn.
     func translationLocaleChanged() {
         guard !isStopped else { return }
-        for model in lists.values where model.state != .notLoaded {
-            reload(model)
-        }
         let library = library
-        for (id, article) in articles {
-            guard case .loaded = article else { continue }
-            enqueue {
-                if let row = try? await library.article(id, translationsIn: self.translationLocale()) {
-                    self.applyTranslation(row.translation, to: id)
+        enqueue {
+            var ids = Set<UUID>()
+            for model in self.lists.values {
+                ids.formUnion(model.rows.map(\.id))
+            }
+            for (id, article) in self.articles {
+                if case .loaded = article {
+                    ids.insert(id)
                 }
+            }
+            guard !ids.isEmpty, let locale = self.translationLocale() else { return }
+            // A failed read shows the originals rather than the old language.
+            let stored = (try? await library.translations(of: ids, locale: locale)) ?? [:]
+            for id in ids {
+                self.applyTranslation(stored[id], to: id)
             }
         }
     }

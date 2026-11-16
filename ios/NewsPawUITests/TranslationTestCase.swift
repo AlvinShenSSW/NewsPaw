@@ -48,15 +48,19 @@ class TranslationTestCase: ReadingTestCase {
 
     /// Launches on this test's library with the translator's models — the
     /// primary, or the primary and the backup — and, when given, the daily
-    /// automatic limit.
+    /// automatic limit and the lists' page size.
     func launchTranslating(
-        models: String = "primary", limit: Int? = nil, arguments: [String] = [], _ orientation: UIDeviceOrientation = .portrait
+        models: String = "primary", limit: Int? = nil, pageSize: Int? = nil, arguments: [String] = [],
+        _ orientation: UIDeviceOrientation = .portrait
     ) {
         app.terminate()
         let application = XCUIApplication()
         application.launchEnvironment[UITestLaunchKey.translationModels] = models
         if let limit {
             application.launchEnvironment[UITestLaunchKey.dailyAutomaticLimit] = String(limit)
+        }
+        if let pageSize {
+            application.launchEnvironment[UITestLaunchKey.articlePageSize] = String(pageSize)
         }
         launch(application, arguments: arguments)
         rotate(orientation)

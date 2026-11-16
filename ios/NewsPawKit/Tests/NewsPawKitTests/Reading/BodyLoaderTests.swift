@@ -302,8 +302,9 @@ struct BodyLoaderTests {
         await #expect(throws: CancellationError.self) { try await task.value }
         #expect(!loader.remembersFailure(ofArticle: setup.article))
 
-        // During the extraction.
-        let extractor = StubExtractor(waits: true)
+        // During the extraction, which ends with its answer just as the
+        // article is left: the loader itself stores nothing.
+        let extractor = StubExtractor(waits: true, answersWhenCancelled: true)
         let second = Self.loader(setup, transport: Self.answering(), extractor: extractor)
         let extracting = Task { try await second.load(article: setup.article, link: Self.link, feed: Self.excerpt) }
         await extractor.started.wait()
@@ -396,13 +397,17 @@ final class StubExtractor: PageExtracting {
     private let html: String?
     private let failure: ExtractionFailure?
     private let waits: Bool
+    /// Whether it answers rather than throws when its task is cancelled
+    /// while it waits: an extraction that ended as the article was left.
+    private let answersWhenCancelled: Bool
     private var release: CheckedContinuation<Void, Never>?
     private var released = false
 
-    init(html: String? = nil, failing failure: ExtractionFailure? = nil, waits: Bool = false) {
+    init(html: String? = nil, failing failure: ExtractionFailure? = nil, waits: Bool = false, answersWhenCancelled: Bool = false) {
         self.html = html
         self.failure = failure
         self.waits = waits
+        self.answersWhenCancelled = answersWhenCancelled
     }
 
     func extract(html page: String, address: URL) async throws -> PageExtraction {
@@ -424,7 +429,9 @@ final class StubExtractor: PageExtracting {
         if let failure {
             throw failure
         }
-        try Task.checkCancellation()
+        if !answersWhenCancelled {
+            try Task.checkCancellation()
+        }
         return PageExtraction(html: html ?? BodyLoaderTests.articleHTML, title: "One")
     }
 

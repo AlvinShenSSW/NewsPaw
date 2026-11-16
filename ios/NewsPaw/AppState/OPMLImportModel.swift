@@ -33,8 +33,8 @@ extension UTType {
 @MainActor @Observable
 final class OPMLImportModel {
     enum Stage: Equatable {
-        /// The file picker is up, or about to be.
-        case choosing
+        /// No file is being read: the picker is up, or a refusal is shown.
+        case idle
         /// The file is being read and planned; nothing is presented.
         case reading
         case preview
@@ -67,7 +67,7 @@ final class OPMLImportModel {
     var alert: Alert?
     var isShowingPreview = false
     var path: [OPMLImportRoute] = []
-    private(set) var stage = Stage.choosing
+    private(set) var stage = Stage.idle
     private(set) var plan: OPMLImportSummary?
     var choice: Choice?
     /// The "New Category…" draft.
@@ -110,6 +110,7 @@ final class OPMLImportModel {
             switch read {
             case .success(let read): document = read
             case .failure(let refusal):
+                stage = .idle
                 alert = .refused(refusal)
                 return
             }
@@ -122,6 +123,7 @@ final class OPMLImportModel {
                 isShowingPreview = true
             } catch {
                 guard !Task.isCancelled, sources.isCurrent(self) else { return }
+                stage = .idle
                 alert = .storage
             }
         }

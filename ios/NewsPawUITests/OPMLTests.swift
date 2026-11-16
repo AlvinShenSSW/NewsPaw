@@ -173,6 +173,8 @@ final class OPMLTests: AdultTestCase {
         button(AccessibilityID.importOPMLButton).tap()
         answerAlert(reason)
         XCTAssertFalse(element(AccessibilityID.opmlFeedsToAdd).waitForExistence(timeout: 2))
+        // Nothing is still being read: the row can be used again.
+        XCTAssertTrue(button(AccessibilityID.importOPMLButton).isEnabled)
 
         openAddSource()
         scrollTo(button(AccessibilityID.addSourceImportOPMLButton)).tap()

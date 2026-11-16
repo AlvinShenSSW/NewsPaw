@@ -3,13 +3,17 @@ import NewsPawKit
 
 /// An open article's body, ready to lay out (RD11 decisions 5 to 7): its
 /// blocks, whether they were cut, whether they are a full text or an
-/// excerpt, and the images of this opening.
+/// excerpt, whether they came from the article's page (RD12), and the
+/// images of this opening.
 struct ReadingContent {
     let blocks: [ArticleBlock]
     /// The input or the block list was past its limit.
     let isCut: Bool
     /// False for an excerpt: the screen then says so and offers the page.
     let isFullText: Bool
+    /// The body was extracted from the article's page (RD12): the screen
+    /// says "Full text from the original page".
+    let isExtracted: Bool
     /// The images of this opening. A new opening has a new one, so an
     /// image that failed is asked for again.
     let images: BodyImageSession
@@ -41,6 +45,18 @@ struct ReadingContent {
         blocks = converted.blocks
         isCut = converted.isCut
         isFullText = converted.isFullText
+        isExtracted = false
+        self.images = BodyImageSession(loader: images, mayLoad: mayLoad)
+    }
+
+    /// A body extracted from a page (RD12): a full text by the time it is
+    /// shown, since only a usable extraction is.
+    @MainActor
+    init(extracted: ExtractedBody, images: BodyImageLoader, mayLoad: @escaping @MainActor () -> Bool) {
+        blocks = extracted.blocks.blocks
+        isCut = extracted.blocks.isCut
+        isFullText = true
+        isExtracted = true
         self.images = BodyImageSession(loader: images, mayLoad: mayLoad)
     }
 }

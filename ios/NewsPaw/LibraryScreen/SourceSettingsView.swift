@@ -41,8 +41,6 @@ struct SourceSettingsView: View {
                             }
                             .disabled(locked)
                             .accessibilityIdentifier(AccessibilityID.bodyModePicker)
-                        } footer: {
-                            footnote(source)
                         }
                         .listRowBackground(Theme.surface)
                         statusSection(source)
@@ -52,7 +50,7 @@ struct SourceSettingsView: View {
                                 .disabled(locked)
                                 .accessibilityIdentifier(AccessibilityID.translatePageToggle)
                         } footer: {
-                            footnote(source)
+                            footnote
                         }
                         .listRowBackground(Theme.surface)
                     }
@@ -209,18 +207,12 @@ struct SourceSettingsView: View {
         .listRowBackground(Theme.surface)
     }
 
-    /// The footnote of the options saved before they are used: a feed's
-    /// body option waits for full-text reading (its titles are translated
-    /// from RD14 on); a web page's "Translate When Opened" waits for page
-    /// translation.
-    private func footnote(_ source: SourceSummary) -> some View {
-        Group {
-            if source.isFeedLike {
-                Text("Saved now; used once full-text reading is available.")
-            } else {
-                Text("Saved now; used once page translation is available.")
-            }
-        }
-        .foregroundStyle(Theme.secondaryText)
+    /// The footnote of the option saved before it is used: a web page's
+    /// "Translate When Opened" waits for page translation (RD16). A feed's
+    /// options are all used once RD12 (the body) and RD14 (the titles) are
+    /// in, so a feed has none (RD12 decision 9; RD14 decision 12).
+    private var footnote: some View {
+        Text("Saved now; used once page translation is available.")
+            .foregroundStyle(Theme.secondaryText)
     }
 }

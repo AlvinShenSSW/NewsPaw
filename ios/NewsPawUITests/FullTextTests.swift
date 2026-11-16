@@ -14,6 +14,10 @@ final class FullTextTests: FullTextTestCase {
     func testFullTextFromItsPage() {
         launchWithFullTextFeed()
         XCTAssertEqual(pagesRequested, 0)
+        // The excerpt under the loading line, until the page answers.
+        openArticle("Fetched story")
+        waitFor(loadingNote)
+        waitFor(block(containing: "The excerpt of fetched story"))
         openAndSettle("Fetched story", fullText: true)
         // The replaced body starts at the top: the header and the line are
         // on screen.

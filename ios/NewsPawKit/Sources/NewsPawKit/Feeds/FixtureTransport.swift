@@ -109,6 +109,9 @@ public final class FixtureTransport: Transport {
         pageRequestCount.withLock { $0 }
     }
 
+    /// How long the full-text feed's article page takes to answer.
+    static let articlePageAnswer = Duration.milliseconds(1_500)
+
     /// How long `flaky.png` fails from the first request for it.
     static let flakyImageWindow = Duration.seconds(4)
 
@@ -245,6 +248,9 @@ public final class FixtureTransport: Transport {
         }
         switch name {
         case "article":
+            // Not at once, as a real page: the excerpt and the loading line
+            // are on screen, and report their place, before the full text.
+            try await Task.sleep(for: Self.articlePageAnswer)
             return answer(Self.fullTextArticle(edition: Int.random(in: 100_000...999_999)))
         case "scripted":
             return answer(Self.scriptedPage)

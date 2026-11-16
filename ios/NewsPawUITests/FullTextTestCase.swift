@@ -27,6 +27,21 @@ class FullTextTestCase: ReadingTestCase {
         chooseFilter("All")
     }
 
+    /// Scrolls the article list back up until the row of `title` can be
+    /// tapped: `scrollList(to:)` only scrolls down.
+    func scrollListUp(to title: String, file: StaticString = #filePath, line: UInt = #line) {
+        let row = articleRow(title)
+        let pane = element(AccessibilityID.listPane)
+        let area = pane.exists ? pane.frame : window
+        let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: area.midX, dy: area.midY - 150))
+        var drags = 0
+        while !(row.waitForExistence(timeout: 1) && row.isHittable), drags < 30 {
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 350)), withVelocity: 800, thenHoldForDuration: 0.2)
+            drags += 1
+        }
+        XCTAssertTrue(row.exists && row.isHittable, "the row \(title) was not reached", file: file, line: line)
+    }
+
     var fullTextNote: XCUIElement { element(AccessibilityID.readingFullTextNote) }
     var loadingNote: XCUIElement { element(AccessibilityID.readingLoadingNote) }
     var excerptNote: XCUIElement { element(AccessibilityID.readingExcerptNote) }

@@ -48,7 +48,7 @@ final class FullTextScreenshotTests: FullTextTestCase {
         capture("rd12-03-no-article-excerpt")
         backToList()
 
-        scrollList(to: "Fetched story")
+        scrollListUp(to: "Fetched story")
         openArticle("Fetched story")
         waitFor(fullTextNote)
         openOriginalPage()

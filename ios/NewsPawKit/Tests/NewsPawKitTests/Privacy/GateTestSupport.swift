@@ -106,6 +106,10 @@ final class StubAdultBrowserData: AdultBrowserData {
         state.withLock { $0.calls.append("clear") }
     }
 
+    func removeLeftoverStore() async {
+        state.withLock { $0.calls.append("removeLeftoverStore") }
+    }
+
     func removeStore() async throws {
         let (refuse, check) = state.withLock { state in
             state.calls.append("removeStore")

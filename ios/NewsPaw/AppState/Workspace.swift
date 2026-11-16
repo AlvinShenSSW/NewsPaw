@@ -168,6 +168,9 @@ final class Workspace: Identifiable {
             partitionModelSettings?.settingsPathChanged(path)
         }
         navigation.sourceOfArticle = { [weak reading] id in reading?.source(ofArticle: id) }
+        // "Open Settings" of a translation question opens this library's
+        // own slots: the adult ones are in Settings › Adult Partition.
+        navigation.modelSettingsRoute = library.partition == .adult ? .adultPartition : .models
         self.categories = categories
         self.sources = sources
         self.refresh = refresh

@@ -90,6 +90,11 @@ public protocol AdultBrowserData: Sendable {
     /// - Throws: `AdultBrowserDataError.couldNotRemove` for any other
     ///   failure.
     func removeStore() async throws
+    /// The partition is off and its library gone (deleted, or never
+    /// created): removes the adult store if WebKit still has one — a Delete
+    /// that met "in use" left it, emptied (review round 1). Nothing is made
+    /// when there is none, and a failure is left for the next launch.
+    func removeLeftoverStore() async
 }
 
 /// The adult browser's data in WebKit: the identified store of
@@ -110,6 +115,17 @@ public struct WebKitAdultBrowserData: AdultBrowserData {
         try await Self.remove(identifier)
     }
 
+    public func removeLeftoverStore() async {
+        await Self.removeIfPresent(identifier)
+    }
+
+    /// Removes the store of `identifier` without making one: clearing first
+    /// would create it.
+    @MainActor
+    private static func removeIfPresent(_ identifier: UUID) async {
+        try? await WKWebsiteDataStore.remove(forIdentifier: identifier)
+    }
+
     @MainActor
     private static func clear(_ identifier: UUID) async {
         let store = WKWebsiteDataStore(forIdentifier: identifier)
@@ -128,6 +144,10 @@ public struct WebKitAdultBrowserData: AdultBrowserData {
     /// Whether `error` is WebKit's refusal of a store that a web view still
     /// uses ("Data store is in use"): the adult browser model that UIKit
     /// keeps after a lock (RD18 assumption A4) holds the store object.
+    /// WebKit gives every failure of this call the same domain and code
+    /// (`WKWebSiteDataStore`, 1, `WKError.Code.unknown`; measured), so only
+    /// its description tells the refusal apart; that text is WebKit's own,
+    /// not localised.
     static func isInUse(_ error: any Error) -> Bool {
         (error as NSError).localizedDescription.localizedCaseInsensitiveContains("in use")
     }

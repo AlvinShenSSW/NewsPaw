@@ -216,9 +216,12 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
                 <p><a href="/hidden-asker">Hidden asker</a></p>
                 <p><a href="/media">Media page</a></p>
                 <p><a href="/storage">Storage page</a></p>
+                <p><a href="/writer">Writer page</a></p>
                 """))
         case (_, "/storage"):
             send(task, html: Self.storage)
+        case (_, "/writer"):
+            send(task, html: Self.writer)
         default:
             fail(task)
         }
@@ -330,6 +333,28 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         document.getElementById('adult').onclick = function () { return store('adult'); };
         document.getElementById('normal').onclick = function () { return store('normal'); };
         show();
+        </script>
+        </body></html>
+        """
+
+    /// A page that will not stop writing (RD19, review round 1): every 200
+    /// ms it stores the mark "adult" in its origin's `localStorage` (the
+    /// `/storage` page's key) and sets a cookie, for as long as its document
+    /// lives. Clear Browsing Data must not leave anything of it behind.
+    private static let writer = """
+        <!DOCTYPE html>
+        <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Writer: writing</title>
+        <style>body { font: -apple-system-body; margin: 16px; }</style>
+        </head><body><h1>Writer</h1>
+        <p>This page writes its mark every 200 ms.</p>
+        <script>
+        function write() {
+          try { window.localStorage.setItem('rd19', 'adult'); } catch (e) {}
+          try { document.cookie = 'rd19=adult; max-age=3600; path=/'; } catch (e) {}
+        }
+        write();
+        setInterval(write, 200);
         </script>
         </body></html>
         """

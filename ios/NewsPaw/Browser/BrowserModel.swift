@@ -432,16 +432,18 @@ final class BrowserSession: NSObject {
         dropReaderModeIfMoved()
     }
 
-    /// The session's route left its stack: the page stops and lets go of
-    /// the app.
+    /// The session's route left its stack: the page stops, lets go of the
+    /// app, and its document is replaced by an empty one (RD19, review
+    /// round 1): a view may keep the web view after this, and a page's
+    /// script must not go on running, or writing website data, in it.
     func end() {
         cancelReaderMode()
         temporaryArticle = nil
         isShowingNoReadableArticle = false
         observations = []
         webView.stopLoading()
-        webView.navigationDelegate = nil
         webView.uiDelegate = nil
+        DocumentUnloader.unload(webView)
     }
 
     /// Pauses the page's media, closes a full-screen presentation of it,
@@ -835,5 +837,89 @@ extension BrowserSession: WKUIDelegate {
         _ webView: WKWebView, requestDeviceOrientationAndMotionPermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo
     ) async -> WKPermissionDecision {
         .deny
+    }
+}
+
+/// Replaces an ended session's document with an empty one, and knows when
+/// that is done (RD19, review round 1). A page is not trusted to stop
+/// itself: closing its route stops loading, but its document — its timers,
+/// its storage writes — lives as long as the web view, which a view may
+/// keep. Loading an empty document detaches the page's: once the empty one
+/// has committed, nothing of the page runs. Clear Browsing Data and Delete
+/// wait for every unload before they remove the adult store's data.
+///
+/// While it runs it is the web view's navigation delegate and lets through
+/// only its own empty document: a navigation the page asks for meanwhile is
+/// cancelled. A load that fails is asked for again until one commits.
+@MainActor
+final class DocumentUnloader: NSObject, WKNavigationDelegate {
+    /// The unloads that have not committed yet, app-wide; each holds its
+    /// web view until then.
+    private static var running: [ObjectIdentifier: DocumentUnloader] = [:]
+
+    private let webView: WKWebView
+    private var navigation: WKNavigation?
+
+    private init(webView: WKWebView) {
+        self.webView = webView
+    }
+
+    /// Starts replacing `webView`'s document with an empty one.
+    static func unload(_ webView: WKWebView) {
+        let unloader = DocumentUnloader(webView: webView)
+        running[ObjectIdentifier(unloader)] = unloader
+        webView.navigationDelegate = unloader
+        unloader.load()
+    }
+
+    /// Waits until every unload asked for so far has committed, `bound` at
+    /// most.
+    ///
+    /// - Returns: whether every one has.
+    static func allCommitted(within bound: Duration) async -> Bool {
+        let deadline = ContinuousClock.now + bound
+        while !running.isEmpty, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return running.isEmpty
+    }
+
+    private func load() {
+        navigation = webView.loadHTMLString("", baseURL: nil)
+    }
+
+    private func committed() {
+        webView.navigationDelegate = nil
+        Self.running[ObjectIdentifier(self)] = nil
+    }
+
+    private func failed() {
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(100))
+            self?.load()
+        }
+    }
+
+    // MARK: - WKNavigationDelegate
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+        // Only the empty document; nothing the page asks for.
+        let isEmptyDocument = navigationAction.request.url?.absoluteString == "about:blank"
+        return navigationAction.targetFrame?.isMainFrame == true && isEmptyDocument ? .allow : .cancel
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard navigation === self.navigation else { return }
+        committed()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+        guard navigation === self.navigation else { return }
+        failed()
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+        guard navigation === self.navigation else { return }
+        failed()
     }
 }

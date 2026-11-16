@@ -103,6 +103,19 @@ final class AdultIsolationTests: IsolationTestCase {
         button(AccessibilityID.cancelButton).tap()
         waitForAbsence(button(AccessibilityID.saveButton))
 
+        // A row the adult slot cannot translate now asks for a key; its
+        // question's "Open Settings" opens the adult slots, in Settings ›
+        // Adult Partition, not the normal ones (review round 1).
+        addSource(Fixture.articles, to: "Velvet")
+        openCategoryList("Velvet")
+        let mark = scrollTo(button(AccessibilityID.translationWarning("Plain story")))
+        mark.tap()
+        let question = waitFor(app.alerts.firstMatch)
+        question.buttons["Open Settings"].tap()
+        waitFor(adultPrimaryRow)
+        XCTAssertFalse(element(AccessibilityID.primaryModelRow).exists, "the normal slots were opened")
+        waitFor(turnOffButton)
+
         // The normal key is still there, and still used.
         tapLock()
         waitForPartition(Wording.normal)
@@ -168,6 +181,33 @@ final class AdultIsolationTests: IsolationTestCase {
         tapLock()
         waitForPartition(Wording.normal)
         XCTAssertEqual(openStoragePage(of: "Plain story", in: "World"), "normal", "Clear removed the normal data")
+    }
+
+    // MARK: - Criterion 6: a page that will not stop writing (review round 1)
+
+    /// A page that writes `localStorage` and a cookie every 200 ms was open
+    /// in the adult browser and then left (its route closed; a view may
+    /// keep its web view). Clear waits until every ended page's document is
+    /// gone: well after Clear, the `/storage` page finds nothing.
+    func testClearLeavesNothingOfAPageThatKeepsWriting() {
+        launchAtFullWidth(authentication: ["passed", "passed"])
+        turnOnAdult()
+        enterAdult()
+        createCategory("Velvet")
+        addSource(Fixture.articles, to: "Velvet")
+        openCategoryList("Velvet")
+        openArticle("Plain story")
+        waitFor(button(AccessibilityID.openOriginalButton)).tap()
+        waitForPage("Original of plain-story")
+        tapLink("Writer page")
+        waitForPage("Writer: writing")
+        // Left: on the tab structure the page is popped to reach Settings;
+        // on the panes choosing Settings closes it.
+        openAdultSettings()
+        clearBrowsingData()
+        // Many times the page's interval.
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertEqual(openStoragePage(of: "Plain story", in: "Velvet"), "none", "the page wrote again after Clear")
     }
 
     // MARK: - Criterion 7

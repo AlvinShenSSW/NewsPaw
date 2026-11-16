@@ -309,6 +309,13 @@ final class AppModel {
             )
             self.gate = gate
             gateState = await gate.state
+            // A Delete that met "in use" left the adult store, emptied; with
+            // the partition off and its library gone, nothing holds it now
+            // (review round 1). "Keep Data Hidden" keeps the library file,
+            // and with it the store.
+            if gateState == .off, !gate.adultLibraryFileExists {
+                Task { await adultBrowserData.removeLeftoverStore() }
+            }
             lockTiming = await gate.lockTiming
             normal = workspace
             status = .ready
@@ -575,19 +582,27 @@ final class AppModel {
         showsPartitionSwitch && !isAuthenticating && !isTurningOff && !isClearingBrowsingData
     }
 
+    /// How long Clear and Delete wait for the pages' documents to unload.
+    static let unloadBound = Duration.seconds(10)
+
     /// Removes every kind of website data of the adult browser's own store;
     /// the normal partition's are kept. An adult page open now is closed
-    /// first, on both stacks, so that none writes during or after.
+    /// first, on both stacks, and the clear waits until every ended page's
+    /// document has been replaced by an empty one, so that no page's script
+    /// writes during or after the clear (review round 1). A page whose
+    /// document is not replaced within the bound still has its data
+    /// cleared, and the clear does not report success.
     ///
-    /// - Returns: whether the clear ended.
+    /// - Returns: whether the clear ended with no page left running.
     @discardableResult
     func clearAdultBrowsingData() async -> Bool {
         guard canClearBrowsingData, let adultBrowserData else { return false }
         isClearingBrowsingData = true
         defer { isClearingBrowsingData = false }
         adult?.navigation.closeBrowsers()
+        let unloaded = await DocumentUnloader.allCommitted(within: Self.unloadBound)
         await adultBrowserData.clear()
-        return true
+        return unloaded
     }
 
     // MARK: - Moving a category (RD19 decisions 9 to 11)
@@ -683,6 +698,15 @@ final class AppModel {
         isTurningOff = true
         defer { isTurningOff = false }
         lock()
+        // The lock ended the adult pages; Delete removes their store only
+        // once their documents are gone, so that none writes again after
+        // it (review round 1). Not in time: nothing is deleted, and the
+        // owner can try again.
+        if deletingData, await !DocumentUnloader.allCommitted(within: Self.unloadBound) {
+            notice = .couldNotDelete
+            gateState = await gate.state
+            return
+        }
         switch await gate.turnOff(deletingData: deletingData) {
         case .turnedOff, .refused:
             break

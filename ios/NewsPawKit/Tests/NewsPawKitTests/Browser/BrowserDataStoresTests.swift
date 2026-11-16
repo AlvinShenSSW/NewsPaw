@@ -23,7 +23,7 @@ struct BrowserDataStoresTests {
     }
 
     @Test("under the UI tests: the normal store lasts the process, the adult one is the directory's own and never the real one")
-    func uiTestMapping() {
+    func uiTestMapping() async {
         let normal = BrowserDataStores.uiTestStore(for: .normal, directoryName: "UITest-A")
         #expect(!normal.isPersistent)
         let first = BrowserDataStores.uiTestAdultIdentifier(directoryName: "UITest-A")
@@ -33,7 +33,25 @@ struct BrowserDataStoresTests {
         let adult = BrowserDataStores.uiTestStore(for: .adult, directoryName: "UITest-A")
         #expect(adult.isPersistent)
         #expect(adult.identifier == first)
-        Task { try? await WKWebsiteDataStore.remove(forIdentifier: first) }
+        #expect(await Self.removed([first]))
+    }
+
+    /// Removes the test's identified stores and waits for it, 60 s at most
+    /// (a store is refused while a web view on it is still being
+    /// released), so that none is left under the runner's `~/Library/WebKit`.
+    private static func removed(_ identifiers: [UUID]) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(60)
+        var left = Set(identifiers)
+        while !left.isEmpty, ContinuousClock.now < deadline {
+            for identifier in left where (try? await WKWebsiteDataStore.remove(forIdentifier: identifier)) != nil {
+                left.remove(identifier)
+            }
+            if !left.isEmpty {
+                try? await Task.sleep(for: .milliseconds(200))
+            }
+        }
+        let known = await WKWebsiteDataStore.allDataStoreIdentifiers
+        return identifiers.allSatisfy { !known.contains($0) }
     }
 
     /// The cookies of `store` named `name`.
@@ -58,12 +76,18 @@ struct BrowserDataStoresTests {
     func identifiedStoresAreSeparate() async throws {
         let first = UUID()
         let second = UUID()
-        defer {
-            Task {
-                try? await WKWebsiteDataStore.remove(forIdentifier: first)
-                try? await WKWebsiteDataStore.remove(forIdentifier: second)
-            }
+        do {
+            try await Self.separation(first, second)
+        } catch {
+            _ = await Self.removed([first, second])
+            throw error
         }
+        #expect(await Self.removed([first, second]))
+    }
+
+    /// A1's measurement on the stores of `first` and `second`; every web
+    /// view it makes is gone when it returns.
+    private static func separation(_ first: UUID, _ second: UUID) async throws {
         let server = try LoopbackServer { _, _ in
             LoopbackServer.Reply(
                 headers: ["Content-Type: text/html", "Set-Cookie: rd19page=first; Max-Age=3600; Path=/"],
@@ -115,6 +139,33 @@ struct BrowserDataStoresTests {
         #expect(known.contains(first))
         #expect(known.contains(second))
         view.navigationDelegate = nil
+    }
+
+    @Test("review round 1: a leftover adult store is removed at launch, and none is made when there is none")
+    func leftoverStoreRemoved() async throws {
+        let left = UUID()
+        // A store that was used: it holds a cookie, and WebKit lists it.
+        let cookie = try #require(HTTPCookie(properties: [
+            .name: "rd19left", .value: "1", .domain: "127.0.0.1", .path: "/", .expires: Date().addingTimeInterval(3600),
+        ]))
+        await WKWebsiteDataStore(forIdentifier: left).httpCookieStore.setCookie(cookie)
+        let deadline = ContinuousClock.now + .seconds(60)
+        while await !WKWebsiteDataStore.allDataStoreIdentifiers.contains(left), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        #expect(await WKWebsiteDataStore.allDataStoreIdentifiers.contains(left))
+        // At launch nothing holds the store; here the store object made
+        // above may live a moment longer, and WebKit refuses a store in
+        // use: asked again until it is gone, 60 s at most.
+        let removal = ContinuousClock.now + .seconds(60)
+        repeat {
+            await WebKitAdultBrowserData(identifier: left).removeLeftoverStore()
+        } while await WKWebsiteDataStore.allDataStoreIdentifiers.contains(left) && ContinuousClock.now < removal
+        #expect(await !WKWebsiteDataStore.allDataStoreIdentifiers.contains(left))
+
+        let never = UUID()
+        await WebKitAdultBrowserData(identifier: never).removeLeftoverStore()
+        #expect(await !WKWebsiteDataStore.allDataStoreIdentifiers.contains(never))
     }
 
     @Test("A2: removing the store while a web view on it is alive, and after it is released")

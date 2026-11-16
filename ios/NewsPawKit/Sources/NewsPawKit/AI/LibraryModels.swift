@@ -83,8 +83,8 @@ public final class LibraryModels: Sendable {
     }
 
     /// Whether these are `library`'s own models: the same object, not only
-    /// the same partition (RD14 decision 12). A workspace makes a
-    /// translator only when it is.
+    /// the same partition (RD14 decision 12). A workspace is built only with
+    /// its library's own models (RD19 decision 1), and checks it with this.
     public func belong(to library: Library) -> Bool {
         self.library === library
     }

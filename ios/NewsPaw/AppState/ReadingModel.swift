@@ -128,11 +128,15 @@ final class ReadingModel {
 
     // MARK: - Thumbnails (RD19 decision 6)
 
-    /// Reads the library's "Show Thumbnails in Lists"; a value that cannot
-    /// be read leaves the one shown.
+    /// Reads the library's "Show Thumbnails in Lists". A value that cannot
+    /// be read counts as off in the adult partition, whose owner may have
+    /// turned them off (review round 1), and leaves the one shown in the
+    /// normal partition.
     func loadSettings() async {
         if let shows = try? await library.listThumbnails() {
             showsThumbnails = shows
+        } else if library.partition == .adult {
+            showsThumbnails = false
         }
     }
 

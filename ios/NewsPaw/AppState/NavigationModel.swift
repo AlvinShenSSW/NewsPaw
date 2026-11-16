@@ -591,14 +591,20 @@ final class NavigationModel {
         }
     }
 
+    /// Where this workspace's own model slots are: Settings › Models &
+    /// Translation for the normal library, Settings › Adult Partition for
+    /// the adult one (RD19 decision 2; review round 1). Set by the
+    /// workspace.
+    @ObservationIgnored var modelSettingsRoute = SettingsRoute.models
+
     /// "Open Settings" of a translation that a model's set-up stops (RD14
-    /// decision 9): Settings › Models & Translation, over whatever was
-    /// shown.
+    /// decision 9): the screen of this workspace's own model slots, over
+    /// whatever was shown.
     func openModelSettings() {
         sheet = nil
         closeSlideOver()
         select(.settings)
-        settingsPath = [.models]
+        settingsPath = [modelSettingsRoute]
     }
 
     /// The workspace of this navigation is dropped: nothing stays

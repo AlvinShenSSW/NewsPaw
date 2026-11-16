@@ -35,6 +35,8 @@ struct IsolationScanTests {
         #"WKWebsiteDataStore\.(default|nonPersistent)\("#,
         #"\bdataStoreForIdentifier\b"#,
         #"(dataStore|websiteDataStore)\s*[:=]\s*\.default\(\)"#,
+        // A default value of a property or a parameter (review round 1).
+        #"WKWebsiteDataStore\s*=\s*\.(default|nonPersistent)\("#,
     ]
 
     /// The files that make website data stores, relative to `ios/`.
@@ -111,9 +113,9 @@ struct IsolationScanTests {
         #expect(logging.count == 6)
         let stores = try Self.findings(
             Self.storePatterns,
-            in: [("x.swift", "    BrowserSetup(dataStore: .nonPersistent())\n    BrowserSetup(dataStore: .default())\n    WKWebsiteDataStore(forIdentifier: id)\n    let s = WKWebsiteDataStore.default()\n    WKContentRuleListStore.default()")],
+            in: [("x.swift", "    BrowserSetup(dataStore: .nonPersistent())\n    BrowserSetup(dataStore: .default())\n    WKWebsiteDataStore(forIdentifier: id)\n    let s = WKWebsiteDataStore.default()\n    WKContentRuleListStore.default()\n    var store: WKWebsiteDataStore = .default()\n    init(store: WKWebsiteDataStore = .nonPersistent()) {}")],
             exempt: []
         )
-        #expect(stores.count == 4)
+        #expect(stores.count == 6)
     }
 }

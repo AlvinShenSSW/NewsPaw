@@ -23,7 +23,7 @@ struct LibraryModelsTests {
         defer { fixture.remove() }
         try await fixture.save(key: "sk-send-key-0123456789")
         let reply = try await fixture.models.send(texts: ["Hello", "World"], instructions: "Translate.", purpose: .titles, role: .primary)
-        #expect(reply == ModelReply(texts: ["Hallo", "Welt"], isCutOff: false, inputTokens: 11, outputTokens: 7))
+        #expect(reply == ModelReply(texts: ["Hallo", "Welt"], isCutOff: false, inputTokens: 11, outputTokens: 7, model: "test-model"))
         let request = try #require(http.received.first)
         #expect(http.received.count == 1)
         #expect(request.url.absoluteString == "https://api.example.invalid/v1/chat/completions")

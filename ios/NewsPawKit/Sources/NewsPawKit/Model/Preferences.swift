@@ -68,11 +68,11 @@ public enum ReadingTypeface: String, Sendable, CaseIterable {
 }
 
 /// The settings kept in the system preferences store (spec section 4): the
-/// two refresh settings, under the names the configuration file uses; the
-/// three reading settings (RD11) and the two device settings of the adult
-/// partition (RD18), which the configuration file never carries. A stored
-/// value outside its set reads as the default. Nothing about a partition's
-/// content is kept here.
+/// two refresh settings and the three translation settings (RD14), under the
+/// names the configuration file uses; the three reading settings (RD11) and
+/// the two device settings of the adult partition (RD18), which the
+/// configuration file never carries. A stored value outside its set reads
+/// as the default. Nothing about a partition's content is kept here.
 ///
 /// Sendable by hand: its one stored property is a `UserDefaults`, which the
 /// system documents as safe to use from any thread and does not mark so.
@@ -84,6 +84,9 @@ public struct Preferences: @unchecked Sendable {
     static let readingTypefaceKey = "reading_typeface"
     static let adultPartitionIsOnKey = "adult_partition_on"
     static let lockTimingKey = "adult_lock_timing"
+    static let readingLocaleKey = "reading_locale"
+    static let autoTranslateTitlesKey = "auto_translate_titles"
+    static let showOriginalTitlesKey = "show_original_titles"
 
     private let defaults: UserDefaults
 
@@ -142,15 +145,45 @@ public struct Preferences: @unchecked Sendable {
     /// setting, off until the owner turns it on. Anything stored that is
     /// not a truth value reads as off.
     public var adultPartitionIsOn: Bool {
-        get {
-            guard let number = defaults.object(forKey: Self.adultPartitionIsOnKey) as? NSNumber,
-                  CFGetTypeID(number) == CFBooleanGetTypeID()
-            else { return false }
-            return number.boolValue
-        }
+        get { truthValue(Self.adultPartitionIsOnKey) ?? false }
         nonmutating set {
             defaults.set(newValue, forKey: Self.adultPartitionIsOnKey)
         }
+    }
+
+    /// The reading language (spec N06; RD14 decision 1): Simplified
+    /// Chinese until changed.
+    public var readingLocale: ReadingLocale {
+        get {
+            (defaults.object(forKey: Self.readingLocaleKey) as? String).flatMap(ReadingLocale.init(rawValue:)) ?? .standard
+        }
+        nonmutating set {
+            defaults.set(newValue.rawValue, forKey: Self.readingLocaleKey)
+        }
+    }
+
+    /// Whether titles and excerpts of sources that follow the global setting
+    /// are translated without the owner asking: on until turned off.
+    public var autoTranslateTitles: Bool {
+        get { truthValue(Self.autoTranslateTitlesKey) ?? true }
+        nonmutating set {
+            defaults.set(newValue, forKey: Self.autoTranslateTitlesKey)
+        }
+    }
+
+    /// Whether a list row shows the original title under its translation:
+    /// off until turned on, as in the specification's sample.
+    public var showOriginalTitles: Bool {
+        get { truthValue(Self.showOriginalTitlesKey) ?? false }
+        nonmutating set {
+            defaults.set(newValue, forKey: Self.showOriginalTitlesKey)
+        }
+    }
+
+    /// A stored truth value, or `nil` for nothing or anything else.
+    private func truthValue(_ key: String) -> Bool? {
+        guard let number = defaults.object(forKey: key) as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+        return number.boolValue
     }
 
     /// When the adult partition locks after the app is left: a device

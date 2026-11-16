@@ -28,7 +28,7 @@ public struct ArticlePosition: Sendable, Hashable {
     let rowID: Int64
 }
 
-/// One article as a list row and the interim reading screen show it, read
+/// One article as a list row and the reading screen show it, read
 /// by `Library.articleRows` and `Library.article(_:)`. It never carries the
 /// stored HTML.
 public struct ArticleRow: Sendable, Hashable, Identifiable {
@@ -51,4 +51,8 @@ public struct ArticleRow: Sendable, Hashable, Identifiable {
     public var isStarred: Bool
     /// Where the row stands in the list order.
     public let position: ArticlePosition
+    /// The stored translation in the reading language the row was read
+    /// with (RD14 decision 11); `nil` while the article waits, and always
+    /// when it was read without a reading language.
+    public var translation: StoredTranslation?
 }

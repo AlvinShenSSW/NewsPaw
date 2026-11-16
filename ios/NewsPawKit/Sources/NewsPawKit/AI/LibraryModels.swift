@@ -56,7 +56,9 @@ public struct ModelSlotDraft: Sendable {
 /// another library's slot. There is no default slot: with no row for the
 /// asked role it fails with "no model set up".
 public final class LibraryModels: Sendable {
-    private let library: Library
+    /// The library whose slots these are: the only library a translator
+    /// made from this object reads and writes (RD14 decision 12).
+    let library: Library
     private let keys: any KeyStore
     private let http: any ModelHTTP
 
@@ -74,6 +76,13 @@ public final class LibraryModels: Sendable {
 
     public var partition: Partition {
         library.partition
+    }
+
+    /// Whether these are `library`'s own models: the same object, not only
+    /// the same partition (RD14 decision 12). A workspace makes a
+    /// translator only when it is.
+    public func belong(to library: Library) -> Bool {
+        self.library === library
     }
 
     // MARK: - Reading
@@ -270,14 +279,18 @@ public final class LibraryModels: Sendable {
     // MARK: - Sending
 
     /// Sends `texts` to the slot of `role` and returns the reply's texts
-    /// (decision 8). The system message is `instructions` followed by the
-    /// sentence that fixes the reply's shape; how many texts to return, and
-    /// in what order, is for `instructions` to say. Every sent request
-    /// writes one usage row.
+    /// (decision 8) with the model's name. The system message is
+    /// `instructions` followed by the sentence that fixes the reply's shape;
+    /// how many texts to return, and in what order, is for `instructions` to
+    /// say. Every sent request writes one usage row; `automatic` is written
+    /// with it (RD14 decision 4) and is what the daily automatic limit
+    /// counts.
     ///
     /// - Throws: a `ModelFailure` (`noModelSetUp` and `keyNeeded` without a
     ///   request or a row), or `CancellationError`.
-    public func send(texts: [String], instructions: String, purpose: UsagePurpose, role: ModelRole) async throws -> ModelReply {
+    public func send(
+        texts: [String], instructions: String, purpose: UsagePurpose, role: ModelRole, automatic: Bool = false
+    ) async throws -> ModelReply {
         guard let slot = try await library.modelSlot(role) else {
             throw ModelFailure.noModelSetUp
         }
@@ -291,8 +304,13 @@ public final class LibraryModels: Sendable {
         guard let key = storedKey(of: slot) else {
             throw ModelFailure.keyNeeded
         }
-        switch try await chat(address: address, model: model, instructions: instructions, texts: texts, key: key, purpose: purpose) {
-        case .completion(.success(let reply)): return reply
+        let exchange = try await chat(
+            address: address, model: model, instructions: instructions, texts: texts, key: key, purpose: purpose, automatic: automatic
+        )
+        switch exchange {
+        case .completion(.success(var reply)):
+            reply.model = model
+            return reply
         case .completion(.failure(let failure)), .failed(let failure): throw failure
         }
     }
@@ -309,7 +327,8 @@ public final class LibraryModels: Sendable {
     /// Sends one chat request, writes its usage row and returns how it
     /// ended. A cancelled request writes its row and throws.
     private func chat(
-        address: String, model: String, instructions: String, texts: [String], key: SecretKey, purpose: UsagePurpose
+        address: String, model: String, instructions: String, texts: [String], key: SecretKey, purpose: UsagePurpose,
+        automatic: Bool = false
     ) async throws -> ChatExchange {
         guard let request = ChatWire.chatRequest(address: address, model: model, instructions: instructions, texts: texts, key: key) else {
             throw ModelFailure.unreachable
@@ -320,7 +339,7 @@ public final class LibraryModels: Sendable {
         } catch let failure as ModelHTTPFailure {
             classified = .failure(ChatWire.failure(failure))
         } catch is CancellationError {
-            await record(model: model, purpose: purpose, outcome: .cancelled)
+            await record(model: model, purpose: purpose, outcome: .cancelled, automatic: automatic)
             throw CancellationError()
         } catch {
             classified = .failure(.unreachable)
@@ -334,11 +353,11 @@ public final class LibraryModels: Sendable {
             }
             await record(
                 model: model, purpose: purpose, inputTokens: completion.promptTokens, outputTokens: completion.completionTokens,
-                outcome: outcome
+                outcome: outcome, automatic: automatic
             )
             return .completion(interpreted)
         case .failure(let failure):
-            await record(model: model, purpose: purpose, outcome: failure.usageOutcome ?? .unreachable)
+            await record(model: model, purpose: purpose, outcome: failure.usageOutcome ?? .unreachable, automatic: automatic)
             return .failed(failure)
         }
     }
@@ -347,11 +366,14 @@ public final class LibraryModels: Sendable {
     /// awaited: the database's asynchronous write refuses to start in a
     /// cancelled task, and the row of a cancelled request would otherwise be
     /// lost. A failure to write is ignored (decision 11).
-    private func record(model: String, purpose: UsagePurpose, inputTokens: Int? = nil, outputTokens: Int? = nil, outcome: UsageOutcome) async {
+    private func record(
+        model: String, purpose: UsagePurpose, inputTokens: Int? = nil, outputTokens: Int? = nil, outcome: UsageOutcome,
+        automatic: Bool
+    ) async {
         let library = library
         let row = UsageRecord(
             id: UUID(), model: model, purpose: purpose, inputTokens: inputTokens, outputTokens: outputTokens, outcome: outcome,
-            at: library.now()
+            at: library.now(), automatic: automatic
         )
         await Task {
             try? await library.insertUsage(row)

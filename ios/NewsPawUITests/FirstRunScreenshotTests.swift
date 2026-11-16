@@ -2,12 +2,14 @@ import XCTest
 
 /// RD21 criterion 14: the first run's three steps (step 3 also with a
 /// ticked row, and in landscape on iPad), Today with no source, the
-/// no-model question, About and one licence.
+/// category Done created (asserted by its name in the interface language,
+/// criterion 4), the no-model question, About and one licence.
 /// Written when run with `TEST_RUNNER_NEWSPAW_SCREENSHOT_DIR` set (and,
 /// optionally, `TEST_RUNNER_NEWSPAW_SCREENSHOT_VARIANT` = `zh` or
 /// `largest-text`; dark appearance is set on the simulator with `xcrun
-/// simctl ui`). Skipped otherwise: it asserts nothing beyond what
-/// `FirstRunTests`, `TranslationTests` and `SettingsRowTests` assert.
+/// simctl ui`). Skipped otherwise; beyond the category's name it asserts
+/// nothing that `FirstRunTests`, `TranslationTests` and `SettingsRowTests`
+/// do not.
 final class FirstRunScreenshotTests: FirstRunTestCase {
     func testCaptureFirstRunScreens() throws {
         let environment = ProcessInfo.processInfo.environment
@@ -43,7 +45,7 @@ final class FirstRunScreenshotTests: FirstRunTestCase {
         continueButton.tap()
         waitForStep(3)
         capture("step3")
-        categoryRow("world").tap()
+        tick("world")
         XCTAssertTrue(isTicked("world"))
         capture("step3-ticked")
         if isPad {
@@ -54,18 +56,26 @@ final class FirstRunScreenshotTests: FirstRunTestCase {
             rotate(.portrait)
             requireFullSize()
         }
-        skipButton.tap()
+        // Done creates the ticked World, named in the interface language
+        // (criterion 4): the Library lists it as "世界" in Simplified
+        // Chinese.
+        let world = variant == "zh" ? "世界" : "World"
+        doneButton.tap()
         waitForShellOnToday()
         waitFor(button(AccessibilityID.todayAddSourceButton))
         capture("today-no-sources")
+        showCategoryList()
+        waitFor(element(AccessibilityID.categoryRow(world)))
+        capture("library-created-category")
 
-        // A source whose foreign rows wait for a model.
+        // A source whose foreign rows wait for a model, in that category.
+        showToday()
         button(AccessibilityID.todayAddSourceButton).tap()
         detect(Translation.feed)
         waitFor(element(AccessibilityID.confirmAddress))
-        saveIntoNewCategory("World")
+        chooseCategoryAndSave(world)
         waitForAbsence(app.textFields[AccessibilityID.addressField])
-        openCategoryList("World")
+        openCategoryList(world)
         // The list's first row: at the largest text size the later rows
         // are below the fold.
         let mark = waitFor(warningMark(Translation.markup))

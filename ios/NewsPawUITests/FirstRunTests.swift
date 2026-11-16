@@ -32,6 +32,11 @@ final class FirstRunTests: FirstRunTestCase {
         XCTAssertTrue(note.label.contains("The key stays on this device"), note.label)
         XCTAssertTrue(waitFor(primaryModelRow).label.contains("Not set up"), primaryModelRow.label)
         assertNothingNamesTheAdultPartition("step 2")
+        // Criterion 3: Cancel on the untouched form returns to step 2.
+        primaryModelRow.tap()
+        waitFor(button(AccessibilityID.cancelButton)).tap()
+        waitForStep(2)
+        XCTAssertTrue(waitFor(primaryModelRow).label.contains("Not set up"), primaryModelRow.label)
         // A2: RD13's form, pushed from the first run's stack, saves and
         // pops back to step 2 with the new state.
         primaryModelRow.tap()
@@ -43,13 +48,17 @@ final class FirstRunTests: FirstRunTestCase {
         continueButton.tap()
 
         waitForStep(3)
+        // ux S12's order: adding sources first, wholly above the bottom bar
+        // without scrolling (fix round 1).
+        XCTAssertLessThan(waitFor(addSourceButton).frame.minY, waitFor(categoryRow("world")).frame.minY)
+        XCTAssertLessThanOrEqual(addSourceButton.frame.maxY, doneButton.frame.minY, "Add a Source… is under Done")
         for group in ["world", "japan", "australia", "china", "tech", "ai"] {
             XCTAssertFalse(isTicked(group), "\(group) starts ticked")
         }
         XCTAssertEqual(categoryRow("world").label, "World")
         XCTAssertEqual(categoryRow("tech").label, "Tech")
         assertNothingNamesTheAdultPartition("step 3")
-        categoryRow("world").tap()
+        tick("world")
         XCTAssertTrue(isTicked("world"))
         // "Add a Source…" creates World first, so the picker offers it.
         addSourceButton.tap()
@@ -87,7 +96,7 @@ final class FirstRunTests: FirstRunTestCase {
         waitForStep(2)
         skipButton.tap()
         waitForStep(3)
-        categoryRow("japan").tap()
+        tick("japan")
         assertNothingNamesTheAdultPartition("step 3")
         skipButton.tap()
 
@@ -156,11 +165,11 @@ final class FirstRunTests: FirstRunTestCase {
         waitForStep(2)
         skipButton.tap()
         waitForStep(3)
-        categoryRow("world").tap()
-        categoryRow("japan").tap()
+        tick("world")
+        tick("japan")
         XCTAssertTrue(isTicked("world"))
         XCTAssertTrue(isTicked("japan"))
-        categoryRow("japan").tap()
+        tick("japan")
         XCTAssertFalse(isTicked("japan"))
 
         // The debug save failure: the alert, and the first run stays.
@@ -180,7 +189,7 @@ final class FirstRunTests: FirstRunTestCase {
         waitLong(for: world, containing: "Added")
         XCTAssertTrue(world.isSelected)
         XCTAssertFalse(world.isEnabled)
-        categoryRow("ai").tap()
+        tick("ai")
         doneButton.tap()
 
         waitForShellOnToday()
@@ -242,7 +251,7 @@ final class FirstRunTests: FirstRunTestCase {
         waitForStep(2)
         skipButton.tap()
         waitForStep(3)
-        categoryRow("world").tap()
+        tick("world")
         addSourceButton.tap()
         waitFor(app.textFields[AccessibilityID.addressField])
         launchFirstRun()

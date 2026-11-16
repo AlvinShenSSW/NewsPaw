@@ -83,6 +83,39 @@ class FirstRunTestCase: TranslationTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [reported], timeout: timeout), .completed, "the report is \(adultReport)", file: file, line: line)
     }
 
+    /// The bottom bar's button of the step shown: Continue, or Done.
+    var primaryButton: XCUIElement {
+        doneButton.exists ? doneButton : continueButton
+    }
+
+    /// Scrolls the step's list until `element` lies wholly above the
+    /// bottom bar and below the top bar, then returns it.
+    @discardableResult
+    func revealAboveTheBar(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+        waitFor(element, file: file, line: line)
+        var swipes = 0
+        while swipes < 8 {
+            let bar = primaryButton.frame.minY
+            let top = app.navigationBars.firstMatch.frame.maxY
+            let frame = element.frame
+            if frame.maxY > bar - 4 {
+                app.swipeUp(velocity: .slow)
+            } else if frame.minY < top {
+                app.swipeDown(velocity: .slow)
+            } else {
+                break
+            }
+            swipes += 1
+        }
+        XCTAssertLessThanOrEqual(element.frame.maxY, primaryButton.frame.minY, "\(element) is under the bottom bar", file: file, line: line)
+        return element
+    }
+
+    /// Taps step 3's row of `group`, once it is clear of the bottom bar.
+    func tick(_ group: String) {
+        revealAboveTheBar(categoryRow(group)).tap()
+    }
+
     /// Step 3's row of `group` is ticked (it carries the selected trait).
     func isTicked(_ group: String) -> Bool {
         waitFor(categoryRow(group)).isSelected

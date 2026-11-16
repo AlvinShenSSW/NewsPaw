@@ -86,7 +86,8 @@ public final class FixtureTransport: Transport {
         /// "Fetched story", "Scripted story", "List story", "Huge story",
         /// "Stalled story" and "Plain text story" carry an excerpt and link
         /// to the pages below of the same names; "Full feed story" carries
-        /// its full text and links to the article page; "Failing full
+        /// its full text and links to the article page (with a query, so
+        /// that its link is its own); "Failing full
         /// story" carries its full text and links to a page that does not
         /// answer.
         public static let fullText = "https://fulltext.example.invalid/rss.xml"
@@ -194,7 +195,10 @@ public final class FixtureTransport: Transport {
             return answer(Self.fullTextFeed, type: rss)
         case let address where address.hasPrefix(Address.fullTextPages):
             pageRequestCount.withLock { $0 += 1 }
-            return try await fullTextPage(String(address.dropFirst(Address.fullTextPages.count)), at: url)
+            // The query only makes a link of its own: collection keeps one
+            // article per link in a category.
+            let name = address.dropFirst(Address.fullTextPages.count).split(separator: "?", maxSplits: 1).first ?? ""
+            return try await fullTextPage(String(name), at: url)
         default:
             throw TransportFailure.unreachable
         }
@@ -527,7 +531,7 @@ public final class FixtureTransport: Transport {
             item("Huge story", page: "huge", hoursAgo: 4),
             item("Stalled story", page: "stalled", hoursAgo: 5),
             item("Plain text story", page: "plain", hoursAgo: 6),
-            item("Full feed story", page: "article", hoursAgo: 7, body: fullFeedBody),
+            item("Full feed story", page: "article?from=feed", hoursAgo: 7, body: fullFeedBody),
             item("Failing full story", page: "missing", hoursAgo: 8, body: fullFeedBody),
         ]
         return """

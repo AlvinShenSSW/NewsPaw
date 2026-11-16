@@ -18,35 +18,41 @@ extension Library {
     ///     `nil` for the first page. The page starts strictly after it, so
     ///     pages never repeat or skip a row.
     ///   - limit: the most rows returned.
+    ///   - locale: the reading language whose stored translations the rows
+    ///     carry (RD14 decision 11), or `nil` for none.
     public func articleRows(
-        _ scope: ArticleScope, filter: ArticleFilter, after cursor: ArticlePosition? = nil, limit: Int = articlePageSize
+        _ scope: ArticleScope, filter: ArticleFilter, after cursor: ArticlePosition? = nil, limit: Int = articlePageSize,
+        translationsIn locale: ReadingLocale? = nil
     ) async throws -> [ArticleRow] {
         var conditions: [String] = []
-        var arguments: [(any DatabaseValueConvertible)?] = []
+        // The join's argument comes first: it stands before the conditions.
+        var arguments: [(any DatabaseValueConvertible)?] = locale.map { [$0.rawValue] } ?? []
         Self.appendListConditions(scope, filter: filter, to: &conditions, arguments: &arguments)
         if let cursor {
             conditions.append("(\(Self.shownAtSQL), article.first_seen_at, article.rowid) < (?, ?, ?)")
             arguments += [cursor.shownAt, cursor.firstSeenAt, cursor.rowID]
         }
         arguments.append(max(0, limit))
-        let sql = Self.articleRowsSQL(where: conditions)
+        let sql = Self.articleRowsSQL(where: conditions, joiningTranslations: locale != nil)
         let finalArguments = StatementArguments(arguments)
         return try await read { db in
             try Row.fetchAll(db, sql: sql, arguments: finalArguments).map(Self.articleRow)
         }
     }
 
-    /// The article `id` as its row, for the reading screen.
+    /// The article `id` as its row, for the reading screen, with its stored
+    /// translation in `locale` when one is given.
     ///
     /// - Throws: `unknownArticle` when the library holds no such article.
-    public func article(_ id: UUID) async throws -> ArticleRow {
+    public func article(_ id: UUID, translationsIn locale: ReadingLocale? = nil) async throws -> ArticleRow {
         let sql = """
-            SELECT \(Self.articleRowColumns)
+            SELECT \(Self.articleRowColumns(joiningTranslations: locale != nil))
             FROM article JOIN source ON source.id = article.source_id
-            WHERE article.id = ?
+            \(locale != nil ? Self.translationJoinSQL + "\n" : "")WHERE article.id = ?
             """
+        let arguments: StatementArguments = locale.map { [$0.rawValue, id.databaseKey] } ?? [id.databaseKey]
         return try await read { db in
-            guard let row = try Row.fetchOne(db, sql: sql, arguments: [id.databaseKey]) else {
+            guard let row = try Row.fetchOne(db, sql: sql, arguments: arguments) else {
                 throw LibraryError.unknownArticle
             }
             return try Self.articleRow(row)
@@ -111,21 +117,35 @@ extension Library {
     /// The list order of decision 2.
     static let articleOrderSQL = "\(shownAtSQL) DESC, article.first_seen_at DESC, article.rowid DESC"
 
-    /// What a row reads: never `content_html`.
-    static let articleRowColumns = """
-        article.rowid AS row_id, article.id, article.source_id, source.name AS source_name,
-        article.title, article.excerpt, article.author, article.url, article.image_url,
-        \(shownAtSQL) AS shown_at, article.first_seen_at,
-        article.read_at IS NOT NULL AS is_read, article.starred_at IS NOT NULL AS is_starred
-        """
-
-    /// A page query; its last argument is the limit.
-    static func articleRowsSQL(where conditions: [String]) -> String {
-        let filter = conditions.isEmpty ? "" : "WHERE " + conditions.joined(separator: " AND ") + "\n"
+    /// What a row reads: never `content_html`; with the translation join,
+    /// the stored translation's columns, else nulls in their place.
+    static func articleRowColumns(joiningTranslations: Bool) -> String {
+        let translation = joiningTranslations
+            ? "translation.state AS translation_state, translation.title AS translation_title, "
+                + "translation.excerpt AS translation_excerpt, translation.error AS translation_error"
+            : "NULL AS translation_state, NULL AS translation_title, NULL AS translation_excerpt, NULL AS translation_error"
         return """
-            SELECT \(articleRowColumns)
+            article.rowid AS row_id, article.id, article.source_id, source.name AS source_name,
+            article.title, article.excerpt, article.author, article.url, article.image_url,
+            \(shownAtSQL) AS shown_at, article.first_seen_at,
+            article.read_at IS NOT NULL AS is_read, article.starred_at IS NOT NULL AS is_starred,
+            \(translation)
+            """
+    }
+
+    /// The left join on the reading language (RD14 decision 11); its one
+    /// argument is the locale. The table's primary key serves it.
+    static let translationJoinSQL = "LEFT JOIN translation ON translation.article_id = article.id AND translation.locale = ?"
+
+    /// A page query; its arguments are the locale when `joiningTranslations`,
+    /// then the conditions', then the limit.
+    static func articleRowsSQL(where conditions: [String], joiningTranslations: Bool = false) -> String {
+        let filter = conditions.isEmpty ? "" : "WHERE " + conditions.joined(separator: " AND ") + "\n"
+        let join = joiningTranslations ? translationJoinSQL + "\n" : ""
+        return """
+            SELECT \(articleRowColumns(joiningTranslations: joiningTranslations))
             FROM article JOIN source ON source.id = article.source_id
-            \(filter)ORDER BY \(articleOrderSQL)
+            \(join)\(filter)ORDER BY \(articleOrderSQL)
             LIMIT ?
             """
     }
@@ -174,7 +194,11 @@ extension Library {
             id: id, sourceID: sourceID, sourceName: row["source_name"], title: row["title"], excerpt: row["excerpt"],
             author: row["author"], link: row["url"], imageAddress: row["image_url"], shownAt: shownAt,
             firstSeenAt: firstSeenAt, isRead: row["is_read"], isStarred: row["is_starred"],
-            position: ArticlePosition(shownAt: shownText, firstSeenAt: firstSeenText, rowID: row["row_id"])
+            position: ArticlePosition(shownAt: shownText, firstSeenAt: firstSeenText, rowID: row["row_id"]),
+            translation: StoredTranslation(
+                state: row["translation_state"], title: row["translation_title"], excerpt: row["translation_excerpt"],
+                error: row["translation_error"]
+            )
         )
     }
 

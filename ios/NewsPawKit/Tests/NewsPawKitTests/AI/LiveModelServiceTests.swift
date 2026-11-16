@@ -16,6 +16,13 @@ import Testing
 /// only — never a body, never a key — and "not run" for a service the file
 /// does not name. No `#expect` here names a key, so a failure cannot print
 /// one either.
+///
+/// RD14 adds a fifth step per service: 20 fixed articles with full
+/// 500-character excerpts through `TitleTranslator` into Simplified
+/// Chinese, in a library of its own made for the step, reporting how many
+/// requests it took, their outcomes, and how many articles were translated
+/// or, for the failed ones, which check failed. It prints counts and
+/// reasons only, never a text.
 @Suite("Real model services (enabled by NEWSPAW_LIVE_MODEL_KEYS)")
 struct LiveModelServiceTests {
     static let variable = "NEWSPAW_LIVE_MODEL_KEYS"
@@ -34,7 +41,7 @@ struct LiveModelServiceTests {
     static let translateTexts = ["The weather is fine today.", "The library opens at nine in the morning."]
 
     @Test(
-        "each service in the owner's key file: list, translate, wrong key, missing model",
+        "each service in the owner's key file: list, translate, wrong key, missing model, 20 articles through the translator",
         .enabled(if: ProcessInfo.processInfo.environment[variable] != nil, "set NEWSPAW_LIVE_MODEL_KEYS to the owner's key file")
     )
     func realServices() async throws {
@@ -113,7 +120,49 @@ struct LiveModelServiceTests {
                 Self.report(name, step, "\(test.status == 0 ? "no answer" : "HTTP \(test.status)") → Test line \(line)")
                 #expect(line == expected, "\(name) \(step): HTTP \(test.status)")
             }
+
+            // 5. Twenty articles through the translator (RD14).
+            try await Self.translateArticles(name, preset: preset, address: address, model: model, key: realKey, http: http)
         }
+    }
+
+    /// The 20 articles of step 5: short English titles and full excerpts.
+    static let articleTitles = (1...20).map { "Harbour authority publishes its plan for the coming year, part \($0)" }
+    static let articleExcerpt = String(
+        repeating: "The harbour authority said the new quay will open in the spring, and that ferries will run every hour. ",
+        count: 5
+    ).prefix(500)
+
+    private static func translateArticles(
+        _ name: String, preset: ModelPreset, address: String, model: String, key: SecretKey, http: URLSessionModelHTTP
+    ) async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = try await LibraryStore(directory: directory, cacheRoot: directory.appending(path: "Images")).openNormal()
+        let models = LibraryModels(library: library, keys: InMemoryKeyStore(), http: http)
+        try await models.save(ModelSlotDraft(role: .primary, preset: preset, address: address, model: model, newKey: key), testedOutcome: nil)
+        let category = try await library.createCategory(name: "Live", icon: .newspaper)
+        let source = Sample.source(in: category.id, url: "https://live.example.invalid/feed", name: "Live", at: Date())
+        try await library.insert(source)
+        var ids: [UUID] = []
+        for (index, title) in articleTitles.enumerated() {
+            var article = Sample.article(in: source.id, externalID: "live-\(index)", title: title, at: Date().addingTimeInterval(Double(-index)))
+            article.excerpt = String(articleExcerpt)
+            try await library.insert(article)
+            ids.append(article.id)
+        }
+        let translator = TitleTranslator(models: models)
+        await translator.configure(TranslationConfiguration(locale: .simplifiedChinese, automatic: true))
+        await translator.settled()
+        let usage = try await library.usageRecords()
+        let stored = try await library.translations(of: ids, locale: .simplifiedChinese)
+        let done = stored.values.filter { $0.state == .done }.count
+        let failures = stored.values.compactMap(\.failure).map(\.rawValue).sorted()
+        let paused = await translator.pausedBy
+        Self.report(name, "translator", "\(usage.count) requests (\(usage.map(\.outcome.rawValue).joined(separator: ", "))), "
+            + "\(done) of 20 translated\(failures.isEmpty ? "" : ", failed: \(failures.joined(separator: ", "))")"
+            + "\(paused.map { ", paused: \($0)" } ?? "")")
+        #expect(done == 20, "\(name) translator: \(done) of 20 translated")
     }
 
     /// One exchange: the response, or the transport failure; `status` is 0

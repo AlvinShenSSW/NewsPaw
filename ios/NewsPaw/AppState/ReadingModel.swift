@@ -56,6 +56,11 @@ final class ReadingModel {
     /// The rows a list page holds: the library's page size. The UI tests
     /// lower it in a debug build, so that the next page is a few rows away.
     @ObservationIgnored var pageSize = Library.articlePageSize
+    /// The reading language whose stored translations the rows carry (RD14
+    /// decision 11), read at each list or article read; `nil` for a
+    /// workspace without translation, whose rows show originals. Set by
+    /// the workspace.
+    @ObservationIgnored var translationLocale: @MainActor () -> ReadingLocale? = { nil }
 
     /// The model of each list shown: the Library side's current list and
     /// Starred. Created when a view asks for it, so not observed.
@@ -196,7 +201,9 @@ final class ReadingModel {
             let scope = model.kind.scope
             let filter = model.filter
             do {
-                let page = try await library.articleRows(scope, filter: filter, limit: self.pageSize)
+                let page = try await library.articleRows(
+                    scope, filter: filter, limit: self.pageSize, translationsIn: self.translationLocale()
+                )
                 model.replace(with: page, pageSize: self.pageSize)
             } catch {
                 model.readDidFail(.firstPage)
@@ -217,7 +224,8 @@ final class ReadingModel {
             guard model.hasMore, let last = model.rows.last else { return }
             do {
                 let page = try await library.articleRows(
-                    model.kind.scope, filter: model.filter, after: last.position, limit: self.pageSize
+                    model.kind.scope, filter: model.filter, after: last.position, limit: self.pageSize,
+                    translationsIn: self.translationLocale()
                 )
                 model.append(page, pageSize: self.pageSize)
             } catch {
@@ -270,7 +278,7 @@ final class ReadingModel {
         let library = library
         enqueue {
             do {
-                self.articles[id] = .loaded(try await library.article(id))
+                self.articles[id] = .loaded(try await library.article(id, translationsIn: self.translationLocale()))
             } catch LibraryError.unknownArticle {
                 self.articles[id] = .missing
             } catch {
@@ -563,6 +571,78 @@ final class ReadingModel {
         dropBody(id)
         if navigation.layout?.structure == .tabs, !isStopped {
             navigation.closeArticle(id)
+        }
+    }
+
+    // MARK: - Translations (RD14 decision 11)
+
+    /// The translator stored rows for `ids`: they are read in the reading
+    /// language and applied where the rows stand, in every living list and
+    /// to the open articles, through the queue, so that a list read begun
+    /// before the store cannot land after it and undo it.
+    func applyTranslations(of ids: Set<UUID>) {
+        guard !isStopped, !ids.isEmpty else { return }
+        let library = library
+        enqueue {
+            guard let locale = self.translationLocale(),
+                  let stored = try? await library.translations(of: ids, locale: locale)
+            else { return }
+            for id in ids {
+                self.applyTranslation(stored[id], to: id)
+            }
+        }
+    }
+
+    /// The reading language changed: the translations of the new one are
+    /// read for the rows of every living list and every open article, and
+    /// applied where the rows stand (none where there is none), so that no
+    /// translation of the old one is shown. The lists are not read again:
+    /// their rows past the first page and the reader's place stay. Through
+    /// the queue, with the rows as they stand when it is this work's turn.
+    func translationLocaleChanged() {
+        guard !isStopped else { return }
+        let library = library
+        enqueue {
+            var ids = Set<UUID>()
+            for model in self.lists.values {
+                ids.formUnion(model.rows.map(\.id))
+            }
+            for (id, article) in self.articles {
+                if case .loaded = article {
+                    ids.insert(id)
+                }
+            }
+            guard !ids.isEmpty, let locale = self.translationLocale() else { return }
+            // A failed read shows the originals rather than the old language.
+            let stored = (try? await library.translations(of: ids, locale: locale)) ?? [:]
+            for id in ids {
+                self.applyTranslation(stored[id], to: id)
+            }
+        }
+    }
+
+    /// A slot changed and the library's failed rows were deleted with it:
+    /// the rows that show a failure wait again.
+    func failedTranslationsCleared() {
+        enqueue {
+            for model in self.lists.values {
+                model.clearFailedTranslations()
+            }
+            for (id, article) in self.articles {
+                if case .loaded(let row) = article, row.translation?.state == .failed {
+                    self.applyTranslation(nil, to: id)
+                }
+            }
+        }
+    }
+
+    private func applyTranslation(_ translation: StoredTranslation?, to id: UUID) {
+        for model in lists.values {
+            model.update(id, translation: translation)
+        }
+        if case .loaded(var row) = articles[id], row.translation != translation {
+            row.translation = translation
+            articles[id] = .loaded(row)
         }
     }
 

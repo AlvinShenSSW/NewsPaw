@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import Synchronization
 
 /// The model HTTP of a debug build running under the UI tests (RD13): it
 /// answers by host under `models.example.invalid` and reports every other
@@ -21,6 +22,33 @@ public final class FixtureModelHTTP: ModelHTTP {
         public static let down = "https://down.models.example.invalid/v1"
         /// 302 to another address.
         public static let redirect = "https://redirect.models.example.invalid/v1"
+        /// A translator (RD14 decision 13): it answers each text with
+        /// "译[<language asked for>]：" before it, and obeys the words of
+        /// `Word` in the texts it is sent.
+        public static let translate = "https://translate.models.example.invalid/v1"
+        /// The same without the 429, as a backup.
+        public static let translateBackup = "https://translate-backup.models.example.invalid/v1"
+    }
+
+    /// The words the translator obeys, anywhere in a request's texts.
+    public enum Word {
+        /// The model declines the whole request.
+        public static let refuse = "fixture:refuse"
+        /// 429 from `translate`; the backup ignores it.
+        public static let limit = "fixture:limit"
+        /// The answer comes after `slowAnswer`.
+        public static let slow = "fixture:slow"
+    }
+
+    /// How long the translator takes for a request with `Word.slow`.
+    static let slowAnswer = Duration.seconds(2)
+
+    /// The chat requests this process has sent to the translator hosts, for
+    /// the UI tests' report.
+    private static let translationRequestCount = Mutex(0)
+
+    public static var translationRequests: Int {
+        translationRequestCount.withLock { $0 }
     }
 
     /// The three models `passed` lists, in the order it lists them.
@@ -52,6 +80,24 @@ public final class FixtureModelHTTP: ModelHTTP {
             return answer(503, "Service Unavailable")
         case "redirect.models.example.invalid":
             throw ModelHTTPFailure.redirected
+        case "translate.models.example.invalid", "translate-backup.models.example.invalid":
+            if request.url.path.hasSuffix("/models") {
+                return answer(200, #"{"object":"list","data":[{"id":"fixture-translator","object":"model"}]}"#)
+            }
+            Self.translationRequestCount.withLock { $0 += 1 }
+            let (system, texts) = Self.messages(of: request.body)
+            if texts.contains(where: { $0.contains(Word.slow) }) {
+                try await Task.sleep(for: Self.slowAnswer)
+            }
+            if texts.contains(where: { $0.contains(Word.refuse) }) {
+                return answer(200, Self.completion(content: nil, refusal: "I can't translate this."))
+            }
+            if host == "translate.models.example.invalid", texts.contains(where: { $0.contains(Word.limit) }) {
+                return answer(429, #"{"error":{"message":"Rate limit reached","type":"requests"}}"#)
+            }
+            let mark = "译[" + Self.languageTag(in: system) + "]："
+            let translated = ChatWire.jsonArray(texts.map { mark + $0 })
+            return answer(200, Self.completion(content: #"{"texts":\#(translated)}"#))
         default:
             throw ModelHTTPFailure.unreachable
         }
@@ -60,14 +106,32 @@ public final class FixtureModelHTTP: ModelHTTP {
     /// A completion whose content is `{"texts": [...]}` with the texts of the
     /// request's user message.
     private static func completion(echoing body: Data?) -> String {
-        var texts: [String] = []
-        if let body, let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
-           let messages = object["messages"] as? [[String: Any]], let user = messages.last?["content"] as? String,
-           let parsed = ChatWire.texts(in: user) {
-            texts = parsed
+        completion(content: #"{"texts":\#(ChatWire.jsonArray(messages(of: body).texts))}"#)
+    }
+
+    /// The system message and the texts of a request's user message.
+    private static func messages(of body: Data?) -> (system: String, texts: [String]) {
+        guard let body, let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
+              let messages = object["messages"] as? [[String: Any]]
+        else { return ("", []) }
+        let system = messages.first?["content"] as? String ?? ""
+        let texts = (messages.last?["content"] as? String).flatMap(ChatWire.texts(in:)) ?? []
+        return (system, texts)
+    }
+
+    /// The first bracketed language tag of the instructions: the language
+    /// asked for (`TranslationPrompt` names it so).
+    private static func languageTag(in system: String) -> String {
+        guard let match = system.firstMatch(of: /\(([A-Za-z]{2,3}(?:-[A-Za-z]{2,4})?)\)/) else { return "?" }
+        return String(match.1)
+    }
+
+    /// A chat completion with `content`, or with a refusal.
+    private static func completion(content: String?, refusal: String? = nil) -> String {
+        var message: [String: Any] = ["role": "assistant", "content": content as Any? ?? NSNull()]
+        if let refusal {
+            message["refusal"] = refusal
         }
-        let content = #"{"texts":\#(ChatWire.jsonArray(texts))}"#
-        let message: [String: Any] = ["role": "assistant", "content": content]
         let reply: [String: Any] = [
             "id": "fixture",
             "object": "chat.completion",

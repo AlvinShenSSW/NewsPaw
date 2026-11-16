@@ -85,6 +85,10 @@ final class ModelSettingsModel {
 
     private let models: LibraryModels
     private let navigation: NavigationModel
+    /// Told after a slot was saved or removed, or its key removed (RD14
+    /// decisions 2 and 6): the translation of the models' library resumes.
+    /// Set by the app model.
+    @ObservationIgnored var onSlotsChanged: (@MainActor () -> Void)?
 
     init(models: LibraryModels, navigation: NavigationModel) {
         self.models = models
@@ -373,6 +377,7 @@ final class ModelSettingsModel {
             defer { isBusy = false }
             do {
                 try await models.removeKey(role)
+                onSlotsChanged?()
             } catch ModelSettingsError.keyNotRemoved {
                 alert = .keyNotRemoved
             } catch {
@@ -397,6 +402,7 @@ final class ModelSettingsModel {
             defer { isBusy = false }
             do {
                 try await models.save(draft, testedOutcome: tested)
+                onSlotsChanged?()
                 await reload()
                 leaveForm(role)
             } catch ModelSettingsError.keyNotSaved {
@@ -417,6 +423,7 @@ final class ModelSettingsModel {
             defer { isBusy = false }
             do {
                 try await models.removeSlot(role)
+                onSlotsChanged?()
                 await reload()
                 leaveForm(role)
             } catch ModelSettingsError.keyNotRemoved {

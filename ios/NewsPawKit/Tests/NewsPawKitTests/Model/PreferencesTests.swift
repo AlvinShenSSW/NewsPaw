@@ -153,4 +153,41 @@ struct PreferencesTests {
             }
         }
     }
+
+    // MARK: - RD14 decision 1
+
+    @Test("the translation settings: Simplified Chinese, automatic on, originals off; they round-trip under the file's names")
+    func translationSettings() throws {
+        try withSuite { defaults in
+            let preferences = Preferences(defaults)
+            #expect(preferences.readingLocale == .simplifiedChinese)
+            #expect(preferences.autoTranslateTitles)
+            #expect(!preferences.showOriginalTitles)
+            for locale in ReadingLocale.allCases {
+                preferences.readingLocale = locale
+                #expect(Preferences(defaults).readingLocale == locale)
+                #expect(defaults.string(forKey: "reading_locale") == locale.rawValue)
+            }
+            #expect(ReadingLocale.allCases.map(\.rawValue) == ["zh-Hans", "en", "ja"])
+            preferences.autoTranslateTitles = false
+            preferences.showOriginalTitles = true
+            #expect(!Preferences(defaults).autoTranslateTitles)
+            #expect(Preferences(defaults).showOriginalTitles)
+            #expect(defaults.object(forKey: "auto_translate_titles") as? Bool == false)
+            #expect(defaults.object(forKey: "show_original_titles") as? Bool == true)
+        }
+    }
+
+    @Test("a stored translation value outside its set reads as the default")
+    func translationSettingsOutsideTheirSets() throws {
+        try withSuite { defaults in
+            defaults.set("fr", forKey: "reading_locale")
+            defaults.set("yes", forKey: "auto_translate_titles")
+            defaults.set(1, forKey: "show_original_titles")
+            let preferences = Preferences(defaults)
+            #expect(preferences.readingLocale == .simplifiedChinese)
+            #expect(preferences.autoTranslateTitles)
+            #expect(!preferences.showOriginalTitles)
+        }
+    }
 }

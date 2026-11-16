@@ -83,7 +83,9 @@ struct ArticleListTests {
         }
         #expect(!statementColumns.contains("content_html"), "\(statementColumns)")
         #expect(!Library.articleRowsSQL(where: []).contains("content_html"))
-        #expect(!Library.articleRowColumns.contains("content_html"))
+        #expect(!Library.articleRowColumns(joiningTranslations: false).contains("content_html"))
+        #expect(!Library.articleRowColumns(joiningTranslations: true).contains("content_html"))
+        #expect(!Library.articleRowsSQL(where: [], joiningTranslations: true).contains("content_html"))
         await #expect(throws: LibraryError.unknownArticle) {
             try await fixture.library.article(UUID())
         }

@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import NewsPawKit
 
 /// What the UI tests ask of a debug build through the launch environment.
 /// Release builds contain none of this.
@@ -35,6 +36,13 @@ struct DebugLaunchOptions {
     /// picker (RD08 decision 8). Applied only together with
     /// `libraryDirectory`.
     let opmlFixture: OPMLFixture?
+    /// The translator fixture's models to set up in the normal library
+    /// (RD14): the primary, and the backup after it. Applied only together
+    /// with `libraryDirectory`, and only to a library with no model yet.
+    let translationModels: [ModelRole]
+    /// The daily automatic limit to store (RD14 decision 8). Applied only
+    /// together with `libraryDirectory`.
+    let dailyAutomaticLimit: Int?
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -70,6 +78,16 @@ struct DebugLaunchOptions {
             articlePageSize = nil
         }
         opmlFixture = environment[UITestLaunchKey.opmlFixture].flatMap(OPMLFixture.init(rawValue:))
+        translationModels = switch environment[UITestLaunchKey.translationModels] {
+        case "primary": [.primary]
+        case "primary,backup": [.primary, .backup]
+        default: []
+        }
+        if let text = environment[UITestLaunchKey.dailyAutomaticLimit], let limit = Int(text), limit >= 0 {
+            dailyAutomaticLimit = limit
+        } else {
+            dailyAutomaticLimit = nil
+        }
     }
 
     /// Accepts only a name that stays inside the temporary directory.

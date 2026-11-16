@@ -82,6 +82,20 @@ public final class FixtureTransport: Transport {
         /// `big/<number>.png` (2,400 × 1,600) and `tall.png` (1,080 ×
         /// 6,000, lines of text). Any other name does not answer.
         public static let readingImages = "https://reading.example.invalid/images/"
+        /// A feed for translation (RD14 decision 13): "Markup <b>bold</b>
+        /// **stars** [a link](https://example.invalid)" (a title holding
+        /// HTML and Markdown as text), a Simplified Chinese item, a
+        /// Traditional Chinese item, then 60 English items "Foreign story
+        /// 01" … "60" with short excerpts, an hour apart.
+        public static let translation = "https://translation.example.invalid/rss.xml"
+
+        /// A feed of one English item whose title holds the translator's
+        /// word "fixture:<word>" (`FixtureModelHTTP.Word`: "refuse",
+        /// "limit" or "slow"), so that the translator obeys it.
+        public static func translationWord(_ word: String) -> String {
+            "https://translationwords.example.invalid/\(word).xml"
+        }
+
         /// A feed of articles whose bodies come from their pages (RD12):
         /// "Fetched story", "Scripted story", "List story", "Huge story",
         /// "Stalled story" and "Plain text story" carry an excerpt and link
@@ -218,6 +232,10 @@ public final class FixtureTransport: Transport {
             return answer(Self.longCountingFeed(fresh: String(UUID().uuidString.prefix(8))), type: rss)
         case Address.reading:
             return answer(Self.readingFeed, type: rss)
+        case Address.translation:
+            return answer(Self.translationFeed, type: rss)
+        case Address.translationWord("refuse"), Address.translationWord("limit"), Address.translationWord("slow"):
+            return answer(Self.translationWordFeed(String(url.deletingPathExtension().lastPathComponent)), type: rss)
         case GitHubFeedAddress.of("project", "releases"):
             return answer(Self.gitHubReleases(repository: "project", fresh: String(UUID().uuidString.prefix(8)).lowercased()), type: atomType)
         case GitHubFeedAddress.of("project", "tags"):
@@ -497,6 +515,49 @@ public final class FixtureTransport: Transport {
             """
     }()
 
+    // MARK: - The translation feeds (RD14)
+
+    /// The title of the translation feed's item with HTML and Markdown, as
+    /// the app shows it.
+    public static let markupTitle = "Markup <b>bold</b> **stars** [a link](https://example.invalid)"
+    public static let simplifiedTitle = "国务院发布新的数据安全管理条例"
+    public static let traditionalTitle = "台灣半導體產業持續擴張"
+
+    private static func translationItem(_ title: String, slug: String, minutesAgo: Int, description: String) -> String {
+        // A title is HTML in RSS: escaped twice, so that its markup arrives
+        // as text.
+        let escaped = title.replacingOccurrences(of: "&", with: "&amp;amp;")
+            .replacingOccurrences(of: "<", with: "&amp;lt;").replacingOccurrences(of: ">", with: "&amp;gt;")
+        return "<item><title>\(escaped)</title><link>https://example.invalid/translation/\(slug)</link>"
+            + "<guid>translation-\(slug)</guid><description>\(description)</description>"
+            + "<pubDate>\(date(minutesAgo: minutesAgo))</pubDate></item>"
+    }
+
+    private static let translationFeed: String = {
+        var items = [
+            translationItem(markupTitle, slug: "markup", minutesAgo: 10, description: "A title with markup that is shown as text."),
+            translationItem(simplifiedTitle, slug: "simplified", minutesAgo: 20, description: "条例明确了数据处理者的责任，并将于明年一月起施行。"),
+            translationItem(traditionalTitle, slug: "traditional", minutesAgo: 30, description: "業者表示，新廠將於明年開始量產，並創造數千個工作機會。"),
+        ]
+        items += (1...60).map { number in
+            let name = String(format: "%02d", number)
+            return translationItem(
+                "Foreign story \(name)", slug: "foreign-\(name)", minutesAgo: 60 * number,
+                description: "A short summary of foreign story \(name)."
+            )
+        }
+        return channel(title: "Translation Feed", items: items)
+    }()
+
+    private static func translationWordFeed(_ word: String) -> String {
+        let (feed, title) = switch word {
+        case "refuse": ("Refusing Feed", "A story the model refuses fixture:refuse")
+        case "limit": ("Limited Feed", "A story the service limits fixture:limit")
+        default: ("Slow Translation Feed", "A story that takes its time fixture:slow")
+        }
+        return channel(title: feed, items: [translationItem(title, slug: "word-\(word)", minutesAgo: 5, description: "")])
+    }
+
     // MARK: - The full-text feed and its pages (RD12)
 
     /// The running text of the article page, a paragraph at a time.
@@ -605,6 +666,7 @@ public final class FixtureTransport: Transport {
             </channel></rss>
             """
     }()
+
     // MARK: - GitHub repositories (RD07)
 
     /// One entry shaped like those of a repository's Atom feeds: the
@@ -839,6 +901,14 @@ public final class FixtureTransport: Transport {
         formatter.timeZone = TimeZone(identifier: "GMT")
         formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
         return formatter.string(from: fixtureNow.addingTimeInterval(-3600 * Double(hours)))
+    }
+
+    private static func date(minutesAgo minutes: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+        return formatter.string(from: fixtureNow.addingTimeInterval(-60 * Double(minutes)))
     }
 
     private static func slug(_ text: String) -> String {

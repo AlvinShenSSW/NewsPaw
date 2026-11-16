@@ -1,15 +1,49 @@
 import NewsPawKit
 import SwiftUI
 
-/// Settings → Models & Translation (ux S8; RD13 decision 14): the primary
-/// and backup model, each with its name and state. The reading-language and
-/// translation switches of this screen arrive with RD14.
+/// Settings → Models & Translation (ux S8; RD13 decision 14; RD14 decision
+/// 12): the reading language, the two translation switches, then the
+/// primary and backup model, each with its name and state. The settings are
+/// global; the models are the normal library's, in either partition.
 struct ModelsView: View {
     @Environment(ModelSettingsModel.self) private var models
+    @Environment(TranslationSettings.self) private var translation
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        @Bindable var translation = translation
         List {
+            // An inline picker whose options are rows: at the largest text
+            // size each wraps instead of being cut, as on Refresh.
+            Section {
+                Picker("Reading Language", selection: $translation.readingLocale) {
+                    ForEach(ReadingLocale.allCases, id: \.self) { locale in
+                        Text(verbatim: TranslationWording.language(locale)).tag(locale)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+                .accessibilityIdentifier(AccessibilityID.readingLanguagePicker)
+            } header: {
+                Text("Reading Language")
+                    .foregroundStyle(Theme.secondaryText)
+            } footer: {
+                Text("Titles and summaries are translated into this language.")
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            .listRowBackground(Theme.surface)
+            Section {
+                Toggle("Translate Titles Automatically", isOn: $translation.translatesTitlesAutomatically)
+                    .frame(minHeight: Theme.minimumTapTarget)
+                    .accessibilityIdentifier(AccessibilityID.autoTranslateToggle)
+                Toggle("Show Original Titles in Lists", isOn: $translation.showsOriginalTitles)
+                    .frame(minHeight: Theme.minimumTapTarget)
+                    .accessibilityIdentifier(AccessibilityID.showOriginalTitlesToggle)
+            } header: {
+                Text("Translation")
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            .listRowBackground(Theme.surface)
             Section {
                 row(.primary)
                     .accessibilityIdentifier(AccessibilityID.primaryModelRow)

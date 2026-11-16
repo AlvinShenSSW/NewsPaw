@@ -84,7 +84,8 @@ final class SourceListTests: NewsPawUITestCase {
         addSource(feed, to: "World")
         openSourceSettings("Fixture Feed", in: "World")
         XCTAssertEqual(element(AccessibilityID.sourceAddress).label, feed)
-        XCTAssertTrue(app.staticTexts["Saved now; used once translation is available."].exists)
+        // A feed's options are all in use: no "Saved now" footnote.
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Saved now")).count, 0)
         let name = app.textFields[AccessibilityID.nameField]
         name.clearAndType("Renamed\n")
         let paused = app.switches[AccessibilityID.pausedToggle]

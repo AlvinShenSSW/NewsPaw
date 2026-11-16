@@ -528,6 +528,16 @@ final class NavigationModel {
         }
     }
 
+    /// "Open Settings" of a translation that a model's set-up stops (RD14
+    /// decision 9): Settings › Models & Translation, over whatever was
+    /// shown.
+    func openModelSettings() {
+        sheet = nil
+        closeSlideOver()
+        select(.settings)
+        settingsPath = [.models]
+    }
+
     /// The workspace of this navigation is dropped: nothing stays
     /// presented or pushed, and no list is entered.
     func clear() {

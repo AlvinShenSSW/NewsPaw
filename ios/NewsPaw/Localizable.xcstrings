@@ -830,6 +830,17 @@
         }
       }
     },
+    "English" : {
+      "comment" : "A reading language: English.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "英语"
+          }
+        }
+      }
+    },
     "Enter an address." : {
       "comment" : "Message under the address field.",
       "localizations" : {
@@ -1270,6 +1281,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "日本"
+          }
+        }
+      }
+    },
+    "Japanese" : {
+      "comment" : "A reading language: Japanese.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日语"
           }
         }
       }
@@ -1881,6 +1903,17 @@
         }
       }
     },
+    "Not translated" : {
+      "comment" : "A list row's warning mark and its VoiceOver state: the title is shown untranslated because of a failure.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未翻译"
+          }
+        }
+      }
+    },
     "Not updated yet" : {
       "comment" : "Status of a source never updated; on Today, of a library never refreshed.",
       "localizations" : {
@@ -1976,6 +2009,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开原网页"
+          }
+        }
+      }
+    },
+    "Open Settings" : {
+      "comment" : "Alert button: opens Settings, Models & Translation.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开设置"
           }
         }
       }
@@ -2156,6 +2200,17 @@
         }
       }
     },
+    "Reading Language" : {
+      "comment" : "Settings, Models & Translation: the language titles are translated into.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "阅读语言"
+          }
+        }
+      }
+    },
     "Reading Settings" : {
       "comment" : "Label of the Aa button in the reading screen's navigation bar, and the title of what it opens.",
       "localizations" : {
@@ -2299,6 +2354,28 @@
         }
       }
     },
+    "Retry" : {
+      "comment" : "Alert button and row action: translates the article again.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试"
+          }
+        }
+      }
+    },
+    "Retry with the Backup Model" : {
+      "comment" : "Alert button and row action: translates the article again with the backup model.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用备用模型重试"
+          }
+        }
+      }
+    },
     "Rising chart" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -2354,13 +2431,24 @@
         }
       }
     },
-    "Saved now; used once translation and full-text reading are available." : {
-      "comment" : "Footnote under source options that nothing acts on yet.",
+    "Saved now; used once full-text reading is available." : {
+      "comment" : "Source settings footnote under a feed's options.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "现在先保存，翻译和全文阅读可用后生效。"
+            "value" : "现在先保存，全文阅读可用后生效。"
+          }
+        }
+      }
+    },
+    "Saved now; used once page translation is available." : {
+      "comment" : "Source settings footnote under a web page's options.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "现在先保存，网页翻译可用后生效。"
           }
         }
       }
@@ -2405,6 +2493,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请先设置设备密码，才能使用成人分区。"
+          }
+        }
+      }
+    },
+    "Set up a model to translate" : {
+      "comment" : "Why an article is not translated: no usable model.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置模型后即可翻译"
           }
         }
       }
@@ -2475,6 +2574,17 @@
         }
       }
     },
+    "Show Original Titles in Lists" : {
+      "comment" : "Settings switch: a list row shows the original title under its translation.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在列表中显示原标题"
+          }
+        }
+      }
+    },
     "Show Sidebar" : {
       "comment" : "Accessibility label of the icon-only button that slides the sidebar over the content on iPad.",
       "localizations" : {
@@ -2504,6 +2614,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已展开"
+          }
+        }
+      }
+    },
+    "Simplified Chinese" : {
+      "comment" : "A reading language: Simplified Chinese.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "简体中文"
           }
         }
       }
@@ -2862,6 +2983,17 @@
         }
       }
     },
+    "The model declined to translate this" : {
+      "comment" : "Why an article is not translated: the model refused.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型拒绝翻译这篇内容"
+          }
+        }
+      }
+    },
     "The model name cannot contain line breaks or control characters." : {
       "comment" : "Footer of the model-name field in the model form.",
       "localizations" : {
@@ -2895,6 +3027,17 @@
         }
       }
     },
+    "The reply could not be used" : {
+      "comment" : "Why an article is not translated: the model's reply failed the checks.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "返回的内容无法使用"
+          }
+        }
+      }
+    },
     "The rest of this article is not shown." : {
       "comment" : "Reading screen, under a body that was too long to show whole, for an article without a link.",
       "localizations" : {
@@ -2913,6 +3056,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文章的其余部分请在原网页查看。"
+          }
+        }
+      }
+    },
+    "The service did not accept the request" : {
+      "comment" : "Why an article is not translated: the service answered 400, 413 or 422.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务没有接受这次请求"
           }
         }
       }
@@ -3130,6 +3284,17 @@
         }
       }
     },
+    "Titles and summaries are translated into this language." : {
+      "comment" : "Footer under the reading language.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标题和摘要会翻译成这种语言。"
+          }
+        }
+      }
+    },
     "Today" : {
       "comment" : "Destination name: the tab and sidebar row for today's overviews (ux section 2).",
       "localizations" : {
@@ -3137,6 +3302,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "今日"
+          }
+        }
+      }
+    },
+    "Today's automatic limit is reached. Translate manually, or raise the limit in Settings" : {
+      "comment" : "Why an article is not translated: the daily automatic limit.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已达到今天的自动上限，可手动翻译，或在设置里调高"
           }
         }
       }
@@ -3152,6 +3328,17 @@
         }
       }
     },
+    "Translate Titles Automatically" : {
+      "comment" : "Settings switch: titles and summaries of new articles are translated without asking.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动翻译标题"
+          }
+        }
+      }
+    },
     "Translate When Opened" : {
       "comment" : "Toggle in the settings of a web-page source.",
       "localizations" : {
@@ -3159,6 +3346,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开时翻译"
+          }
+        }
+      }
+    },
+    "Translating…" : {
+      "comment" : "A list row's activity mark and its VoiceOver state: the title is being translated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在翻译…"
+          }
+        }
+      }
+    },
+    "Translation" : {
+      "comment" : "Settings, Models & Translation: the section of the translation switches.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译"
           }
         }
       }

@@ -43,15 +43,26 @@ enum ArticleActionWording {
     }
 }
 
-/// One article row (ux S3): the unread dot, the title in up to three lines,
-/// the source name and relative time, a star when starred, and the
-/// thumbnail on the trailing side — below the text at the accessibility
-/// text sizes. Feed text is shown as plain text. The row is one VoiceOver
-/// element whose label holds the unread state, title, source and time, and
-/// "Starred" when starred.
+/// One article row (ux S3): the unread dot, the title in up to three lines
+/// — the translation when there is one, with the original in one secondary
+/// line when that setting is on (RD14 decision 9) — the source name and
+/// relative time, a star when starred, and the thumbnail on the trailing
+/// side, below the text at the accessibility text sizes. Feed text and
+/// model text are shown as plain text. The row is one VoiceOver element
+/// whose label holds the unread state, title, source and time, "Starred"
+/// when starred, and the translation's state; a translated title carries
+/// the reading language.
 struct ArticleRowView: View {
     @Environment(\.accent) private var accent
     let row: ArticleRow
+    /// The translated title shown in place of the original, or `nil`.
+    var translatedTitle: String?
+    /// Whether the original title follows a translated one.
+    var showsOriginal = false
+    /// The reading language of `translatedTitle`.
+    var language: ReadingLocale?
+    /// What the translation's mark says, for the label.
+    var mark: TranslationMark?
     @Environment(ReadingModel.self) private var reading
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var thumbnail: UIImage?
@@ -85,7 +96,7 @@ struct ArticleRowView: View {
         .padding(.vertical, Theme.Spacing.tight)
         .frame(minHeight: Theme.minimumTapTarget)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: accessibilityLabel))
+        .accessibilityLabel(Text(accessibilityLabel))
         .accessibilityAddTraits(.isButton)
         .task(id: row.imageAddress) {
             await loadThumbnail()
@@ -94,11 +105,17 @@ struct ArticleRowView: View {
 
     private var text: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
-            Text(verbatim: row.displayTitle)
+            Text(verbatim: translatedTitle ?? row.displayTitle)
                 .font(.headline)
                 .foregroundStyle(Theme.text)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
+            if translatedTitle != nil, showsOriginal {
+                Text(verbatim: row.displayTitle)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(1)
+            }
             HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.tight) {
                 Text(verbatim: "\(row.sourceName) · \(row.relativeTime)")
                     .font(.subheadline)
@@ -113,16 +130,48 @@ struct ArticleRowView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var accessibilityLabel: String {
-        var parts: [String] = []
+    /// The label, in parts joined by commas; a translated title is a run in
+    /// the reading language, the rest in the interface's and the
+    /// original's.
+    private var accessibilityLabel: AttributedString {
+        var parts: [AttributedString] = []
         if !row.isRead {
-            parts.append(String(localized: "Unread"))
+            parts.append(AttributedString(String(localized: "Unread")))
         }
-        parts += [row.displayTitle, row.sourceName, row.relativeTime]
+        if let translatedTitle {
+            var title = AttributedString(translatedTitle)
+            if let language {
+                title[AccessibilitySpeechLanguageAttribute.self] = language.rawValue
+                title.languageIdentifier = language.rawValue
+            }
+            parts.append(title)
+            if showsOriginal {
+                parts.append(AttributedString(row.displayTitle))
+            }
+        } else {
+            parts.append(AttributedString(row.displayTitle))
+        }
+        parts += [AttributedString(row.sourceName), AttributedString(row.relativeTime)]
         if row.isStarred {
-            parts.append(String(localized: "Starred"))
+            parts.append(AttributedString(String(localized: "Starred")))
         }
-        return parts.joined(separator: ", ")
+        switch mark {
+        case .working:
+            parts.append(AttributedString(String(localized: "Translating…")))
+        case .warning(let question):
+            parts.append(AttributedString(String(localized: "Not translated")))
+            parts.append(AttributedString(TranslationWording.sentence(question)))
+        case nil:
+            break
+        }
+        var label = AttributedString()
+        for (index, part) in parts.enumerated() {
+            if index > 0 {
+                label += AttributedString(", ")
+            }
+            label += part
+        }
+        return label
     }
 
     /// Fetches the thumbnail through the loader; the row is laid out without

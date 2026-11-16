@@ -202,11 +202,16 @@ final class AppModel {
             self.store = store
             let library = try await store.openNormal()
             let preferences = Preferences(defaults)
+            let models = LibraryModels(library: library, keys: keyStore, http: modelHTTP)
             let parts = WorkspaceParts(
                 transport: transport, candidateLimit: candidateLimit, now: now,
                 refreshSettings: RefreshSettings(preferences),
                 readingSettings: ReadingSettings(preferences: preferences),
-                models: LibraryModels(library: library, keys: keyStore, http: modelHTTP)
+                models: models,
+                translationSettings: TranslationSettings(preferences: preferences),
+                // The models are the normal library's: its workspace's
+                // translation resumes, whichever workspace's Settings saved.
+                slotsChanged: { [weak self] in self?.normal?.translation?.slotsChanged() }
             )
             self.parts = parts
             // The embedded browser: the system's default website data store
@@ -248,6 +253,10 @@ final class AppModel {
             }
             if let count = options.syntheticSources {
                 try await library.insertSyntheticSourcesForUITests(count: count)
+            }
+            // The translator fixture's models and the daily limit (RD14).
+            if options.libraryDirectory != nil {
+                try await Self.setUpTranslationForUITests(options, models: models, library: library)
             }
             workspace.categories.failNextSave = options.failNextSave
             workspace.categories.slowNextSave = options.slowNextSave
@@ -594,6 +603,10 @@ final class AppModel {
             if !locksAdult, let refresh = shown?.refresh {
                 Task { await refresh.entered() }
             }
+            // The app came to the front: a translation pause of the normal
+            // library may end (RD14 decision 6), whichever partition is
+            // shown, since the normal workspace goes on working.
+            normal?.translation?.cameToFront()
         }
         removeCover()
     }
@@ -689,12 +702,31 @@ final class AppModel {
     }
 
     #if DEBUG
+    // MARK: - The UI tests' translation (RD14)
+
+    /// Saves the translator fixture's primary model, and its backup when
+    /// asked, with keys under the UI tests' keychain service, and stores
+    /// the daily automatic limit when one is given.
+    private static func setUpTranslationForUITests(_ options: DebugLaunchOptions, models: LibraryModels, library: Library) async throws {
+        if let limit = options.dailyAutomaticLimit {
+            try await library.setDailyAutomaticLimit(limit)
+        }
+        guard !options.translationModels.isEmpty, try await models.statuses().isEmpty else { return }
+        for role in options.translationModels {
+            let address = role == .primary ? FixtureModelHTTP.Address.translate : FixtureModelHTTP.Address.translateBackup
+            guard case .success(let key) = SecretKey.validate("sk-fixture-translator-\(role.rawValue)-0123") else { continue }
+            let draft = ModelSlotDraft(role: role, preset: .custom, address: address, model: "fixture-translator", newKey: key)
+            try await models.save(draft, testedOutcome: .passed)
+        }
+    }
+
     // MARK: - The UI tests' report (decision 4)
 
     /// Whether the adult library's file exists, whether a pool is open on
     /// it, whether the library object, the adult workspace and its browser
-    /// model are gone from memory, and how many browser sessions the app
-    /// has made.
+    /// model are gone from memory, how many browser sessions the app has
+    /// made, and how many requests the translator fixture has answered
+    /// (RD14).
     func adultDebugReport() async -> String {
         guard let gate else { return "" }
         let file = gate.adultLibraryFileExists ? 1 : 0
@@ -704,7 +736,8 @@ final class AppModel {
             !adultWasShown ? "none" : object == nil ? "released" : "held"
         }
         return "file=\(file) pool=\(pool) library=\(library) workspace=\(state(lastAdultWorkspace)) "
-            + "browser=\(state(lastAdultBrowser)) sessions=\(BrowserModel.sessionsMade)"
+            + "browser=\(state(lastAdultBrowser)) sessions=\(BrowserModel.sessionsMade) "
+            + "translationRequests=\(FixtureModelHTTP.translationRequests)"
     }
     #endif
 }

@@ -217,9 +217,13 @@ private struct ArticleListContent: View {
     }
 }
 
-/// A row as a button that opens its article, with the swipes and the menu;
-/// the first row reports its height, which says how far the list may be
-/// scrolled with that row still on screen.
+/// A row as a button that opens its article, with the swipes and the menu,
+/// and beside the button the translation's mark (RD14 decision 9): a
+/// sibling, since the row's label is one accessibility element, so that the
+/// mark has its own tap, label and identifier. The first row reports its
+/// height, which says how far the list may be scrolled with that row still
+/// on screen. A row reports its appearing and disappearing to the
+/// workspace's translation.
 private struct ArticleRowButton: View {
     @Environment(\.accent) private var accent
     let row: ArticleRow
@@ -227,19 +231,60 @@ private struct ArticleRowButton: View {
     let model: ArticleListModel
     @Environment(ReadingModel.self) private var reading
     @Environment(NavigationModel.self) private var navigation
+    @Environment(TranslationModel.self) private var translation: TranslationModel?
+    @Environment(TranslationSettings.self) private var translationSettings
 
     var body: some View {
-        Button {
-            reading.open(row, on: kind)
-        } label: {
-            ArticleRowView(row: row)
+        let mark = translation?.mark(for: row)
+        HStack(alignment: .top, spacing: 0) {
+            Button {
+                reading.open(row, on: kind)
+            } label: {
+                ArticleRowView(
+                    row: row, translatedTitle: translation == nil ? nil : row.translatedTitle,
+                    showsOriginal: translationSettings.showsOriginalTitles, language: translationSettings.readingLocale, mark: mark
+                )
                 .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(AccessibilityID.articleRow(row.displayTitle))
-        .accessibilityActions {
-            Button(ArticleActionWording.read(isRead: row.isRead)) { toggleRead() }
-            Button(ArticleActionWording.star(isStarred: row.isStarred)) { toggleStar() }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier(AccessibilityID.articleRow(row.displayTitle))
+            .accessibilityActions {
+                Button(ArticleActionWording.read(isRead: row.isRead)) { toggleRead() }
+                Button(ArticleActionWording.star(isStarred: row.isStarred)) { toggleStar() }
+                if case .warning(let question) = mark, let translation {
+                    ForEach(TranslationWording.steps(for: question, hasBackup: translation.hasBackup), id: \.self) { step in
+                        Button(TranslationWording.title(step)) {
+                            TranslationSteps.take(step, for: question, translation: translation, navigation: navigation)
+                        }
+                    }
+                }
+            }
+            .contextMenu {
+                if let url = row.linkURL {
+                    // The article is opened first (and so marked read), then its
+                    // page above it: closing the browser returns to the article
+                    // (RD10 decision 2).
+                    Button("Open in Browser", systemImage: "safari") {
+                        reading.open(row, on: kind)
+                        navigation.openPage(url, on: kind)
+                    }
+                    ShareLink(item: url) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    Button("Copy Link", systemImage: "link") {
+                        UIPasteboard.general.string = url.absoluteString
+                    }
+                }
+                Button(ArticleActionWording.read(isRead: row.isRead), systemImage: row.isRead ? "circle.fill" : "circle") {
+                    toggleRead()
+                }
+                Button(ArticleActionWording.star(isStarred: row.isStarred), systemImage: row.isStarred ? "star.slash" : "star") {
+                    toggleStar()
+                }
+            }
+            if let mark {
+                TranslationMarkView(mark: mark, title: row.displayTitle)
+            }
         }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button(ArticleActionWording.read(isRead: row.isRead), systemImage: row.isRead ? "circle.fill" : "circle") {
@@ -253,34 +298,17 @@ private struct ArticleRowButton: View {
             }
             .tint(accent)
         }
-        .contextMenu {
-            if let url = row.linkURL {
-                // The article is opened first (and so marked read), then its
-                // page above it: closing the browser returns to the article
-                // (RD10 decision 2).
-                Button("Open in Browser", systemImage: "safari") {
-                    reading.open(row, on: kind)
-                    navigation.openPage(url, on: kind)
-                }
-                ShareLink(item: url) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                }
-                Button("Copy Link", systemImage: "link") {
-                    UIPasteboard.general.string = url.absoluteString
-                }
-            }
-            Button(ArticleActionWording.read(isRead: row.isRead), systemImage: row.isRead ? "circle.fill" : "circle") {
-                toggleRead()
-            }
-            Button(ArticleActionWording.star(isStarred: row.isStarred), systemImage: row.isStarred ? "star.slash" : "star") {
-                toggleStar()
-            }
-        }
         .listRowBackground(Theme.background)
         .onGeometryChange(for: Double.self) { $0.size.height } action: { height in
             if model.rows.first?.id == row.id {
                 model.firstRowMeasured(height: height)
             }
+        }
+        .onAppear {
+            translation?.rowAppeared(row)
+        }
+        .onDisappear {
+            translation?.rowDisappeared(row.id)
         }
     }
 
@@ -290,6 +318,41 @@ private struct ArticleRowButton: View {
 
     private func toggleStar() {
         reading.setStarred(row.id, !row.isStarred)
+    }
+}
+
+/// A row's translation mark (decision 9's table): a small activity mark
+/// while its article is in a request or its retry was tapped; a small
+/// warning mark, with a 44-point target, whose tap asks the question of the
+/// failure or the block.
+private struct TranslationMarkView: View {
+    let mark: TranslationMark
+    /// The article's original title, which names the mark's identifier.
+    let title: String
+    @Environment(TranslationModel.self) private var translation: TranslationModel?
+
+    var body: some View {
+        switch mark {
+        case .working:
+            ProgressView()
+                .controlSize(.small)
+                .frame(width: Theme.minimumTapTarget, height: Theme.minimumTapTarget)
+                .accessibilityLabel(Text("Translating…"))
+                .accessibilityIdentifier(AccessibilityID.translationActivity(title))
+        case .warning(let question):
+            Button {
+                translation?.question = question
+            } label: {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryText)
+                    .frame(width: Theme.minimumTapTarget, height: Theme.minimumTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(Text("Not translated"))
+            .accessibilityIdentifier(AccessibilityID.translationWarning(title))
+        }
     }
 }
 

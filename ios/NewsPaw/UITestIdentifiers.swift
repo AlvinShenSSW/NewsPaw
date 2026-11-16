@@ -119,13 +119,25 @@ enum AccessibilityID {
     static let couldNotLoad = "list.couldNotLoad"
     static let showAllButton = "list.showAll"
 
-    /// A list row, named by the title it shows.
+    /// A list row, named by its article's original title (RD14 decision
+    /// 9: not by a translation it shows).
     static func articleRow(_ title: String) -> String {
         articleRowPrefix + title
     }
 
+    // Translation marks of a row (RD14), named by the original title.
+    static func translationActivity(_ title: String) -> String {
+        "article.translating." + title
+    }
+
+    static func translationWarning(_ title: String) -> String {
+        "article.translationWarning." + title
+    }
+
     // Reading screen (RD09, RD11)
     static let readingTitle = "reading.title"
+    /// The original title under a translated one (RD14).
+    static let readingOriginalTitle = "reading.originalTitle"
     static let readingByline = "reading.byline"
     /// "Open Original Page" under an excerpt or a cut body.
     static let openOriginalButton = "reading.openOriginal"
@@ -225,6 +237,10 @@ enum AccessibilityID {
 
     // Models & Translation (RD13)
     static let modelsRow = "settings.models"
+    // Translation settings (RD14)
+    static let readingLanguagePicker = "translation.readingLanguage"
+    static let autoTranslateToggle = "translation.automatic"
+    static let showOriginalTitlesToggle = "translation.showOriginal"
     static let primaryModelRow = "models.primary"
     static let backupModelRow = "models.backup"
     static let backupNeedsPrimary = "models.backupNeedsPrimary"
@@ -309,6 +325,13 @@ enum UITestLaunchKey {
     /// harness is slow around context menus then. Honoured only with
     /// `libraryDirectory`.
     static let keepAnimations = "NEWSPAW_UITEST_KEEP_ANIMATIONS"
+    /// "primary" or "primary,backup": the translator fixture's models are
+    /// set up in the normal library at launch (RD14). Honoured only with
+    /// `libraryDirectory`, and only while the library has no model.
+    static let translationModels = "NEWSPAW_UITEST_TRANSLATION_MODELS"
+    /// A whole number stored as the daily automatic limit (RD14 decision
+    /// 8); honoured only with `libraryDirectory`.
+    static let dailyAutomaticLimit = "NEWSPAW_UITEST_DAILY_AUTOMATIC_LIMIT"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.
@@ -316,9 +339,11 @@ enum DebugAccessibilityID {
     /// The element that reports the adult library's state (RD18 decision
     /// 4): its label is `file=<0|1> pool=<open|closed>
     /// library=<held|released> workspace=<none|held|released>
-    /// browser=<none|held|released>`. `pool` is whether connections are
-    /// open on the file; the other three are whether the objects are gone
-    /// from memory.
+    /// browser=<none|held|released> sessions=<n>
+    /// translationRequests=<n>`. `pool` is whether connections are open on
+    /// the file; the other three are whether the objects are gone from
+    /// memory; the last is how many requests the translator fixture has
+    /// answered in this process (RD14 criterion 13).
     static let adultReport = "debug.adultReport"
 }
 #endif

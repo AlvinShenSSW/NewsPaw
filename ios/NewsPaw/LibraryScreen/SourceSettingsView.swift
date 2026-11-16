@@ -42,7 +42,7 @@ struct SourceSettingsView: View {
                             .disabled(locked)
                             .accessibilityIdentifier(AccessibilityID.bodyModePicker)
                         } footer: {
-                            footnote
+                            footnote(source)
                         }
                         .listRowBackground(Theme.surface)
                         statusSection(source)
@@ -52,7 +52,7 @@ struct SourceSettingsView: View {
                                 .disabled(locked)
                                 .accessibilityIdentifier(AccessibilityID.translatePageToggle)
                         } footer: {
-                            footnote
+                            footnote(source)
                         }
                         .listRowBackground(Theme.surface)
                     }
@@ -209,8 +209,18 @@ struct SourceSettingsView: View {
         .listRowBackground(Theme.surface)
     }
 
-    private var footnote: some View {
-        Text("Saved now; used once translation and full-text reading are available.")
-            .foregroundStyle(Theme.secondaryText)
+    /// The footnote of the options saved before they are used: a feed's
+    /// body option waits for full-text reading (its titles are translated
+    /// from RD14 on); a web page's "Translate When Opened" waits for page
+    /// translation.
+    private func footnote(_ source: SourceSummary) -> some View {
+        Group {
+            if source.isFeedLike {
+                Text("Saved now; used once full-text reading is available.")
+            } else {
+                Text("Saved now; used once page translation is available.")
+            }
+        }
+        .foregroundStyle(Theme.secondaryText)
     }
 }

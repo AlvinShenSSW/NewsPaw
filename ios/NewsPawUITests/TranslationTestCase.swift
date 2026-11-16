@@ -63,6 +63,20 @@ class TranslationTestCase: ReadingTestCase {
         requireFullSize()
     }
 
+    /// On the panes Settings › Models & Translation, pushed on the leading
+    /// pane, has the back button where the sidebar button is: it is left
+    /// first (as `AdultTestCase` does).
+    override func openSidebarIfNeeded() {
+        var backs = 0
+        while !app.tabBars.firstMatch.exists, !element(AccessibilityID.sidebarPane).exists,
+              !element(AccessibilityID.slideOverPanel).exists,
+              !button(AccessibilityID.showSidebarButton).waitForExistence(timeout: 1), backs < 3 {
+            goBack()
+            backs += 1
+        }
+        super.openSidebarIfNeeded()
+    }
+
     /// Creates `category`, adds `feed` to it and opens the category's list.
     func addFeed(_ feed: String, to category: String) {
         createCategory(category)

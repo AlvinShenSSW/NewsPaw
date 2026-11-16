@@ -1,0 +1,164 @@
+import Foundation
+@testable import NewsPawKit
+import Testing
+import WebKit
+
+/// RD19 decision 4, criterion 6 and assumption A1: each partition's browser
+/// has its own website data store, and an identified store is a persistent
+/// store of its own. The identified stores made here have test-only
+/// identifiers and are removed at the end of each test (they are written
+/// under the test runner's `~/Library/WebKit`).
+@Suite("Browser data stores", .serialized)
+@MainActor
+struct BrowserDataStoresTests {
+    @Test("criterion 6: the normal partition's store is the default one, the adult partition's its own identified store")
+    func mapping() {
+        let normal = BrowserDataStores.store(for: .normal)
+        let adult = BrowserDataStores.store(for: .adult)
+        #expect(normal === WKWebsiteDataStore.default())
+        #expect(normal.identifier == nil)
+        #expect(adult !== normal)
+        #expect(adult.isPersistent)
+        #expect(adult.identifier == BrowserDataStores.adultIdentifier)
+    }
+
+    @Test("under the UI tests: the normal store lasts the process, the adult one is the directory's own and never the real one")
+    func uiTestMapping() {
+        let normal = BrowserDataStores.uiTestStore(for: .normal, directoryName: "UITest-A")
+        #expect(!normal.isPersistent)
+        let first = BrowserDataStores.uiTestAdultIdentifier(directoryName: "UITest-A")
+        #expect(first == BrowserDataStores.uiTestAdultIdentifier(directoryName: "UITest-A"))
+        #expect(first != BrowserDataStores.uiTestAdultIdentifier(directoryName: "UITest-B"))
+        #expect(first != BrowserDataStores.adultIdentifier)
+        let adult = BrowserDataStores.uiTestStore(for: .adult, directoryName: "UITest-A")
+        #expect(adult.isPersistent)
+        #expect(adult.identifier == first)
+        Task { try? await WKWebsiteDataStore.remove(forIdentifier: first) }
+    }
+
+    /// The cookies of `store` named `name`.
+    private static func cookies(named name: String, in store: WKWebsiteDataStore) async -> [HTTPCookie] {
+        await store.httpCookieStore.allCookies().filter { $0.name == name }
+    }
+
+    /// Waits, with a bound a stalled runner does not reach, until `store`
+    /// holds a cookie named `name`.
+    private static func waitForCookie(_ name: String, in store: WKWebsiteDataStore) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(60)
+        while ContinuousClock.now < deadline {
+            if await !cookies(named: name, in: store).isEmpty {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return false
+    }
+
+    @Test("A1: two identified stores keep separate data; a second object for one identifier sees its data; Clear empties one only")
+    func identifiedStoresAreSeparate() async throws {
+        let first = UUID()
+        let second = UUID()
+        defer {
+            Task {
+                try? await WKWebsiteDataStore.remove(forIdentifier: first)
+                try? await WKWebsiteDataStore.remove(forIdentifier: second)
+            }
+        }
+        let server = try LoopbackServer { _, _ in
+            LoopbackServer.Reply(
+                headers: ["Content-Type: text/html", "Set-Cookie: rd19page=first; Max-Age=3600; Path=/"],
+                body: Data("<p>A page that sets a cookie.</p>".utf8)
+            )
+        }
+        let storeOne = WKWebsiteDataStore(forIdentifier: first)
+        let storeTwo = WKWebsiteDataStore(forIdentifier: second)
+        #expect(storeOne.isPersistent)
+        #expect(storeTwo.isPersistent)
+
+        // A page's Set-Cookie in the first store.
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = storeOne
+        let view = WKWebView(frame: CGRect(x: 0, y: 0, width: 400, height: 400), configuration: configuration)
+        let loaded = LoadWaiter()
+        view.navigationDelegate = loaded
+        view.load(URLRequest(url: try #require(URL(string: server.base + "/set"))))
+        try await loaded.wait()
+        #expect(await Self.waitForCookie("rd19page", in: storeOne))
+
+        // A cookie set through the second store's cookie store.
+        let cookie = try #require(HTTPCookie(properties: [
+            .name: "rd19store", .value: "second", .domain: "127.0.0.1", .path: "/", .expires: Date().addingTimeInterval(3600),
+        ]))
+        await storeTwo.httpCookieStore.setCookie(cookie)
+
+        #expect(await !Self.cookies(named: "rd19page", in: storeOne).isEmpty)
+        #expect(await Self.cookies(named: "rd19store", in: storeOne).isEmpty)
+        #expect(await !Self.cookies(named: "rd19store", in: storeTwo).isEmpty)
+        #expect(await Self.cookies(named: "rd19page", in: storeTwo).isEmpty)
+        // The default store has neither.
+        #expect(await Self.cookies(named: "rd19page", in: .default()).isEmpty)
+        #expect(await Self.cookies(named: "rd19store", in: .default()).isEmpty)
+
+        // Another object for the first identifier sees the same data.
+        let again = WKWebsiteDataStore(forIdentifier: first)
+        #expect(await !Self.cookies(named: "rd19page", in: again).isEmpty)
+
+        // Clear (every type, since the distant past) empties the first and
+        // leaves the second.
+        await WebKitAdultBrowserData(identifier: first).clear()
+        #expect(await Self.cookies(named: "rd19page", in: storeOne).isEmpty)
+        #expect(await Self.cookies(named: "rd19page", in: again).isEmpty)
+        #expect(await !Self.cookies(named: "rd19store", in: storeTwo).isEmpty)
+
+        // The identifiers are known to WebKit while the stores exist.
+        let known = await WKWebsiteDataStore.allDataStoreIdentifiers
+        #expect(known.contains(first))
+        #expect(known.contains(second))
+        view.navigationDelegate = nil
+    }
+
+    @Test("A2: removing the store while a web view on it is alive, and after it is released")
+    func removeStoreInUseAndReleased() async throws {
+        let identifier = UUID()
+        var webView: WKWebView? = {
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: identifier)
+            return WKWebView(frame: .zero, configuration: configuration)
+        }()
+        let loaded = LoadWaiter()
+        webView?.navigationDelegate = loaded
+        webView?.loadHTMLString("<p>in use</p>", baseURL: URL(string: "https://example.invalid/"))
+        try await loaded.wait()
+        // While the web view is alive: removal fails as "in use", which the
+        // adult browser data count as removed.
+        var inUse: (any Error)?
+        do {
+            try await WKWebsiteDataStore.remove(forIdentifier: identifier)
+        } catch {
+            inUse = error
+        }
+        Self.record("A2 removal while a web view is alive: \(inUse.map { "\(($0 as NSError).domain) \(($0 as NSError).code) \(($0 as NSError).localizedDescription)" } ?? "no error")")
+        if let inUse {
+            #expect(WebKitAdultBrowserData.isInUse(inUse))
+        }
+        try await WebKitAdultBrowserData(identifier: identifier).removeStore()
+        webView = nil
+        // Released: the removal succeeds and the identifier is gone.
+        let deadline = ContinuousClock.now + .seconds(60)
+        var removed = false
+        while ContinuousClock.now < deadline {
+            if (try? await WKWebsiteDataStore.remove(forIdentifier: identifier)) != nil {
+                removed = true
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        #expect(removed)
+        #expect(await !WKWebsiteDataStore.allDataStoreIdentifiers.contains(identifier))
+    }
+
+    /// Writes a measurement to the test's output: the evidence of A2.
+    private static func record(_ line: String) {
+        print("RD19 measurement: \(line)")
+    }
+}

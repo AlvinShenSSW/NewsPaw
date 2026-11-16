@@ -76,6 +76,48 @@ final class StubAuthenticator: DeviceAuthenticator {
     }
 }
 
+/// The adult browser's data as a stub (RD19 decision 5): it records each
+/// call, can be told to fail the store's removal, and runs a check of the
+/// test's at the moment of the removal, so that the order of Delete is seen.
+final class StubAdultBrowserData: AdultBrowserData {
+    private struct State {
+        var calls: [String] = []
+        var refuseRemoval = false
+        var atRemoval: (@Sendable () -> Void)?
+    }
+
+    private let state = Mutex(State())
+
+    var calls: [String] {
+        state.withLock { $0.calls }
+    }
+
+    var refuseRemoval: Bool {
+        get { state.withLock { $0.refuseRemoval } }
+        set { state.withLock { $0.refuseRemoval = newValue } }
+    }
+
+    /// Runs inside `removeStore()`, before it answers.
+    func atRemoval(_ check: @escaping @Sendable () -> Void) {
+        state.withLock { $0.atRemoval = check }
+    }
+
+    func clear() async {
+        state.withLock { $0.calls.append("clear") }
+    }
+
+    func removeStore() async throws {
+        let (refuse, check) = state.withLock { state in
+            state.calls.append("removeStore")
+            return (state.refuseRemoval, state.atRemoval)
+        }
+        check?()
+        if refuse {
+            throw AdultBrowserDataError.couldNotRemove
+        }
+    }
+}
+
 /// A gate over a temporary directory, with everything a test looks at.
 struct GateFixture {
     let root: URL
@@ -86,6 +128,7 @@ struct GateFixture {
     let store: LibraryStore
     let authenticator: StubAuthenticator
     let keys: InMemoryKeyStore
+    let browserData: StubAdultBrowserData
     let gate: AdultGate
 
     init(_ answers: [AuthenticationAnswer] = [], isEnabled: Bool = true) throws {
@@ -97,8 +140,10 @@ struct GateFixture {
         store = LibraryStore(directory: directory, cacheRoot: cacheRoot)
         authenticator = StubAuthenticator(answers)
         keys = InMemoryKeyStore(partition: .adult)
+        browserData = StubAdultBrowserData()
         gate = AdultGate(
-            store: store, authenticator: authenticator, preferences: Preferences(defaults), keys: keys, isEnabled: isEnabled
+            store: store, authenticator: authenticator, preferences: Preferences(defaults), keys: keys, browserData: browserData,
+            isEnabled: isEnabled
         )
     }
 
@@ -108,7 +153,8 @@ struct GateFixture {
         let store = LibraryStore(directory: directory, cacheRoot: cacheRoot)
         let authenticator = StubAuthenticator(answers)
         let gate = AdultGate(
-            store: store, authenticator: authenticator, preferences: Preferences(defaults), keys: keys, isEnabled: isEnabled
+            store: store, authenticator: authenticator, preferences: Preferences(defaults), keys: keys, browserData: browserData,
+            isEnabled: isEnabled
         )
         return (gate, store, authenticator)
     }

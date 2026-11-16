@@ -16,8 +16,9 @@ import UniformTypeIdentifiers
 ///
 /// At most `limit` requests are in flight; a freed slot goes to the first
 /// waiter, and a cancelled waiter leaves the queue. A cancelled request
-/// stores nothing. An address that failed is not asked again for the life
-/// of the loader.
+/// stores nothing, and neither does one whose fetch began before the
+/// cache was cleared. An address that failed is not asked again for the
+/// life of the loader.
 public actor ThumbnailLoader {
     /// The longest side of a thumbnail, in pixels.
     public static let maximumPixelSize = 288
@@ -54,6 +55,9 @@ public actor ThumbnailLoader {
     /// cancelled.
     public func thumbnail(for address: String) async -> Data? {
         let key = Self.cacheKey(for: address)
+        // Read before anything is fetched: a clear that comes during the
+        // fetch keeps it out of the cache (RD19 decision 7).
+        let generation = await cache.generation
         if let cached = await cache.data(for: key) {
             return cached
         }
@@ -87,7 +91,7 @@ public actor ThumbnailLoader {
             return nil
         }
         guard !Task.isCancelled else { return nil }
-        await cache.store(thumbnail, for: key)
+        await cache.store(thumbnail, for: key, generation: generation)
         return thumbnail
     }
 

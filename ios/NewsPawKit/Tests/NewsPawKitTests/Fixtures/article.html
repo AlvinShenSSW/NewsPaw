@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Synthetic article</title>
-<!-- Both subresources use the test-only scheme, so a scheme handler in the test sees every request for them. -->
+<!-- The stylesheet and the image are never requested: the extractor blocks every load. -->
 <link rel="stylesheet" href="newspaw-test://fixture/style.css">
 </head>
 <body>

@@ -36,6 +36,15 @@ final class TranslationService: ModelHTTP {
 
     private let state = Mutex(State())
     private let rule: Mutex<Rule>
+
+    /// Requests held until released by number (the first is 1).
+    private struct Holds {
+        var held: Set<Int> = []
+        var released: Set<Int> = []
+        var waiting: [Int: CheckedContinuation<Void, Never>] = [:]
+    }
+
+    private let holds = Mutex(Holds())
     /// How long each request takes.
     let delay: Duration
 
@@ -46,6 +55,22 @@ final class TranslationService: ModelHTTP {
 
     func answer(with rule: @escaping Rule) {
         self.rule.withLock { $0 = rule }
+    }
+
+    /// Request `number` waits, once it has arrived, until `release(_:)` or
+    /// until its task is cancelled (it then throws `CancellationError`, as
+    /// a cancelled request does). Tests that need a request in flight hold
+    /// it instead of giving it a delay that a slow runner could outlast.
+    func hold(request number: Int) {
+        holds.withLock { _ = $0.held.insert(number) }
+    }
+
+    func release(request number: Int) {
+        let waiting = holds.withLock { holds in
+            holds.released.insert(number)
+            return holds.waiting.removeValue(forKey: number)
+        }
+        waiting?.resume()
     }
 
     /// "T:" before each text.
@@ -81,6 +106,23 @@ final class TranslationService: ModelHTTP {
             return state.requests.count
         }
         defer { state.withLock { $0.inFlight -= 1 } }
+        if holds.withLock({ $0.held.contains(number) }) {
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    let now = holds.withLock { holds in
+                        guard !holds.released.contains(number) else { return true }
+                        holds.waiting[number] = continuation
+                        return false
+                    }
+                    if now {
+                        continuation.resume()
+                    }
+                }
+            } onCancel: {
+                release(request: number)
+            }
+            try Task.checkCancellation()
+        }
         if delay > .zero {
             try await Task.sleep(for: delay)
         } else {
@@ -98,6 +140,54 @@ final class TranslationService: ModelHTTP {
             return ModelHTTPResponse(status: status, headers: [:], body: Data(#"{"error":{"message":"stub"}}"#.utf8))
         case .failure(let failure):
             throw failure
+        }
+    }
+}
+
+/// Holds the translator at one of its suspension points
+/// (`TitleTranslator.SuspensionPoint`), the first time it gets there, until
+/// the test releases it: the race tests hold an interleaving instead of
+/// sleeping for it.
+final class SuspensionGate: Sendable {
+    typealias Point = TitleTranslator.SuspensionPoint
+
+    private struct State {
+        var held: Set<Point> = []
+        var reached: Set<Point> = []
+        var released: Set<Point> = []
+        var waiting: [Point: CheckedContinuation<Void, Never>] = [:]
+    }
+
+    private let state = Mutex(State())
+
+    func hold(_ point: Point) {
+        state.withLock { _ = $0.held.insert(point) }
+    }
+
+    func reached(_ point: Point) -> Bool {
+        state.withLock { $0.reached.contains(point) }
+    }
+
+    func release(_ point: Point) {
+        let waiting = state.withLock { state in
+            state.released.insert(point)
+            return state.waiting.removeValue(forKey: point)
+        }
+        waiting?.resume()
+    }
+
+    /// The translator's hook.
+    func arrive(_ point: Point) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let now = state.withLock { state in
+                state.reached.insert(point)
+                guard state.held.contains(point), !state.released.contains(point) else { return true }
+                state.waiting[point] = continuation
+                return false
+            }
+            if now {
+                continuation.resume()
+            }
         }
     }
 }
@@ -314,14 +404,19 @@ final class TranslatorFixture: @unchecked Sendable {
         await translator.settled()
     }
 
-    /// Waits, five seconds at most, until `condition` holds: for what the
+    /// How long `eventually` waits at most: a bound a stalled runner does
+    /// not reach (CI saw a first request take over five seconds); a passing
+    /// test returns as soon as its condition holds.
+    static let eventualBound = Duration.seconds(120)
+
+    /// Waits, `eventualBound` at most, until `condition` holds: for what the
     /// translator does from a task of its own (a pause's timer, a request
-    /// that is being cancelled).
+    /// that is being cancelled, the first request after `configure`).
     func eventually(_ condition: @escaping () async throws -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async rethrows {
-        let deadline = ContinuousClock.now + .seconds(5)
+        let deadline = ContinuousClock.now + Self.eventualBound
         while try await !condition() {
             guard ContinuousClock.now < deadline else {
-                Issue.record("the condition did not hold within five seconds", sourceLocation: sourceLocation)
+                Issue.record("the condition did not hold within \(Self.eventualBound)", sourceLocation: sourceLocation)
                 return
             }
             try? await Task.sleep(for: .milliseconds(5))

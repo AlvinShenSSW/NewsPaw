@@ -41,14 +41,20 @@ public actor BodyImageLoader {
 
     private let transport: any Transport
     private let cache: ImageCache
+    /// Whether a fetched image is kept in the cache: false for a body that
+    /// is not stored itself, reader mode's temporary article (RD12
+    /// decision 7), which writes nothing. Such a loader still answers from
+    /// what the cache already holds.
+    private let stores: Bool
     private var freeSlots: Int
     /// Requests waiting for a slot, first come first served.
     private var waiters: [(id: Int, continuation: CheckedContinuation<Bool, Never>)] = []
     private var nextWaiter = 0
 
-    public init(transport: any Transport, cache: ImageCache, limit: Int = standardLimit) {
+    public init(transport: any Transport, cache: ImageCache, limit: Int = standardLimit, stores: Bool = true) {
         self.transport = transport
         self.cache = cache
+        self.stores = stores
         freeSlots = max(1, limit)
     }
 
@@ -118,7 +124,9 @@ public actor BodyImageLoader {
         guard !Task.isCancelled else { return .cancelled }
         guard let image = await Self.reduce(response.body) else { return .failed }
         guard !Task.isCancelled else { return .cancelled }
-        await cache.store(image, for: key)
+        if stores {
+            await cache.store(image, for: key)
+        }
         return .image(image)
     }
 

@@ -140,6 +140,14 @@ public actor TitleTranslator {
 
     private var pause: Pause?
     private var pauseGeneration = 0
+    /// Counts the slot changes this translator was told of: a failure of
+    /// the model (set-up, content or service) to a request sent before the
+    /// latest one belongs to the old slots and is dropped
+    /// (`Attempt.superseded`).
+    private var slotsGeneration = 0
+    /// Counts the passes started: a pass whose candidates come back after a
+    /// newer one started (a changed language, a later trigger) is dropped.
+    private var passGeneration = 0
     private var pauseTimer: Task<Void, Never>?
     /// Passes and slot reads started and not ended.
     private var sideWork = 0
@@ -221,6 +229,7 @@ public actor TitleTranslator {
                 return
             }
         case .slotsChanged:
+            slotsGeneration += 1
             endPause()
         case .localeChanged, .automaticTurnedOn:
             break
@@ -280,9 +289,15 @@ public actor TitleTranslator {
 
     private func runPass() async {
         guard !isStopped, let configuration else { return }
+        passGeneration += 1
+        let generation = passGeneration
+        await suspend(.passCandidates(configuration.locale))
         guard let candidates = try? await library.translationPassCandidates(
             locale: configuration.locale, automatic: configuration.automatic
         ) else { return }
+        // A newer pass has filled the queue since this one began: its
+        // candidates (of an older language, perhaps) would replace it.
+        guard generation == passGeneration, !isStopped else { return }
         let queued = Set(screenQueue).union(taken)
         passQueue = candidates.filter { !queued.contains($0) }
         deferredPass += candidates.filter { taken.contains($0) && !deferredPass.contains($0) }
@@ -325,9 +340,17 @@ public actor TitleTranslator {
         resumeWork()
     }
 
-    private func pauseForSetUp(_ block: TranslationBlock) async {
+    /// A set-up failure: the articles are blocked and sending pauses until
+    /// the slots, as read now, change. A slot change during that read
+    /// supersedes the failure: nothing is blocked or paused, and the
+    /// articles wait (the change asked for them again).
+    private func setUpFailed(_ ids: [UUID], _ failure: ModelFailure) async {
+        let generation = slotsGeneration
+        await suspend(.setUpSlots)
         let slots = try? await library.modelSlots()
-        pause = .setUp(block, slots: slots)
+        guard generation == slotsGeneration, !isStopped else { return }
+        block(ids, .setUp(failure))
+        pause = .setUp(.setUp(failure), slots: slots)
         pauseTimer?.cancel()
         pauseTimer = nil
     }
@@ -502,7 +525,9 @@ public actor TitleTranslator {
     /// How one request ended.
     private enum Attempt {
         case accepted([String], model: String)
-        case content(TranslationFailure)
+        /// A content failure, with the name of the model that was called
+        /// (stored with the failed rows; decision 2).
+        case content(TranslationFailure, model: String?)
         case service(ModelFailure)
         case setUp(ModelFailure)
         /// The day's automatic requests are at the limit: nothing was sent.
@@ -510,15 +535,24 @@ public actor TitleTranslator {
         /// The day's count could not be read: nothing was sent.
         case storage
         case cancelled
+        /// A set-up, content or service failure that came back after the
+        /// slots changed: it belongs to the old slots, so nothing is stored,
+        /// blocked, paused or sent to the backup, and the articles wait (the
+        /// change asked for them again). An accepted reply of the old slots
+        /// is still stored: it is good text.
+        case superseded
     }
 
     /// An automatic batch through decision 6.
     private func sendAutomatic(_ batch: [Prepared], locale: ReadingLocale) async {
+        // A batch failed wholly pauses sending only if the slots did not
+        // change while it was sent and its failures stored.
+        let generation = slotsGeneration
         let first = await attempt(batch, role: .primary, automatic: true, locale: locale)
         switch first {
         case .accepted(let entries, let model):
             await storeAccepted(batch, entries: entries, model: model, locale: locale, automatic: true)
-        case .cancelled:
+        case .cancelled, .superseded:
             return
         case .limit:
             block(batch.map(\.id), .dailyLimit)
@@ -526,10 +560,10 @@ public actor TitleTranslator {
             block(batch.map(\.id), .storage)
             pauseForService(.storage)
         case .setUp(let failure):
-            block(batch.map(\.id), .setUp(failure))
-            await pauseForSetUp(.setUp(failure))
+            await setUpFailed(batch.map(\.id), failure)
         case .service(let failure):
-            if case .failed(let reason) = await sendToBackup(batch, after: failure, locale: locale, automatic: true), pause == nil {
+            if case .failed(let reason) = await sendToBackup(batch, after: failure, locale: locale, automatic: true), pause == nil,
+               generation == slotsGeneration {
                 pauseForService(.failedBatch(reason))
             }
         case .content:
@@ -547,8 +581,8 @@ public actor TitleTranslator {
                 switch await attempt(part, role: .primary, automatic: true, locale: locale) {
                 case .accepted(let entries, let model):
                     await storeAccepted(part, entries: entries, model: model, locale: locale, automatic: true)
-                case .content(let failure):
-                    if await storeFailed(part, failure: failure, locale: locale, automatic: true) {
+                case .content(let failure, let model):
+                    if await storeFailed(part, failure: failure, model: model, locale: locale, automatic: true) {
                         failed += part.count
                         lastFailure = failure
                     }
@@ -558,8 +592,7 @@ public actor TitleTranslator {
                         lastFailure = reason
                     }
                 case .setUp(let failure):
-                    block(part.map(\.id), .setUp(failure))
-                    await pauseForSetUp(.setUp(failure))
+                    await setUpFailed(part.map(\.id), failure)
                 case .limit:
                     block(part.map(\.id), .dailyLimit)
                 case .storage:
@@ -567,10 +600,12 @@ public actor TitleTranslator {
                     pauseForService(.storage)
                 case .cancelled:
                     return
+                case .superseded:
+                    continue
                 }
             }
             // A model that fails everything is tried a batch at a time.
-            if failed == batch.count, pause == nil {
+            if failed == batch.count, pause == nil, generation == slotsGeneration {
                 pauseForService(.failedBatch(lastFailure))
             }
         }
@@ -581,6 +616,8 @@ public actor TitleTranslator {
         case stored
         case failed(TranslationFailure)
         case notStored
+        /// The slots changed meanwhile: nothing stored, blocked or paused.
+        case superseded
     }
 
     /// After a service failure of the primary: once to a usable backup,
@@ -589,7 +626,12 @@ public actor TitleTranslator {
     /// primary's reason and, when automatic, sending pauses.
     private func sendToBackup(_ part: [Prepared], after failure: ModelFailure, locale: ReadingLocale, automatic: Bool) async -> BackupEnd {
         let ids = part.map(\.id)
-        guard await hasUsableBackup() else {
+        let generation = slotsGeneration
+        await suspend(.backupCheck)
+        let usable = await hasUsableBackup()
+        // A slot change during the check supersedes the primary's failure.
+        guard generation == slotsGeneration else { return .superseded }
+        guard usable else {
             block(ids, .service(failure))
             if automatic {
                 pauseForService(.service(failure))
@@ -598,10 +640,11 @@ public actor TitleTranslator {
         }
         switch await attempt(part, role: .backup, automatic: automatic, locale: locale) {
         case .accepted(let entries, let model):
-            await storeAccepted(part, entries: entries, model: model, locale: locale, automatic: automatic)
-            return .stored
-        case .content(let reason):
-            return await storeFailed(part, failure: reason, locale: locale, automatic: automatic) ? .failed(reason) : .notStored
+            // Not stored: the articles are blocked for storage (and, when
+            // automatic, sending pauses) by `storeAccepted`.
+            return await storeAccepted(part, entries: entries, model: model, locale: locale, automatic: automatic) ? .stored : .notStored
+        case .content(let reason, let model):
+            return await storeFailed(part, failure: reason, model: model, locale: locale, automatic: automatic) ? .failed(reason) : .notStored
         case .service, .setUp:
             block(ids, .service(failure))
             if automatic {
@@ -619,6 +662,8 @@ public actor TitleTranslator {
             return .notStored
         case .cancelled:
             return .notStored
+        case .superseded:
+            return .superseded
         }
     }
 
@@ -643,6 +688,14 @@ public actor TitleTranslator {
             }
         }
         guard !Task.isCancelled else { return .cancelled }
+        // Before sending: the slots' generation, and the name of the model
+        // the slot names, for a failed row (the reply carries it otherwise).
+        let generation = slotsGeneration
+        let slotModel: String? = if let slot = try? await library.modelSlot(role), case .success(let name) = ModelName.validate(slot.model) {
+            name
+        } else {
+            nil
+        }
         let texts = articles.flatMap(\.texts)
         report(.requesting(Set(articles.map(\.id))))
         defer { report(.requesting([])) }
@@ -654,16 +707,19 @@ public actor TitleTranslator {
         } catch is CancellationError {
             return .cancelled
         } catch let failure as ModelFailure {
+            let superseded = slotsGeneration != generation
             switch failure {
-            case .refused: return .content(.refused)
-            case .cutOff: return .content(.cutOff)
-            case .malformed: return .content(.malformed)
-            case .badRequest: return .content(.badRequest)
-            case .limited, .serverError, .unreachable: return .service(failure)
-            case .noModelSetUp, .keyNeeded, .keyRejected, .modelNotFound: return .setUp(failure)
+            case .refused: return superseded ? .superseded : .content(.refused, model: slotModel)
+            case .cutOff: return superseded ? .superseded : .content(.cutOff, model: slotModel)
+            case .malformed: return superseded ? .superseded : .content(.malformed, model: slotModel)
+            case .badRequest: return superseded ? .superseded : .content(.badRequest, model: slotModel)
+            case .limited, .serverError, .unreachable: return superseded ? .superseded : .service(failure)
+            case .noModelSetUp, .keyNeeded, .keyRejected, .modelNotFound: return superseded ? .superseded : .setUp(failure)
             }
         } catch {
-            // The slot could not be read.
+            // The slot could not be read, or the usage row of this automatic
+            // request could not be written (`UsageNotRecorded`): the count
+            // of the daily limit cannot be trusted, so sending pauses.
             return .storage
         }
         if Task.isCancelled {
@@ -671,7 +727,7 @@ public actor TitleTranslator {
         }
         switch TranslationAcceptance.check(originals: texts, reply: reply) {
         case .success(let entries): return .accepted(entries, model: reply.model)
-        case .failure(let failure): return .content(failure)
+        case .failure(let failure): return slotsGeneration != generation ? .superseded : .content(failure, model: reply.model)
         }
     }
 
@@ -701,10 +757,13 @@ public actor TitleTranslator {
     }
 
     @discardableResult
-    private func storeFailed(_ part: [Prepared], failure: TranslationFailure, locale: ReadingLocale, automatic: Bool) async -> Bool {
+    private func storeFailed(
+        _ part: [Prepared], failure: TranslationFailure, model: String?, locale: ReadingLocale, automatic: Bool
+    ) async -> Bool {
         let records = part.map { article in
-            TranslationRecord(articleID: article.id, locale: locale, state: .failed, title: nil, excerpt: nil, failure: failure, model: nil)
+            TranslationRecord(articleID: article.id, locale: locale, state: .failed, title: nil, excerpt: nil, failure: failure, model: model)
         }
+        await suspend(.failedRowsWrite)
         return await storeOrBlock(records, automatic: automatic)
     }
 
@@ -772,43 +831,47 @@ public actor TitleTranslator {
             case .accepted(let entries, let model):
                 return await storeAccepted(article, entries: entries, model: model, locale: locale, automatic: false)
                     ? succeeded() : .notStored(.storage)
-            case .content(let failure):
-                return await storeFailed(article, failure: failure, locale: locale, automatic: false) ? .stored : .notStored(.storage)
+            case .content(let failure, let model):
+                return await storeFailed(article, failure: failure, model: model, locale: locale, automatic: false)
+                    ? .stored : .notStored(.storage)
             case .service(let failure):
                 return .notStored(.service(failure))
             case .setUp(let failure):
                 return .notStored(.setUp(failure))
             case .storage, .limit:
                 return .notStored(.storage)
-            case .cancelled:
+            case .cancelled, .superseded:
                 return .cancelled
             }
         }
         // The primary, with its own retry and its own backup attempt.
         var lastContent: TranslationFailure?
+        var lastModel: String?
         for _ in 0..<2 {
             switch await attempt(article, role: .primary, automatic: false, locale: locale) {
             case .accepted(let entries, let model):
                 return await storeAccepted(article, entries: entries, model: model, locale: locale, automatic: false)
                     ? succeeded() : .notStored(.storage)
-            case .content(let failure):
+            case .content(let failure, let model):
                 lastContent = failure
+                lastModel = model
                 continue
             case .service(let failure):
                 switch await sendToBackup(article, after: failure, locale: locale, automatic: false) {
                 case .stored: return succeeded()
                 case .failed: return .stored
                 case .notStored: return .notStored(blocked[input.id] ?? .service(failure))
+                case .superseded: return .cancelled
                 }
             case .setUp(let failure):
                 return .notStored(.setUp(failure))
             case .storage, .limit:
                 return .notStored(.storage)
-            case .cancelled:
+            case .cancelled, .superseded:
                 return .cancelled
             }
         }
-        return await storeFailed(article, failure: lastContent ?? .malformed, locale: locale, automatic: false)
+        return await storeFailed(article, failure: lastContent ?? .malformed, model: lastModel, locale: locale, automatic: false)
             ? .stored : .notStored(.storage)
     }
 
@@ -833,6 +896,32 @@ public actor TitleTranslator {
 
     // MARK: - For the tests
 
+    /// Where the race tests hold the translator: just before the `await`
+    /// whose window they test. Nothing holds it in the app.
+    enum SuspensionPoint: Sendable, Hashable {
+        /// A pass is about to read its candidates.
+        case passCandidates(ReadingLocale)
+        /// A set-up failure is about to read the slots for its pause.
+        case setUpSlots
+        /// A service failure is about to look for a usable backup.
+        case backupCheck
+        /// Failed rows are about to be written.
+        case failedRowsWrite
+    }
+
+    private var suspensionHook: (@Sendable (SuspensionPoint) async -> Void)?
+
+    /// Sets the hook the race tests hold the translator with.
+    func setSuspensionHook(_ hook: @escaping @Sendable (SuspensionPoint) async -> Void) {
+        suspensionHook = hook
+    }
+
+    private func suspend(_ point: SuspensionPoint) async {
+        if let suspensionHook {
+            await suspensionHook(point)
+        }
+    }
+
     /// Returns once nothing is queued, no worker or pass is running and
     /// every event has been reported. A pause's timer does not count.
     func settled() async {
@@ -849,6 +938,11 @@ public actor TitleTranslator {
     /// Whether automatic sending is paused, and why.
     var pausedBy: TranslationBlock? {
         pause?.block
+    }
+
+    /// Passes and slot reads running now.
+    var sideWorkRunning: Int {
+        sideWork
     }
 
     // MARK: - Reporting

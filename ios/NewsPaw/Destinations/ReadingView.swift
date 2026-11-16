@@ -112,6 +112,11 @@ private struct ArticleScreen: View {
             .frame(maxWidth: .infinity)
         }
         .modifier(ReaderPosition(articleID: row.id, reading: reading))
+        // A body replaced by the article's page (RD12) starts at the top,
+        // header and all: the scroll view and its position are made anew.
+        // (Kept, the position would hold the old body's block at the top
+        // of the screen, and the new body's block of that number with it.)
+        .id(reading.replacements[row.id] ?? 0)
         .articleSwipes(
             layoutDirection: layoutDirection,
             next: { Task { await reading.openNext(on: list) } },
@@ -128,6 +133,7 @@ private struct ArticleScreen: View {
         }
         .onDisappear {
             reading.readingScreenClosed(row.id)
+            translation?.articleClosed(row.id)
         }
     }
 
@@ -175,10 +181,10 @@ private struct ArticleScreen: View {
     private var articleBody: some View {
         switch reading.bodies[row.id] {
         case .loaded(let content):
-            BlocksView(blocks: content.blocks, settings: settings, images: content.images) { url in
-                // In the embedded browser above the article, never Safari.
-                navigation.openPage(url, on: list)
+            if content.isExtracted {
+                note(Text("Full text from the original page"), identifier: AccessibilityID.readingFullTextNote)
             }
+            blocks(content)
             if content.isCut {
                 note(
                     row.linkURL == nil
@@ -190,6 +196,22 @@ private struct ArticleScreen: View {
             } else if !content.isFullText {
                 note(Text("Only an excerpt is available"), identifier: AccessibilityID.readingExcerptNote)
                 openOriginalButton
+            }
+        case .fetching(let feed):
+            // Where the full-text line then stands (RD12 decision 4).
+            HStack(spacing: Theme.Spacing.small) {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityHidden(true)
+                Text("Loading the full text…")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(AccessibilityID.readingLoadingNote)
+            if let feed {
+                blocks(feed)
             }
         case .failed:
             note(Text("This article could not be shown."), identifier: AccessibilityID.readingBodyFailed)
@@ -204,6 +226,13 @@ private struct ArticleScreen: View {
             .accessibilityIdentifier(AccessibilityID.readingTryAgainButton)
         case .loading, nil:
             EmptyView()
+        }
+    }
+
+    private func blocks(_ content: ReadingContent) -> some View {
+        BlocksView(blocks: content.blocks, settings: settings, images: content.images) { url in
+            // In the embedded browser above the article, never Safari.
+            navigation.openPage(url, on: list)
         }
     }
 

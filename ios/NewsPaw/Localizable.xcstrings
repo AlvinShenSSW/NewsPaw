@@ -1190,6 +1190,17 @@
         }
       }
     },
+    "Full text from the original page" : {
+      "comment" : "Reading screen, a small line under the header when the body was fetched from the article's web page (RD12).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全文来自原网页"
+          }
+        }
+      }
+    },
     "Game controller" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -1672,6 +1683,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在载入"
+          }
+        }
+      }
+    },
+    "Loading the full text…" : {
+      "comment" : "Reading screen, a small line under the header while the article's web page is being fetched for its full text (RD12).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在载入全文…"
           }
         }
       }
@@ -2437,6 +2459,17 @@
         }
       }
     },
+    "Reader Mode" : {
+      "comment" : "Embedded browser, bottom bar: shows the page's main text as a temporary article (RD12).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "阅读模式"
+          }
+        }
+      }
+    },
     "Reading" : {
       "comment" : "Settings row and the title of its screen: text size, line spacing, typeface.",
       "localizations" : {
@@ -2686,17 +2719,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存为网页"
-          }
-        }
-      }
-    },
-    "Saved now; used once full-text reading is available." : {
-      "comment" : "Source settings footnote under a feed's options.",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "现在先保存，全文阅读可用后生效。"
           }
         }
       }
@@ -3539,6 +3561,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这个链接是一个文件。NewsPaw 不下载文件。"
+          }
+        }
+      }
+    },
+    "This page has no readable article" : {
+      "comment" : "Embedded browser: alert when reader mode finds no article on the page (RD12).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个页面没有可阅读的文章"
           }
         }
       }

@@ -14,6 +14,10 @@ public enum ModelSettingsError: Error, Sendable, Hashable {
     case keyNotRemoved
 }
 
+/// An automatic request was sent and its usage row could not be written
+/// (RD14 decision 8): the daily automatic limit would not count it.
+public struct UsageNotRecorded: Error, Sendable, Hashable {}
+
 /// Whether a saved slot has a usable key (decision 3).
 public enum StoredKeyState: Sendable, Hashable {
     /// "Key needed": no reference, or no item for it.
@@ -287,7 +291,8 @@ public final class LibraryModels: Sendable {
     /// counts.
     ///
     /// - Throws: a `ModelFailure` (`noModelSetUp` and `keyNeeded` without a
-    ///   request or a row), or `CancellationError`.
+    ///   request or a row), `UsageNotRecorded` for an automatic request
+    ///   whose usage row could not be written, or `CancellationError`.
     public func send(
         texts: [String], instructions: String, purpose: UsagePurpose, role: ModelRole, automatic: Bool = false
     ) async throws -> ModelReply {
@@ -351,32 +356,46 @@ public final class LibraryModels: Sendable {
             case .success: .ok
             case .failure(let failure): failure.usageOutcome ?? .malformed
             }
-            await record(
+            let recorded = await record(
                 model: model, purpose: purpose, inputTokens: completion.promptTokens, outputTokens: completion.completionTokens,
                 outcome: outcome, automatic: automatic
             )
+            try Self.requireRecorded(recorded, automatic: automatic)
             return .completion(interpreted)
         case .failure(let failure):
-            await record(model: model, purpose: purpose, outcome: failure.usageOutcome ?? .unreachable, automatic: automatic)
+            let recorded = await record(model: model, purpose: purpose, outcome: failure.usageOutcome ?? .unreachable, automatic: automatic)
+            try Self.requireRecorded(recorded, automatic: automatic)
             return .failed(failure)
+        }
+    }
+
+    /// An automatic request whose usage row could not be written is not
+    /// counted by the daily automatic limit (RD14 decision 8), so it ends
+    /// in `UsageNotRecorded`, which stops automatic work; a request the
+    /// owner asked for goes on as before.
+    private static func requireRecorded(_ recorded: Bool, automatic: Bool) throws {
+        if automatic, !recorded {
+            throw UsageNotRecorded()
         }
     }
 
     /// Writes one usage row from a new unstructured task whose value is
     /// awaited: the database's asynchronous write refuses to start in a
     /// cancelled task, and the row of a cancelled request would otherwise be
-    /// lost. A failure to write is ignored (decision 11).
+    /// lost. A failure to write is ignored (decision 11), except by an
+    /// automatic request (`requireRecorded`); returns whether it was written.
+    @discardableResult
     private func record(
         model: String, purpose: UsagePurpose, inputTokens: Int? = nil, outputTokens: Int? = nil, outcome: UsageOutcome,
         automatic: Bool
-    ) async {
+    ) async -> Bool {
         let library = library
         let row = UsageRecord(
             id: UUID(), model: model, purpose: purpose, inputTokens: inputTokens, outputTokens: outputTokens, outcome: outcome,
             at: library.now(), automatic: automatic
         )
-        await Task {
-            try? await library.insertUsage(row)
+        return await Task {
+            (try? await library.insertUsage(row)) != nil
         }.value
     }
 

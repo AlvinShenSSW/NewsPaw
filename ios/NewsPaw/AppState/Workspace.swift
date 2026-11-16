@@ -1,5 +1,6 @@
 import Foundation
 import NewsPawKit
+import UIKit
 import WebKit
 
 /// What every workspace of the app is built with: the transport, the clock,
@@ -77,11 +78,23 @@ final class Workspace: Identifiable {
             library: library, transport: parts.transport, candidateLimit: parts.candidateLimit,
             navigation: navigation, categories: categories, refresh: refresh
         )
+        // The workspace's one extractor (RD12): its reading model and its
+        // browser's reader mode share it, so that one extraction runs at a
+        // time per workspace.
+        let extractor = PageExtractor()
         let reading = ReadingModel(
-            library: library, transport: parts.transport, navigation: navigation, sources: sources, refresh: refresh
+            library: library, transport: parts.transport, extractor: extractor, now: parts.now,
+            isInFront: { UIApplication.shared.applicationState == .active },
+            navigation: navigation, sources: sources, refresh: refresh
         )
         let browser = BrowserModel(
             dataStore: setup.dataStore, navigation: navigation, sources: sources,
+            // Reader mode's images are fetched like a body's and not kept:
+            // a temporary article writes nothing (RD12 decision 7).
+            reader: BrowserReader(
+                transport: parts.transport, extractor: extractor,
+                images: BodyImageLoader(transport: parts.transport, cache: library.imageCache, stores: false)
+            ),
             addressMap: setup.addressMap, schemeHandlers: setup.schemeHandlers,
             allowsPictureInPicture: setup.allowsPictureInPicture
         )
@@ -103,6 +116,7 @@ final class Workspace: Identifiable {
             reading?.runEnded()
             translation?.refreshEnded()
         }
+        sources.onSettingsSaved = { [weak reading] in reading?.sourceSettingsSaved() }
         navigation.onListEntered = { [weak reading] list in reading?.entered(list) }
         navigation.isWebPageSource = { [weak sources] id in sources?.summary(id)?.kind == .webpage }
         navigation.onStacksChanged = { [weak browser] in browser?.stacksChanged() }
@@ -130,12 +144,14 @@ final class Workspace: Identifiable {
 
     /// The workspace is dropped (RD18 decision 4), before its library is
     /// closed: its refresh run and its source detection are cancelled, a
-    /// running model test is cancelled, the reading model's body reads and
-    /// conversions are cancelled and it starts no new one and asks for no
-    /// body image, and its browser sessions are ended with their web views
-    /// taken out of the view tree; its translation's request in flight is
-    /// cancelled and none starts; its usage screen keeps no result of a
-    /// read or a write in flight and starts none. Image loads belong to the rows' own
+    /// running model test is cancelled, the reading model's body reads,
+    /// conversions, page fetches and extractions are cancelled and it
+    /// starts no new one, stores no extraction and asks for no body image,
+    /// and its browser sessions are ended with their web views taken out
+    /// of the view tree and their reader mode with them; its translation's
+    /// request in flight is cancelled and none starts; its usage screen
+    /// keeps no result of a read or a write in flight and starts none.
+    /// Image loads belong to the rows' own
     /// tasks and end with the views. A save that is still
     /// queued is not cancelled: it runs into the closed library, fails,
     /// and says so nowhere, because a stopped model raises no alert. UIKit

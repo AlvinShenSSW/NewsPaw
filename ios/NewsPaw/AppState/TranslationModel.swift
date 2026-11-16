@@ -51,6 +51,9 @@ final class TranslationModel {
     var question: TranslationQuestion?
 
     let settings: TranslationSettings
+    /// The "translate titles" setting of a source, by its identifier, as
+    /// the workspace's source list holds it (set by the workspace).
+    @ObservationIgnored var autoTranslateOfSource: (@MainActor (UUID) -> AutoTranslate?)?
 
     @ObservationIgnored private let translator: TitleTranslator
     @ObservationIgnored private let models: LibraryModels
@@ -95,6 +98,11 @@ final class TranslationModel {
     /// The mark of an article's row, from its stored state and this model.
     /// A library with no model set up marks its waiting rows too, whose
     /// question says so and opens Settings (spec N01; RD21 decision 7).
+    /// Every block comes from automatic sending, so a row whose title is not
+    /// translated automatically — the global switch off, or its source set
+    /// not to translate — shows none: the translator keeps a block of a row
+    /// on screen until it is asked again with automatic sending on, and it
+    /// shows again then (RD21 fix round 1).
     func mark(for row: ArticleRow) -> TranslationMark? {
         if inRequest.contains(row.id) || retrying.contains(row.id) {
             return .working
@@ -106,10 +114,18 @@ final class TranslationModel {
         // row with its translation in that language was not stopped by it
         // (a block of a request begun before the language was switched
         // back can arrive after the switch). A stored failure is shown above.
-        if row.translation == nil, let block = blocked[row.id] {
+        if row.translation == nil, let block = blocked[row.id], translatesAutomatically(row) {
             return .warning(.blocked(row.id, block))
         }
         return nil
+    }
+
+    /// Whether the row's title is translated without the owner asking: its
+    /// source's setting over the global switch. Read in the row's body, so
+    /// a change of either redraws the row at once.
+    private func translatesAutomatically(_ row: ArticleRow) -> Bool {
+        let setting = autoTranslateOfSource?(row.sourceID) ?? .inherit
+        return Library.translatesAutomatically(setting, automatic: settings.translatesTitlesAutomatically)
     }
 
     // MARK: - Rows on screen (decision 7)

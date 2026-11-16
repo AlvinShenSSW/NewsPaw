@@ -343,7 +343,16 @@ final class ReadingModel {
     func readerMoved(to block: Int?, in id: UUID) {
         guard bodies[id] != nil else { return }
         positions[id] = block
+        #if DEBUG
+        lastReportedPosition = block
+        #endif
     }
+
+    #if DEBUG
+    /// The block the reading screen last reported at its top, for the UI
+    /// tests' report (RD15 criterion 7).
+    @ObservationIgnored private(set) var lastReportedPosition: Int?
+    #endif
 
     /// Reads and converts the feed's body, then follows the body plan
     /// (RD12 decision 4): the feed's content; or a usable stored

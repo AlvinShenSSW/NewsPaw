@@ -87,12 +87,13 @@ final class BodyTranslationModeTests: BodyTranslationTestCase {
         for mode in ["original", "translation", "side_by_side", "translation", "side_by_side", "original"] {
             let top = topBlock()
             let index = top.index ?? 0
+            let reported = reportedBlock
             chooseMode(mode)
             Thread.sleep(forTimeInterval: 1)
             let (translation, original) = positions(of: index)
             let drift = min(abs(translation - top.minY), abs(original - top.minY))
             record("A3 switch to \(mode)", "block \(index) from \(top.minY) to translation \(translation), original \(original); "
-                + "top block now \(topBlock().index ?? -1)")
+                + "top block now \(topBlock().index ?? -1); the screen's stored position \(reported) before, \(reportedBlock) after")
             XCTAssertLessThanOrEqual(drift, lineHeight, "the switch to \(mode) moved block \(index): \(translation), \(original), was \(top.minY)")
         }
     }

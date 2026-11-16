@@ -61,6 +61,11 @@ class BodyTranslationTestCase: TranslationTestCase {
         return Int(match.1) ?? -2
     }
 
+    /// The block the reading screen last reported at its top.
+    var reportedBlock: String {
+        report.firstMatch(of: /readerBlock=(\S+)/).map { String($0.1) } ?? "?"
+    }
+
     /// The requests the translator fixture has answered in this launch.
     var translatorRequests: Int {
         guard let match = report.firstMatch(of: /translationRequests=(-?\d+)/) else { return -2 }

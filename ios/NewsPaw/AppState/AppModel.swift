@@ -743,7 +743,8 @@ final class AppModel {
             + "browser=\(state(lastAdultBrowser)) sessions=\(BrowserModel.sessionsMade) "
             + "pages=\((parts?.transport as? FixtureTransport)?.pageRequests ?? -1) "
             + "translationRequests=\(FixtureModelHTTP.translationRequests) "
-            + "bodyRequests=\((try? await normal?.reading.library.usageCount(purpose: .body)) ?? -1)"
+            + "bodyRequests=\((try? await normal?.reading.library.usageCount(purpose: .body)) ?? -1) "
+            + "readerBlock=\(normal?.reading.lastReportedPosition.map(String.init) ?? "none")"
     }
     #endif
 }

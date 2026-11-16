@@ -292,6 +292,31 @@ final class BodyTranslationTests: BodyTranslationTestCase {
         expectBodyRequests(firstOpening + (firstOpening - afterArticle), "opened again: translated again")
     }
 
+    /// Review R2 (fix round 1): an excerpt put in as the body is pre-filled
+    /// from RD14's row of the opening's own language. After a change to
+    /// Japanese the open article never shows the Chinese excerpt as its
+    /// body; it shows the Japanese one, pre-filled or sent. (Which of the
+    /// two depends on whether RD14's Japanese row is stored before the
+    /// body is planned; the ordering the review describes cannot be held
+    /// from a UI test.)
+    func testExcerptBodyFollowsTheReadingLanguage() {
+        launchWithBodies()
+        openBody(Body.excerptOnly)
+        waitForBlock(0, Translation.translated(Body.excerptOnlyText))
+        // Pre-filled from RD14's row: nothing sent for the body.
+        expectBodyRequests(0, "the excerpt is RD14's translation")
+        openTranslationSettings()
+        option("Japanese").tap()
+        let chosen = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: option("Japanese"))
+        XCTAssertEqual(XCTWaiter.wait(for: [chosen], timeout: timeout), .completed)
+        openCategoryList(Body.category)
+        chooseFilter("All")
+        openBody(Body.excerptOnly)
+        waitForBlock(0, Translation.translated(Body.excerptOnlyText, "ja"))
+        XCTAssertFalse(block(at: 0).label.contains("译[zh-Hans]"), block(at: 0).label)
+        record("R2 body requests after the change", "\(bodyRequests)")
+    }
+
     /// Criterion 17: changing the reading language shows nothing of the
     /// old one and translates the open article in the new one.
     func testReadingLanguageChange() {

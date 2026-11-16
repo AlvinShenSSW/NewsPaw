@@ -86,6 +86,15 @@ final class BodyTranslationModel {
         var generation = 0
         /// The texts filled from RD14's excerpt translation.
         var prefilled: Set<String> = []
+        /// RD14's row of the article in this opening's language, read from
+        /// the library with the plan; `nil` when there is none (the title
+        /// waits).
+        var titleRow: StoredTranslation?
+        /// The screen went and its job's cancellation was sent.
+        var cancelSent = false
+        /// The screen came back before that job's end arrived: work starts
+        /// again under decision 5 when it does.
+        var resumeWhenEnded = false
     }
 
     struct Detail: Equatable {
@@ -106,13 +115,12 @@ final class BodyTranslationModel {
     /// the order they were made.
     @ObservationIgnored private var calls: Task<Void, Never>?
     @ObservationIgnored private var isStopped = false
+    /// Counts the plans made in this model, for every body: a dropped
+    /// opening's late events cannot match a new opening's plan.
+    @ObservationIgnored private var plans = 0
 
     /// The display mode a new opening starts in: Settings › Reading's.
     @ObservationIgnored var defaultMode: @MainActor () -> ReadingDisplayMode = { .standard }
-    /// The open article's RD14 row in the reading language, as the reading
-    /// model holds it: whether its title waits, and its excerpt's
-    /// translation for the pre-fill.
-    @ObservationIgnored var titleTranslation: @MainActor (UUID) -> (waiting: Bool, translation: StoredTranslation?)? = { _ in nil }
     /// Translates a waiting title with the body (decision 10).
     @ObservationIgnored var translateTitle: @MainActor (UUID) -> Void = { _ in }
 
@@ -162,7 +170,7 @@ final class BodyTranslationModel {
         let previous = openings[key]
         openings[key] = Opening(
             blocks: blocks, title: title, isExcerptFallback: isExcerptFallback, locale: settings.readingLocale,
-            mode: previous?.mode ?? defaultMode(), ownerStarted: previous?.ownerStarted ?? false, generation: previous?.generation ?? 0
+            mode: previous?.mode ?? defaultMode(), ownerStarted: previous?.ownerStarted ?? false
         )
         plan(key)
     }
@@ -170,6 +178,8 @@ final class BodyTranslationModel {
     private func drop(_ key: BodyKey) {
         cancelJob(of: key)
         openings[key] = nil
+        // Its jobs' late events match nothing.
+        jobs = jobs.filter { $0.value.key != key }
     }
 
     /// Plans the body in the reading language off the main actor, reads
@@ -178,7 +188,8 @@ final class BodyTranslationModel {
     private func plan(_ key: BodyKey) {
         guard var opening = openings[key] else { return }
         let locale = settings.readingLocale
-        opening.generation += 1
+        plans += 1
+        opening.generation = plans
         opening.locale = locale
         opening.plan = nil
         opening.done = [:]
@@ -188,6 +199,7 @@ final class BodyTranslationModel {
         opening.stop = nil
         opening.lastEnd = nil
         opening.retrying = []
+        opening.titleRow = nil
         let generation = opening.generation
         let blocks = opening.blocks
         let title = opening.title
@@ -196,16 +208,22 @@ final class BodyTranslationModel {
         Task {
             let plan = await Self.makePlan(blocks, title: title, locale: locale)
             var stored: [String: StoredBodyText] = [:]
+            var titleRow: StoredTranslation?
             var readFailed = false
             if let article = key.article {
                 do {
                     stored = try await translator.storedTexts(ofArticle: article, locale: locale)
+                    // RD14's row in this opening's own language, from the
+                    // library: the reading model's copy may still be the
+                    // old language's after a change.
+                    titleRow = try await translator.titleTranslation(ofArticle: article, locale: locale)
                 } catch {
                     readFailed = true
                 }
             }
             guard !isStopped, var opening = openings[key], opening.generation == generation else { return }
             opening.plan = plan
+            opening.titleRow = titleRow
             let sent = plan.sentHashes
             for (hash, row) in stored where sent.contains(hash) {
                 switch row.state {
@@ -220,9 +238,8 @@ final class BodyTranslationModel {
             }
             // The excerpt's translation stands for the excerpt put in as
             // the body (nothing is sent or written for it).
-            if opening.isExcerptFallback, sent.count == 1, let hash = sent.first, opening.done[hash] == nil, let article = key.article,
-               let translation = titleTranslation(article)?.translation, translation.state == .done,
-               let excerpt = translation.excerpt, !excerpt.isEmpty {
+            if opening.isExcerptFallback, sent.count == 1, let hash = sent.first, opening.done[hash] == nil,
+               let translation = titleRow, translation.state == .done, let excerpt = translation.excerpt, !excerpt.isEmpty {
                 opening.done[hash] = excerpt
                 opening.failed[hash] = nil
                 opening.prefilled.insert(hash)
@@ -246,7 +263,12 @@ final class BodyTranslationModel {
 
     func screenAppeared(_ key: BodyKey) {
         appearances[key, default: 0] += 1
-        if appearances[key] == 1 {
+        guard appearances[key] == 1 else { return }
+        if let opening = openings[key], opening.job != nil, opening.cancelSent {
+            // Back before the cancellation sent when the screen went has
+            // ended: the work starts again when that end arrives.
+            openings[key]?.resumeWhenEnded = true
+        } else {
             startIfDue(key)
         }
     }
@@ -256,8 +278,10 @@ final class BodyTranslationModel {
     func screenDisappeared(_ key: BodyKey) {
         let left = appearances[key, default: 1] - 1
         appearances[key] = left > 0 ? left : nil
-        if left <= 0 {
+        if left <= 0, openings[key]?.job != nil {
             cancelJob(of: key)
+            openings[key]?.cancelSent = true
+            openings[key]?.resumeWhenEnded = false
         }
     }
 
@@ -271,6 +295,9 @@ final class BodyTranslationModel {
     /// work in this opening.
     private func startIfDue(_ key: BodyKey) {
         guard !isStopped, isShown(key), let opening = openings[key], let plan = opening.plan, opening.job == nil else { return }
+        // After a failed read of the rows nothing starts by itself: what is
+        // stored is not known, and a stored chunk is never sent again.
+        guard opening.stop != .read else { return }
         let waiting = plan.sentHashes.filter { opening.done[$0] == nil && opening.failed[$0] == nil }
         guard !waiting.isEmpty else { return }
         guard settings.translatesBodyOnOpen || !opening.done.isEmpty || opening.ownerStarted else { return }
@@ -284,10 +311,12 @@ final class BodyTranslationModel {
         opening.job = job.id
         opening.stop = nil
         opening.retrying = hashes.intersection(opening.failed.keys)
+        opening.cancelSent = false
+        opening.resumeWhenEnded = false
         openings[key] = opening
         jobs[job.id] = (key, opening.generation)
         call { await $0.start(job) }
-        if let article = key.article, titleTranslation(article)?.waiting == true {
+        if let article = key.article, opening.titleRow == nil {
             translateTitle(article)
         }
     }
@@ -311,23 +340,32 @@ final class BodyTranslationModel {
     /// Translate and Retry: every text sent that is not done, failed and
     /// waiting, cancelling any work running.
     func translate(_ key: BodyKey) {
-        guard var opening = openings[key], let plan = opening.plan else { return }
+        guard var opening = openings[key], let planned = opening.plan else { return }
         opening.ownerStarted = true
         openings[key] = opening
+        if opening.stop == .read {
+            // The rows could not be read: they are read again first.
+            plan(key)
+            return
+        }
         cancelJob(of: key)
         openings[key]?.job = nil
-        startJob(key, sending: plan.sentHashes.filter { opening.done[$0] == nil }, route: .primary)
+        startJob(key, sending: planned.sentHashes.filter { opening.done[$0] == nil }, route: .primary)
     }
 
     /// Retry with the Backup Model: the same texts, once each to the
     /// backup.
     func retryWithBackup(_ key: BodyKey) {
-        guard var opening = openings[key], let plan = opening.plan else { return }
+        guard var opening = openings[key], let planned = opening.plan else { return }
         opening.ownerStarted = true
         openings[key] = opening
+        if opening.stop == .read {
+            plan(key)
+            return
+        }
         cancelJob(of: key)
         openings[key]?.job = nil
-        startJob(key, sending: plan.sentHashes.filter { opening.done[$0] == nil }, route: .backupOnly)
+        startJob(key, sending: planned.sentHashes.filter { opening.done[$0] == nil }, route: .backupOnly)
     }
 
     // MARK: - Triggers
@@ -404,7 +442,16 @@ final class BodyTranslationModel {
             if case .stopped(let stop) = end {
                 opening.stop = stop
             }
+            let resumes = opening.resumeWhenEnded
+            opening.cancelSent = false
+            opening.resumeWhenEnded = false
             openings[key] = opening
+            // Only the screen's own cancellation, with the screen back:
+            // work cancelled because another body's started does not
+            // restart.
+            if resumes {
+                startIfDue(key)
+            }
         }
     }
 

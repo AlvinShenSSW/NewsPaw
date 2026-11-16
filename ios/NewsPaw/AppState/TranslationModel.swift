@@ -83,10 +83,6 @@ final class TranslationModel {
         translator = TitleTranslator(models: models, now: now)
         body = BodyTranslationModel(models: models, settings: settings, now: now)
         settings.addListener(self)
-        body.titleTranslation = { [weak reading] id in
-            guard case .loaded(let row)? = reading?.articles[id] else { return nil }
-            return (row.translation == nil, row.translation)
-        }
         body.translateTitle = { [weak self] id in
             self?.translateIfWaiting(id)
         }

@@ -65,9 +65,21 @@ struct ArticleInfoView: View {
         .tint(accent)
         .foregroundStyle(Theme.text)
         .accessibilityIdentifier(AccessibilityID.articleInfo)
-        .task {
+        // Read again whenever the title's translation changes, and whenever
+        // the body's does (an excerpt pre-filled from RD14's row shows that
+        // row's model and time): a sheet opened before a translation
+        // arrived is not left saying "Not translated".
+        .task(id: Refresh(title: row.translation, body: translation?.body.openings[key]?.details.count ?? 0,
+                          locale: translation?.body.readingLocale)) {
             title = await translation?.body.titleDetails(of: row.id)
         }
+    }
+
+    /// What the title's details are read again for.
+    private struct Refresh: Equatable {
+        let title: StoredTranslation?
+        let body: Int
+        let locale: ReadingLocale?
     }
 
     private func line(_ text: String, identifier: String?) -> some View {

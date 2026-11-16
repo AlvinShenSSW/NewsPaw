@@ -120,6 +120,8 @@ private struct ArticleScreen: View {
             .frame(maxWidth: Self.maximumColumnWidth, alignment: .leading)
             .padding(Theme.Spacing.standard)
             .frame(maxWidth: .infinity)
+            // The scroll content's own coordinates, for the rows' frames.
+            .coordinateSpace(.named(BlockRowFrames.space))
         }
         // "Translating k of n" under the navigation bar while work runs
         // (assumption A4).
@@ -429,43 +431,36 @@ struct ReaderPosition: ViewModifier {
         _position = State(initialValue: start.map { ScrollPosition(id: $0, anchor: .top) } ?? ScrollPosition(idType: Int.self))
     }
 
+    /// Where the reader's rows are and where the visible top edge is, in
+    /// the content's coordinates: not observed, read at a switch.
+    @State private var rows = BlockRowFrames()
+
     func body(content: Content) -> some View {
-        ScrollViewReader { proxy in
-            content
-                .scrollPosition($position, anchor: .top)
-                .onChange(of: position.viewID(type: Int.self)) { _, block in
-                    // While a switch settles, the blocks passing the top are
-                    // not the reader's place.
-                    if !isSwitching {
-                        reading.readerMoved(to: block, in: articleID)
-                    }
-                }
-                .onChange(of: mode) {
-                    keepTopBlock(proxy)
-                }
-        }
+        content
+            .environment(\.blockRowFrames, rows)
+            .scrollPosition($position, anchor: .top)
+            .onScrollGeometryChange(for: Double.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top
+            } action: { _, top in
+                rows.visibleTop = top
+            }
+            .onChange(of: position.viewID(type: Int.self)) { _, block in
+                reading.readerMoved(to: block, in: articleID)
+            }
+            .onChange(of: mode) {
+                keepTopBlock()
+            }
     }
 
-    @State private var isSwitching = false
-
-    /// The block at the top stays there across a switch. Nothing is done
-    /// at the article's top (no block reported). The lazy stack lays out
-    /// the blocks above with their new heights over a few passes, so the
-    /// block is scrolled to again after them. Measured (assumption A3,
-    /// iPhone): between Translation and Original the block stays within
-    /// 7 pt; into Side by Side the block's original stays where the block
-    /// was and its translation is laid out above it, off the top.
-    private func keepTopBlock(_ proxy: ScrollViewProxy) {
-        guard let block = reading.position(of: articleID) else { return }
-        isSwitching = true
-        proxy.scrollTo(block, anchor: .top)
-        Task { @MainActor in
-            for delay in [0, 50, 150, 300, 500] {
-                try? await Task.sleep(for: .milliseconds(delay))
-                proxy.scrollTo(block, anchor: .top)
-            }
-            isSwitching = false
-            reading.readerMoved(to: block, in: articleID)
-        }
+    /// The block at the top stays there across a switch (assumption A3):
+    /// the block whose row holds the visible top edge — not the position's
+    /// `viewID`, which names the first block below that edge (measured:
+    /// the reader saw block 16 at the top and the position held 17) — is
+    /// scrolled to the top once, through the bound position, and the new
+    /// layout puts its first line there (in Side by Side, its
+    /// translation). Nothing is done at the article's top.
+    private func keepTopBlock() {
+        guard let block = rows.block(atTop: rows.visibleTop) else { return }
+        position.scrollTo(id: block, anchor: .top)
     }
 }

@@ -56,6 +56,40 @@ struct BlocksView: View {
     }
 }
 
+/// Where each laid-out block row stands in the reading screen's scroll
+/// content, and the content's visible top edge (RD15 decision 11): what a
+/// display-mode switch keeps at the top. A plain reference, not observed:
+/// written as rows lay out and as the reader scrolls, read at a switch.
+@MainActor
+final class BlockRowFrames {
+    /// The coordinate space of the scroll content the frames are in.
+    nonisolated static let space = "reading.content"
+
+    private(set) var frames: [Int: CGRect] = [:]
+    /// The content's y at the visible top edge, under the bars.
+    var visibleTop = 0.0
+
+    func set(_ frame: CGRect, of block: Int) {
+        frames[block] = frame
+    }
+
+    func remove(_ block: Int) {
+        frames[block] = nil
+    }
+
+    /// The block whose row holds `top`: its row begins at or above it and
+    /// ends below it (a point of tolerance, so that a row set exactly at
+    /// the top is still the one at the top).
+    func block(atTop top: Double) -> Int? {
+        frames.filter { $0.value.minY <= top + 1 && $0.value.maxY > top + 1 }.map(\.key).min()
+    }
+}
+
+extension EnvironmentValues {
+    /// The reading screen's row frames; none elsewhere (reader mode).
+    @Entry var blockRowFrames: BlockRowFrames?
+}
+
 /// How a body's blocks show its translation (RD15 decisions 11 and 13).
 struct BlockTranslation {
     let mode: ReadingDisplayMode
@@ -85,6 +119,7 @@ private struct BlockRow: View {
     /// The block is an image that is not drawn: it takes no room at all.
     @State private var isUndrawn = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.blockRowFrames) private var rowFrames
 
     private static let quoteBarWidth = 3.0
     private static let quoteStep = 12.0
@@ -99,6 +134,14 @@ private struct BlockRow: View {
                 // A block that becomes translated fades in (ux section 5),
                 // not under Reduce Motion.
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: translated)
+                .onGeometryChange(for: CGRect.self) { geometry in
+                    geometry.frame(in: .named(BlockRowFrames.space))
+                } action: { frame in
+                    rowFrames?.set(frame, of: index)
+                }
+                .onDisappear {
+                    rowFrames?.remove(index)
+                }
         }
     }
 

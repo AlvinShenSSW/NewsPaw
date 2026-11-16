@@ -26,6 +26,9 @@ class BodyTranslationTestCase: TranslationTestCase {
         static let many = "Many paragraphs story"
         static let chinese = "海港议会讨论新的渡轮时刻表"
         static let short = "Short note"
+        /// Its content gives no block: the excerpt is put in as the body.
+        static let excerptOnly = "Excerpt only story"
+        static let excerptOnlyText = "The ferry timetable changes next week, the harbour office said."
 
         /// The start of paragraph `number` (1-based) of `story`.
         static func paragraph(_ number: Int, of story: String) -> String {

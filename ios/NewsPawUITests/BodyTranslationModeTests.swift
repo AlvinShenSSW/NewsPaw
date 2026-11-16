@@ -76,25 +76,26 @@ final class BodyTranslationModeTests: BodyTranslationTestCase {
         translateButton.tap()
         waitForBlock(before.index ?? 0, startingWith: Translation.translated("Short paragraph"))
         waitForAbsence(progressLine)
-        Thread.sleep(forTimeInterval: 1)
-        let arrived = position(of: before.index ?? 0)
+        let arrived = settledPosition(of: before.index ?? 0)
         record("A3 after the arrivals", "block \(before.index ?? -1) at \(arrived), top block \(topBlock().index ?? -1)")
         XCTAssertEqual(arrived, before.minY, accuracy: lineHeight, "the arrivals moved the block at the top")
 
-        // Each switch: the block at the top keeps its place. In Side by
-        // Side a block is its translation and its original; what is
-        // compared is whichever of the two stays nearer.
+        // Each switch: the block at the top stays at the top. Its first
+        // line — in Side by Side, its translation — is at the top after the
+        // switch: not under the bar, and within one line of its edge.
         for mode in ["original", "translation", "side_by_side", "translation", "side_by_side", "original"] {
             let top = topBlock()
             let index = top.index ?? 0
             let reported = reportedBlock
             chooseMode(mode)
-            Thread.sleep(forTimeInterval: 1)
+            let first = settledPosition(of: index)
             let (translation, original) = positions(of: index)
-            let drift = min(abs(translation - top.minY), abs(original - top.minY))
-            record("A3 switch to \(mode)", "block \(index) from \(top.minY) to translation \(translation), original \(original); "
-                + "top block now \(topBlock().index ?? -1); the screen's stored position \(reported) before, \(reportedBlock) after")
-            XCTAssertLessThanOrEqual(drift, lineHeight, "the switch to \(mode) moved block \(index): \(translation), \(original), was \(top.minY)")
+            record("A3 switch to \(mode)", "block \(index) at \(top.minY) before; its first line at \(first) after "
+                + "(translation \(translation), original \(original)); the scroll view's top at \(scrollTop); top block now "
+                + "\(topBlock().index ?? -1); the screen's stored position \(reported) before, \(reportedBlock) after")
+            XCTAssertGreaterThanOrEqual(first, scrollTop - 2, "the switch to \(mode) left block \(index)'s first line under the bar")
+            XCTAssertLessThanOrEqual(first, scrollTop + lineHeight, "the switch to \(mode) moved block \(index) down from the top")
+            XCTAssertEqual(topBlock().index, index, "the switch to \(mode) changed the block at the top")
         }
     }
 
@@ -108,14 +109,13 @@ final class BodyTranslationModeTests: BodyTranslationTestCase {
         XCTAssertEqual(modeValue, "Translation")
         for expected in ["Original", "Side by Side", "Translation"] {
             app.typeKey("t", modifierFlags: [])
-            Thread.sleep(forTimeInterval: 1)
-            XCTAssertEqual(modeValue, expected)
-            // What each mode shows of block 0.
+            // What each mode shows of block 0, waited for; then the menu.
             switch expected {
             case "Original": waitForBlock(0, Body.markupParagraph)
             case "Side by Side": waitFor(element(AccessibilityID.readingOriginalBlock(0)))
             default: waitForAbsence(element(AccessibilityID.readingOriginalBlock(0)))
             }
+            XCTAssertEqual(modeValue, expected)
         }
     }
 
@@ -145,6 +145,19 @@ final class BodyTranslationModeTests: BodyTranslationTestCase {
             return (nil, 0)
         }
         return (index, first.frame.minY)
+    }
+
+    /// The top of block `index`'s first line once it has stopped moving
+    /// (two equal readings in a row; ten seconds at most).
+    func settledPosition(of index: Int) -> CGFloat {
+        var last = position(of: index)
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            let now = self.position(of: index)
+            defer { last = now }
+            return now == last && now.isFinite
+        }, object: nil)
+        _ = XCTWaiter.wait(for: [settled], timeout: timeout)
+        return position(of: index)
     }
 
     func position(of index: Int) -> CGFloat {

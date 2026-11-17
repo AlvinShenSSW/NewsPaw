@@ -247,6 +247,7 @@ final class AppModel {
             #if DEBUG
             if options.libraryDirectory != nil {
                 articlePageSize = options.articlePageSize
+                workspace.translation?.body.holdsFirstPlanUntilBackground = options.holdsFirstBodyPlan
             }
             if let size = articlePageSize {
                 workspace.reading.pageSize = size
@@ -616,6 +617,10 @@ final class AppModel {
             // library may end (RD14 decision 6), whichever partition is
             // shown, since the normal workspace goes on working.
             normal?.translation?.cameToFront()
+            // The bodies' work, stopped in the background, may start again
+            // in each workspace (none has a translation in the adult one
+            // today).
+            adult?.translation?.cameToFront()
         }
         removeCover()
     }
@@ -750,7 +755,8 @@ final class AppModel {
             + "pages=\((parts?.transport as? FixtureTransport)?.pageRequests ?? -1) "
             + "translationRequests=\(FixtureModelHTTP.translationRequests) "
             + "bodyRequests=\((try? await normal?.reading.library.usageCount(purpose: .body)) ?? -1) "
-            + "readerBlock=\(normal?.reading.lastReportedPosition.map(String.init) ?? "none")"
+            + "readerBlock=\(normal?.reading.lastReportedPosition.map(String.init) ?? "none") "
+            + "bodyStartsInBackground=\(BodyTranslationModel.startsInBackground)"
     }
     #endif
 }

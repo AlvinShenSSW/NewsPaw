@@ -39,6 +39,10 @@ struct DebugLaunchOptions {
     /// The daily automatic limit to store (RD14 decision 8). Applied only
     /// together with `libraryDirectory`.
     let dailyAutomaticLimit: Int?
+    /// Whether the first body plan is held until the app is in the
+    /// background (RD15 review round 3). Applied only together with
+    /// `libraryDirectory`.
+    let holdsFirstBodyPlan: Bool
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -83,6 +87,7 @@ struct DebugLaunchOptions {
         } else {
             dailyAutomaticLimit = nil
         }
+        holdsFirstBodyPlan = environment[UITestLaunchKey.holdFirstBodyPlan] == "1"
     }
 
     /// Accepts only a name that stays inside the temporary directory.

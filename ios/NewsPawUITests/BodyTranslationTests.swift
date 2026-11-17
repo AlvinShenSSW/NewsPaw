@@ -75,6 +75,37 @@ final class BodyTranslationTests: BodyTranslationTestCase {
         expectBodyRequests(9, "opened again: nothing sent", settle: 3)
     }
 
+    /// Review round 3 (K1): a plan that finishes while the app is in the
+    /// background starts nothing there. The first plan is held until the
+    /// app is in the background (a debug hold under the UI tests) and
+    /// finishes there a second later; no job starts and no body request is
+    /// sent until the app returns. Then the plan made in the background is
+    /// used: the body is translated with each of its eight chunks sent once
+    /// (chunk 4 stalls for 60 seconds on its first request).
+    func testPlanFinishingInTheBackgroundStartsNothing() {
+        launchWithBodies(environment: [UITestLaunchKey.holdFirstBodyPlan: "1"])
+        openBody(Body.long)
+        // Planning is held: nothing runs.
+        expectBodyRequests(0, "planning held", settle: 1)
+        XCTAssertFalse(progressLine.exists)
+
+        XCUIDevice.shared.press(.home)
+        let backgrounded = app.wait(for: .runningBackground, timeout: 10) || app.wait(for: .runningBackgroundSuspended, timeout: 5)
+        XCTAssertTrue(backgrounded, "the app did not go to the background: \(app.state.rawValue)")
+        // The plan finishes a second after the background is entered.
+        Thread.sleep(forTimeInterval: 5)
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: timeout))
+        XCTAssertEqual(bodyStartsInBackground, 0, "a body job started while the app was in the background")
+
+        waitForBlock(0, startingWith: Translation.translated(Body.paragraph(1, of: Body.long)))
+        expectBodyRequests(8, "each chunk sent once", timeout: 150)
+        waitForAbsence(progressLine)
+        _ = scrollArticle(to: block(at: 15))
+        waitForBlock(15, startingWith: Translation.translated(Body.paragraph(16, of: Body.long)))
+        XCTAssertEqual(bodyStartsInBackground, 0)
+    }
+
     /// Criteria 5 and 8: a refused paragraph is stored failed; the rest
     /// goes on; leaving during chunk 4 and returning sends chunks 4–8 and
     /// not chunk 2's failure; the banner stays while the failure is stored;

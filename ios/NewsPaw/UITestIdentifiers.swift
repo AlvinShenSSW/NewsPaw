@@ -377,6 +377,10 @@ enum UITestLaunchKey {
     /// A whole number stored as the daily automatic limit (RD14 decision
     /// 8); honoured only with `libraryDirectory`.
     static let dailyAutomaticLimit = "NEWSPAW_UITEST_DAILY_AUTOMATIC_LIMIT"
+    /// "1" holds the normal workspace's first body plan until the app is
+    /// in the background, and a second more (RD15 review round 3);
+    /// honoured only with `libraryDirectory`.
+    static let holdFirstBodyPlan = "NEWSPAW_UITEST_HOLD_FIRST_BODY_PLAN"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.
@@ -386,7 +390,7 @@ enum DebugAccessibilityID {
     /// library=<held|released> workspace=<none|held|released>
     /// browser=<none|held|released> sessions=<number> pages=<number>
     /// translationRequests=<number> bodyRequests=<number>
-    /// readerBlock=<number|none>`. `pool` is whether connections are open
+    /// readerBlock=<number|none> bodyStartsInBackground=<number>`. `pool` is whether connections are open
     /// on the file; the other three are whether the objects are gone from
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
@@ -394,7 +398,9 @@ enum DebugAccessibilityID {
     /// criterion 13); `bodyRequests` is how many usage rows of body
     /// requests the normal library holds (RD15 decision 16);
     /// `readerBlock` the block the reading screen last reported at its top
-    /// (RD15 criterion 7).
+    /// (RD15 criterion 7); `bodyStartsInBackground` how many body jobs
+    /// started while the application was in the background (RD15 review
+    /// round 3).
     static let adultReport = "debug.adultReport"
 }
 #endif

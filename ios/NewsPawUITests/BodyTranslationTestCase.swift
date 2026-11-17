@@ -46,8 +46,10 @@ class BodyTranslationTestCase: TranslationTestCase {
 
     /// Launches with the translator's models and the body feed in its
     /// category, its list shown under All.
-    func launchWithBodies(models: String = "primary", arguments: [String] = [], _ orientation: UIDeviceOrientation = .portrait) {
-        launchTranslating(models: models, arguments: arguments, orientation)
+    func launchWithBodies(
+        models: String = "primary", arguments: [String] = [], environment: [String: String] = [:], _ orientation: UIDeviceOrientation = .portrait
+    ) {
+        launchTranslating(models: models, arguments: arguments, environment: environment, orientation)
         addFeed(Body.feed, to: Body.category)
         waitFor(articleRow(Body.long))
     }
@@ -64,6 +66,12 @@ class BodyTranslationTestCase: TranslationTestCase {
         return Int(match.1) ?? -2
     }
 
+    /// The body jobs started while the application was in the background.
+    var bodyStartsInBackground: Int {
+        guard let match = report.firstMatch(of: /bodyStartsInBackground=(-?\d+)/) else { return -2 }
+        return Int(match.1) ?? -2
+    }
+
     /// The block the reading screen last reported at its top.
     var reportedBlock: String {
         report.firstMatch(of: /readerBlock=(\S+)/).map { String($0.1) } ?? "?"
@@ -77,11 +85,13 @@ class BodyTranslationTestCase: TranslationTestCase {
 
     /// Waits until the report counts `count` body requests, then a moment
     /// more, so that a further request is seen.
-    func expectBodyRequests(_ count: Int, _ what: String, settle: TimeInterval = 1.5, file: StaticString = #filePath, line: UInt = #line) {
+    func expectBodyRequests(
+        _ count: Int, _ what: String, settle: TimeInterval = 1.5, timeout: TimeInterval = 60, file: StaticString = #filePath, line: UInt = #line
+    ) {
         let reached = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
             self.bodyRequests == count
         }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [reached], timeout: 60), .completed,
+        XCTAssertEqual(XCTWaiter.wait(for: [reached], timeout: timeout), .completed,
                        "\(what): \(bodyRequests) body requests, not \(count)", file: file, line: line)
         Thread.sleep(forTimeInterval: settle)
         XCTAssertEqual(bodyRequests, count, "\(what): a further body request", file: file, line: line)

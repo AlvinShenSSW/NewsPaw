@@ -1,5 +1,8 @@
 import Foundation
 import NewsPawKit
+#if DEBUG
+import UIKit
+#endif
 
 /// Which open body a translation belongs to (RD15 decisions 5 and 14): a
 /// library article's, or reader mode's temporary article's, which is never
@@ -95,6 +98,9 @@ final class BodyTranslationModel {
         /// The screen came back before that job's end arrived: work starts
         /// again under decision 5 when it does.
         var resumeWhenEnded = false
+        /// A start refused because the app was in the background:
+        /// `cameToFront` makes it under decision 5.
+        var startDeferred = false
     }
 
     struct Detail: Equatable {
@@ -118,6 +124,21 @@ final class BodyTranslationModel {
     /// Counts the plans made in this model, for every body: a dropped
     /// opening's late events cannot match a new opening's plan.
     @ObservationIgnored private var plans = 0
+    /// The app is in the background (set by `appEnteredBackground`,
+    /// cleared by `cameToFront`): no job starts. Cleared when the model is
+    /// made: no body is planned before a reading screen opens one, and none
+    /// opens while the app is not in front.
+    @ObservationIgnored private var isInBackground = false
+
+    #if DEBUG
+    /// Under a UI test only: the first plan waits until the app is in the
+    /// background, and one second more, so that it finishes there (review
+    /// round 3).
+    @ObservationIgnored var holdsFirstPlanUntilBackground = false
+    /// The jobs started while the application was in the background, for
+    /// the UI tests' report; always 0 when the start check holds.
+    static var startsInBackground = 0
+    #endif
 
     /// The display mode a new opening starts in: Settings › Reading's.
     @ObservationIgnored var defaultMode: @MainActor () -> ReadingDisplayMode = { .standard }
@@ -209,7 +230,19 @@ final class BodyTranslationModel {
         let title = opening.title
         openings[key] = opening
         let translator = translator
+        #if DEBUG
+        let held = holdsFirstPlanUntilBackground
+        holdsFirstPlanUntilBackground = false
+        #endif
         Task {
+            #if DEBUG
+            if held {
+                while UIApplication.shared.applicationState != .background {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+                try? await Task.sleep(for: .seconds(1))
+            }
+            #endif
             let plan = await Self.makePlan(blocks, title: title, locale: locale)
             var stored: [String: StoredBodyText] = [:]
             var titleRow: StoredTranslation?
@@ -312,7 +345,21 @@ final class BodyTranslationModel {
         guard !isStopped, var opening = openings[key], let plan = opening.plan else { return }
         let job = BodyTranslationJob(article: key.article, locale: opening.locale, chunks: plan.chunks(sending: hashes), route: route)
         guard !job.chunks.isEmpty else { return }
+        // Every job starts here, and none while the app is in the
+        // background, whatever led here (a plan or a read of the rows
+        // finishing, a cancelled job's end, a settle, a language change):
+        // the start is kept for `cameToFront`.
+        guard !isInBackground else {
+            openings[key]?.startDeferred = true
+            return
+        }
+        #if DEBUG
+        if UIApplication.shared.applicationState == .background {
+            Self.startsInBackground += 1
+        }
+        #endif
         opening.job = job.id
+        opening.startDeferred = false
         opening.stop = nil
         opening.retrying = hashes.intersection(opening.failed.keys)
         opening.cancelSent = false
@@ -391,10 +438,20 @@ final class BodyTranslationModel {
         readingLocaleChanged()
     }
 
-    /// The app came to the front: a shown body whose work stopped with a
-    /// service failure or a cancellation starts again.
+    /// The app came to the front: a start refused in the background is
+    /// made under decision 5 for a body still shown, with the plan made
+    /// there; a shown body whose work stopped with a service failure or a
+    /// cancellation starts again.
     func cameToFront() {
         guard !isStopped else { return }
+        isInBackground = false
+        for (key, opening) in openings where opening.startDeferred {
+            openings[key]?.startDeferred = false
+            // A body no screen shows starts when one appears.
+            if isShown(key), opening.job == nil {
+                startIfDue(key)
+            }
+        }
         for (key, opening) in openings where isShown(key) && opening.job != nil && opening.cancelSent {
             // Stopped in the background and its end not arrived yet: the
             // work starts again when it does.
@@ -415,10 +472,12 @@ final class BodyTranslationModel {
 
     /// The app went to the background (not a mere deactivation): the work
     /// of every body stops as on leaving its screen (N06) — nothing of the
-    /// request in flight is stored, finished chunks are kept — and
-    /// `cameToFront` starts it again for a body still shown. A screen does
-    /// not disappear when the app goes to the background.
+    /// request in flight is stored, finished chunks are kept — nothing
+    /// starts until `cameToFront`, which starts it again for a body still
+    /// shown. A screen does not disappear when the app goes to the
+    /// background.
     func appEnteredBackground() {
+        isInBackground = true
         guard !isStopped else { return }
         for (key, opening) in openings where opening.job != nil {
             cancelJob(of: key)

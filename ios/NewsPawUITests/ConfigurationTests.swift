@@ -289,8 +289,10 @@ final class ConfigurationTests: AdultTestCase {
         XCTAssertTrue(waitFor(timing("Every 30 Minutes")).isSelected)
         openDataSettings()
         button(AccessibilityID.importConfigurationButton).tap()
-        waitFor(element(AccessibilityID.configurationNothingNew))
-        XCTAssertFalse(button(AccessibilityID.configurationMergeButton).isEnabled)
+        // Below the fold of the iPad's form sheet.
+        waitFor(element(AccessibilityID.configurationCounts("normal")))
+        scrollTo(element(AccessibilityID.configurationNothingNew))
+        XCTAssertFalse(scrollTo(button(AccessibilityID.configurationMergeButton)).isEnabled)
         button(AccessibilityID.configurationCancelButton).tap()
     }
 

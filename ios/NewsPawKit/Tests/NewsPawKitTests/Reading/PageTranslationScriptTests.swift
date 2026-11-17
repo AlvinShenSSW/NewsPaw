@@ -403,11 +403,11 @@ struct PageTranslationScriptTests {
         #expect(!first.contains { $0.text == "箱のさらに奥の文" })
         _ = try await page.translateAll(first)
         #expect(try await page.runs().isEmpty)
-        #expect(try await page.collect() == .unchanged(loaded: true))
+        #expect(try await page.collect() == .unchanged(loaded: true, written: true))
         try await page.page(#"document.getElementById("one").className = "tab"; document.getElementById("two").className = "tab on""#)
         try await page.settle()
         #expect(try await page.runs().map(\.text) == ["二つ目のタブ"])
-        #expect(try await page.collect() == .unchanged(loaded: true))
+        #expect(try await page.collect() == .unchanged(loaded: true, written: true))
         // The window does not scroll; the box does.
         try await page.page(#"document.getElementById("box").scrollTop = 2400"#)
         try await page.settle()

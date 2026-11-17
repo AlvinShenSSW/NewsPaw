@@ -95,7 +95,7 @@ const normalised = (text) => text.replace(SPACE, " ").trim();
 
 function makeState() {
   const state = {
-    ids: new WeakMap(), records: new Map(), nextId: 1, recorded: 0, blocks: new WeakMap(), nextBlock: 1,
+    ids: new WeakMap(), records: new Map(), nextId: 1, recorded: 0, written: 0, blocks: new WeakMap(), nextBlock: 1,
     dirty: true, view: null, observer: null, onScroll: null
   };
   state.observer = new MutationObserver(() => { state.dirty = true; });
@@ -246,9 +246,10 @@ function sameView(left, right) {
 
 function collect(state) {
   const loaded = readyStateOf.call(doc) === "complete";
-  if (focusHeld()) return { held: true, loaded: loaded };
+  const written = state.written > 0;
+  if (focusHeld()) return { held: true, loaded: loaded, written: written };
   const view = [windowValue("scrollX"), windowValue("scrollY"), windowValue("innerWidth"), windowValue("innerHeight")];
-  if (!state.dirty && sameView(view, state.view)) return { unchanged: true, loaded: loaded };
+  if (!state.dirty && sameView(view, state.view)) return { unchanged: true, loaded: loaded, written: written };
   state.dirty = false;
   state.view = view;
   const width = view[2];
@@ -256,7 +257,7 @@ function collect(state) {
   const bandTop = -height / 2;
   const bandBottom = height * 2;
   const root = rootOf.call(doc);
-  if (!root) return { runs: [], loaded: loaded };
+  if (!root) return { runs: [], loaded: loaded, written: written };
   const range = makeRange.call(doc);
   const caches = { excluded: new Map(), clip: new Map(), display: new Map(), whole: new Map() };
   let start = pointOf.call(doc, width / 2, height / 2);
@@ -348,7 +349,7 @@ function collect(state) {
     runs.push({ id: run.id, block: run.block, text: run.text, whole: run.whole, inView: run.inView });
   }
   if (full) state.dirty = true;
-  return { runs: runs, loaded: loaded };
+  return { runs: runs, loaded: loaded, written: written };
 }
 
 function holdsOriginal(record) {
@@ -374,6 +375,7 @@ function apply(state, input) {
     setData.call(record.node, value);
     record.written = value;
     record.state = "written";
+    state.written++;
     written.push(id);
   }
   const settle = Array.isArray(input.settle) ? input.settle : [];

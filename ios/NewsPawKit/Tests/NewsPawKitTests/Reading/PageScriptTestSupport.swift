@@ -99,7 +99,7 @@ final class ScriptPage: NSObject, WKNavigationDelegate {
 
     /// The runs of one `collect`; empty for an unchanged or held answer.
     func runs(sourceLocation: SourceLocation = #_sourceLocation) async throws -> [PageRun] {
-        if case .runs(let runs, _) = try await collect(sourceLocation: sourceLocation) {
+        if case .runs(let runs, _, _) = try await collect(sourceLocation: sourceLocation) {
             return runs
         }
         return []

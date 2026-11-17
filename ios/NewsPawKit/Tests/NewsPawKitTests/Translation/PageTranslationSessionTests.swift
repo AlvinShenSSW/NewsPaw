@@ -196,6 +196,22 @@ struct PageTranslationSessionTests {
         #expect(harness.page.written.contains { $0.id == 200 })
     }
 
+    @Test("criterion 3: a page shown again from the back-forward cache, translated already, reads Translated, not Nothing to translate")
+    func cachedPage() async throws {
+        let fixture = try await TranslatorFixture.make()
+        defer { fixture.remove() }
+        let harness = Harness(fixture: fixture)
+        harness.session.documentCommitted(Self.address)
+        harness.page.collection = { .success(.runs(Self.runs(Self.japanese), loaded: true)) }
+        await harness.turnOn()
+        await harness.eventually { harness.session.line == .translated(.simplifiedChinese) }
+        harness.page.collection = { .success(.unchanged(loaded: true, written: true)) }
+        harness.session.documentCommitted(Self.address)
+        try await Task.sleep(for: .milliseconds(200))
+        await harness.eventually { harness.session.line == .translated(.simplifiedChinese) }
+        #expect(fixture.service.requests.count == 1)
+    }
+
     @Test("criterion 15: a page whose load never ends is decided after the decision time; a held collection never decides")
     func decisions() async throws {
         let fixture = try await TranslatorFixture.make()

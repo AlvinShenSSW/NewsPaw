@@ -12,20 +12,29 @@ public enum PageCallFailure: Error, Sendable, Hashable {
     case malformed
 }
 
-/// What a `collect` found (decision 4).
+/// What a `collect` found (decision 4). `written` says that the script
+/// has written translations into this document: a page shown again from
+/// the back-forward cache is translated already.
 public enum PageCollection: Sendable, Hashable {
     /// Nothing changed since the last walk.
-    case unchanged(loaded: Bool)
+    case unchanged(loaded: Bool, written: Bool = false)
     /// A field has focus: nothing was collected (decision 3).
-    case held(loaded: Bool)
+    case held(loaded: Bool, written: Bool = false)
     /// The runs in the viewport, then the rest of the band, each in
     /// document order.
-    case runs([PageRun], loaded: Bool)
+    case runs([PageRun], loaded: Bool, written: Bool = false)
 
     /// Whether the document had loaded (`readyState` is `complete`).
     public var loaded: Bool {
         switch self {
-        case .unchanged(let loaded), .held(let loaded), .runs(_, let loaded): loaded
+        case .unchanged(let loaded, _), .held(let loaded, _), .runs(_, let loaded, _): loaded
+        }
+    }
+
+    /// Whether the script had written translations into the document.
+    public var written: Bool {
+        switch self {
+        case .unchanged(_, let written), .held(_, let written), .runs(_, _, let written): written
         }
     }
 }
@@ -217,11 +226,12 @@ public final class PageScriptBridge: PageScripting {
     /// bounds; anything else is `nil`.
     nonisolated static func collection(_ value: Any) -> PageCollection? {
         guard let object = value as? [String: Any], let loaded = bool(object["loaded"]) else { return nil }
+        let written = bool(object["written"]) ?? false
         if bool(object["held"]) == true {
-            return .held(loaded: loaded)
+            return .held(loaded: loaded, written: written)
         }
         if bool(object["unchanged"]) == true {
-            return .unchanged(loaded: loaded)
+            return .unchanged(loaded: loaded, written: written)
         }
         guard let list = object["runs"] as? [Any], list.count <= maximumRuns else { return nil }
         var runs: [PageRun] = []
@@ -235,7 +245,7 @@ public final class PageScriptBridge: PageScripting {
             guard units <= maximumUnits else { return nil }
             runs.append(PageRun(id: id, block: block, text: text, whole: whole, inView: inView))
         }
-        return .runs(runs, loaded: loaded)
+        return .runs(runs, loaded: loaded, written: written)
     }
 
     nonisolated static func applied(_ value: Any) -> PageApplied? {

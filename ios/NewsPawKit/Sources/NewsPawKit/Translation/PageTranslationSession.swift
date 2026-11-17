@@ -409,19 +409,25 @@ public final class PageTranslationSession {
         if document.firstCollection == nil {
             document.firstCollection = clock.now
         }
+        // A document shown again from the back-forward cache holds the
+        // translations written before: it is not "nothing to translate".
+        if result.written {
+            document.didSomething = true
+            document.nothing = false
+        }
         switch result {
         case .held:
             // A field has focus: nothing is decided until it leaves.
             document.collecting = false
             self.document = document
-        case .unchanged(let loaded):
+        case .unchanged(let loaded, _):
             document.collecting = false
             self.document = document
             decide(loaded: loaded)
             // What waits (the page was not seen, or both slots were busy)
             // goes now.
             dispatch()
-        case .runs(let runs, let loaded):
+        case .runs(let runs, let loaded, _):
             if runs.contains(where: { TextLanguage.Units($0.text).kana > 0 }) {
                 document.hasKana = true
             }

@@ -5315,6 +5315,40 @@
         }
       }
     },
+    "summary.changed" : {
+      "comment" : "Configuration import summary row: what was changed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已修改"
+          }
+        }
+      }
+    },
+    "summary.deleted" : {
+      "comment" : "Configuration import summary row: what was deleted.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleted"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已删除"
+          }
+        }
+      }
+    },
     "the address is gone" : {
       "comment" : "Reason a source could not be read, used after “·”; lower case in English.",
       "localizations" : {

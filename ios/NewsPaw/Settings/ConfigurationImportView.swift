@@ -658,8 +658,16 @@ private struct ConfigurationSummaryView: View {
                 if case .imported(let plan, let keysNeeded) = outcome {
                     Section {
                         row(Text("Added"), categories: plan.newCategories.count, sources: plan.newSources.count)
-                        row(Text("Changed"), categories: plan.changedCategories.count, sources: plan.changedSources.count)
-                        row(Text("Deleted"), categories: plan.deletedCategories.count, sources: plan.deletedSources.count)
+                        // Keys of their own: the review's "Changed" and
+                        // "Deleted" say what will happen, these what did.
+                        row(
+                            Text(LocalizedStringResource("summary.changed", defaultValue: "Changed", comment: "Configuration import summary row: what was changed.")),
+                            categories: plan.changedCategories.count, sources: plan.changedSources.count
+                        )
+                        row(
+                            Text(LocalizedStringResource("summary.deleted", defaultValue: "Deleted", comment: "Configuration import summary row: what was deleted.")),
+                            categories: plan.deletedCategories.count, sources: plan.deletedSources.count
+                        )
                         if keysNeeded > 0 {
                             Text("\(keysNeeded) models need a key.")
                                 .accessibilityIdentifier(AccessibilityID.configurationKeysNeeded(partition.rawValue))

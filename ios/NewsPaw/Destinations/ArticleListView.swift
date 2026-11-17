@@ -88,7 +88,21 @@ private struct ArticleListContent: View {
         // (measured: a pull on the empty state refreshes).
         .overlay {
             if showsEmptyState {
-                emptyState
+                if kind == .search {
+                    // With the keyboard up, a large text size leaves the
+                    // state less height than it needs: it scrolls then,
+                    // rather than cutting its lines short.
+                    ViewThatFits(in: .vertical) {
+                        emptyState
+                        ScrollView {
+                            emptyState
+                                .padding(.vertical, Theme.Spacing.standard)
+                        }
+                        .scrollDismissesKeyboard(.immediately)
+                    }
+                } else {
+                    emptyState
+                }
             }
         }
         .listStyle(.plain)

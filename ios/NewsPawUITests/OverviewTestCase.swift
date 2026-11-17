@@ -111,13 +111,16 @@ class OverviewTestCase: TranslationTestCase {
                        "\(target.exists ? target.label : "absent") should contain \(text)", file: file, line: line)
     }
 
-    /// Pulls the list of `category`: a refresh run, at whose end the due
+    /// Refreshes the list of `category`: a refresh run, at whose end the due
     /// categories of the whole library are written (adding a source
     /// stores its articles without a run). Then shows Today. (A pull on
     /// Today itself did not start a run on the iPad in portrait.)
     func refreshRun(in category: String) {
         openCategoryList(category)
-        pullList()
+        // The list's menu, not a pull: at the largest text size the card
+        // fills the screen and a pull from a row may not reach.
+        waitFor(button(AccessibilityID.listMenu)).tap()
+        waitFor(app.buttons.matching(NSPredicate(format: "label IN %@", ["Refresh", "刷新"])).firstMatch).tap()
         showToday()
     }
 

@@ -96,6 +96,15 @@ public final class PageTranslationSession {
         var failed: [Int: PageGroup] = [:]
         /// The runs of the failed groups: not sent again until Retry.
         var failedRuns: Set<Int> = []
+        /// The runs a request of this document translated: not sent again
+        /// (a collection made while their request was in flight can still
+        /// hold them).
+        var doneRuns: Set<Int> = []
+
+        /// Whether a run is in a request, failed or translated already.
+        func isTaken(_ id: Int) -> Bool {
+            inFlight.contains(id) || failedRuns.contains(id) || doneRuns.contains(id)
+        }
         var refused: [Int: PageGroup] = [:]
         /// The latest failure, shown in the line.
         var failure: PageFailureReason?
@@ -431,7 +440,7 @@ public final class PageTranslationSession {
             if runs.contains(where: { TextLanguage.Units($0.text).kana > 0 }) {
                 document.hasKana = true
             }
-            let fresh = runs.filter { !document.inFlight.contains($0.id) && !document.failedRuns.contains($0.id) }
+            let fresh = runs.filter { !document.isTaken($0.id) }
             self.document = document
             // The document stays "collecting" until its runs are prepared,
             // so that no second step prepares the same runs meanwhile.
@@ -439,7 +448,9 @@ public final class PageTranslationSession {
             guard isCurrent(generation), var document = self.document else { return }
             document.collecting = false
             queue(PageApplyRequest(writes: preparation.writes, settle: preparation.kept))
-            document.pending = preparation.groups
+            // Runs that went into a request, failed or were translated
+            // while they were prepared are not sent again.
+            document.pending = preparation.groups.filter { group in !group.runs.contains { document.isTaken($0.id) } }
             if !preparation.writes.isEmpty || !preparation.groups.isEmpty {
                 document.didSomething = true
                 document.nothing = false
@@ -516,6 +527,7 @@ public final class PageTranslationSession {
         // listed; its result is dropped.
         guard units.removeValue(forKey: id) != nil, isCurrent(generation), var document else { return }
         document.inFlight.subtract(unit.runIDs)
+        document.doneRuns.formUnion(outcome.writes.map(\.id))
         var request = PageApplyRequest(writes: outcome.writes)
         for (group, reason) in outcome.failed {
             document.failed[group.block] = group

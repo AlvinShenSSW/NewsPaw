@@ -39,13 +39,28 @@ final class StubPage: PageScripting {
         calls.compactMap { if case .end(let restore) = $0 { restore } else { nil } }
     }
 
+    /// The runs written into or settled in the page, which it does not
+    /// return again, as the script does not; `end` forgets them.
+    private var writtenIDs = Set<Int>()
+    private var settledIDs = Set<Int>()
+
     func collect() async -> Result<PageCollection, PageCallFailure> {
         calls.append(.collect)
-        let answer = collection()
+        var answer = collection()
+        if case .success(.runs(let runs, let loaded, let written)) = answer {
+            let left = runs.filter { !writtenIDs.contains($0.id) && !settledIDs.contains($0.id) }
+            answer = .success(.runs(left, loaded: loaded, written: written || !writtenIDs.isEmpty))
+        }
         if holdsCollects {
             await withCheckedContinuation { heldCollects.append($0) }
         }
         return answer
+    }
+
+    /// The page made a new document: nothing of the script's is in it.
+    func newDocument() {
+        writtenIDs = []
+        settledIDs = []
     }
 
     func releaseCollects() {
@@ -58,14 +73,18 @@ final class StubPage: PageScripting {
     func apply(_ request: PageApplyRequest) async -> Result<PageApplied, PageCallFailure> {
         calls.append(.apply(request))
         defer { afterApply?() }
-        if let applyAnswer {
-            return applyAnswer(request)
+        let result = applyAnswer?(request) ?? .success(PageApplied(written: request.writes.map(\.id), skipped: [], holding: request.check))
+        if case .success(let applied) = result {
+            writtenIDs.formUnion(applied.written)
+            settledIDs.formUnion(request.settle)
         }
-        return .success(PageApplied(written: request.writes.map(\.id), skipped: [], holding: request.check))
+        return result
     }
 
     func end(restore: Bool) async -> Result<PageEnded, PageCallFailure> {
         calls.append(.end(restore))
+        writtenIDs = []
+        settledIDs = []
         return endAnswer
     }
 }
@@ -187,6 +206,7 @@ struct PageTranslationSessionTests {
         await harness.turnOn()
         await harness.eventually { harness.session.line == .translated(.simplifiedChinese) }
         harness.page.collection = { .success(.runs(Self.runs(["国务院发布新的数据安全管理条例"], from: 100), loaded: true)) }
+        harness.page.newDocument()
         harness.session.documentCommitted(URL(string: "https://pages.example.invalid/zh-hans"))
         await harness.eventually { harness.session.line == .nothingToTranslate(brief: false) }
         #expect(harness.session.isOn)
@@ -477,8 +497,9 @@ struct PageTranslationSessionTests {
         for number in 1...6 {
             service.release(request: number)
         }
-        await harness.eventually { service.requests.count == 5 }
         await harness.eventually { harness.session.line == .translated(.simplifiedChinese) }
+        #expect(service.requests.count == 5, "\(service.requests.map(\.texts.count))")
+        #expect(harness.session.line == .translated(.simplifiedChinese), "\(String(describing: harness.session.line)) written \(Set(harness.page.written.map(\.id)).count)")
         #expect(service.mostInFlight == 2)
         #expect(service.requests.allSatisfy { $0.texts.count <= 40 })
     }

@@ -254,6 +254,37 @@ final class CategoryMoveTests: IsolationTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 60), .completed, "Turn Off stayed dimmed after the move")
     }
 
+    // MARK: - Review round 3: one move at a time across a lock
+
+    /// A normal → adult move held between its copy and its deletion, then a
+    /// lock and a new unlock: the new adult workspace shows the copy of
+    /// “World”, and until the first move has ended Turn Off is dimmed and
+    /// the copy's sheet can neither begin a second move nor be edited.
+    func testNoSecondMoveAfterALockAndANewUnlock() {
+        launchForMoves(authentication: ["passed", "passed", "passed"], pause: 60)
+        createCategory("World")
+        addSource(Fixture.articles, to: "World")
+        turnOnAdult()
+        openCategorySheet("World")
+        tapMove()
+        _ = waitForAlert()
+        waitFor(button(AccessibilityID.confirmMoveButton)).tap()
+        waitForAbsence(app.alerts.firstMatch)
+        // Held between the copy and the deletion: lock, and unlock again.
+        tapLock()
+        waitForPartition(Wording.normal)
+        enterAdult()
+        openAdultSettings()
+        XCTAssertFalse(scrollTo(turnOffButton).isEnabled, "Turn Off could be used while the first move ran")
+        openCategorySheet("World")
+        let move = scrollTo(moveButton)
+        XCTAssertFalse(move.isEnabled, "a second move could be begun while the first ran")
+        XCTAssertFalse(app.textFields[AccessibilityID.nameField].isEnabled, "the name could be edited while the first move ran")
+        // Once the first move has ended a move can be begun again.
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: move)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 90), .completed, "the move button stayed disabled after the move")
+    }
+
     // MARK: - Criterion 12: a lock during a normal → adult run
 
     /// A normal → adult move whose run a lock overtakes (the run waits

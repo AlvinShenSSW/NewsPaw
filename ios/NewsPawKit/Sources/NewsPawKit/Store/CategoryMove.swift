@@ -115,6 +115,12 @@ public enum CategoryMove {
     /// The old library's image cache is not cleared here: the app clears
     /// it with `clearOldCache(from:)` once the interface has let go of the
     /// moved articles (decision 11).
+    ///
+    /// Runs are not serialised here: two runs that overlap are the
+    /// caller's responsibility. A second run between another one's copy and
+    /// its deletion can take the first one's copies for twins and delete
+    /// them, so the category is lost from both libraries; the app runs one
+    /// move at a time.
     public static func run(_ plan: Plan, from: Library, to: Library) async -> Outcome {
         await perform(plan, from: from, to: to, hooks: Hooks())
     }

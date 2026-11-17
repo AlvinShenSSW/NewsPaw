@@ -82,7 +82,8 @@ final class AppModel {
     /// Whether the adult browser's data are being cleared.
     private(set) var isClearingBrowsingData = false
     /// Whether a category move runs (review round 2): the partition is not
-    /// turned off meanwhile.
+    /// turned off meanwhile, and no other move begins anywhere in the app
+    /// (review round 3).
     private(set) var isMovingCategory = false
     /// The sentence to show at the root; it outlives a swap of workspaces.
     var notice: AdultNotice?
@@ -290,6 +291,7 @@ final class AppModel {
             #endif
             self.adultBrowserData = adultBrowserData
             let workspace = Workspace(library: library, models: models, parts: parts, browser: browser)
+            workspace.categories.moveRunsInApp = { [weak self] in self?.isMovingCategory ?? false }
             #if DEBUG
             if options.libraryDirectory != nil {
                 articlePageSize = options.articlePageSize
@@ -355,6 +357,11 @@ final class AppModel {
         guard let gate, let parts, let makeAdultBrowser, let adultKeys, let makeAdultModelHTTP, let normal, adult == nil,
               gateState == .locked, !isAuthenticating, !isTurningOff, !isClearingBrowsingData
         else { return .refused }
+        // One move at a time (review round 3): an unlock that would carry
+        // a move across does not begin while another move runs.
+        if case .move? = pending, isMovingCategory {
+            return .refused
+        }
         // Chosen in the slide-over: it closes, so that what follows is
         // shown at the root.
         normal.navigation.closeSlideOver()
@@ -376,6 +383,7 @@ final class AppModel {
             let models = LibraryModels(library: library, keys: adultKeys, http: makeAdultModelHTTP())
             let workspace = Workspace(library: library, models: models, parts: parts, browser: makeAdultBrowser())
             workspace.categories.mover = mover(adult: library, workspace: workspace)
+            workspace.categories.moveRunsInApp = { [weak self] in self?.isMovingCategory ?? false }
             // No adult page opens while its data are cleared or removed.
             workspace.browser.mayMakeSessions = { [weak self] in
                 guard let self else { return false }
@@ -636,7 +644,9 @@ final class AppModel {
     private func mover(adult library: Library, workspace: Workspace) -> CategoryMover {
         CategoryMover(
             plan: { [weak self] id, from in
-                guard let normalLibrary = self?.normalLibrary else { return nil }
+                // No second move's plan while a move runs (review round 3):
+                // the model says nothing was moved.
+                guard let self, !self.isMovingCategory, let normalLibrary = self.normalLibrary else { return nil }
                 let (old, new) = from == .normal ? (normalLibrary, library) : (library, normalLibrary)
                 return try? await CategoryMove.plan(category: id, from: old, to: new)
             },
@@ -658,7 +668,12 @@ final class AppModel {
     /// Both workspaces then read their categories and recorded refresh
     /// time, and a destination on screen refreshes the new category.
     private func runMove(_ plan: CategoryMove.Plan, adultLibrary: Library, workspace: Workspace) async -> CategoryMove.Outcome {
-        guard let normalLibrary, let normal else { return .notMoved }
+        // One move at a time in the whole app (review round 3): a lock and
+        // a new unlock make a new adult workspace whose category model
+        // knows nothing of a move an earlier one started. A second run is
+        // refused and changes nothing; the flag belongs to the run that set
+        // it (no await between the check and the setting).
+        guard let normalLibrary, let normal, !isMovingCategory else { return .notMoved }
         isMovingCategory = true
         defer { isMovingCategory = false }
         let toAdult = plan.from == .normal

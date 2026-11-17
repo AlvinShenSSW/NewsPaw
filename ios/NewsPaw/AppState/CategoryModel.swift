@@ -114,6 +114,11 @@ final class CategoryModel {
     /// Given by the app model to the adult workspace's model only: moves
     /// run inside the adult partition, in both directions.
     @ObservationIgnored var mover: CategoryMover?
+    /// Whether a move runs anywhere in the app (review round 3): set by the
+    /// app model on both workspaces' models, so that a workspace made by a
+    /// new unlock, or the normal one shown after a lock, sees a move that
+    /// an earlier adult workspace started and that still runs.
+    @ObservationIgnored var moveRunsInApp: @MainActor () -> Bool = { false }
 
     private let library: Library
     private let navigation: NavigationModel
@@ -165,9 +170,10 @@ final class CategoryModel {
     /// read or the move runs (review round 2). Meanwhile the open editor is
     /// locked and rows cannot be moved or deleted: an edit made then would
     /// be built on a list that is about to change (RD03 C2–C5), or saved in
-    /// a library the category is leaving.
+    /// a library the category is leaving. A move that runs elsewhere in the
+    /// app counts too (review round 3).
     var isBusy: Bool {
-        queuedOperations > 0 || isMoving
+        queuedOperations > 0 || isMoving || moveRunsInApp()
     }
 
     var activeDialogHost: CategoryDialogHost {

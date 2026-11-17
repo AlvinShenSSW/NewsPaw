@@ -133,6 +133,21 @@ final class ArticleListModel {
         }
     }
 
+    /// Applies a stored translation to the row of `id`, where it stands
+    /// (RD14 decision 11).
+    func update(_ id: UUID, translation: StoredTranslation?) {
+        guard let index = index(of: id), rows[index].translation != translation else { return }
+        rows[index].translation = translation
+    }
+
+    /// The library's failed translations were deleted: those rows wait
+    /// again.
+    func clearFailedTranslations() {
+        for index in rows.indices where rows[index].translation?.state == .failed {
+            rows[index].translation = nil
+        }
+    }
+
     /// The article no longer exists: its row leaves the list.
     func remove(_ id: UUID) {
         rows.removeAll { $0.id == id }

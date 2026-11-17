@@ -77,6 +77,9 @@ public struct ModelReply: Sendable, Hashable {
     /// integers.
     public let inputTokens: Int?
     public let outputTokens: Int?
+    /// The name of the model the request was sent to (RD14 decision 2),
+    /// set by `LibraryModels.send`.
+    public internal(set) var model = ""
 }
 
 /// The OpenAI-compatible chat wire format (spec N08; RD13 decisions 7, 8

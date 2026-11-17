@@ -17,8 +17,9 @@ extension Library {
         try await read { db in try ModelSlot.fetchOne(db, key: role.rawValue) }
     }
 
-    /// Writes `slot`, replacing the row of its role. A backup is written
-    /// only while a primary exists.
+    /// Writes `slot`, replacing the row of its role, and deletes the
+    /// library's failed translations in the same transaction (RD14 decision
+    /// 2): they wait again. A backup is written only while a primary exists.
     ///
     /// - Throws: `ModelSettingsError.primaryNeeded` for a backup without a
     ///   primary.
@@ -28,11 +29,20 @@ extension Library {
                 throw ModelSettingsError.primaryNeeded
             }
             try slot.save(db)
+            try Self.deleteFailedTranslations(db)
         }
     }
 
-    /// Deletes the row of `role`. The primary is not deleted while a backup
-    /// exists.
+    /// The one statement that makes every failed translation of the library
+    /// wait again (RD14 decision 2): run with every change of a slot — a
+    /// save, a removal, a key removed — so that a fault of the model stored
+    /// on many articles is repaired by repairing the slot.
+    static func deleteFailedTranslations(_ db: Database) throws {
+        try db.execute(sql: "DELETE FROM translation WHERE state = ?", arguments: [TranslationState.failed.rawValue])
+    }
+
+    /// Deletes the row of `role`, and with it the library's failed
+    /// translations. The primary is not deleted while a backup exists.
     ///
     /// - Throws: `ModelSettingsError.backupExists`.
     func deleteModelSlot(_ role: ModelRole) async throws {
@@ -40,12 +50,15 @@ extension Library {
             if role == .primary, try ModelSlot.fetchOne(db, key: ModelRole.backup.rawValue) != nil {
                 throw ModelSettingsError.backupExists
             }
-            _ = try ModelSlot.deleteOne(db, key: role.rawValue)
+            if try ModelSlot.deleteOne(db, key: role.rawValue) {
+                try Self.deleteFailedTranslations(db)
+            }
         }
     }
 
     /// Clears the key reference and the Test result of `role`'s row when it
-    /// still names `keyRef`.
+    /// still names `keyRef`, and then deletes the library's failed
+    /// translations.
     func clearModelKey(_ role: ModelRole, keyRef: String) async throws {
         let now = now()
         try await write { db in
@@ -53,6 +66,9 @@ extension Library {
                 sql: "UPDATE model_slot SET key_ref = NULL, test_outcome = NULL, updated_at = ? WHERE role = ? AND key_ref = ?",
                 arguments: [now, role.rawValue, keyRef]
             )
+            if db.changesCount > 0 {
+                try Self.deleteFailedTranslations(db)
+            }
         }
     }
 

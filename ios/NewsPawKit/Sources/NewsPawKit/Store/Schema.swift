@@ -5,8 +5,9 @@ import GRDB
 /// Migrations are append-only: a migration is never edited after it has been
 /// merged, and each keeps its name for good. Adding a value to one of the
 /// closed sets stored as text (`kind`, `overview`, `auto_translate`,
-/// `body_mode`, `origin`, and from `v5` `role`, `preset`, `test_outcome`,
-/// `purpose`, `outcome`) also ships with a migration, even an empty one, so
+/// `body_mode`, `origin`, from `v5` `role`, `preset`, `test_outcome`,
+/// `purpose`, `outcome`, and from `v6` `translation.state` and
+/// `translation.error`) also ships with a migration, even an empty one, so
 /// that an older build refuses the database as newer.
 enum Schema {
     /// The migrator the app opens libraries with.
@@ -17,6 +18,7 @@ enum Schema {
         registerV3(in: &migrator)
         registerV4(in: &migrator)
         registerV5(in: &migrator)
+        registerV6(in: &migrator)
         return migrator
     }
 
@@ -151,6 +153,32 @@ enum Schema {
                     at TEXT NOT NULL
                 );
                 CREATE INDEX usage_at ON usage(at);
+                """)
+        }
+    }
+
+    /// `v6`: one translation row per article and reading language (RD14
+    /// decision 2), and whether a usage row was an automatic request (N11).
+    /// `state` is `none`, `done` or `failed`; `title` and `excerpt` hold
+    /// what is shown in place of the originals (null: the original);
+    /// `error` is the stored reason of a failed row; `model` the model's
+    /// name, null when no model was called. An article without a row for
+    /// the reading language is waiting. Rows go with their article.
+    static func registerV6(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v6") { db in
+            try db.execute(sql: """
+                CREATE TABLE translation (
+                    article_id TEXT NOT NULL REFERENCES article(id) ON DELETE CASCADE,
+                    locale TEXT NOT NULL,
+                    title TEXT,
+                    excerpt TEXT,
+                    state TEXT NOT NULL,
+                    error TEXT,
+                    model TEXT,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (article_id, locale)
+                );
+                ALTER TABLE usage ADD COLUMN automatic INTEGER NOT NULL DEFAULT 0;
                 """)
         }
     }

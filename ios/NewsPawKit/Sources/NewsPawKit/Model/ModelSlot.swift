@@ -134,6 +134,9 @@ struct UsageRecord: Sendable, Hashable, Codable, FetchableRecord, PersistableRec
     let outputTokens: Int?
     let outcome: UsageOutcome
     let at: Date
+    /// Whether the request was sent without the owner asking (RD14): what
+    /// the daily automatic limit counts (N11).
+    let automatic: Bool
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -143,6 +146,7 @@ struct UsageRecord: Sendable, Hashable, Codable, FetchableRecord, PersistableRec
         case outputTokens = "output_tokens"
         case outcome
         case at
+        case automatic
     }
 
     static func databaseUUIDEncodingStrategy(for column: String) -> DatabaseUUIDEncodingStrategy {

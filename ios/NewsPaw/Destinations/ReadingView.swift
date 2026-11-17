@@ -91,6 +91,7 @@ private struct ArticleScreen: View {
     @Environment(ReadingModel.self) private var reading
     @Environment(NavigationModel.self) private var navigation
     @Environment(ReadingSettings.self) private var settings
+    @Environment(TranslationModel.self) private var translation: TranslationModel?
     @Environment(\.layoutDirection) private var layoutDirection
     @State private var isShowingSettings = false
     /// The title's size: 22 pt at the default Dynamic Type size, scaled
@@ -126,22 +127,37 @@ private struct ArticleScreen: View {
         .toolbar { bars }
         .onAppear {
             reading.loadBody(of: row)
+            // The reading screen asks for its article as a row does (RD14
+            // decision 7).
+            translation?.articleOpened(row)
         }
         .onDisappear {
             reading.readingScreenClosed(row.id)
+            translation?.articleClosed(row.id)
         }
     }
 
     // MARK: - Header
 
+    /// The translated title (large) with the original under it (small,
+    /// secondary) when there is a translation (ux S4; RD14 decision 11),
+    /// else the original; then the byline. Model text is plain text.
     @ViewBuilder
     private var header: some View {
-        Text(verbatim: row.displayTitle)
+        let translated = translation == nil ? nil : row.translatedTitle
+        Text(verbatim: translated ?? row.displayTitle)
             .font(.system(size: min(scaledTitleSize * settings.textSize.factor, ReadingMetrics.maximumSize), weight: .bold))
             .foregroundStyle(Theme.text)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)
             .accessibilityIdentifier(AccessibilityID.readingTitle)
+        if translated != nil {
+            Text(verbatim: row.displayTitle)
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier(AccessibilityID.readingOriginalTitle)
+        }
         Text(verbatim: byline)
             .font(.subheadline)
             .foregroundStyle(Theme.secondaryText)

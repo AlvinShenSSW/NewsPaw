@@ -38,6 +38,8 @@ struct RootView: View {
                     .environment(workspace.browser)
                     .environment(workspace.modelSettings)
                     .environment(workspace.readingSettings)
+                    .environment(workspace.translationSettings)
+                    .environment(workspace.translation)
                     .environment(workspace.navigation)
                     // The accent follows the partition (decision 7).
                     .environment(\.accent, Theme.accent(of: workspace.partition))
@@ -128,6 +130,7 @@ struct ShellView: View {
         .sourceDialogs(host: .root)
         .markAllReadDialog(host: .root)
         .browserDialogs()
+        .translationDialogs()
         .tint(accent)
         .foregroundStyle(Theme.text)
     }

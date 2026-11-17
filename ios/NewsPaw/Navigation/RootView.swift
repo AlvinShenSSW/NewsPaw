@@ -92,7 +92,6 @@ private struct AdultDebugElement: View {
 struct ShellView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accent) private var accent
-    @Environment(AppModel.self) private var model
     @Environment(CategoryModel.self) private var categories
     @Environment(SourceModel.self) private var sources
     @Environment(NavigationModel.self) private var navigation

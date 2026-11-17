@@ -202,16 +202,25 @@ struct BrowserView: View {
         }
     }
 
-    /// Translate (RD16; ux S5): on and off, shown active while on.
+    /// Translate (RD16; ux S5): on and off; while on, its symbol stands
+    /// on the accent colour, as an active control does.
     private var translateButton: some View {
         let pages = session.translation
-        // Closure literals for the binding (CI's compiler, see RD15).
-        return Toggle(isOn: Binding(get: { pages.isOn }, set: { _ in pages.toggle() })) {
+        return Button {
+            pages.toggle()
+        } label: {
             Label("Translate", systemImage: "translate")
+                .foregroundStyle(pages.isOn ? Theme.onAccent : accent)
+                .padding(6)
+                .background {
+                    if pages.isOn {
+                        Circle().fill(accent)
+                    }
+                }
         }
-        .toggleStyle(.button)
         .accessibilityLabel(Text("Translate"))
         .accessibilityValue(pages.isOn ? Text("On") : Text("Off"))
+        .accessibilityAddTraits(pages.isOn ? .isSelected : [])
         .accessibilityIdentifier(AccessibilityID.browserTranslateButton)
     }
 

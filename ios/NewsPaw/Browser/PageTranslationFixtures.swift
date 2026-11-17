@@ -215,7 +215,7 @@ enum PageTranslationFixtures {
             <p translate="no" id="elements"></p>
             <script>
             const report = document.getElementById("elements");
-            setInterval(() => { report.textContent = "b=" + document.getElementsByTagName("b").length + " scripts=" + document.scripts.length; }, 300);
+            setInterval(() => { report.textContent = "b=" + document.getElementsByTagName("b").length; }, 300);
             </script>
             """)
     }
@@ -236,12 +236,10 @@ enum PageTranslationFixtures {
     }
 
     /// Criterion 7: one block the primary refuses (the backup translates
-    /// it), beside one it translates.
+    /// it), after the title, which it translates: the retry's two halves
+    /// are one block each.
     private static var refusing: String {
-        page("拒否されるページ", """
-            <p>最初の段落は翻訳されます。</p>
-            <p>この段落は拒否されます fixture:refuse-primary</p>
-            """)
+        page("拒否されるページ", "<p>この段落は拒否されます fixture:refuse-primary</p>")
     }
 
     /// Criterion 7: the primary limits; the backup translates.

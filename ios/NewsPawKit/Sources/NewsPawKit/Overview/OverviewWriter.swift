@@ -676,4 +676,9 @@ public actor OverviewWriter {
     var queuedManualJobs: Int {
         manualQueue.count
     }
+
+    /// Automatic jobs queued and not yet taken.
+    var queuedAutomaticJobs: Int {
+        automaticQueue.count
+    }
 }

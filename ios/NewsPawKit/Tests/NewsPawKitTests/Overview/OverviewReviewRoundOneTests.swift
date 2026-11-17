@@ -54,6 +54,7 @@ struct OverviewReviewRoundOneTests {
         let (category, _, _) = try await fixture.filledCategory()
         await fixture.writer.enteredBackground()
         await fixture.runDue()
+        #expect(await fixture.writer.queuedAutomaticJobs == 0, "the due check queued nothing")
         #expect(await fixture.write(category) == .cancelled)
         #expect(fixture.service.requests.isEmpty)
         #expect(try await fixture.rows().isEmpty)

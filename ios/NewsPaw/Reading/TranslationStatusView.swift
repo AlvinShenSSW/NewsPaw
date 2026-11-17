@@ -101,11 +101,16 @@ struct BodyControlView: View {
         case .none:
             EmptyView()
         case .translate:
-            Button("Translate", systemImage: "translate", action: translate)
+            Button("Translate", systemImage: "translate") {
+                translate()
+            }
                 .accessibilityIdentifier(AccessibilityID.translateButton)
         case .modes:
             Menu {
-                Picker(selection: Binding(get: { mode }, set: setMode)) {
+                // Closure literals, not the stored function values: Xcode
+                // 26.6's compiler crashed emitting the thunk that converts
+                // `setMode` to the binding's setter type (CI, fix round 1).
+                Picker(selection: Binding(get: { mode }, set: { newMode in setMode(newMode) })) {
                     ForEach(ReadingDisplayMode.allCases, id: \.self) { option in
                         Text(verbatim: DisplayModeWording.title(option))
                             .tag(option)

@@ -57,6 +57,16 @@ private struct ArticleListContent: View {
                 .onChange(of: navigation.searchFocusRequests) {
                     focusIfAsked()
                 }
+                // Opening a result ends the field's focus: in the panes the
+                // field stays on screen beside the reading pane, and the
+                // software keyboard would stay up over that pane's bottom
+                // bar (Star, Share, Next). On the tab structure the push
+                // ends it anyway. The text and the rows are kept.
+                .onChange(of: navigation.openArticle(on: .search)) { _, opened in
+                    if opened != nil {
+                        isSearchFocused = false
+                    }
+                }
         } else {
             list
                 .refreshable {

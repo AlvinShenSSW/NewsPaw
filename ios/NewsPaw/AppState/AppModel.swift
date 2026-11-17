@@ -85,6 +85,10 @@ final class AppModel {
     /// turned off meanwhile, and no other move begins anywhere in the app
     /// (review round 3).
     private(set) var isMovingCategory = false
+    /// Whether a configuration import's write runs (RD20): no other import
+    /// writes, no category move begins and the partition is not turned
+    /// off meanwhile.
+    private(set) var isImportingConfiguration = false
     /// The sentence to show at the root; it outlives a swap of workspaces.
     var notice: AdultNotice?
     /// The question of turning off being asked at the root.
@@ -102,6 +106,11 @@ final class AppModel {
     @ObservationIgnored private var adultBrowserData: (any AdultBrowserData)?
     /// The adult partition's key store, for the adult library's models.
     @ObservationIgnored private var adultKeys: (any KeyStore)?
+    /// The normal partition's key store: a configuration import removes
+    /// the items of the references it cleared (RD20 decision 7).
+    @ObservationIgnored private var normalKeys: (any KeyStore)?
+    /// The preferences store the configuration file reads and writes.
+    @ObservationIgnored private var preferences: Preferences?
     /// Makes the adult library's models' own HTTP stand-in for each unlock
     /// (RD19 decision 3): no connection is shared with the normal one.
     @ObservationIgnored private var makeAdultModelHTTP: (@Sendable () -> any ModelHTTP)?
@@ -141,6 +150,10 @@ final class AppModel {
     /// The OPML fixture of the UI tests, which every workspace's source
     /// model takes (RD08 decision 8).
     @ObservationIgnored private var opmlFixture: OPMLFixture?
+    /// The configuration fixture of the UI tests (RD20 decision 10), and
+    /// the pause between an import's write and its completion.
+    @ObservationIgnored private var configurationFixture: ConfigurationFixture?
+    @ObservationIgnored private var configurationWritePause: Duration?
     @ObservationIgnored private var adultWasShown = false
     @ObservationIgnored private weak var lastAdultWorkspace: Workspace?
     @ObservationIgnored private weak var lastAdultBrowser: BrowserModel?
@@ -181,9 +194,10 @@ final class AppModel {
     func start() async {
         guard case .loading = status else { return }
         observeScene()
-        // OPML exports left by a session that ended with a share sheet open
-        // (RD08 decision 7).
+        // OPML and configuration exports left by a session that ended with
+        // a share sheet open (RD08 decision 7; RD20 decision 9).
         OPMLExportFile.emptyAll()
+        ConfigurationExportFile.emptyAll()
         // The one transport the app makes requests through. Under a UI-test
         // library directory it is the fixture transport, never the real one.
         // The one clock of the library and of Today's status line.
@@ -247,6 +261,8 @@ final class AppModel {
             let library = try await store.openNormal()
             normalLibrary = library
             let preferences = Preferences(defaults)
+            self.preferences = preferences
+            normalKeys = keyStore
             let models = LibraryModels(library: library, keys: keyStore, http: modelHTTP)
             let parts = WorkspaceParts(
                 transport: transport, candidateLimit: candidateLimit, now: now,
@@ -296,14 +312,21 @@ final class AppModel {
             let adultBrowserData: any AdultBrowserData = WebKitAdultBrowserData(identifier: BrowserDataStores.adultIdentifier)
             #endif
             self.adultBrowserData = adultBrowserData
-            let workspace = Workspace(library: library, models: models, parts: parts, browser: browser)
-            workspace.categories.moveRunsInApp = { [weak self] in self?.isMovingCategory ?? false }
+            let workspace = Workspace(
+                library: library, models: models, parts: parts, browser: browser,
+                configuration: configurationContext(adult: nil, workspace: WeakWorkspace())
+            )
+            workspace.categories.moveRunsInApp = { [weak self] in self?.moveIsHeldBack ?? false }
             #if DEBUG
             if options.libraryDirectory != nil {
                 articlePageSize = options.articlePageSize
                 opmlFixture = options.opmlFixture
+                configurationFixture = options.configurationFixture
+                configurationWritePause = options.configurationWritePause
             }
             workspace.sources.opmlFixture = opmlFixture
+            workspace.configuration.fixture = configurationFixture
+            workspace.configuration.writePause = configurationWritePause
             if let size = articlePageSize {
                 workspace.reading.pageSize = size
             }
@@ -367,7 +390,7 @@ final class AppModel {
         else { return .refused }
         // One move at a time (review round 3): an unlock that would carry
         // a move across does not begin while another move runs.
-        if case .move? = pending, isMovingCategory {
+        if case .move? = pending, moveIsHeldBack {
             return .refused
         }
         // Chosen in the slide-over: it closes, so that what follows is
@@ -389,9 +412,16 @@ final class AppModel {
             // adult key store and an HTTP stand-in of their own. They go
             // with the workspace at the lock.
             let models = LibraryModels(library: library, keys: adultKeys, http: makeAdultModelHTTP())
-            let workspace = Workspace(library: library, models: models, parts: parts, browser: makeAdultBrowser())
+            // The adult target is the pair the adult models were made from
+            // (RD20 decision 7): only this workspace's context has it.
+            let shown = WeakWorkspace()
+            let workspace = Workspace(
+                library: library, models: models, parts: parts, browser: makeAdultBrowser(),
+                configuration: configurationContext(adult: ConfigurationTarget(library: library, keys: adultKeys), workspace: shown)
+            )
+            shown.value = workspace
             workspace.categories.mover = mover(adult: library, workspace: workspace)
-            workspace.categories.moveRunsInApp = { [weak self] in self?.isMovingCategory ?? false }
+            workspace.categories.moveRunsInApp = { [weak self] in self?.moveIsHeldBack ?? false }
             // No adult page opens while its data are cleared or removed.
             workspace.browser.mayMakeSessions = { [weak self] in
                 guard let self else { return false }
@@ -403,6 +433,8 @@ final class AppModel {
                 workspace.reading.pageSize = size
             }
             workspace.sources.opmlFixture = opmlFixture
+            workspace.configuration.fixture = configurationFixture
+            workspace.configuration.writePause = configurationWritePause
             #endif
             await workspace.load()
             // From here to the end of the case nothing suspends before the
@@ -454,6 +486,7 @@ final class AppModel {
         // criterion 8).
         normal.navigation.clear()
         normal.sources.endOPMLImport()
+        normal.configuration.leftForOtherPartition()
         applyTint()
         #if DEBUG
         adultWasShown = true
@@ -490,8 +523,10 @@ final class AppModel {
         }
         workspace.stop()
         // An adult export whose share sheet the swap took away is not
-        // dismissed through the sheet: every export file goes now (RD08).
+        // dismissed through the sheet: every export file goes now (RD08,
+        // RD20).
         OPMLExportFile.emptyAll()
+        ConfigurationExportFile.emptyAll()
         gateState = .locked
         applyTint()
         // A cover that is shown stays until the scene is active again and
@@ -661,7 +696,7 @@ final class AppModel {
             plan: { [weak self] id, from in
                 // No second move's plan while a move runs (review round 3):
                 // the model says nothing was moved.
-                guard let self, !self.isMovingCategory, let normalLibrary = self.normalLibrary else { return nil }
+                guard let self, !self.moveIsHeldBack, let normalLibrary = self.normalLibrary else { return nil }
                 let (old, new) = from == .normal ? (normalLibrary, library) : (library, normalLibrary)
                 return try? await CategoryMove.plan(category: id, from: old, to: new)
             },
@@ -688,7 +723,7 @@ final class AppModel {
         // knows nothing of a move an earlier one started. A second run is
         // refused and changes nothing; the flag belongs to the run that set
         // it (no await between the check and the setting).
-        guard let normalLibrary, let normal, !isMovingCategory else { return .notMoved }
+        guard let normalLibrary, let normal, !moveIsHeldBack else { return .notMoved }
         isMovingCategory = true
         defer { isMovingCategory = false }
         let toAdult = plan.from == .normal
@@ -738,13 +773,109 @@ final class AppModel {
         return outcome
     }
 
+    // MARK: - The configuration file (RD20 decision 7)
+
+    /// A category move does not begin while another move or a
+    /// configuration import's write runs (review round 3; RD20).
+    private var moveIsHeldBack: Bool {
+        isMovingCategory || isImportingConfiguration
+    }
+
+    /// Whether a configuration import's write may not begin now.
+    var configurationWriteIsHeldBack: Bool {
+        isImportingConfiguration || isMovingCategory || isTurningOff
+    }
+
+    /// What a workspace's configuration model is given. The adult target
+    /// only for the adult workspace; `workspace` names the workspace the
+    /// context is for, weakly, so that the write's completion never keeps
+    /// it.
+    private func configurationContext(adult: ConfigurationTarget?, workspace: WeakWorkspace) -> ConfigurationContext {
+        guard let preferences, let normalLibrary, let normalKeys else {
+            preconditionFailure("the configuration context before the normal library is open")
+        }
+        return ConfigurationContext(
+            preferences: preferences,
+            normal: ConfigurationTarget(library: normalLibrary, keys: normalKeys),
+            adult: adult,
+            appVersion: AboutView.version,
+            now: now,
+            gateState: { [weak self] in self?.gateState ?? .unavailable },
+            noticeIsShown: { [weak self] in self?.notice != nil },
+            unlock: { [weak self] document in
+                guard let self else { return .refused }
+                return await self.unlockForImport(document)
+            },
+            writeIsHeldBack: { [weak self] in self?.configurationWriteIsHeldBack ?? true },
+            beginWrite: { [weak self] in
+                guard let self, !self.configurationWriteIsHeldBack else { return false }
+                self.isImportingConfiguration = true
+                return true
+            },
+            completion: { [weak self, weak workspace] result in
+                guard let self else { return false }
+                return await self.configurationImported(result, by: workspace?.value)
+            },
+            summaryLeft: { [weak self] result in
+                self?.configurationSummaryLeft(result)
+            }
+        )
+    }
+
+    /// "Unlock" or "Turn On and Unlock" of an import begun in the normal
+    /// partition: the partition switch's own unlock, after turning the
+    /// partition on when it is off (two prompts, decision 11), carrying
+    /// the document. Every outcome but `.unlocked` drops it here.
+    private func unlockForImport(_ document: ConfigurationDocument) async -> AdultUnlockOutcome {
+        if gateState == .off {
+            await turnOnAdult()
+            guard gateState == .locked else { return .refused }
+        }
+        return await chooseAdult(pending: .importConfiguration(document))
+    }
+
+    /// The completion of every import's write (decision 7), whether or not
+    /// the workspace that began it still exists: the normal workspace is
+    /// read again, the shared settings objects read the preferences again
+    /// and the normal library's translation resumes; the adult workspace
+    /// is read again only while it is the one shown.
+    ///
+    /// - Returns: whether the summary may be shown: the workspace that
+    ///   began the import is the one shown.
+    private func configurationImported(_ result: ConfigurationImportResult, by workspace: Workspace?) async -> Bool {
+        defer { isImportingConfiguration = false }
+        guard let normal, let parts else { return false }
+        await normal.reloadAfterImport()
+        parts.refreshSettings.reload()
+        parts.translationSettings.reload()
+        parts.slotsChanged()
+        if let workspace, workspace.partition == .adult {
+            guard adult === workspace else { return false }
+            await workspace.reloadAfterImport()
+            workspace.translation.slotsChanged()
+            return adult === workspace
+        }
+        return adult == nil
+    }
+
+    /// The summary was left: each workspace whose library was written and
+    /// that still exists refreshes (decision 8).
+    private func configurationSummaryLeft(_ result: ConfigurationImportResult) {
+        if case .imported = result.normal, let refresh = normal?.refresh {
+            Task { await refresh.refresh(.library) }
+        }
+        if case .imported? = result.adult, let refresh = adult?.refresh {
+            Task { await refresh.refresh(.library) }
+        }
+    }
+
     /// "Turn Off the Adult Partition": asks at the root.
     /// Whether the partition can be turned off now: not while its
     /// browser's data are cleared or a category move runs (review round 2):
     /// Delete would remove a store the clear then makes again, or the
     /// library a move is copying into.
     var canTurnOff: Bool {
-        showsPartitionSwitch && !isClearingBrowsingData && !isMovingCategory
+        showsPartitionSwitch && !isClearingBrowsingData && !isMovingCategory && !isImportingConfiguration
     }
 
     func askToTurnOff() {
@@ -999,7 +1130,8 @@ final class AppModel {
             + "browser=\(state(lastAdultBrowser)) sessions=\(BrowserModel.sessionsMade) "
             + "pages=\((parts?.transport as? FixtureTransport)?.pageRequests ?? -1) "
             + "translationRequests=\(FixtureModelHTTP.translationRequests) "
-            + "adultStore=\(await adultStoreIsListed() ? "listed" : "absent")"
+            + "adultStore=\(await adultStoreIsListed() ? "listed" : "absent") "
+            + "configuration=\(normal?.configuration.heldDocumentReport ?? "none")"
     }
 
     private func adultStoreIsListed() async -> Bool {
@@ -1007,4 +1139,11 @@ final class AppModel {
         return await WKWebsiteDataStore.allDataStoreIdentifiers.contains(uiTestAdultStore)
     }
     #endif
+}
+
+/// A workspace held weakly: what a configuration context names as its own
+/// before and after the workspace exists (RD20).
+@MainActor
+final class WeakWorkspace {
+    weak var value: Workspace?
 }

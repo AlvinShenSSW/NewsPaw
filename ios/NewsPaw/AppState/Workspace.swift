@@ -45,14 +45,17 @@ struct BrowserSetup {
 }
 
 /// An operation that needs the adult library and began in the normal
-/// partition (RD19 decision 9; RD20 adds its own case): it is carried
-/// through the partition switch's own unlock and handed to the adult
-/// workspace once that is shown. It lives only in that call and then in
-/// the adult workspace, so that a lock drops it.
+/// partition (RD19 decision 9; RD20 decision 7): it is carried through
+/// the partition switch's own unlock and handed to the adult workspace
+/// once that is shown. It lives only in that call and then in the adult
+/// workspace, so that a lock drops it.
 enum PendingAdultOperation {
     /// Moving the normal category of this identifier to the adult
     /// partition.
     case move(categoryID: UUID)
+    /// A configuration file with the adult partition, read in the normal
+    /// partition: the adult workspace builds its preview.
+    case importConfiguration(ConfigurationDocument)
 }
 
 /// What an unlock asked for by `AppModel.chooseAdult(pending:)` came to.
@@ -106,11 +109,19 @@ final class Workspace: Identifiable {
     /// library's rows show originals; nothing of it is ever sent through
     /// another library's models.
     let translation: TranslationModel
+    /// The configuration file's export and import (RD20): only the adult
+    /// workspace's may write the adult library.
+    let configuration: ConfigurationModel
 
-    /// - Parameter models: the library's own models; another library's are
-    ///   a programming error.
-    init(library: Library, models: LibraryModels, parts: WorkspaceParts, browser setup: BrowserSetup) {
+    /// - Parameters:
+    ///   - models: the library's own models; another library's are a
+    ///     programming error.
+    ///   - configuration: what the configuration model is given (RD20
+    ///     decision 7); an adult target outside the adult workspace is a
+    ///     programming error.
+    init(library: Library, models: LibraryModels, parts: WorkspaceParts, browser setup: BrowserSetup, configuration context: ConfigurationContext) {
         precondition(models.belong(to: library), "the models of another library")
+        precondition(context.adult.map { $0.library === library } ?? true, "the adult target of another library")
         partition = library.partition
         self.models = models
         let navigation = navigation
@@ -179,6 +190,7 @@ final class Workspace: Identifiable {
         self.modelSettings = modelSettings
         self.partitionModelSettings = partitionModelSettings
         self.translation = translation
+        configuration = ConfigurationModel(partition: library.partition, context: context, navigation: navigation, sources: sources)
         readingSettings = parts.readingSettings
         translationSettings = parts.translationSettings
     }
@@ -202,9 +214,23 @@ final class Workspace: Identifiable {
         switch pending {
         case .move(let id)?:
             categories.beginMove(id, from: .normal)
+        case .importConfiguration(let document)?:
+            configuration.receive(document)
         case nil:
             break
         }
+    }
+
+    /// A configuration import wrote this workspace's library, or the
+    /// settings every workspace shares (RD20 decision 7): what the root
+    /// screens show is read again, every living list too.
+    func reloadAfterImport() async {
+        await categories.reload()
+        await refresh.load()
+        await reading.loadSettings()
+        await modelSettings.reload()
+        await partitionModelSettings?.reload()
+        await reading.reloadAllLists()
     }
 
     /// A category was moved out of this workspace's library (RD19 decision
@@ -236,6 +262,7 @@ final class Workspace: Identifiable {
         reading.stop()
         browser.stop()
         translation.stop()
+        configuration.stop()
         // Closes the sheet and every pushed screen; the model form, if one
         // was pushed, cancels its running Test or list with its route.
         navigation.clear()

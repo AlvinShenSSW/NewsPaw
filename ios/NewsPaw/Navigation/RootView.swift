@@ -42,6 +42,7 @@ struct RootView: View {
                     .environment(workspace.translationSettings)
                     .environment(workspace.translation)
                     .environment(workspace.navigation)
+                    .environment(workspace.configuration)
                     // The accent follows the partition (decision 7).
                     .environment(\.accent, Theme.accent(of: workspace.partition))
                     // The cover waits for the shell of the workspace
@@ -93,6 +94,7 @@ struct ShellView: View {
     @Environment(CategoryModel.self) private var categories
     @Environment(SourceModel.self) private var sources
     @Environment(NavigationModel.self) private var navigation
+    @Environment(ConfigurationModel.self) private var configuration
     @State private var width = 0.0
 
     private var layout: WindowLayout {
@@ -125,8 +127,11 @@ struct ShellView: View {
                 .sourceDialogs(host: .sheet)
                 .environment(categories)
                 .environment(sources)
+                .environment(configuration)
+                .environment(navigation)
                 .tint(accent)
         }
+        .configurationImport()
         .categoryDialogs(host: .root)
         .sourceDialogs(host: .root)
         .markAllReadDialog(host: .root)
@@ -143,14 +148,18 @@ struct ShellView: View {
         case .categorySettings(let id): CategorySheetView(sheet: .settings(id))
         case .addSource: AddSourceView()
         case .sourceSettings(let id): SourceSettingsView(sourceID: id)
+        case .configurationImport: ConfigurationImportSheet()
         }
     }
 
     /// A sheet closed by any means. Add source cancels its detection and
-    /// releases what it parsed.
+    /// releases what it parsed. A configuration import's sheet ends the
+    /// import; one begun on Add source presents its picker now (RD20).
     private func sheetDismissed() {
         if navigation.sheet != .addSource, sources.addSource != nil {
             sources.addSourceClosed()
         }
+        configuration.sheetClosed()
+        configuration.sheetDidClose()
     }
 }

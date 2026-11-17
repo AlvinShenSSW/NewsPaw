@@ -74,7 +74,7 @@ final class CategoryModel {
             switch navigation.sheet {
             case .newCategory: .newCategory
             case .categorySettings(let id): .settings(id)
-            case .addSource, .sourceSettings, nil: nil
+            case .addSource, .sourceSettings, .configurationImport, nil: nil
             }
         }
         set {

@@ -158,13 +158,14 @@ struct RefreshSettingsView: View {
     }
 }
 
-/// Settings → Data (ux S8; RD09 decision 14; RD08): OPML import and export
-/// of the current library, the size of its image cache, read each time the
-/// screen is shown, and Clear for that cache only. The configuration file
-/// arrives with RD20.
+/// Settings → Data (ux S8; RD09 decision 14; RD08; RD20): the
+/// configuration file's export and import, OPML import and export of the
+/// current library, the size of its image cache, read each time the
+/// screen is shown, and Clear for that cache only.
 struct DataSettingsView: View {
     @Environment(ReadingModel.self) private var reading
     @Environment(SourceModel.self) private var sources
+    @Environment(ConfigurationModel.self) private var configuration
     @State private var size: Int?
     @State private var isClearing = false
     @State private var isExporting = false
@@ -184,6 +185,7 @@ struct DataSettingsView: View {
 
     var body: some View {
         List {
+            ConfigurationSection()
             Section {
                 Button {
                     sources.beginOPMLImport(from: .settings)
@@ -274,10 +276,15 @@ struct DataSettingsView: View {
         .navigationTitle("Data")
         .onAppear {
             isShown = true
+            // "Include the Adult Partition" is off each time the screen
+            // opens (RD20 decision 7).
+            configuration.includesAdult = false
+            configuration.isDataShown = true
             Task { size = await reading.library.imageCache.size() }
         }
         .onDisappear {
             isShown = false
+            configuration.isDataShown = false
         }
         .opmlImport(from: .settings)
     }
@@ -325,6 +332,115 @@ struct DataSettingsView: View {
             size = await cache.size()
             isClearing = false
         }
+    }
+}
+
+/// The Configuration section of Settings › Data (ux S8, S11; RD20
+/// decisions 7 and 9): "Include the Adult Partition" — hidden while the
+/// partition is off or unavailable, shown disabled and off in the normal
+/// partition, enabled inside the adult one — then Export and Import.
+private struct ConfigurationSection: View {
+    @Environment(ConfigurationModel.self) private var configuration
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        @Bindable var configuration = configuration
+        Section {
+            if showsSwitch {
+                Toggle("Include the Adult Partition", isOn: $configuration.includesAdult)
+                    .disabled(!configuration.canIncludeAdult || configuration.isExporting)
+                    .frame(minHeight: Theme.minimumTapTarget)
+                    .accessibilityIdentifier(AccessibilityID.includeAdultToggle)
+            }
+            Button {
+                configuration.export()
+            } label: {
+                HStack {
+                    Text("Export Configuration")
+                    if configuration.isExporting {
+                        Spacer(minLength: Theme.Spacing.small)
+                        ProgressView()
+                    }
+                }
+                .frame(minHeight: Theme.minimumTapTarget)
+            }
+            .disabled(configuration.isExporting)
+            .accessibilityIdentifier(AccessibilityID.exportConfigurationButton)
+            // On the row: the list's other rows carry OPML's sheet and alert.
+            .sheet(
+                item: Binding {
+                    configuration.exportedFile.map(SharedConfiguration.init)
+                } set: { shared in
+                    if shared == nil, configuration.exportedFile != nil {
+                        configuration.exportEnded()
+                    }
+                },
+                onDismiss: { configuration.exportEnded() }
+            ) { shared in
+                ShareSheet(url: shared.url) {
+                    configuration.exportEnded()
+                }
+                .ignoresSafeArea()
+            }
+            .alert(
+                Text("Could not export"),
+                isPresented: Binding {
+                    configuration.exportFailure != nil
+                } set: { presented in
+                    if !presented {
+                        configuration.exportFailure = nil
+                    }
+                },
+                presenting: configuration.exportFailure
+            ) { _ in
+                Button("OK") {}
+            } message: { failure in
+                switch failure {
+                case .tooLarge: Text("Your library has more than 500 categories or 5,000 sources, which a configuration file cannot hold.")
+                case .failed: Text("The configuration could not be exported.")
+                }
+            }
+            Button {
+                configuration.beginImport(from: .settings)
+            } label: {
+                HStack {
+                    Text("Import Configuration")
+                    if configuration.origin == .settings, configuration.stage == .reading {
+                        Spacer(minLength: Theme.Spacing.small)
+                        ProgressView()
+                    }
+                }
+                .frame(minHeight: Theme.minimumTapTarget)
+            }
+            .disabled(configuration.isImporting)
+            .accessibilityIdentifier(AccessibilityID.importConfigurationButton)
+        } header: {
+            Text("Configuration")
+                .foregroundStyle(Theme.secondaryText)
+        } footer: {
+            VStack(alignment: .leading, spacing: Theme.Spacing.small) {
+                Text("Categories, sources, settings and models, for your other devices. Keys are never included.")
+                if showsSwitch, !configuration.canIncludeAdult {
+                    Text("To include the adult partition, export from inside it.")
+                }
+                if configuration.includesAdult {
+                    Text("The file is not encrypted: anyone who has it can read the adult partition's categories and sources.")
+                }
+            }
+            .foregroundStyle(Theme.secondaryText)
+        }
+        .listRowBackground(Theme.surface)
+    }
+
+    /// The switch exists only while the partition is on.
+    private var showsSwitch: Bool {
+        app.gateState == .locked || app.gateState == .unlocked
+    }
+
+    /// The file handed to the share sheet.
+    private struct SharedConfiguration: Identifiable {
+        let url: URL
+        var id: URL { url }
     }
 }
 

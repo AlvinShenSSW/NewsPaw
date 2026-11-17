@@ -21,4 +21,17 @@ final class RefreshSettings {
         interval = preferences.refreshInterval
         retention = preferences.retention
     }
+
+    /// Reads the preferences again after a configuration import wrote
+    /// them (RD20 decision 7): a changed value acts as a change made here.
+    func reload() {
+        let interval = preferences.refreshInterval
+        let retention = preferences.retention
+        if interval != self.interval {
+            self.interval = interval
+        }
+        if retention != self.retention {
+            self.retention = retention
+        }
+    }
 }

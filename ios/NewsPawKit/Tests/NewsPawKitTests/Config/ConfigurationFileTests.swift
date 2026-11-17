@@ -356,7 +356,10 @@ struct ConfigurationFileTests {
 
     @Test("a value of the wrong type in an entry is refused with its position")
     func wrongTypes() {
+        // A1: `1` where a Boolean is read, `true` where an integer is read.
         #expect(Self.refusal { J.change(&$0, "sources", at: 0) { $0["paused"] = 1 } } == .invalid(.unknownValue, at: .source(1)))
+        #expect(Self.refusal { J.change(&$0, "categories", at: 1) { $0["sort_order"] = true } } == .invalid(.unknownValue, at: .category(2)))
+        #expect(Self.refusal { $0["partition_settings"] = [["partition": "normal", "daily_auto_limit": false]] } == .invalid(.unknownValue, at: .settings))
         #expect(Self.refusal { J.change(&$0, "sources", at: 0) { $0["paused"] = "true" } } == .invalid(.unknownValue, at: .source(1)))
         #expect(Self.refusal { J.change(&$0, "categories", at: 0) { $0["name"] = 12 } } == .invalid(.unknownValue, at: .category(1)))
         #expect(Self.refusal { J.change(&$0, "model_slots", at: 0) { $0["model"] = ["gpt"] } } == .invalid(.unknownValue, at: .model(1)))

@@ -57,6 +57,7 @@ private struct AddSourceStack: View {
 struct AddressStepView: View {
     @Bindable var model: AddSourceModel
     @Environment(SourceModel.self) private var sources
+    @Environment(ConfigurationModel.self) private var configuration
     @FocusState private var isFieldFocused: Bool
 
     var body: some View {
@@ -127,6 +128,17 @@ struct AddressStepView: View {
                 }
                 .disabled(model.isDetecting || sources.opmlImport?.stage == .reading)
                 .accessibilityIdentifier(AccessibilityID.addSourceImportOPMLButton)
+                // Closes Add source; the import goes on from the root
+                // (RD20 decision 8).
+                Button {
+                    isFieldFocused = false
+                    configuration.beginImport(from: .addSource)
+                } label: {
+                    Label("Import Configuration", systemImage: "doc.badge.gearshape")
+                        .frame(minHeight: Theme.minimumTapTarget)
+                }
+                .disabled(model.isDetecting || configuration.isImporting)
+                .accessibilityIdentifier(AccessibilityID.addSourceImportConfigurationButton)
             }
             .listRowBackground(Theme.surface)
         }

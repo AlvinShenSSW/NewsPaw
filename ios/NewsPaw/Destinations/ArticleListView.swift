@@ -25,7 +25,31 @@ private struct ArticleListContent: View {
     @Environment(RefreshModel.self) private var refresh
 
     var body: some View {
+        let card = overviewCategory
         List {
+            if let card {
+                // The overview card (RD23 decision 12): the first row, with
+                // no swipe and no separator; its height counts towards "the
+                // first row is on screen".
+                OverviewListCard(category: card)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Theme.background)
+                    .listRowInsets(EdgeInsets(
+                        top: Theme.Spacing.small, leading: Theme.Spacing.standard, bottom: Theme.Spacing.small,
+                        trailing: Theme.Spacing.standard
+                    ))
+                    .onGeometryChange(for: Double.self) { $0.size.height } action: { height in
+                        model.cardMeasured(height: height + 2 * Theme.Spacing.small)
+                    }
+                    .onDisappear { model.cardMeasured(height: 0) }
+                if showsEmptyState {
+                    // Below the card, as a row: an overlay would cover it.
+                    emptyState
+                        .frame(minHeight: 280)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Theme.background)
+                }
+            }
             ForEach(model.rows) { row in
                 ArticleRowButton(row: row, kind: kind, model: model)
             }
@@ -34,7 +58,7 @@ private struct ArticleListContent: View {
         // Over the list, which still scrolls and refreshes under it
         // (measured: a pull on the empty state refreshes).
         .overlay {
-            if showsEmptyState {
+            if showsEmptyState, card == nil {
                 emptyState
             }
         }
@@ -118,6 +142,17 @@ private struct ArticleListContent: View {
                 .listRowBackground(Theme.background)
                 .onAppear { reading.loadNextPage(model) }
         }
+    }
+
+    // MARK: - The overview card (RD23)
+
+    /// The category whose overview card heads the list: a category's list
+    /// whose overviews are on.
+    private var overviewCategory: LibraryCategory? {
+        guard case .category(let id) = kind, let category = categories.summary(id)?.category, category.overview != .off else {
+            return nil
+        }
+        return category
     }
 
     // MARK: - Empty states (decision 16)

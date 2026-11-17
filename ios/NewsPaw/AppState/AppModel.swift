@@ -249,7 +249,10 @@ final class AppModel {
                 translationSettings: TranslationSettings(preferences: preferences),
                 // The normal library's models: its workspace's translation
                 // resumes, whichever workspace's Settings saved.
-                slotsChanged: { [weak self] in self?.normal?.translation.slotsChanged() }
+                slotsChanged: { [weak self] in
+                    self?.normal?.translation.slotsChanged()
+                    self?.normal?.overviews.slotsChanged()
+                }
             )
             self.parts = parts
             // The embedded browser (RD19 decision 4): the system's default
@@ -300,9 +303,15 @@ final class AppModel {
             if let count = options.syntheticSources {
                 try await library.insertSyntheticSourcesForUITests(count: count)
             }
-            // The translator fixture's models and the daily limit (RD14).
+            // The translator fixture's models and the daily limit (RD14);
+            // the earlier overviews (RD23).
             if options.libraryDirectory != nil {
                 try await Self.setUpTranslationForUITests(options, models: models, library: library)
+                if options.seedOverviews {
+                    try await library.insertEarlierOverviewsForUITests(
+                        locale: parts.translationSettings.readingLocale, now: now(), calendar: .autoupdatingCurrent
+                    )
+                }
             }
             workspace.categories.failNextSave = options.failNextSave
             workspace.categories.slowNextSave = options.slowNextSave
@@ -835,6 +844,11 @@ final class AppModel {
             // adult library's, while it is shown.
             normal?.translation.cameToFront()
             adult?.translation.cameToFront()
+            // The overviews' cards are read and the day's change waited for
+            // afresh (RD23 decision 12). The due check at every entry is
+            // added when RD24 meets this (RD23 Handoff).
+            normal?.overviews.cameToFront()
+            adult?.overviews.cameToFront()
         }
         removeCover()
     }

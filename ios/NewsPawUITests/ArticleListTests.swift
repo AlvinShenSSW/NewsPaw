@@ -227,8 +227,13 @@ final class ArticleListTests: ArticleTestCase {
         waitForUnread(articleRow("Linkless story"), false)
     }
 
-    // MARK: - Criterion 9: Today
+    // MARK: - Criterion 9: Today (as RD23 changed it)
 
+    /// Today with categories: one card or row per category in the owner's
+    /// order, each with its unread count, under the status line — also a
+    /// category without unread articles (RD23 replaced RD09's interim rows,
+    /// which listed only categories with unread articles). Its header opens
+    /// the category's list; after Mark All as Read the row stays at 0.
     func testTodayRows() {
         launchAtFullWidth()
         showToday()
@@ -244,12 +249,11 @@ final class ArticleListTests: ArticleTestCase {
         let tech = waitFor(element(AccessibilityID.todayCategoryRow("Tech")))
         XCTAssertEqual(world.value as? String, "3 unread")
         XCTAssertEqual(tech.value as? String, "3 unread")
-        XCTAssertFalse(element(AccessibilityID.todayCategoryRow("Quiet")).exists, "a category without unread articles")
         XCTAssertFalse(element(AccessibilityID.todayEmpty).exists)
         XCTAssertLessThan(world.frame.minY, tech.frame.minY, "the owner's order")
         let status = waitFor(element(AccessibilityID.todayStatus))
         XCTAssertLessThanOrEqual(element(AccessibilityID.todayDate).frame.maxY, status.frame.minY + 0.5)
-        XCTAssertLessThanOrEqual(status.frame.maxY, world.frame.minY + 0.5, "the status line stays above the rows")
+        XCTAssertLessThanOrEqual(status.frame.maxY, world.frame.minY + 0.5, "the status line stays above the cards")
         screenshot("today-rows")
 
         world.tap()
@@ -261,15 +265,10 @@ final class ArticleListTests: ArticleTestCase {
         button(AccessibilityID.markAllReadButton).tap()
         waitFor(app.alerts.firstMatch).buttons["Mark as Read"].tap()
         showToday()
-        waitForAbsence(element(AccessibilityID.todayCategoryRow("World")))
+        waitForValue(waitFor(element(AccessibilityID.todayCategoryRow("World"))), "0 unread")
         XCTAssertEqual(element(AccessibilityID.todayCategoryRow("Tech")).value as? String, "3 unread")
-        openCategoryList("Tech")
-        waitFor(articleRow("Fixture story one"))
-        button(AccessibilityID.markAllReadButton).tap()
-        waitFor(app.alerts.firstMatch).buttons["Mark as Read"].tap()
-        showToday()
-        waitFor(element(AccessibilityID.todayEmpty))
-        XCTAssertEqual(element(AccessibilityID.todayEmpty).label, "Nothing new today")
+        let quiet = scrollTo(element(AccessibilityID.todayCategoryRow("Quiet")))
+        XCTAssertEqual(quiet.value as? String, "0 unread")
     }
 
     /// Today scrolls past one screen: with six long-named categories at

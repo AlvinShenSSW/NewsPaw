@@ -349,3 +349,34 @@ extension Library {
         return id
     }
 }
+
+#if DEBUG
+// MARK: - UI-test seeding (debug builds only)
+
+extension Library {
+    /// Stores three `done` overviews of the first category in `locale`, for
+    /// the three days before the day of `now` (RD23 decision 16), so that a
+    /// UI test can open Earlier Overviews. Does nothing without a category;
+    /// a day that has a row keeps it. Compiled into debug builds only.
+    public func insertEarlierOverviewsForUITests(locale: ReadingLocale, now: Date, calendar: Calendar) async throws {
+        let created = self.now()
+        try await write { db in
+            guard let first = try String.fetchOne(db, sql: "SELECT id FROM category ORDER BY sort_order, id LIMIT 1") else { return }
+            for days in 1...3 {
+                let day = OverviewDay.key(daysBefore: days, now, calendar: calendar)
+                try db.execute(
+                    sql: """
+                        INSERT INTO overview (id, category_id, day, locale, text, highlights, article_count, covered_until, model, state, created_at)
+                        VALUES (?, ?, ?, ?, ?, '[]', 3, ?, 'fixture-translator', 'done', ?)
+                        ON CONFLICT (category_id, day, locale) DO NOTHING
+                        """,
+                    arguments: [
+                        UUID().databaseKey, first, day, locale.rawValue, "Earlier overview \(days) day(s) ago.",
+                        created.addingTimeInterval(-Double(days) * 86_400), created.addingTimeInterval(-Double(days) * 86_400),
+                    ]
+                )
+            }
+        }
+    }
+}
+#endif

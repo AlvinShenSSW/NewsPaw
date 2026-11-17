@@ -23,6 +23,41 @@
         }
       }
     },
+    "%lld new articles, no overview for today yet" : {
+      "comment" : "An overview card on Today or in a category's list (RD23): the category has new articles and no overview for today; followed by Write Overview.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld new article, no overview for today yet"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld new articles, no overview for today yet"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "有 %lld 篇新文章，还没有今天的概览"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld sources failed" : {
       "comment" : "Today's status line: how many sources failed in their last update; a button that shows them in the category list.",
       "localizations" : {
@@ -86,6 +121,41 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld 篇未读"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld unread · Overviews off" : {
+      "comment" : "Today's row of a category whose overviews are off (RD23): its unread articles.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld unread · Overviews off"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld unread · Overviews off"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld 篇未读 · 概览已关闭"
                 }
               }
             }
@@ -346,6 +416,17 @@
         }
       }
     },
+    "An overview rests on titles and excerpts only and is not verification." : {
+      "comment" : "Standing line under every overview's footnote (spec N07; RD23 decision 6).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "概览只依据标题和摘要生成，未经核实。"
+          }
+        }
+      }
+    },
     "Australia" : {
       "comment" : "Group of suggested sources.",
       "localizations" : {
@@ -369,12 +450,23 @@
       }
     },
     "Automatic" : {
-      "comment" : "Body option of a source.",
+      "comment" : "Body option of a source. Also the Overviews option of Category Settings (RD23).",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "自动"
+          }
+        }
+      }
+    },
+    "Automatic: written after the day's first refresh that brings new articles. Manual: written when you tap Write Overview." : {
+      "comment" : "Footer of the Overviews setting in Category Settings (ux S13; RD23 decision 13).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动：当天第一次刷新带来新文章后生成。手动：点“生成概览”时生成。"
           }
         }
       }
@@ -918,6 +1010,17 @@
         }
       }
     },
+    "Earlier Overviews" : {
+      "comment" : "Button on the expanded overview card of a category's list, and the title of its sheet: the overviews of the last 7 days (RD23).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "往日概览"
+          }
+        }
+      }
+    },
     "Edit" : {
       "comment" : "Button: puts the category list in edit mode to reorder and delete.",
       "localizations" : {
@@ -1002,6 +1105,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "“%@”的所有来源在普通分区中都已存在，没有移动任何内容。"
+          }
+        }
+      }
+    },
+    "Expand" : {
+      "comment" : "Button on the collapsed overview card of a category's list: shows the whole overview (RD23).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展开"
           }
         }
       }
@@ -1628,6 +1742,17 @@
         }
       }
     },
+    "Less" : {
+      "comment" : "Button on an expanded overview card: shows less of it again (RD23).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起"
+          }
+        }
+      }
+    },
     "Library" : {
       "comment" : "Destination name: the tab that lists All Unread and the categories (ux section 2).",
       "localizations" : {
@@ -1734,6 +1859,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在查找 Feed…"
+          }
+        }
+      }
+    },
+    "Manual" : {
+      "comment" : "Overviews option in Category Settings: an overview is written only when the owner taps Write Overview (RD23).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手动"
           }
         }
       }
@@ -1884,7 +2020,7 @@
       }
     },
     "More" : {
-      "comment" : "Accessibility label of an article list's toolbar menu (Refresh, Category or Source Settings).",
+      "comment" : "Accessibility label of an article list's toolbar menu (Refresh, Category or Source Settings). Also the button that shows a whole overview on Today (RD23).",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2103,6 +2239,17 @@
         }
       }
     },
+    "No earlier overviews" : {
+      "comment" : "Empty state of Earlier Overviews (RD23).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有往日概览"
+          }
+        }
+      }
+    },
     "No feed was found at this address" : {
       "comment" : "Add source outcome: the page declares no feed.",
       "localizations" : {
@@ -2192,7 +2339,7 @@
       }
     },
     "Nothing new today" : {
-      "comment" : "Empty state of Today (ux section 4).",
+      "comment" : "Empty state of Today (ux section 4). Also an overview card's row when its category has no new article (RD23).",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2214,7 +2361,7 @@
       }
     },
     "Off" : {
-      "comment" : "Translate-titles option of a source.",
+      "comment" : "Translate-titles option of a source. Also the Overviews option of Category Settings that turns a category's overviews off (RD23).",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2330,6 +2477,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要在其他应用中打开这个链接吗？"
+          }
+        }
+      }
+    },
+    "Overviews" : {
+      "comment" : "Setting in Category Settings: Automatic, Manual or Off (ux S13; RD23).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "概览"
           }
         }
       }
@@ -2664,6 +2822,17 @@
         }
       }
     },
+    "Rewrite" : {
+      "comment" : "Button on an overview card: writes today's overview again (RD23).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新生成"
+          }
+        }
+      }
+    },
     "Rising chart" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -2770,6 +2939,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请先设置设备密码，才能使用成人分区。"
+          }
+        }
+      }
+    },
+    "Set up a model to get overviews" : {
+      "comment" : "An overview card when the partition has no model; followed by Open Settings (ux S1; RD23).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置模型后即可生成概览"
           }
         }
       }
@@ -3315,6 +3495,17 @@
         }
       }
     },
+    "The model declined to write this overview" : {
+      "comment" : "Why an overview failed: the model refused (RD23); followed by Retry.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型拒绝生成这份概览"
+          }
+        }
+      }
+    },
     "The model name cannot contain line breaks or control characters." : {
       "comment" : "Footer of the model-name field in the model form.",
       "localizations" : {
@@ -3638,6 +3829,17 @@
         }
       }
     },
+    "Today's Overview" : {
+      "comment" : "Title of the overview card at the top of a category's list (ux S3; RD23).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日概览"
+          }
+        }
+      }
+    },
     "Today's automatic limit is reached. Translate manually, or raise the limit in Settings" : {
       "comment" : "Why an article is not translated: the daily automatic limit.",
       "localizations" : {
@@ -3645,6 +3847,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已达到今天的自动上限，可手动翻译，或在设置里调高"
+          }
+        }
+      }
+    },
+    "Today's automatic limit is reached. Write it manually, or raise the limit in Settings" : {
+      "comment" : "Why no overview was written automatically: the daily automatic limit (spec N11; RD23); followed by Write Overview.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已达到今天的自动上限，可手动生成，或在设置里调高"
           }
         }
       }
@@ -3953,6 +4166,67 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "世界"
+          }
+        }
+      }
+    },
+    "Write Overview" : {
+      "comment" : "Button on an overview card: writes today's overview (ux S1; RD23).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成概览"
+          }
+        }
+      }
+    },
+    "Writing overview…" : {
+      "comment" : "Progress line of an overview card while its overview is written (ux S1; RD23).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在生成概览…"
+          }
+        }
+      }
+    },
+    "Written by %@ from the titles and excerpts of %lld articles · %@" : {
+      "comment" : "Footnote of an overview: the model's name, how many articles it was written from, and the time (ux section 4; RD23).",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Written by %1$@ from the titles and excerpts of %#@articles@ · %3$@"
+          },
+          "substitutions" : {
+            "articles" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg article"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg articles"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %1$@ 根据 %2$lld 篇文章的标题与摘要生成 · %3$@"
           }
         }
       }

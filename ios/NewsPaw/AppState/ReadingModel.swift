@@ -321,6 +321,26 @@ final class ReadingModel {
         }
     }
 
+    /// Opens the article `id` on `kind` as a tapped row does, after reading
+    /// its row (an overview's highlight, RD23 decision 12): it is marked
+    /// read; an article that no longer exists leaves the lists as a
+    /// vanished row's does.
+    func open(articleID id: UUID, on kind: ArticleListKind) {
+        guard !isStopped else { return }
+        let library = library
+        enqueue {
+            do {
+                let row = try await library.article(id, translationsIn: self.translationLocale())
+                guard !self.isStopped else { return }
+                self.open(row, on: kind)
+            } catch LibraryError.unknownArticle {
+                self.articleVanished(id)
+            } catch {
+                // Not opened: the next tap tries again.
+            }
+        }
+    }
+
     /// Reads the article for the reading screen when it was not opened from
     /// a row of this session.
     func loadArticle(_ id: UUID) {

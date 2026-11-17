@@ -8,7 +8,7 @@ import Observation
 /// title too. Global settings over the preferences store, one object for
 /// the app, shared by every workspace as the refresh settings are (RD18
 /// decision 3). A change applies at once and is stored; the translation
-/// models listening are told.
+/// and overview models listening are told.
 @MainActor @Observable
 final class TranslationSettings {
     var readingLocale: ReadingLocale {
@@ -16,6 +16,9 @@ final class TranslationSettings {
             guard readingLocale != oldValue else { return }
             preferences.readingLocale = readingLocale
             for listener in listeners {
+                listener.model?.readingLocaleChanged()
+            }
+            for listener in overviewListeners {
                 listener.model?.readingLocaleChanged()
             }
         }
@@ -48,6 +51,14 @@ final class TranslationSettings {
 
     @ObservationIgnored private var listeners: [Listener] = []
 
+    private struct OverviewListener {
+        weak var model: OverviewModel?
+    }
+
+    /// The overview models told of a change of the reading language (RD23
+    /// decision 12).
+    @ObservationIgnored private var overviewListeners: [OverviewListener] = []
+
     init(preferences: Preferences) {
         self.preferences = preferences
         readingLocale = preferences.readingLocale
@@ -59,5 +70,11 @@ final class TranslationSettings {
     func addListener(_ model: TranslationModel) {
         listeners.removeAll { $0.model == nil }
         listeners.append(Listener(model: model))
+    }
+
+    /// `model` is told of a change of the reading language until it is gone.
+    func addListener(_ model: OverviewModel) {
+        overviewListeners.removeAll { $0.model == nil }
+        overviewListeners.append(OverviewListener(model: model))
     }
 }

@@ -49,6 +49,10 @@ struct DebugLaunchOptions {
     /// How long Clear Browsing Data waits before it clears (review round
     /// 2). Applied only together with `libraryDirectory`.
     let clearPause: Duration?
+    /// Whether three earlier `done` overviews are seeded for the first
+    /// category at launch (RD23 decision 16). Applied only together with
+    /// `libraryDirectory`.
+    let seedOverviews: Bool
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -104,6 +108,7 @@ struct DebugLaunchOptions {
         } else {
             clearPause = nil
         }
+        seedOverviews = environment[UITestLaunchKey.seedOverviews] == "1"
     }
 
     /// Accepts only a name that stays inside the temporary directory.

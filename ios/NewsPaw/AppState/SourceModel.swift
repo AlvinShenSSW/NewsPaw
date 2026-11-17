@@ -129,15 +129,6 @@ final class SourceModel {
         }
     }
 
-    /// The categories that hold unread articles, in the owner's order, with
-    /// their counts: Today's rows (RD09 decision 10).
-    func categoriesWithUnread(_ categories: [CategorySummary]) -> [(category: LibraryCategory, unread: Int)] {
-        categories.compactMap { summary in
-            let unread = unreadCount(in: summary.id)
-            return unread > 0 ? (summary.category, unread) : nil
-        }
-    }
-
     /// Whether the library has a feed-like source: Today's status line is
     /// shown only then.
     var hasFeedLikeSource: Bool {

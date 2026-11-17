@@ -56,6 +56,9 @@ struct CategorySheetView: View {
                         .foregroundStyle(Theme.secondaryText)
                 }
                 .listRowBackground(Theme.surface)
+                if case .settings = sheet {
+                    overviewSection(locked: locked)
+                }
                 if case .settings(let id) = sheet, model.showsPartitionSwitch {
                     moveSection(id, locked: locked)
                 }
@@ -101,6 +104,27 @@ struct CategorySheetView: View {
             }
         }
         .interactiveDismissDisabled(locked)
+    }
+
+    /// "Overviews": Automatic, Manual or Off (ux S13; RD23 decision 13),
+    /// saved with Save.
+    private func overviewSection(locked: Bool) -> some View {
+        @Bindable var categories = categories
+        return Section {
+            Picker("Overviews", selection: $categories.draftOverview) {
+                Text("Automatic").tag(OverviewMode.auto)
+                Text("Manual").tag(OverviewMode.manual)
+                Text("Off").tag(OverviewMode.off)
+            }
+            .pickerStyle(.menu)
+            .frame(minHeight: Theme.minimumTapTarget)
+            .disabled(locked)
+            .accessibilityIdentifier(AccessibilityID.overviewModePicker)
+        } footer: {
+            Text("Automatic: written after the day's first refresh that brings new articles. Manual: written when you tap Write Overview.")
+                .foregroundStyle(Theme.secondaryText)
+        }
+        .listRowBackground(Theme.surface)
     }
 
     /// "Move to Adult Partition…" or "Move to Normal Partition…" (ux S13;

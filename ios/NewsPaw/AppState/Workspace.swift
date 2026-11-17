@@ -106,6 +106,10 @@ final class Workspace: Identifiable {
     /// library's rows show originals; nothing of it is ever sent through
     /// another library's models.
     let translation: TranslationModel
+    /// The daily overviews of this workspace's library (RD23), through its
+    /// own models: with no slot of its own its cards say so, and nothing
+    /// of it is sent through another library's models.
+    let overviews: OverviewModel
 
     /// - Parameter models: the library's own models; another library's are
     ///   a programming error.
@@ -146,18 +150,34 @@ final class Workspace: Identifiable {
             : nil
         let translation = TranslationModel(models: models, settings: parts.translationSettings, reading: reading, now: parts.now)
         reading.translationLocale = { [weak translation] in translation?.settings.readingLocale }
+        let overviews = OverviewModel(
+            library: library, models: models, settings: parts.translationSettings, reading: reading, navigation: navigation, now: parts.now
+        )
         // A change of the normal slots resumes the normal library's
         // translation, whichever workspace's Settings made it; a change of
         // the adult slots, the adult library's.
         modelSettings.onSlotsChanged = parts.slotsChanged
-        partitionModelSettings?.onSlotsChanged = { [weak translation] in translation?.slotsChanged() }
-        categories.onReload = { [weak sources] in await sources?.reload() }
+        partitionModelSettings?.onSlotsChanged = { [weak translation, weak overviews] in
+            translation?.slotsChanged()
+            overviews?.slotsChanged()
+        }
+        categories.onReload = { [weak sources, weak overviews] in
+            await sources?.reload()
+            overviews?.listsChanged()
+        }
         categories.sourcesOf = { [weak sources] id in Set(sources?.sources(in: id).map(\.id) ?? []) }
-        refresh.onListsChanged = { [weak sources] in await sources?.reload() }
+        refresh.onListsChanged = { [weak sources, weak overviews] in
+            await sources?.reload()
+            overviews?.listsChanged()
+        }
         refresh.onStorageError = { [weak sources] in sources?.isShowingSaveError = true }
-        refresh.onRunEnded = { [weak reading, weak translation] in
+        // A foreground run's end: the lists, the translation and the
+        // overviews' due check (RD23 decision 8). A background run (RD24)
+        // never reaches this hook's overview call.
+        refresh.onRunEnded = { [weak reading, weak translation, weak overviews] in
             reading?.runEnded()
             translation?.refreshEnded()
+            overviews?.runEnded()
         }
         sources.onSettingsSaved = { [weak reading] in reading?.sourceSettingsSaved() }
         navigation.onListEntered = { [weak reading] list in reading?.entered(list) }
@@ -179,6 +199,7 @@ final class Workspace: Identifiable {
         self.modelSettings = modelSettings
         self.partitionModelSettings = partitionModelSettings
         self.translation = translation
+        self.overviews = overviews
         readingSettings = parts.readingSettings
         translationSettings = parts.translationSettings
     }
@@ -193,6 +214,7 @@ final class Workspace: Identifiable {
         await modelSettings.reload()
         await partitionModelSettings?.reload()
         await translation.start()
+        await overviews.start()
     }
 
     /// The workspace was just shown with an operation that began in the
@@ -236,6 +258,7 @@ final class Workspace: Identifiable {
         reading.stop()
         browser.stop()
         translation.stop()
+        overviews.stop()
         // Closes the sheet and every pushed screen; the model form, if one
         // was pushed, cancels its running Test or list with its route.
         navigation.clear()

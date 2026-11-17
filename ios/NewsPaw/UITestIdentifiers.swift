@@ -239,6 +239,30 @@ enum AccessibilityID {
         todayCategoryRowPrefix + name
     }
 
+    // Overviews (RD23). Each part of a category's card is named after the
+    // category; the list's card uses the same parts.
+    static let overviewModePicker = "editor.overviews"
+    static let earlierOverviewsList = "earlier.list"
+    static let noEarlierOverviews = "earlier.empty"
+    static let earlierOverviewsDoneButton = "earlier.done"
+
+    /// A part of the overview card of the category `name`: `card`,
+    /// `summary`, `more`, `footnote`, `note`, `rewrite`, `working`,
+    /// `issue`, `step`, `newCount`, `write`, `noModel`, `nothingNew`,
+    /// `off`, `expand`, `earlier`, or `highlight.<n>` (from 1).
+    static func overview(_ part: String, _ name: String) -> String {
+        "overview.\(part).\(name)"
+    }
+
+    static func overviewHighlight(_ number: Int, _ name: String) -> String {
+        overview("highlight.\(number)", name)
+    }
+
+    /// An entry of Earlier Overviews, by its day (`yyyy-MM-dd`).
+    static func earlierOverview(_ day: String) -> String {
+        "earlier.day." + day
+    }
+
     // Settings → Data (RD09)
     static let dataRow = "settings.data"
     static let cacheSize = "data.cacheSize"
@@ -367,6 +391,9 @@ enum UITestLaunchKey {
     /// A number of seconds Clear Browsing Data waits before it clears
     /// (review round 2); honoured only with `libraryDirectory`.
     static let clearPause = "NEWSPAW_UITEST_CLEAR_PAUSE"
+    /// "1" seeds three earlier `done` overviews for the first category
+    /// (RD23 decision 16); honoured only with `libraryDirectory`.
+    static let seedOverviews = "NEWSPAW_UITEST_SEED_OVERVIEWS"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.

@@ -43,8 +43,10 @@ final class PageTranslationScreenshotTests: PageTranslationTestCase {
         line(AccessibilityID.pageTranslationOpenSettings)
         capture("no-model")
 
-        // With the primary and the backup, and a ceiling of two requests.
-        launchPages(models: "primary,backup", ceiling: 2, arguments: arguments)
+        // With the primary and the backup, and a ceiling of six requests:
+        // the list (two), the refusing page (three), then the endless page
+        // reaches it.
+        launchPages(models: "primary,backup", ceiling: 6, arguments: arguments)
         openList()
         tapTranslate()
         _ = waitFor(webText(Self.translated(Pages.item(1))))

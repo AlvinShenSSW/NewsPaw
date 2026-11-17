@@ -91,8 +91,9 @@ class OverviewTestCase: TranslationTestCase {
     func revealOnToday(_ target: XCUIElement, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
         let today = app.scrollViews.containing(.any, identifier: AccessibilityID.todayDate).firstMatch
         var swipes = 0
-        while !(target.waitForExistence(timeout: 2) && target.isHittable), swipes < 10 {
-            if swipes < 6 {
+        // At the largest text size Today is many screens long.
+        while !(target.waitForExistence(timeout: 2) && target.isHittable), swipes < 30 {
+            if swipes < 20 {
                 today.swipeUp()
             } else {
                 today.swipeDown()

@@ -261,7 +261,9 @@ final class CategoryMoveTests: IsolationTestCase {
     /// “World”, and until the first move has ended Turn Off is dimmed and
     /// the copy's sheet can neither begin a second move nor be edited.
     func testNoSecondMoveAfterALockAndANewUnlock() {
-        launchForMoves(authentication: ["passed", "passed", "passed"], pause: 60)
+        // Held 120 s: on the iPad the sheet is reached about 65 s after the
+        // confirmation, past a 60 s hold.
+        launchForMoves(authentication: ["passed", "passed", "passed"], pause: 120)
         createCategory("World")
         addSource(Fixture.articles, to: "World")
         turnOnAdult()
@@ -282,7 +284,7 @@ final class CategoryMoveTests: IsolationTestCase {
         XCTAssertFalse(app.textFields[AccessibilityID.nameField].isEnabled, "the name could be edited while the first move ran")
         // Once the first move has ended a move can be begun again.
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: move)
-        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 90), .completed, "the move button stayed disabled after the move")
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 120), .completed, "the move button stayed disabled after the move")
     }
 
     // MARK: - Criterion 12: a lock during a normal → adult run

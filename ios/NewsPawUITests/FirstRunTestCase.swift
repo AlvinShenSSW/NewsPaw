@@ -96,8 +96,15 @@ class FirstRunTestCase: TranslationTestCase {
     /// bottom bar and below the top bar, then returns it.
     @discardableResult
     func revealAboveTheBar(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
-        waitFor(element, file: file, line: line)
+        // A row below the fold is not in the hierarchy yet (at the largest
+        // text size, step 3's categories start below "Import OPML…").
         var swipes = 0
+        while !element.waitForExistence(timeout: 2), swipes < 8 {
+            app.swipeUp(velocity: .slow)
+            swipes += 1
+        }
+        waitFor(element, file: file, line: line)
+        swipes = 0
         while swipes < 8 {
             let bar = primaryButton.frame.minY
             let top = app.navigationBars.firstMatch.frame.maxY

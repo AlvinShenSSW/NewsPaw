@@ -34,12 +34,24 @@ final class PageTranslationTests: PageTranslationTestCase {
         let afterFirst = settledRequests()
         XCTAssertGreaterThan(afterFirst, before)
 
-        // Item 150 is translated within 2 s of the scroll ending.
-        scrollPage(to: Pages.item(150))
-        let scrolled = Date()
-        XCTAssertTrue(webText(Self.translated(Pages.item(150))).waitForExistence(timeout: 10))
-        let took = Date().timeIntervalSince(scrolled)
-        XCTAssertLessThan(took, 2.0, "item 150 was translated \(took) s after the scroll ended")
+        // Item 150 is translated within 2 s of the scroll that brings it
+        // near the screen ending: after each swipe, its translation is
+        // waited for 2 s.
+        let page = app.webViews.firstMatch
+        var reached = false
+        for _ in 0..<60 {
+            page.swipeUp(velocity: .fast)
+            let ended = Date()
+            if webText(Self.translated(Pages.item(150))).waitForExistence(timeout: 2) {
+                let took = Date().timeIntervalSince(ended)
+                XCTAssertLessThan(took, 2.0, "item 150 was translated \(took) s after the scroll ended")
+                reached = true
+                break
+            }
+            XCTAssertTrue(webText(Pages.item(150)).exists, "item 150 lost its text")
+        }
+        XCTAssertTrue(reached, "item 150 was never translated")
+        XCTAssertEqual(mutationReport(), "childList=0 attributes=0", "the page saw elements change")
 
         // Show Original restores at once; a second tap is the same.
         waitFor(lineAction(AccessibilityID.pageTranslationShowOriginal)).tap()

@@ -148,16 +148,85 @@ struct RefreshSettingsView: View {
     }
 }
 
-/// Settings → Data (ux S8; RD09 decision 14): the size of the current
-/// library's image cache, read each time the screen is shown, and Clear for
-/// that cache only. Export and import arrive with RD20.
+/// Settings → Data (ux S8; RD09 decision 14; RD08): OPML import and export
+/// of the current library, the size of its image cache, read each time the
+/// screen is shown, and Clear for that cache only. The configuration file
+/// arrives with RD20.
 struct DataSettingsView: View {
     @Environment(ReadingModel.self) private var reading
+    @Environment(SourceModel.self) private var sources
     @State private var size: Int?
     @State private var isClearing = false
+    @State private var isExporting = false
+    @State private var exported: ExportedFile?
+    /// The export the share sheet shows, until its directory is removed.
+    @State private var shownExport: URL?
+    @State private var exportFailed = false
+    /// Whether this screen is shown: an export that ends after it went
+    /// away is removed, not presented.
+    @State private var isShown = false
+
+    /// The file handed to the share sheet.
+    private struct ExportedFile: Identifiable {
+        let url: URL
+        var id: URL { url }
+    }
 
     var body: some View {
         List {
+            Section {
+                Button {
+                    sources.beginOPMLImport(from: .settings)
+                } label: {
+                    HStack {
+                        Text("Import OPML")
+                        if sources.opmlImport?.origin == .settings, sources.opmlImport?.stage == .reading {
+                            Spacer(minLength: Theme.Spacing.small)
+                            ProgressView()
+                        }
+                    }
+                    .frame(minHeight: Theme.minimumTapTarget)
+                }
+                .disabled(sources.opmlImport?.stage == .reading)
+                .accessibilityIdentifier(AccessibilityID.importOPMLButton)
+                Button {
+                    export()
+                } label: {
+                    HStack {
+                        Text("Export OPML")
+                        if isExporting {
+                            Spacer(minLength: Theme.Spacing.small)
+                            ProgressView()
+                        }
+                    }
+                    .frame(minHeight: Theme.minimumTapTarget)
+                }
+                // Only feeds and GitHub sources are written.
+                .disabled(isExporting || !sources.summaries.contains { $0.kind.isCollectedAsFeed })
+                .accessibilityIdentifier(AccessibilityID.exportOPMLButton)
+                // On the row, not on the list: the list carries the import's
+                // sheet and alert, and two of a kind on one view do not both
+                // present.
+                .sheet(item: $exported, onDismiss: removeShownExport) { file in
+                    ShareSheet(url: file.url) {
+                        exported = nil
+                        removeShownExport()
+                    }
+                    .ignoresSafeArea()
+                }
+                .alert(Text("Could not export"), isPresented: $exportFailed) {
+                    Button("OK") {}
+                } message: {
+                    Text("The file could not be written.")
+                }
+            } header: {
+                Text(verbatim: "OPML")
+                    .foregroundStyle(Theme.secondaryText)
+            } footer: {
+                Text("Import subscriptions from another reader: its folders become categories. Export writes this library's feeds; web pages are not included.")
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            .listRowBackground(Theme.surface)
             Section {
                 LabeledContent {
                     Group {
@@ -194,7 +263,47 @@ struct DataSettingsView: View {
         .stackBackground(Theme.groupedBackground)
         .navigationTitle("Data")
         .onAppear {
+            isShown = true
             Task { size = await reading.library.imageCache.size() }
+        }
+        .onDisappear {
+            isShown = false
+        }
+        .opmlImport(from: .settings)
+    }
+
+    /// The share sheet ended, by an activity or by being closed: its
+    /// export's directory is removed.
+    private func removeShownExport() {
+        if let url = shownExport {
+            OPMLExportFile.remove(url)
+            shownExport = nil
+        }
+    }
+
+    /// "Export OPML": the library's file is built off the main actor and
+    /// written to a directory of its own; the share sheet shows it. A result
+    /// that arrives after the workspace was dropped or the screen was left
+    /// is removed, not shown.
+    private func export() {
+        isExporting = true
+        let library = sources.library
+        Task {
+            defer { isExporting = false }
+            do {
+                let data = try await library.opmlExport()
+                let url = try await Task.detached { try OPMLExportFile.write(data, on: Date()) }.value
+                guard !sources.isStopped, isShown, exported == nil else {
+                    OPMLExportFile.remove(url)
+                    return
+                }
+                shownExport = url
+                exported = ExportedFile(url: url)
+            } catch {
+                if !sources.isStopped {
+                    exportFailed = true
+                }
+            }
         }
     }
 

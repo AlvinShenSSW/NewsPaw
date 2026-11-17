@@ -174,12 +174,14 @@ final class ConfigurationTests: AdultTestCase {
         screenshot("preview-both")
         tapWhenEnabled(AccessibilityID.configurationMergeButton)
         assertText(AccessibilityID.configurationKeysNeeded("normal"), contains: ["1 model needs a key."])
-        // Below the fold of the iPad's form sheet.
-        scrollTo(element(AccessibilityID.configurationKeysNeeded("adult")))
-        assertText(AccessibilityID.configurationKeysNeeded("adult"), contains: ["1 model needs a key."])
         screenshot("summary")
-        button(AccessibilityID.configurationSetUpKeys("normal")).tap()
-        waitFor(element(AccessibilityID.primaryModelRow))
+        // Below the fold of the iPad's form sheet; scrolled to, the normal
+        // section may leave the hierarchy, so the adult section's Set Up
+        // Keys is the one tapped: the adult partition's own slots.
+        scrollTo(button(AccessibilityID.configurationSetUpKeys("adult")))
+        assertText(AccessibilityID.configurationKeysNeeded("adult"), contains: ["1 model needs a key."])
+        button(AccessibilityID.configurationSetUpKeys("adult")).tap()
+        waitFor(element(AccessibilityID.adultPrimaryModelRow))
         XCTAssertTrue(app.staticTexts["Key needed"].exists || app.descendants(matching: .any)["Key needed"].exists)
         waitForPartition(AdultTestCase.Wording.adult)
         waitForCategory(Self.adultCategory)

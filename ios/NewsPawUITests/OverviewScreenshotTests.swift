@@ -48,18 +48,25 @@ final class OverviewScreenshotTests: OverviewTestCase {
         // seeded earlier ones, a refused one, a manual category with new
         // articles, a slow manual one, a category with no source, and one
         // with overviews off.
+        // Each category is collapsed after its source is added, so that
+        // the next new category's row stays above the fold.
         launchOverviews()
         addFeed(Translation.feed, to: Translation.category)
+        collapse(Translation.category)
         addFeed(Translation.wordFeed("refuse"), to: "Refused")
+        collapse("Refused")
         createCategory("Manual")
         setOverviews(of: "Manual", to: "Manual")
         addSource(Fixture.articles, to: "Manual")
+        collapse("Manual")
         createCategory("Slow")
         setOverviews(of: "Slow", to: "Manual")
         addSource(Translation.wordFeed("slow"), to: "Slow")
+        collapse("Slow")
         createCategory("Quiet")
         createCategory("Paused")
         addSource(Fixture.feed, to: "Paused")
+        collapse("Paused")
         setOverviews(of: "Paused", to: "Off")
         launchOverviews(seed: true)
         refreshToday()
@@ -69,6 +76,9 @@ final class OverviewScreenshotTests: OverviewTestCase {
         // The captures, at a limit of 0 so that nothing is written by
         // itself; "Limited" is added then, and its card says why.
         launchOverviews(limit: 0, arguments: capture.arguments, landscape)
+        for name in [Translation.category, "Refused", "Manual", "Slow", "Paused"] {
+            collapse(name)
+        }
         addFeed(Fixture.longCounting, to: "Limited")
         refreshToday()
         waitFor(summary(Translation.category))

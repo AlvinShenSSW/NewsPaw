@@ -250,7 +250,11 @@ final class ArticleListTests: ArticleTestCase {
         XCTAssertEqual(world.value as? String, "3 unread")
         XCTAssertEqual(tech.value as? String, "3 unread")
         XCTAssertFalse(element(AccessibilityID.todayEmpty).exists)
-        XCTAssertLessThan(world.frame.minY, tech.frame.minY, "the owner's order")
+        // The owner's order: above, or, in two columns on an iPad, to the
+        // left on the same line.
+        let sameLine = abs(world.frame.minY - tech.frame.minY) < 1
+        XCTAssertTrue(world.frame.minY < tech.frame.minY || (sameLine && world.frame.minX < tech.frame.minX),
+                      "the owner's order: \(world.frame) \(tech.frame)")
         let status = waitFor(element(AccessibilityID.todayStatus))
         XCTAssertLessThanOrEqual(element(AccessibilityID.todayDate).frame.maxY, status.frame.minY + 0.5)
         XCTAssertLessThanOrEqual(status.frame.maxY, world.frame.minY + 0.5, "the status line stays above the cards")

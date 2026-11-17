@@ -30,6 +30,12 @@ import Testing
 /// Simplified Chinese, on a library of its own, reporting the requests,
 /// the chunks accepted, the failed check if any, and the seconds to the
 /// first chunk. Counts, reasons and times only, never a text.
+///
+/// RD16 adds a seventh step per service: three fixed page requests through
+/// `PageTranslator` (40 short Japanese titles; a paragraph split into five
+/// runs by links; a block with a number and a name), reporting the
+/// requests, their outcomes and tokens, and the runs accepted or the
+/// failed check. Never a text or the key.
 @Suite("Real model services (enabled by NEWSPAW_LIVE_MODEL_KEYS)")
 struct LiveModelServiceTests {
     static let variable = "NEWSPAW_LIVE_MODEL_KEYS"
@@ -133,6 +139,52 @@ struct LiveModelServiceTests {
 
             // 6. An eight-chunk body through the body translator (RD15).
             try await Self.translateBody(name, preset: preset, address: address, model: model, key: realKey, http: http)
+
+            // 7. Three page requests through the page translator (RD16).
+            try await Self.translatePage(name, preset: preset, address: address, model: model, key: realKey, http: http)
+        }
+    }
+
+    /// The page requests of step 7: 40 short Japanese titles, each its own
+    /// block; a paragraph split into five runs by links; a block with a
+    /// number and a name.
+    static let pageGroups: [(String, [PageGroup])] = [
+        ("40 titles", (1...40).map { number in
+            PageGroup(block: number, runs: [PageRun(id: number, block: number, text: "新しい製品が発表されました、その \(number)", whole: true, inView: true)])
+        }),
+        ("paragraph in five runs", [PageGroup(block: 100, runs: [
+            "The harbour council published", "its new plan", "for the coming year, and", "the ferry timetable", "changes in March.",
+        ].enumerated().map { PageRun(id: 100 + $0.offset, block: 100, text: $0.element, whole: false, inView: true) })]),
+        ("mixed block", [PageGroup(block: 200, runs: [
+            PageRun(id: 200, block: 200, text: "Tim Cook", whole: false, inView: true),
+            PageRun(id: 201, block: 200, text: "announced 3 new products on 12 March", whole: false, inView: true),
+        ])]),
+    ]
+
+    private static func translatePage(
+        _ name: String, preset: ModelPreset, address: String, model: String, key: SecretKey, http: URLSessionModelHTTP
+    ) async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = try await LibraryStore(directory: directory, cacheRoot: directory.appending(path: "Images")).openNormal()
+        let models = LibraryModels(library: library, keys: InMemoryKeyStore(), http: http)
+        try await models.save(ModelSlotDraft(role: .primary, preset: preset, address: address, model: model, newKey: key), testedOutcome: nil)
+        let translator = PageTranslator(models: models)
+        for (label, groups) in pageGroups {
+            let before = try await library.usageRecords().count
+            var accepted = 0
+            var failed: [String] = []
+            for unit in PageBatcher.units(groups) {
+                let outcome = await translator.send(unit, host: "live.example.invalid", locale: .simplifiedChinese, route: .primary)
+                accepted += outcome.writes.count
+                failed += outcome.failed.map { "\($0.reason)" }
+            }
+            let usage = try await library.usageRecords().dropFirst(before)
+            let runs = groups.reduce(0) { $0 + $1.runs.count }
+            let tokens = usage.map { "\($0.inputTokens.map(String.init) ?? "-")/\($0.outputTokens.map(String.init) ?? "-")" }.joined(separator: ", ")
+            Self.report(name, "page: \(label)", "\(usage.count) requests (\(usage.map(\.outcome.rawValue).joined(separator: ", "))), "
+                + "\(accepted) of \(runs) runs accepted, tokens \(tokens)\(failed.isEmpty ? "" : ", failed: \(Set(failed).sorted().joined(separator: ", "))")")
+            #expect(accepted == runs, "\(name) page \(label): \(accepted) of \(runs) runs accepted")
         }
     }
 

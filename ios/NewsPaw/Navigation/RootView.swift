@@ -15,7 +15,10 @@ struct RootView: View {
         #if DEBUG
             .overlay(alignment: .topLeading) {
                 if model.showsDebugReport {
-                    AdultDebugElement()
+                    HStack(spacing: 0) {
+                        AdultDebugElement()
+                        DeliverBackgroundRefreshButton()
+                    }
                 }
             }
         #endif
@@ -80,6 +83,26 @@ private struct AdultDebugElement: View {
                     try? await Task.sleep(for: .milliseconds(250))
                 }
             }
+    }
+}
+
+/// The UI tests' "Deliver background refresh" (RD24 decision 9): a control
+/// of a few points beside the report, present only under a UI-test library
+/// directory; a debug build only.
+private struct DeliverBackgroundRefreshButton: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button {
+            Task { await model.deliverBackgroundRefreshForUITests() }
+        } label: {
+            Color.clear
+                .frame(width: 4, height: 4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: "Deliver background refresh"))
+        .accessibilityIdentifier(DebugAccessibilityID.deliverBackgroundRefresh)
     }
 }
 #endif

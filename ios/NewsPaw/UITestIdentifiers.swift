@@ -248,6 +248,9 @@ enum AccessibilityID {
     static let todayStatus = "today.status"
     static let failedSourcesButton = "today.failedSources"
     static let refreshRow = "settings.refresh"
+    // Background refresh (RD24)
+    static let backgroundRefreshToggle = "refresh.background"
+    static let backgroundRuns = "refresh.backgroundRuns"
 
     // Models & Translation (RD13)
     static let modelsRow = "settings.models"
@@ -375,13 +378,21 @@ enum DebugAccessibilityID {
     /// 4): its label is `file=<0|1> pool=<open|closed>
     /// library=<held|released> workspace=<none|held|released>
     /// browser=<none|held|released> sessions=<number> pages=<number>
-    /// translationRequests=<number> adultStore=<listed|absent>`. `pool` is whether connections are open
+    /// translationRequests=<number> adultStore=<listed|absent>
+    /// scheduled=<yes|no> background=<none|notDue|collected|cancelled|failed|expired|released>
+    /// runs=<number> adultOpens=<number>`. `pool` is whether connections are open
     /// on the file; the other three are whether the objects are gone from
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
     /// requests the translator fixture has answered in this process (RD14
     /// criterion 13); `adultStore` is whether WebKit lists the adult
-    /// browser's own website data store (RD19).
+    /// browser's own website data store (RD19); `scheduled` is whether a
+    /// background request is pending, `background` how the last background
+    /// run ended, `runs` how many background runs the record holds for the
+    /// last 7 days, `adultOpens` how many times the adult library was asked
+    /// of the store (RD24).
     static let adultReport = "debug.adultReport"
+    /// "Deliver background refresh" (RD24 decision 9).
+    static let deliverBackgroundRefresh = "debug.deliverBackgroundRefresh"
 }
 #endif

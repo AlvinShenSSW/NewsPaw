@@ -22,5 +22,12 @@ struct NewsPawApp: App {
                 .environment(model)
                 .task { await model.start() }
         }
+        // Background refresh (RD24): SwiftUI registers the identifier at
+        // launch and runs the action for a delivered task; a cancelled
+        // action is the system's time running out, and its return
+        // completes the task.
+        .backgroundTask(.appRefresh(BackgroundRefreshTask.identifier)) { [model] in
+            await model.backgroundRefresh()
+        }
     }
 }

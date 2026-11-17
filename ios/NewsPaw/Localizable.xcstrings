@@ -390,6 +390,17 @@
         }
       }
     },
+    "Background Refresh" : {
+      "comment" : "Settings › Refresh: the switch that lets the system refresh the library in the background (RD24).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "后台刷新"
+          }
+        }
+      }
+    },
     "Backup Model" : {
       "comment" : "Settings › Models & Translation: the backup model row and the title of its form.",
       "localizations" : {
@@ -1224,6 +1235,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示美洲的地球"
+          }
+        }
+      }
+    },
+    "Has not run in the background yet." : {
+      "comment" : "Settings › Refresh: below the Background Refresh footer, when no background run started in the last 7 days (RD24).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未在后台运行过。"
           }
         }
       }
@@ -2451,6 +2473,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "额度或频率受限"
+          }
+        }
+      }
+    },
+    "Ran in the background %lld time(s) in the last 7 days, most recently %@." : {
+      "comment" : "Settings › Refresh: below the Background Refresh footer, how many background runs started in the last 7 days; %@ is the relative time of the latest, such as “2 hours ago” (RD24).",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ran in the background %lld time in the last 7 days, most recently %@."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ran in the background %lld times in the last 7 days, most recently %@."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "最近 7 天在后台运行了 %lld 次，最近一次在%@。"
+                }
+              }
+            }
           }
         }
       }
@@ -3909,6 +3966,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "网页"
+          }
+        }
+      }
+    },
+    "When NewsPaw is not open, the system may let it collect your sources and translate new titles. The system decides when and how often. Nothing is refreshed in the background with Manual Only, and no notification is sent." : {
+      "comment" : "Settings › Refresh: the footer of the Background Refresh switch (RD24).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NewsPaw 未打开时，系统可能会让它收取来源并翻译新标题。何时运行、多久一次由系统决定。选择“仅手动”时不会在后台刷新，也不会发送通知。"
           }
         }
       }

@@ -126,6 +126,26 @@ final class AppModel {
     /// The unlock that is running, so that the background can discard it.
     @ObservationIgnored private var unlockAttempt: UnlockAttempt?
     @ObservationIgnored private var sceneObservers: [any NSObjectProtocol] = []
+    /// The opening of the normal library under way, which the scene's
+    /// start and a background run share (RD24 approach 7).
+    @ObservationIgnored private var preparation: Task<(any Error)?, Never>?
+    /// Whether the scene's start has been asked for: a start that failed in
+    /// the background is tried again at the next activation.
+    @ObservationIgnored private var startWasAsked = false
+    /// Whether the launch entry has been made or put off (RD24 decision 3).
+    @ObservationIgnored private var launchEntryDecided = false
+    /// The launch was made in the background: its entry is made at the
+    /// scene's first activation.
+    @ObservationIgnored private var launchEntryOwed = false
+    @ObservationIgnored private var preferences: Preferences?
+    /// The background schedule (RD24 approach 3).
+    @ObservationIgnored private var scheduler: (any BackgroundScheduler)?
+    /// The background run in progress, told when the app comes to the
+    /// front.
+    @ObservationIgnored private var currentRun: BackgroundRun?
+    /// The control of the last background run: an entry into the normal
+    /// partition waits for its collection (RD24 approach 7).
+    @ObservationIgnored private var backgroundControl: BackgroundPassControl?
 
     #if DEBUG
     /// Whether the UI tests' report element is shown: only under a UI-test
@@ -149,6 +169,10 @@ final class AppModel {
     @ObservationIgnored private var moveStepPause: Duration?
     /// The adult browser's store under this UI-test library directory.
     @ObservationIgnored private var uiTestAdultStore: UUID?
+    /// The UI tests' clock (RD24 decision 9).
+    @ObservationIgnored private var debugClock: DebugClock?
+    /// How the last background run ended, for the report.
+    @ObservationIgnored private var lastBackgroundEnding: BackgroundRun.Ending?
     #endif
 
     /// One unlock from the choice to its end.
@@ -170,12 +194,72 @@ final class AppModel {
         gateState == .locked || gateState == .unlocked
     }
 
-    /// Opens the normal library, creating it on first launch. A failure is
-    /// shown and left as it is: the file is never deleted, reset or replaced.
-    /// The adult library is not opened here: a launch starts in the normal
-    /// partition.
+    /// The scene's start (RD24 approach 7): the preparation, then the
+    /// launch entry — at once when the app is not in the background, else
+    /// at the scene's first activation, and once. A launch made for a
+    /// background run is not an entry (decision 3).
     func start() async {
-        guard case .loading = status else { return }
+        startWasAsked = true
+        guard await prepare(inBackground: UIApplication.shared.applicationState == .background) else { return }
+        // Rechecked after the wait: another start has decided already.
+        guard !launchEntryDecided, let normal else { return }
+        launchEntryDecided = true
+        if UIApplication.shared.applicationState == .background {
+            launchEntryOwed = true
+        } else {
+            // The launch is the first entry (RD06 decision 3).
+            enter(normal)
+        }
+    }
+
+    /// Opens the normal library and builds its workspace and the gate, once
+    /// for the scene's start and a background run together: one task that
+    /// both wait for, each rechecking `status` after it. A failure in the
+    /// foreground is shown and left as it is: the file is never deleted,
+    /// reset or replaced. A failure in the background shows nothing and is
+    /// forgotten, so that the foreground start tries again (criterion 8).
+    ///
+    /// - Parameter inBackground: whether the caller is in the background,
+    ///   asked when the opening has failed.
+    /// - Returns: whether the normal library is open.
+    private func prepare(inBackground: @autoclosure () -> Bool) async -> Bool {
+        switch status {
+        case .ready: return true
+        case .failed: return false
+        case .loading: break
+        }
+        let task: Task<(any Error)?, Never>
+        if let preparation {
+            task = preparation
+        } else {
+            task = Task { await self.openNormalLibrary() }
+            preparation = task
+        }
+        let error = await task.value
+        // Rechecked after the wait: the task opened the library, or another
+        // caller has shown its failure.
+        switch status {
+        case .ready: return true
+        case .failed: return false
+        case .loading: break
+        }
+        if preparation == task {
+            preparation = nil
+        }
+        if let error, !inBackground(), !(error is CancellationError) {
+            status = .failed(LibraryFailure(error))
+        }
+        return false
+    }
+
+    /// Opens the normal library, creating it on first launch, builds the
+    /// normal workspace (models only) and the gate, and reconciles the
+    /// background schedule. The adult library is not opened here: a launch
+    /// starts in the normal partition.
+    ///
+    /// - Returns: the error that stopped it, or `nil` when the library is
+    ///   open and `status` is ready.
+    private func openNormalLibrary() async -> (any Error)? {
         observeScene()
         // The one transport the app makes requests through. Under a UI-test
         // library directory it is the fixture transport, never the real one.
@@ -193,7 +277,15 @@ final class AppModel {
         // The clock offset, like the fixture transport, applies only under a
         // UI-test library directory.
         let offset = options.libraryDirectory != nil ? options.clockOffset : 0
-        let now: @Sendable () -> Date = { Date().addingTimeInterval(offset) }
+        let clock = DebugClock(offset: offset)
+        if options.libraryDirectory != nil {
+            debugClock = clock
+        }
+        let now: @Sendable () -> Date = { clock.now() }
+        // Under a UI-test library directory the recording scheduler, never
+        // the system's (RD24 decision 9).
+        let scheduler: any BackgroundScheduler = options.libraryDirectory != nil
+            ? RecordingBackgroundScheduler() : SystemBackgroundScheduler()
         // Under a UI-test library directory: keys under a keychain service
         // named after the directory, never the owner's, and the model
         // fixture, which reaches no real service.
@@ -231,15 +323,19 @@ final class AppModel {
         let authenticator: any DeviceAuthenticator = SystemDeviceAuthenticator()
         let adultKeys = KeychainKeyStore(partition: .adult)
         let adultIsEnabled = BuildFeatures.adultPartition
+        let scheduler: any BackgroundScheduler = SystemBackgroundScheduler()
         #endif
         self.now = now
+        self.scheduler = scheduler
         self.adultKeys = adultKeys
         do {
-            let store = LibraryStore(directory: directory, cacheRoot: cacheRoot, now: now)
+            // The app's one store: a start tried again keeps it.
+            let store = self.store ?? LibraryStore(directory: directory, cacheRoot: cacheRoot, now: now)
             self.store = store
             let library = try await store.openNormal()
             normalLibrary = library
             let preferences = Preferences(defaults)
+            self.preferences = preferences
             let models = LibraryModels(library: library, keys: keyStore, http: modelHTTP)
             let parts = WorkspaceParts(
                 transport: transport, candidateLimit: candidateLimit, now: now,
@@ -252,6 +348,7 @@ final class AppModel {
                 slotsChanged: { [weak self] in self?.normal?.translation.slotsChanged() }
             )
             self.parts = parts
+            parts.refreshSettings.onScheduleChanged = { [weak self] in self?.reconcileSchedule() }
             // The embedded browser (RD19 decision 4): the system's default
             // website data store for the normal library, and the adult
             // partition's own persistent one, without Picture in Picture,
@@ -326,12 +423,79 @@ final class AppModel {
             lockTiming = await gate.lockTiming
             normal = workspace
             status = .ready
-            // The launch is the first entry (RD06 decision 3).
-            Task { await workspace.refresh.entered() }
-        } catch is CancellationError {
-            return
+            reconcileSchedule()
+            return nil
         } catch {
-            status = .failed(LibraryFailure(error))
+            return error
+        }
+    }
+
+    // MARK: - Background refresh (RD24)
+
+    /// The background task's action (RD24 approach 7): the shared
+    /// preparation, then one run over the normal library. A run that cannot
+    /// prepare returns, leaving the foreground start to try again; a run
+    /// made while the app is in front does nothing (the entry refreshes).
+    /// The system completes the task when this returns; when its time runs
+    /// out it cancels this task, and the run cancels the refresher first.
+    func backgroundRefresh() async {
+        guard await prepare(inBackground: true) else { return }
+        // Rechecked after the wait: the time ran out, or the app came to
+        // the front, meanwhile.
+        guard !Task.isCancelled, !sceneIsActive else { return }
+        await refreshInBackground()
+    }
+
+    /// One background run: the schedule is reconciled; with background
+    /// refresh off or "Manual Only" nothing is collected or recorded and
+    /// the run waits for the translator; otherwise the run is recorded and
+    /// the pass runs. Nothing of the other partition is reachable from the
+    /// work (`BackgroundRefreshWork`).
+    private func refreshInBackground() async {
+        guard let normal, let normalLibrary, let parts, let preferences, currentRun == nil else { return }
+        reconcileSchedule()
+        let settings = parts.refreshSettings
+        guard settings.backgroundRefresh, settings.interval != .manualOnly else {
+            await normal.translation.translator.untilSettled()
+            return
+        }
+        preferences.recordBackgroundRun(at: now())
+        let control = BackgroundPassControl(refresher: normal.refresh.engine)
+        let work = BackgroundRefreshWork(workspace: normal, library: normalLibrary, settings: settings, control: control)
+        let run = BackgroundRun(control: control) { await work.run() }
+        currentRun = run
+        backgroundControl = control
+        let ending = await run.run()
+        // Rechecked after the wait: only this run is forgotten.
+        if currentRun === run {
+            currentRun = nil
+        }
+        #if DEBUG
+        lastBackgroundEnding = ending
+        #else
+        _ = ending
+        #endif
+    }
+
+    /// Applies the schedule's rule with the settings now (criterion 2).
+    private func reconcileSchedule() {
+        guard let parts, let scheduler else { return }
+        BackgroundSchedule.reconcile(
+            enabled: parts.refreshSettings.backgroundRefresh, interval: parts.refreshSettings.interval, now: now(), scheduler: scheduler
+        )
+    }
+
+    /// An entry into a partition's workspace (RD06 decision 3): clean up,
+    /// then refresh when due. An entry into the normal partition first
+    /// waits for a background run's collection that is under way, so that
+    /// the library is not collected twice and the refresh time is written
+    /// once (RD24 criterion 7).
+    private func enter(_ workspace: Workspace) {
+        let control = workspace === normal ? backgroundControl : nil
+        Task {
+            await control?.untilCollectionEnds()
+            // `entered()` rechecks whether its workspace was dropped.
+            await workspace.refresh.entered()
         }
     }
 
@@ -482,7 +646,9 @@ final class AppModel {
             if let gate {
                 gateState = await gate.state
             }
-            // Returning to the normal partition is an entry for its refresh.
+            // Returning to the normal partition is an entry for its
+            // refresh, after a background collection under way (RD24).
+            await self.backgroundControl?.untilCollectionEnds()
             await normal.refresh.entered()
         }
     }
@@ -807,10 +973,19 @@ final class AppModel {
         if locks {
             lockByRule()
         }
+        reconcileSchedule()
     }
 
     private func sceneDidActivate() {
         sceneIsActive = true
+        // A background run ends its task; its collection goes on as the
+        // ordinary refresh (RD24 criterion 7).
+        currentRun?.cameToFront()
+        // A start that failed in the background is tried again (criterion
+        // 8).
+        if startWasAsked, case .loading = status, preparation == nil {
+            Task { await start() }
+        }
         // The 5-second fallback is on: the app switcher and Control Centre
         // deliver no did-enter-background (measured, assumption A7).
         let locks = absence.didActivate(at: now(), timing: lockTiming, fallback: true)
@@ -821,13 +996,15 @@ final class AppModel {
         // The adult workspace is still shown: its pages may play again. One
         // that the lock dropped stays suspended for good.
         adult?.browser.allowMedia()
-        if wasInBackground {
+        if wasInBackground || launchEntryOwed {
             wasInBackground = false
+            launchEntryOwed = false
             // Every return from the background is an entry (RD06 decision
-            // 3); a lock of the adult partition has made the normal
-            // partition's entry itself.
-            if !locksAdult, let refresh = shown?.refresh {
-                Task { await refresh.entered() }
+            // 3), and so is the first activation of a launch made in the
+            // background (RD24 decision 3); a lock of the adult partition
+            // has made the normal partition's entry itself.
+            if !locksAdult, let shown {
+                enter(shown)
             }
             // The app came to the front: a translation pause of the normal
             // library may end (RD14 decision 6), whichever partition is
@@ -955,8 +1132,11 @@ final class AppModel {
     /// model are gone from memory, how many browser sessions the app has
     /// made, how many article pages the fixture transport was asked for
     /// (RD12), how many requests the translator fixture has answered
-    /// (RD14), and whether WebKit lists the adult browser's own store
-    /// (RD19 assumption A2).
+    /// (RD14), whether WebKit lists the adult browser's own store (RD19
+    /// assumption A2); and for RD24 whether a background request is
+    /// pending, how the last background run ended, how many runs the
+    /// record holds for the last 7 days, and how many times the adult
+    /// library was asked of the store.
     func adultDebugReport() async -> String {
         guard let gate else { return "" }
         let file = gate.adultLibraryFileExists ? 1 : 0
@@ -969,7 +1149,32 @@ final class AppModel {
             + "browser=\(state(lastAdultBrowser)) sessions=\(BrowserModel.sessionsMade) "
             + "pages=\((parts?.transport as? FixtureTransport)?.pageRequests ?? -1) "
             + "translationRequests=\(FixtureModelHTTP.translationRequests) "
-            + "adultStore=\(await adultStoreIsListed() ? "listed" : "absent")"
+            + "adultStore=\(await adultStoreIsListed() ? "listed" : "absent") "
+            + "scheduled=\((scheduler as? RecordingBackgroundScheduler)?.pending != nil ? "yes" : "no") "
+            + "background=\(Self.reportName(of: lastBackgroundEnding)) "
+            + "runs=\(preferences?.backgroundRuns(before: now()).count ?? 0) "
+            + "adultOpens=\(await store?.adultOpensForUITests ?? -1)"
+    }
+
+    private static func reportName(of ending: BackgroundRun.Ending?) -> String {
+        switch ending {
+        case .ended(let result)?: "\(result)"
+        case .expired?: "expired"
+        case .cameToFront?: "released"
+        case nil: "none"
+        }
+    }
+
+    // MARK: - The UI tests' background delivery (RD24 decision 9)
+
+    /// "Deliver background refresh": only when the recording scheduler
+    /// holds a pending request, the clock moves to that request's earliest
+    /// start and one background run is made while the app is in front.
+    /// Nothing else delivers a run on the simulator (assumption A2).
+    func deliverBackgroundRefreshForUITests() async {
+        guard let scheduler = scheduler as? RecordingBackgroundScheduler, let earliest = scheduler.pending, let debugClock else { return }
+        debugClock.move(to: earliest)
+        await refreshInBackground()
     }
 
     private func adultStoreIsListed() async -> Bool {

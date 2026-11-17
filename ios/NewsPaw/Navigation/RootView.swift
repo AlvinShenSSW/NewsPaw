@@ -15,10 +15,12 @@ struct RootView: View {
         #if DEBUG
             .overlay(alignment: .topLeading) {
                 if model.showsDebugReport {
-                    HStack(spacing: 0) {
-                        AdultDebugElement()
-                        DeliverBackgroundRefreshButton()
-                    }
+                    AdultDebugElement()
+                }
+            }
+            .overlay(alignment: .trailing) {
+                if model.showsDebugReport {
+                    DeliverBackgroundRefreshButton()
                 }
             }
         #endif
@@ -86,9 +88,11 @@ private struct AdultDebugElement: View {
     }
 }
 
-/// The UI tests' "Deliver background refresh" (RD24 decision 9): a control
-/// of a few points beside the report, present only under a UI-test library
-/// directory; a debug build only.
+/// The UI tests' "Deliver background refresh" (RD24 decision 9): an
+/// invisible 30-point control at the window's trailing edge, halfway down,
+/// where no test taps; present only under a UI-test library directory; a
+/// debug build only. (A control of a few points beside the report was
+/// measured: the harness's tap never reached it.)
 private struct DeliverBackgroundRefreshButton: View {
     @Environment(AppModel.self) private var model
 
@@ -96,8 +100,9 @@ private struct DeliverBackgroundRefreshButton: View {
         Button {
             Task { await model.deliverBackgroundRefreshForUITests() }
         } label: {
-            Color.clear
-                .frame(width: 4, height: 4)
+            // Two percent grey, as measured; nothing a person sees.
+            Color.gray.opacity(0.02)
+                .frame(width: 30, height: 30)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

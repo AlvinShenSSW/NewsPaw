@@ -940,6 +940,17 @@
         }
       }
     },
+    "Finds articles by their original or translated title." : {
+      "comment" : "Search: the line under the empty state before anything is typed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按原标题或译文标题查找文章。"
+          }
+        }
+      }
+    },
     "Flask" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -1870,6 +1881,17 @@
         }
       }
     },
+    "No Results" : {
+      "comment" : "Search: the empty state when no title contains the typed text.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有结果"
+          }
+        }
+      }
+    },
     "No app on this device can open this link." : {
       "comment" : "Alert after Open when the system has no app for the link's scheme.",
       "localizations" : {
@@ -1888,6 +1910,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未选择文章"
+          }
+        }
+      }
+    },
+    "No article title contains “%@”." : {
+      "comment" : "Search: the line under No Results; the argument is the typed text.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有文章标题包含“%@”。"
           }
         }
       }
@@ -2537,6 +2570,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "现在先保存，网页翻译可用后生效。"
+          }
+        }
+      }
+    },
+    "Search" : {
+      "comment" : "Search: the button that opens the Search screen, its title, and the Command-F shortcut's name.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索"
+          }
+        }
+      }
+    },
+    "Search Article Titles" : {
+      "comment" : "Search: the empty state before anything is typed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索文章标题"
           }
         }
       }
@@ -3401,6 +3456,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "标题和摘要会翻译成这种语言。"
+          }
+        }
+      }
+    },
+    "Titles, Original or Translated" : {
+      "comment" : "Search: the search field's prompt; titles are searched in the original and in the translation.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原标题或译文标题"
           }
         }
       }

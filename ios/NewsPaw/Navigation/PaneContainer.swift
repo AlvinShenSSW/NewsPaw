@@ -75,7 +75,7 @@ struct PaneContainer: View {
                     }
             }
             .paneIdentifier(AccessibilityID.fullPane)
-        case .allUnread, .starred, .category, .source:
+        case .allUnread, .starred, .category, .source, .search:
             let list = ArticleListKind(selection)
             // Hidden, the list pane stays in the hierarchy at no width
             // (RD11 decision 14): its keys still act and it is where it

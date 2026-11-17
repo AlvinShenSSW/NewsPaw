@@ -89,9 +89,13 @@ private struct AdultDebugElement: View {
 /// dismiss them.
 struct ShellView: View {
     @Environment(\.accent) private var accent
+    @Environment(AppModel.self) private var model
     @Environment(CategoryModel.self) private var categories
     @Environment(SourceModel.self) private var sources
     @Environment(NavigationModel.self) private var navigation
+    @Environment(ReadingModel.self) private var reading
+    @Environment(BrowserModel.self) private var browser
+    @Environment(TranslationModel.self) private var translation: TranslationModel?
     @State private var width = 0.0
 
     private var layout: WindowLayout {
@@ -110,6 +114,19 @@ struct ShellView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            // `⌘F` (ux section 2; RD25 decision 9): listed in the system's
+            // shortcut list as "Search".
+            Button("Search") {
+                if searchShortcutMayAct {
+                    navigation.openSearch()
+                }
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+        }
         .onGeometryChange(for: Double.self) { $0.size.width } action: { width = $0 }
         .onChange(of: layout, initial: true) { _, layout in
             navigation.layout = width == 0 ? nil : layout
@@ -133,6 +150,16 @@ struct ShellView: View {
         .translationDialogs()
         .tint(accent)
         .foregroundStyle(Theme.text)
+    }
+
+    /// Whether `⌘F` may open Search, asked when it is pressed: not while a
+    /// sheet, the slide-over, a dialog or a confirmation is open.
+    private var searchShortcutMayAct: Bool {
+        navigation.sheet == nil && !navigation.isSlideOverOpen && reading.pendingMarkAll == nil
+            && categories.pendingDeletion == nil && !categories.isShowingSaveError
+            && sources.pendingDeletion == nil && !sources.isShowingSaveError
+            && browser.question == nil && browser.fileNotice == nil && !browser.isShowingNoApp
+            && translation?.question == nil && model.turnOffQuestion == nil && model.notice == nil
     }
 
     @ViewBuilder

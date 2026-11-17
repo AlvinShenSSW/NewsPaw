@@ -82,6 +82,16 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .navigationTitle("NewsPaw")
         .toolbar {
+            // Search (RD25 decision 9), before Edit. In the slide-over it
+            // closes the slide-over first, as the other choices there do.
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Search", systemImage: "magnifyingglass") {
+                    closeSlideOver()
+                    navigation.openSearch()
+                }
+                .disabled(editMode.isEditing)
+                .accessibilityIdentifier(AccessibilityID.sidebarSearchButton)
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 EditDoneButton(editMode: $editMode)
             }

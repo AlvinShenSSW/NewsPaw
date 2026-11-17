@@ -146,6 +146,13 @@ public final class FixtureTransport: Transport {
         }
     }
 
+    /// How many requests this transport was asked for, whatever their
+    /// address and answer: the request log the UI tests' report shows, so
+    /// that a test can see an action made none (RD25 criterion 11).
+    public var requests: Int {
+        requestCount.withLock { $0 }
+    }
+
     /// How many requests for the full-text pages this transport was asked
     /// for, whatever their answer (RD12): what the UI tests' report shows.
     public var pageRequests: Int {
@@ -162,6 +169,7 @@ public final class FixtureTransport: Transport {
 
     private let sequenceRequests = Mutex(0)
     private let pageRequestCount = Mutex(0)
+    private let requestCount = Mutex(0)
     private let slowTagsRequests = Mutex(0)
     private let stallingRequests = Mutex(0)
     /// When `flaky.png` was first asked for.
@@ -170,6 +178,7 @@ public final class FixtureTransport: Transport {
     public init() {}
 
     public func fetch(_ request: TransportRequest) async throws -> TransportResponse {
+        requestCount.withLock { $0 += 1 }
         try Task.checkCancellation()
         let url = request.url
         func answer(_ body: String, type: String, status: Int = 200) -> TransportResponse {

@@ -12,6 +12,8 @@ struct DebugLaunchOptions {
     let syntheticSources: Int?
     /// Whether the next category save fails.
     let failNextSave: Bool
+    /// The next search read fails (RD25).
+    let failNextSearch: Bool
     /// How long the next save waits before it runs.
     let slowNextSave: Duration?
     /// Whether the next source save fails.
@@ -53,6 +55,7 @@ struct DebugLaunchOptions {
             syntheticSources = nil
         }
         failNextSave = environment[UITestLaunchKey.failNextSave] == "1"
+        failNextSearch = environment[UITestLaunchKey.failNextSearch] == "1"
         failNextSourceSave = environment[UITestLaunchKey.failNextSourceSave] == "1"
         if let text = environment[UITestLaunchKey.slowNextSave], let seconds = Int(text), seconds > 0 {
             slowNextSave = .seconds(seconds)

@@ -110,11 +110,6 @@ public actor OverviewWriter {
     /// The app is in the background (review round 1, R1): no due check
     /// runs and no job is taken; the job in flight was cancelled.
     private var isInBackground = false
-    /// Counts the workers started, so that a worker cancelled by the
-    /// background does not clear the one started after it.
-    private var workerToken = 0
-    /// Workers cancelled by the background and not yet ended.
-    private var retiredWorkers: [Task<Void, Never>] = []
 
     /// - Parameters:
     ///   - models: the library's models; the library worked on is theirs.
@@ -234,13 +229,15 @@ public actor OverviewWriter {
     /// manual job answers `cancelled` —, queued manual jobs answer
     /// `cancelled`, and the automatic queue is dropped (due again at the
     /// next run). The writer is not stopped.
+    ///
+    /// The cancelled worker stays the writer's one worker until it has
+    /// ended (review round 2): no other starts while it unwinds, so the
+    /// job in flight, the queues, the blocks and the hold are never
+    /// another worker's, and no second request is sent meanwhile. On its
+    /// way out the cancelled job changes nothing but its own `inFlight`.
     public func enteredBackground() {
         isInBackground = true
-        if let worker {
-            worker.cancel()
-            retiredWorkers.append(worker)
-        }
-        worker = nil
+        worker?.cancel()
         for job in manualQueue {
             job.reply(.cancelled)
         }
@@ -279,14 +276,15 @@ public actor OverviewWriter {
     }
 
     private func startWorker() {
-        // The one place a job is taken: never in the background (R1).
+        // The one place a job is taken: never in the background (R1), and
+        // never beside a worker that is still running, cancelled or not.
         guard worker == nil, !isStopped, !isInBackground, locale != nil, !manualQueue.isEmpty || !automaticQueue.isEmpty else { return }
-        workerToken += 1
-        let token = workerToken
-        worker = Task { await self.work(token) }
+        workersAlive += 1
+        worker = Task { await self.work() }
     }
 
-    private func work(_ token: Int) async {
+    private func work() async {
+        defer { workersAlive -= 1 }
         while !Task.isCancelled, !isStopped, !isInBackground {
             if !manualQueue.isEmpty {
                 let job = manualQueue.removeFirst()
@@ -307,10 +305,10 @@ public actor OverviewWriter {
                 break
             }
         }
-        // A worker the background cancelled is not the current one.
-        guard token == workerToken else { return }
         worker = nil
-        // Something queued while the last job ended.
+        // Something queued while the last job ended, or while this worker,
+        // cancelled by the background, unwound. A task made here is not
+        // cancelled with this one.
         startWorker()
     }
 
@@ -344,6 +342,8 @@ public actor OverviewWriter {
         /// The slots as read at (b), and the slot changes counted then.
         let slots: [ModelRole: SlotIdentity]
         let generation: Int
+        /// The `configure` calls counted at (a).
+        let configuration: Int
     }
 
     /// One job through decision 9: (a) the read, (b) the slots, (c) the
@@ -366,11 +366,11 @@ public actor OverviewWriter {
         do {
             read = try await library.overviewJobRead(category: category, locale: locale, now: now(), calendar: calendar)
         } catch {
-            guard !isStopped, configuration == configGeneration else { return .cancelled }
+            guard !isStopped, !Task.isCancelled, configuration == configGeneration else { return .cancelled }
             let day = OverviewDay.key(for: now(), calendar: calendar)
             return block(category, .storage, day: day, locale: locale, automatic: automatic, generation: slotsGeneration)
         }
-        guard !isStopped, configuration == configGeneration else { return .cancelled }
+        guard !isStopped, !Task.isCancelled, configuration == configGeneration else { return .cancelled }
         guard let mode = read.mode else { return .gone }
         if automatic, mode != .auto || read.hasRowThatDay || !read.hasArticleFirstSeenThatDay {
             return .cancelled
@@ -378,23 +378,24 @@ public actor OverviewWriter {
         guard !read.input.isEmpty else { return .nothingNew }
         // (b)
         let generation = slotsGeneration
+        await suspend(.slotRead)
         let slots: [ModelRole: SlotIdentity]
         do {
             slots = try await library.slotIdentities()
         } catch {
-            guard !isStopped else { return .cancelled }
+            guard !isStopped, !Task.isCancelled else { return .cancelled }
             return block(category, .storage, day: read.day, locale: locale, automatic: automatic, generation: generation)
         }
-        guard !isStopped else { return .cancelled }
+        guard !isStopped, !Task.isCancelled else { return .cancelled }
         let job = Job(
             category: category, automatic: automatic, locale: locale, day: read.day, dayStart: read.dayStart, input: read.input,
-            texts: OverviewPrompt.texts(read.input), slots: slots, generation: generation
+            texts: OverviewPrompt.texts(read.input), slots: slots, generation: generation, configuration: configuration
         )
         // (c)–(d), and (e)'s retry: a content failure is tried once more
         // on the primary.
-        var result = await attempt(job, role: .primary)
+        var result = await attempt(job, role: .primary, first: true)
         if case .content = result {
-            result = await attempt(job, role: .primary)
+            result = await attempt(job, role: .primary, first: false)
         }
         switch result {
         case .accepted(let accepted, let model):
@@ -425,7 +426,7 @@ public actor OverviewWriter {
         // A slot change during the check supersedes the primary's failure.
         guard job.generation == slotsGeneration else { return .cancelled }
         guard usable else { return block(job, .service(failure)) }
-        switch await attempt(job, role: .backup) {
+        switch await attempt(job, role: .backup, first: false) {
         case .accepted(let accepted, let model):
             return await storeDone(job, accepted, model: model)
         case .content(let reason, let model):
@@ -448,21 +449,35 @@ public actor OverviewWriter {
 
     /// One request: (c) the daily limit first when automatic, read
     /// immediately before sending, then (d) the model, then decision 5's
-    /// checks.
-    private func attempt(_ job: Job, role: ModelRole) async -> Attempt {
+    /// checks. Before the job's `first` request the reading language is
+    /// checked once more (review round 2): a job whose language changed
+    /// before anything was sent is dropped — nothing sent or stored, an
+    /// automatic job due again, a manual one answering `cancelled`. The
+    /// result of a request already sent is kept under the job's language
+    /// (decision 11 (d)), so its retry and backup request are not dropped.
+    private func attempt(_ job: Job, role: ModelRole, first: Bool) async -> Attempt {
         if job.automatic {
+            await suspend(.limitRead)
+            let count: Int
+            let limit: Int
             do {
-                let count = try await library.automaticRequestCount(since: job.dayStart)
-                let limit = try await library.dailyAutomaticLimit()
-                if count >= limit {
-                    return .limit
-                }
+                count = try await library.automaticRequestCount(since: job.dayStart)
+                limit = try await library.dailyAutomaticLimit()
             } catch {
+                // A read in a cancelled task fails: that is the cancellation.
+                guard !Task.isCancelled, !isStopped else { return .cancelled }
                 return .storage
+            }
+            guard !Task.isCancelled, !isStopped else { return .cancelled }
+            if count >= limit {
+                return .limit
             }
         }
         await suspend(.send(role))
         guard !Task.isCancelled, !isStopped else { return .cancelled }
+        if first, job.configuration != configGeneration {
+            return .cancelled
+        }
         let slotModel = job.slots[role]?.model
         let reply: ModelReply
         do {
@@ -533,7 +548,7 @@ public actor OverviewWriter {
         do {
             result = try await Task { try await library.storeOverview(record, sent: sent, slots: slots) }.value
         } catch {
-            guard !isStopped else { return .cancelled }
+            guard !isStopped, !Task.isCancelled else { return .cancelled }
             return block(job, .storage)
         }
         switch result {
@@ -554,7 +569,7 @@ public actor OverviewWriter {
 
     private func setUpFailed(_ job: Job, _ failure: ModelFailure) -> OverviewWriteOutcome {
         let outcome = block(job, .setUp(failure))
-        if job.generation == slotsGeneration, !isStopped {
+        if job.generation == slotsGeneration, !isStopped, !Task.isCancelled {
             holdGeneration += 1
             hold = Hold(reason: .setUp(failure), slots: job.slots, generation: holdGeneration)
             // A manual job's failure holds the automatic jobs queued behind
@@ -578,13 +593,14 @@ public actor OverviewWriter {
 
     /// Blocks the category, and, for an automatic job, ends the run: its
     /// remaining categories are blocked with the same reason. Nothing is
-    /// blocked when the slots changed since the job read them, or the
-    /// writer was stopped.
+    /// blocked when the slots changed since the job read them, the writer
+    /// was stopped, or the job was cancelled (the background; review round
+    /// 2): a cancelled job leaves the blocks and the queue alone.
     private func block(
         _ category: UUID, _ reason: OverviewBlock.Reason, day: String, locale: ReadingLocale, automatic: Bool, generation: Int
     ) -> OverviewWriteOutcome {
         let block = OverviewBlock(reason: reason, day: day, locale: locale)
-        guard generation == slotsGeneration, !isStopped else { return .cancelled }
+        guard generation == slotsGeneration, !isStopped, !Task.isCancelled else { return .cancelled }
         blocks[category] = block
         if automatic {
             for remaining in automaticQueue {
@@ -634,6 +650,11 @@ public actor OverviewWriter {
         case dueRead
         /// A job is about to read (a).
         case jobRead
+        /// A job is about to read the slots (b).
+        case slotRead
+        /// An automatic request is about to read the day's count and the
+        /// limit (c).
+        case limitRead
         /// A request is about to be sent to the slot of this role (d).
         case send(ModelRole)
         /// A service failure is about to look for a usable backup (e).
@@ -661,10 +682,15 @@ public actor OverviewWriter {
         while let worker {
             await worker.value
         }
-        while !retiredWorkers.isEmpty {
-            await retiredWorkers.removeFirst().value
-        }
         await reports?.value
+    }
+
+    /// The worker tasks started and not yet ended.
+    private(set) var workersAlive = 0
+
+    /// The category of the job in flight.
+    var inFlightCategory: UUID? {
+        inFlight
     }
 
     /// Whether automatic jobs hold after a set-up failure.

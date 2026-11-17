@@ -96,6 +96,8 @@ private struct OverviewCompactRow: View {
     let detail: Text
     let part: String
     let unread: Int
+    /// The icon's column, growing with the text size.
+    @ScaledMetric private var iconWidth = 28.0
 
     var body: some View {
         Button {
@@ -104,7 +106,7 @@ private struct OverviewCompactRow: View {
             HStack(spacing: Theme.Spacing.medium) {
                 Image(systemName: category.icon.rawValue)
                     .foregroundStyle(accent)
-                    .frame(width: 28)
+                    .frame(width: iconWidth)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: category.name)
@@ -141,6 +143,8 @@ private struct OverviewTodayCard: View {
     let category: LibraryCategory
     let unread: Int
     let state: OverviewCardState
+    /// The icon's column, growing with the text size.
+    @ScaledMetric private var iconWidth = 28.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.medium) {
@@ -162,7 +166,7 @@ private struct OverviewTodayCard: View {
             HStack(spacing: Theme.Spacing.medium) {
                 Image(systemName: category.icon.rawValue)
                     .foregroundStyle(accent)
-                    .frame(width: 28)
+                    .frame(width: iconWidth)
                     .accessibilityHidden(true)
                 Text(verbatim: category.name)
                     .font(.headline)
@@ -203,26 +207,19 @@ struct OverviewListCard: View {
         let state = overviews.state(of: category)
         let expanded = overviews.expandedListCards.contains(category.id)
         VStack(alignment: .leading, spacing: Theme.Spacing.medium) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Today's Overview")
-                    .font(.headline)
-                    .foregroundStyle(Theme.text)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if case .done = state {
-                    Button {
-                        if expanded {
-                            overviews.expandedListCards.remove(category.id)
-                        } else {
-                            overviews.expandedListCards.insert(category.id)
-                        }
-                    } label: {
-                        Text(expanded ? "Less" : "Expand")
-                            .frame(minWidth: Theme.minimumTapTarget, minHeight: Theme.minimumTapTarget)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.tint)
-                    .accessibilityIdentifier(AccessibilityID.overview("expand", category.name))
+            // The title and Expand side by side, or one above the other
+            // when the text is too large for both on one line.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    title
+                        .fixedSize()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    expandButton(state: state, expanded: expanded)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    title
+                        .fixedSize(horizontal: false, vertical: true)
+                    expandButton(state: state, expanded: expanded)
                 }
             }
             if case .done(let overview, let working) = state, !expanded {
@@ -255,6 +252,34 @@ struct OverviewListCard: View {
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.overview("card", category.name))
+    }
+}
+
+extension OverviewListCard {
+    private var title: some View {
+        Text("Today's Overview")
+            .font(.headline)
+            .foregroundStyle(Theme.text)
+    }
+
+    @ViewBuilder
+    private func expandButton(state: OverviewCardState, expanded: Bool) -> some View {
+        if case .done = state {
+            Button {
+                if expanded {
+                    overviews.expandedListCards.remove(category.id)
+                } else {
+                    overviews.expandedListCards.insert(category.id)
+                }
+            } label: {
+                Text(expanded ? "Less" : "Expand")
+                    .frame(minWidth: Theme.minimumTapTarget, minHeight: Theme.minimumTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.tint)
+            .accessibilityIdentifier(AccessibilityID.overview("expand", category.name))
+        }
     }
 }
 

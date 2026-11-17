@@ -244,6 +244,26 @@ enum AccessibilityID {
     static let cacheSize = "data.cacheSize"
     static let clearCacheButton = "data.clearCache"
 
+    // Settings → Usage (RD17)
+    static let usageRow = "settings.usage"
+    static let usagePeriodPicker = "usage.period"
+    static let usageEmpty = "usage.empty"
+    static let usageReadFailed = "usage.readFailed"
+    /// "Automatic requests today: n of m".
+    static let usageToday = "usage.today"
+    static let usageLimitReached = "usage.limitReached"
+    static let dailyLimitPicker = "usage.limit"
+
+    /// The header of a model's section.
+    static func usageModel(_ name: String) -> String {
+        "usage.model." + name
+    }
+
+    /// The row of one purpose of one model.
+    static func usageTotal(model: String, purpose: String) -> String {
+        "usage.total." + model + "." + purpose
+    }
+
     // Refresh
     static let todayStatus = "today.status"
     static let failedSourcesButton = "today.failedSources"
@@ -346,6 +366,10 @@ enum UITestLaunchKey {
     /// A whole number stored as the daily automatic limit (RD14 decision
     /// 8); honoured only with `libraryDirectory`.
     static let dailyAutomaticLimit = "NEWSPAW_UITEST_DAILY_AUTOMATIC_LIMIT"
+    /// "1" inserts five usage rows of the model `seed-<partition>` into the
+    /// normal library at launch and into the adult library at each unlock
+    /// (RD17 decision 8); honoured only with `libraryDirectory`.
+    static let seedUsage = "NEWSPAW_UITEST_SEED_USAGE"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.

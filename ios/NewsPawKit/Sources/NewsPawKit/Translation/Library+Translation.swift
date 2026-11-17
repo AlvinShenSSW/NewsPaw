@@ -164,8 +164,9 @@ extension Library {
 
     /// The usage rows of automatic requests at or after `start`: what the
     /// daily automatic limit counts, cancelled and failed requests included
-    /// (decision 8).
-    func automaticRequestCount(since start: Date) async throws -> Int {
+    /// (decision 8). Settings › Usage shows it since today's start beside
+    /// the limit (RD17).
+    public func automaticRequestCount(since start: Date) async throws -> Int {
         try await read { db in
             try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage WHERE automatic = 1 AND at >= ?", arguments: [start]) ?? 0
         }

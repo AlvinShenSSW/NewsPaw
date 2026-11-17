@@ -39,6 +39,10 @@ struct DebugLaunchOptions {
     /// The daily automatic limit to store (RD14 decision 8). Applied only
     /// together with `libraryDirectory`.
     let dailyAutomaticLimit: Int?
+    /// Whether five usage rows of `seed-<partition>` are inserted into the
+    /// normal library at launch and into the adult library at each unlock
+    /// (RD17 decision 8). Applied only together with `libraryDirectory`.
+    let seedsUsage: Bool
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -83,6 +87,7 @@ struct DebugLaunchOptions {
         } else {
             dailyAutomaticLimit = nil
         }
+        seedsUsage = environment[UITestLaunchKey.seedUsage] == "1"
     }
 
     /// Accepts only a name that stays inside the temporary directory.

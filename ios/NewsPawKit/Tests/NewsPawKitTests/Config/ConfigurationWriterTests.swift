@@ -166,4 +166,65 @@ struct ConfigurationWriterTests {
         }
         await #expect(throws: ConfigurationExportError.failed) { try await fixture.export(adult: false) }
     }
+
+    @Test("review G1: after a partial move left a category in both libraries with one identifier, both partitions export, read back and import")
+    func categoryInBothPartitions() async throws {
+        let source = try await ConfigurationFixture.make()
+        defer { source.remove() }
+        // What a move whose deletion failed leaves (RD19): the same
+        // category, by identifier, in both libraries, each with sources.
+        let shared = UUID()
+        for library in [source.normal, source.adult] {
+            try await library.pool.write { db in
+                try Category(id: shared, name: "Moved", sortOrder: 0, iconName: "film", overview: .auto, updatedAt: Date()).insert(db)
+            }
+        }
+        try await source.normal.testSource("Left Behind", url: "https://left.example/feed", category: shared)
+        try await source.adult.testSource("Moved Over", url: "https://moved.example/feed", category: shared)
+        let data = try await source.export(adult: true)
+        let document = try readDocument(data)
+        #expect(document.normal.categories.map(\.name) == ["Moved"])
+        #expect(document.adult?.categories.map(\.name) == ["Moved"])
+        #expect(document.normal.sources.map(\.address) == ["https://left.example/feed"])
+        #expect(document.adult?.sources.map(\.address) == ["https://moved.example/feed"])
+        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let ids = (object["categories"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+        #expect(Set(ids).count == 2)
+
+        let target = try await ConfigurationFixture.make()
+        defer { target.remove() }
+        await target.importDocument(document, mode: .replace)
+        let normal = try await target.normal.sourceSummaries()
+        let adult = try await target.adult.sourceSummaries()
+        #expect(normal.map(\.name) == ["Left Behind"])
+        #expect(adult.map(\.name) == ["Moved Over"])
+        #expect(try await target.normal.categories().map(\.name) == ["Moved"])
+        #expect(try await target.adult.categories().map(\.name) == ["Moved"])
+    }
+
+    @Test("review R4: a name holding a control character, or only one, exports and round-trips to the same category")
+    func controlCharacterNames() async throws {
+        let fixture = try await ConfigurationFixture.make()
+        defer { fixture.remove() }
+        let tech = try await fixture.normal.testCategory("Tech\tNews")
+        try await fixture.normal.testCategory("\u{7}")
+        try await fixture.normal.testSource("Feed\u{7}Name", url: "https://feed.example/rss", category: tech)
+        let data = try await fixture.export(adult: false)
+        let document = try readDocument(data)
+        #expect(document.normal.categories.map(\.name) == ["TechNews", "\u{FFFD}"])
+        #expect(document.normal.sources.map(\.name) == ["FeedName"])
+        // The same device: everything is already here, nothing is written.
+        let preview = try #require(try await fixture.preview(document).partitions.first?.merge)
+        #expect(preview.newCategories.isEmpty)
+        #expect(preview.categoriesAlreadyHere == ["TechNews", "\u{FFFD}"])
+        #expect(preview.sourcesAlreadyHere.map(\.name) == ["FeedName"])
+        #expect(preview.sourceConflicts.isEmpty)
+        let before = try await fullDump(fixture.normal)
+        await fixture.importDocument(document, mode: .merge)
+        #expect(try await fullDump(fixture.normal) == before)
+        // Replace keeps the two categories and the source as they are.
+        await fixture.importDocument(document, mode: .replace)
+        #expect(try await fixture.normal.categories().map(\.name) == ["Tech\tNews", "\u{7}"])
+        #expect(try await fixture.normal.sourceSummaries().map(\.name) == ["Feed\u{7}Name"])
+    }
 }

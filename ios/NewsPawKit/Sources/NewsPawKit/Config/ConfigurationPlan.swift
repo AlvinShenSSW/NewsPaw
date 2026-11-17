@@ -189,8 +189,9 @@ public struct ConfigurationPlan: Sendable {
         switch mode {
         case .merge:
             var firstOfName: [String: UUID] = [:]
-            for category in snapshot.categories where firstOfName[category.name] == nil {
-                firstOfName[category.name] = category.id
+            // Names compared in the file's form (`ConfigurationFile.fileName`).
+            for category in snapshot.categories where firstOfName[ConfigurationFile.fileName(category.name)] == nil {
+                firstOfName[ConfigurationFile.fileName(category.name)] = category.id
             }
             var createdOfName: [String: UUID] = [:]
             var nextSortOrder = (snapshot.categories.map(\.sortOrder).max() ?? -1) + 1
@@ -214,7 +215,9 @@ public struct ConfigurationPlan: Sendable {
         case .replace:
             var taken = Set<UUID>()
             for (index, category) in part.categories.enumerated() {
-                if let existing = snapshot.categories.first(where: { $0.name == category.name && !taken.contains($0.id) }) {
+                if let existing = snapshot.categories.first(where: {
+                    ConfigurationFile.fileName($0.name) == category.name && !taken.contains($0.id)
+                }) {
                     taken.insert(existing.id)
                     mapped.append(existing.id)
                     categoriesAlreadyHere.append(category.name)
@@ -263,7 +266,7 @@ public struct ConfigurationPlan: Sendable {
             }
             let options = source.options.applying(to: here.kind)
             var differences: [ConfigurationSourceDifference] = []
-            if here.name != source.name {
+            if ConfigurationFile.fileName(here.name) != source.name {
                 differences.append(.name)
             }
             if here.categoryID != categoryID {

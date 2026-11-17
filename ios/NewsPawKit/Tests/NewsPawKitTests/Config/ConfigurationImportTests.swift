@@ -594,9 +594,11 @@ struct ConfigurationImportTests {
         }
         #expect(entered.withLock { $0 })
         let closeCalled = Mutex(false)
+        let closeFinished = Mutex(false)
         let closing = Task.detached {
             closeCalled.withLock { $0 = true }
             try await fixture.store.closeAdultLibrary()
+            closeFinished.withLock { $0 = true }
         }
         for _ in 0..<1_200 where !closeCalled.withLock({ $0 }) {
             try await Task.sleep(for: .milliseconds(50))
@@ -604,9 +606,14 @@ struct ConfigurationImportTests {
         for _ in 0..<20 {
             await Task.yield()
         }
+        // The close cannot end while the transaction is held: the pool's
+        // close waits for the write in flight.
+        #expect(!closeFinished.withLock { $0 })
+        #expect(!fixture.adult.isClosed)
         release.signal()
         try await closing.value
         let result = await run.value
+        #expect(closeFinished.withLock { $0 })
         #expect(fixture.adult.isClosed)
         if case .imported? = result.adult, case .imported = result.normal {} else {
             Issue.record("unexpected result \(result)")

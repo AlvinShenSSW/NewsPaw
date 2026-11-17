@@ -18,11 +18,23 @@ enum ConfigurationWriter {
         var sources: [ConfigurationWire.Source] = []
         var partitionSettings: [ConfigurationPartitionSettings] = []
         var slots: [ConfigurationWire.Slot] = []
+        // The file's category identifiers are unique across the file, as
+        // the reader requires: a category a partial move left in both
+        // libraries keeps one identifier in each (RD19), so the second
+        // partition's gets a new one in the file, and its sources follow.
+        // Import matches by name and address, never by these identifiers.
+        var usedIDs = Set<String>()
         for snapshot in [normal] + (adult.map { [$0] } ?? []) {
             let partition = snapshot.partition.rawValue
+            var fileID: [UUID: String] = [:]
             for (index, category) in snapshot.categories.enumerated() {
+                var id = category.id.databaseKey
+                while !usedIDs.insert(id).inserted {
+                    id = UUID().databaseKey
+                }
+                fileID[category.id] = id
                 categories.append(ConfigurationWire.Category(
-                    id: category.id.databaseKey, name: category.name, partition: partition, sortOrder: index,
+                    id: id, name: ConfigurationFile.fileName(category.name), partition: partition, sortOrder: index,
                     icon: category.iconName, overview: category.overview.rawValue
                 ))
             }
@@ -31,9 +43,10 @@ enum ConfigurationWriter {
                 // sample); the options of the other kind at their defaults.
                 let options = source.options.applying(to: source.kind)
                 sources.append(ConfigurationWire.Source(
-                    id: source.id.databaseKey, categoryID: source.categoryID.databaseKey, kind: source.kind.rawValue,
-                    name: source.name, url: source.address, paused: options.paused, autoTranslate: options.autoTranslate.rawValue,
-                    bodyMode: options.bodyMode.rawValue, translatePage: options.translatePage
+                    id: source.id.databaseKey, categoryID: fileID[source.categoryID] ?? source.categoryID.databaseKey,
+                    kind: source.kind.rawValue, name: ConfigurationFile.fileName(source.name), url: source.address,
+                    paused: options.paused, autoTranslate: options.autoTranslate.rawValue, bodyMode: options.bodyMode.rawValue,
+                    translatePage: options.translatePage
                 ))
             }
             var settings = snapshot.settings

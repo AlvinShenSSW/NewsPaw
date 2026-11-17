@@ -352,6 +352,15 @@ public enum ConfigurationFile {
         return String(scalars).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// A stored name as the file writes it and as an import compares it:
+    /// cleaned as the reader cleans, so that a name holding a control
+    /// character round-trips to itself; a name with nothing left is written
+    /// as U+FFFD, which the reader accepts.
+    static func fileName(_ stored: String) -> String {
+        let cleaned = cleaned(stored)
+        return cleaned.isEmpty ? "\u{FFFD}" : cleaned
+    }
+
     /// Parses `exported_at`: ISO 8601 with or without fractional seconds.
     static func date(_ text: String) -> Date? {
         let plain = ISO8601DateFormatter()

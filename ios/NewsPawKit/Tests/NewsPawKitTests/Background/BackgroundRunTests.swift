@@ -17,14 +17,19 @@ struct BackgroundRunTests {
         let workMayEnd = Signal()
         let workEnded = Flag()
         let source: UUID
+        let address: String
 
         static func make() async throws -> Setup {
             let fixture = try await PassFixture.make()
             let source = try await fixture.source("Held")
             fixture.transport.hold(source.address)
             Task { @MainActor in try await fixture.refresher.refresh(.library) }
-            await fixture.eventually { fixture.refresher.collecting == [source.id] }
-            return Setup(fixture: fixture, control: BackgroundPassControl(refresher: fixture.refresher), source: source.id)
+            // Held at the transport: the source is collecting before its
+            // request arrives there.
+            await fixture.eventually { fixture.refresher.collecting == [source.id] && fixture.transport.received == [source.address] }
+            return Setup(
+                fixture: fixture, control: BackgroundPassControl(refresher: fixture.refresher), source: source.id, address: source.address
+            )
         }
 
         func run() -> BackgroundRun {
@@ -47,7 +52,7 @@ struct BackgroundRunTests {
         #expect(!setup.control.isCancelled)
         #expect(!setup.control.isReleased)
         #expect(setup.fixture.refresher.collecting == [setup.source])
-        setup.fixture.transport.release(setup.fixture.transport.received[0])
+        setup.fixture.transport.release(setup.address)
     }
 
     @Test("its task is cancelled (the time ran out): control.cancel() is called, and the refresher cancelled, before it returns")
@@ -98,7 +103,7 @@ struct BackgroundRunTests {
         #expect(setup.fixture.refresher.collecting == [setup.source])
         setup.workMayEnd.fire()
         await setup.fixture.eventually { setup.workEnded.isSet }
-        setup.fixture.transport.release(setup.fixture.transport.received[0])
+        setup.fixture.transport.release(setup.address)
     }
 
     @Test("a task cancelled before the run starts: the run expires at once")

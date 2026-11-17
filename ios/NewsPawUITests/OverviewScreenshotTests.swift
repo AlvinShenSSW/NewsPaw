@@ -64,6 +64,10 @@ final class OverviewScreenshotTests: OverviewTestCase {
         addSource(Translation.wordFeed("slow"), to: "Slow")
         collapse("Slow")
         createCategory("Quiet")
+        // Its source is added in the capture launch, at the limit; the
+        // category is made here, where its row is above the fold at any
+        // text size.
+        createCategory("Limited")
         createCategory("Paused")
         addSource(Fixture.feed, to: "Paused")
         collapse("Paused")
@@ -76,10 +80,7 @@ final class OverviewScreenshotTests: OverviewTestCase {
         // The captures, at a limit of 0 so that nothing is written by
         // itself; "Limited" is added then, and its card says why.
         launchOverviews(limit: 0, arguments: capture.arguments, landscape)
-        for name in [Translation.category, "Refused", "Manual", "Slow", "Paused"] {
-            collapse(name)
-        }
-        addFeed(Fixture.longCounting, to: "Limited")
+        addSource(Fixture.longCounting, to: "Limited")
         refreshToday()
         waitFor(summary(Translation.category))
         shoot(capture, "today-top")

@@ -73,7 +73,8 @@ final class ConfigurationScreenshotTests: AdultTestCase {
         scrollDownAndCapture("settings-end")
         goBack()
         scrollTo(button(AccessibilityID.configurationReplaceEverythingButton)).tap()
-        waitFor(button(AccessibilityID.configurationReplaceButton))
+        // The review's title: its Replace button can be below the fold.
+        waitFor(app.navigationBars.staticTexts.matching(NSPredicate(format: "label IN %@", ["Before Replacing", "替换前确认"])).firstMatch)
         capture("review")
         scrollDownAndCapture("review-end")
         scrollTo(button(AccessibilityID.configurationReplaceButton)).tap()

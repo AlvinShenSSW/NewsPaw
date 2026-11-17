@@ -81,6 +81,9 @@ final class BackgroundRefreshTests: AdultTestCase {
         leaveAndReturn()
         waitForReport("scheduled=yes", "runs=0", "background=none")
 
+        // Today, with no slide-over panel open: on the iPad a tap outside
+        // the panel closes it and reaches nothing else.
+        showToday()
         deliver()
         waitForReport("background=collected", "runs=1", seconds: Self.reportBound)
 

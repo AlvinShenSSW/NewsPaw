@@ -43,6 +43,9 @@ struct DebugLaunchOptions {
     /// background (RD15 review round 3). Applied only together with
     /// `libraryDirectory`.
     let holdsFirstBodyPlan: Bool
+    /// Whether the first write of body results fails (RD15 review round
+    /// 4). Applied only together with `libraryDirectory`.
+    let failsFirstBodyWrite: Bool
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -88,6 +91,7 @@ struct DebugLaunchOptions {
             dailyAutomaticLimit = nil
         }
         holdsFirstBodyPlan = environment[UITestLaunchKey.holdFirstBodyPlan] == "1"
+        failsFirstBodyWrite = environment[UITestLaunchKey.failFirstBodyWrite] == "1"
     }
 
     /// Accepts only a name that stays inside the temporary directory.

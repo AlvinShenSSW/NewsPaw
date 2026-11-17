@@ -138,6 +138,12 @@ final class BodyTranslationModel {
     /// The jobs started while the application was in the background, for
     /// the UI tests' report; always 0 when the start check holds.
     static var startsInBackground = 0
+
+    /// Under a UI test only: the next `count` writes of results fail
+    /// (review round 4).
+    func failNextWrites(_ count: Int) {
+        call { await $0.failNextWrites(count) }
+    }
     #endif
 
     /// The display mode a new opening starts in: Settings › Reading's.
@@ -399,6 +405,10 @@ final class BodyTranslationModel {
             plan(key)
             return
         }
+        if opening.stop == .storage, let article = key.article {
+            storeAgain(key, article: article, route: .primary)
+            return
+        }
         cancelJob(of: key)
         openings[key]?.job = nil
         startJob(key, sending: planned.sentHashes.filter { opening.done[$0] == nil }, route: .primary)
@@ -414,9 +424,40 @@ final class BodyTranslationModel {
             plan(key)
             return
         }
+        if opening.stop == .storage, let article = key.article {
+            storeAgain(key, article: article, route: .backupOnly)
+            return
+        }
         cancelJob(of: key)
         openings[key]?.job = nil
         startJob(key, sending: planned.sentHashes.filter { opening.done[$0] == nil }, route: .backupOnly)
+    }
+
+    /// Retry after the results could not be written (review round 4): the
+    /// texts accepted and shown whose rows are missing are written again —
+    /// nothing is sent for them — and once that succeeds the banner goes
+    /// and the rest is sent as Retry sends it. While the write still fails
+    /// the banner stays.
+    private func storeAgain(_ key: BodyKey, article: UUID, route: BodyTranslationJob.Route) {
+        guard let opening = openings[key], let planned = opening.plan, opening.job == nil else { return }
+        let generation = opening.generation
+        let locale = opening.locale
+        let accepted = opening.done.filter { planned.sentHashes.contains($0.key) && !opening.prefilled.contains($0.key) }
+        let models = accepted.keys.reduce(into: [String: String]()) { result, hash in
+            result[hash] = opening.details[hash]?.model
+        }
+        let translator = translator
+        Task {
+            // Only the rows that are missing: a stored row keeps its time.
+            let stored = try? await translator.storedTexts(ofArticle: article, locale: locale)
+            let missing = accepted.filter { stored?[$0.key]?.state != .done }
+            let written = await translator.storeAccepted(missing, models: models, ofArticle: article, locale: locale)
+            guard written, !isStopped, var current = openings[key], current.generation == generation,
+                  current.job == nil, current.stop == .storage else { return }
+            current.stop = nil
+            openings[key] = current
+            startJob(key, sending: planned.sentHashes.filter { current.done[$0] == nil }, route: route)
+        }
     }
 
     // MARK: - Triggers
@@ -432,10 +473,30 @@ final class BodyTranslationModel {
         }
     }
 
-    /// A slot changed: the failed rows were deleted with it; every body is
-    /// planned again, and its failed texts wait again.
+    /// A slot changed: the failed rows were deleted with it; work is
+    /// cancelled and its failed texts wait again. A library article is
+    /// planned again from its rows (what they hold is not sent again). A
+    /// temporary article has no rows: its translations of the same reading
+    /// language are kept while it is open (decision 14, review round 4);
+    /// only its failures are cleared, and the rest starts under decision 5.
     func slotsChanged() {
-        readingLocaleChanged()
+        guard !isStopped else { return }
+        for key in openings.keys {
+            cancelJob(of: key)
+            openings[key]?.job = nil
+            if case .reader = key, var opening = openings[key], opening.plan != nil, opening.locale == settings.readingLocale {
+                opening.failed = [:]
+                opening.retrying = []
+                opening.stop = nil
+                opening.lastEnd = nil
+                opening.cancelSent = false
+                opening.resumeWhenEnded = false
+                openings[key] = opening
+                startIfDue(key)
+            } else {
+                plan(key)
+            }
+        }
     }
 
     /// The app came to the front: a start refused in the background is

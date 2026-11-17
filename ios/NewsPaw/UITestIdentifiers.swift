@@ -381,6 +381,9 @@ enum UITestLaunchKey {
     /// in the background, and a second more (RD15 review round 3);
     /// honoured only with `libraryDirectory`.
     static let holdFirstBodyPlan = "NEWSPAW_UITEST_HOLD_FIRST_BODY_PLAN"
+    /// "1" makes the normal workspace's first write of body results fail
+    /// (RD15 review round 4); honoured only with `libraryDirectory`.
+    static let failFirstBodyWrite = "NEWSPAW_UITEST_FAIL_FIRST_BODY_WRITE"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.
@@ -402,5 +405,9 @@ enum DebugAccessibilityID {
     /// started while the application was in the background (RD15 review
     /// round 3).
     static let adultReport = "debug.adultReport"
+    /// A one-point button beside the report: the normal workspace is told
+    /// that its slots changed, as a save in Settings tells it (RD15 review
+    /// round 4).
+    static let slotsChangedButton = "debug.slotsChanged"
 }
 #endif

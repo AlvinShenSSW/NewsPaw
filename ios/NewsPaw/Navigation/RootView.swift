@@ -15,7 +15,15 @@ struct RootView: View {
         #if DEBUG
             .overlay(alignment: .topLeading) {
                 if model.showsDebugReport {
-                    AdultDebugElement()
+                    HStack(spacing: 0) {
+                        AdultDebugElement()
+                        Button {
+                            model.slotsChangedForUITests()
+                        } label: {
+                            Color.clear.frame(width: 1, height: 1).contentShape(Rectangle())
+                        }
+                        .accessibilityIdentifier(DebugAccessibilityID.slotsChangedButton)
+                    }
                 }
             }
         #endif

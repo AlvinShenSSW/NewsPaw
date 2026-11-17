@@ -248,6 +248,9 @@ final class AppModel {
             if options.libraryDirectory != nil {
                 articlePageSize = options.articlePageSize
                 workspace.translation?.body.holdsFirstPlanUntilBackground = options.holdsFirstBodyPlan
+                if options.failsFirstBodyWrite {
+                    workspace.translation?.body.failNextWrites(1)
+                }
             }
             if let size = articlePageSize {
                 workspace.reading.pageSize = size
@@ -716,6 +719,13 @@ final class AppModel {
     }
 
     #if DEBUG
+    /// The UI tests' stand-in for a slot saved in Settings (RD15 review
+    /// round 4): the same call, made while a reading screen or reader
+    /// mode is shown, which Settings cannot be.
+    func slotsChangedForUITests() {
+        parts?.slotsChanged()
+    }
+
     // MARK: - The UI tests' translation (RD14)
 
     /// Saves the translator fixture's primary model, and its backup when

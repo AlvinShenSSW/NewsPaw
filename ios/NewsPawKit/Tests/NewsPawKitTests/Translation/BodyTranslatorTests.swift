@@ -318,6 +318,38 @@ struct BodyTranslatorTests {
         #expect(try await fixture.stored(article).isEmpty)
     }
 
+    @Test("review round 4: Retry after a failed write stores the texts accepted and shown, with their model, and sends nothing; while the write still fails it stores nothing")
+    func storeAcceptedAfterAWriteFailure() async throws {
+        let fixture = try await BodyFixture.make()
+        defer { fixture.remove() }
+        let article = try await fixture.article()
+        try await fixture.library.pool.write { db in
+            try db.execute(sql: "CREATE TRIGGER fail_body BEFORE INSERT ON body_translation BEGIN SELECT RAISE(FAIL, 'refused by the test'); END;")
+        }
+        let plan = BodySegments.plan(BodyFixture.blocks(2), locale: .simplifiedChinese)
+        #expect(await fixture.run(fixture.job(plan, article: article)) == .stopped(.storage))
+        let accepted = fixture.translated
+        let model = fixture.reported.compactMap { event -> String? in
+            if case .translated(_, _, let model) = event { model } else { nil }
+        }.first ?? ""
+        let models = accepted.mapValues { _ in model }
+        #expect(accepted.count == 2)
+        #expect(!model.isEmpty)
+
+        #expect(await fixture.translator.storeAccepted(accepted, models: models, ofArticle: article, locale: .simplifiedChinese) == false)
+        #expect(try await fixture.stored(article).isEmpty)
+
+        try await fixture.library.pool.write { db in
+            try db.execute(sql: "DROP TRIGGER fail_body")
+        }
+        #expect(await fixture.translator.storeAccepted(accepted, models: models, ofArticle: article, locale: .simplifiedChinese))
+        let stored = try await fixture.stored(article)
+        #expect(stored.mapValues(\.text) == accepted.mapValues { Optional($0) })
+        #expect(stored.values.allSatisfy { $0.state == .done && $0.model == model })
+        #expect(fixture.service.requests.count == 1)
+        #expect(try await fixture.waiting(plan, article).isEmpty)
+    }
+
     @Test("criterion 4: the article deleted during a request: its result is dropped and the work ends")
     func articleDeletedDuringRequest() async throws {
         let service = TranslationService()

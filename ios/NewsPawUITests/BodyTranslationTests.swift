@@ -106,6 +106,82 @@ final class BodyTranslationTests: BodyTranslationTestCase {
         XCTAssertEqual(bodyStartsInBackground, 0)
     }
 
+    /// Review round 4 (L1): a slot change while reader mode's temporary
+    /// article is open keeps its translations (it has no rows to read them
+    /// from again): nothing is sent again and the translated text stays.
+    /// The article under it is planned again from its rows and sends
+    /// nothing either. Settings cannot be reached with a temporary article
+    /// open (every way there ends the browser's session), so the slot
+    /// change is the debug stand-in for Settings' save, the same call.
+    func testSlotChangeKeepsReaderModeTranslation() {
+        launchTranslating()
+        addFeed("https://fulltext.example.invalid/rss.xml", to: "World")
+        openBody("Fetched story")
+        waitFor(element(AccessibilityID.readingFullTextNote))
+        waitForBlock(0, startingWith: "译[zh-Hans]：")
+        waitFor(button(AccessibilityID.readingOriginalBarButton)).tap()
+        waitForPage("The ferry at dawn")
+        let reader = button(AccessibilityID.browserReaderButton)
+        waitForEnabled(reader, true)
+        reader.tap()
+        let text = block(containing: "译[zh-Hans]：The harbour office posts the tide tables")
+        waitFor(text)
+        let translated = settledBodyRequests()
+        XCTAssertGreaterThan(translated, 0)
+
+        let slotsChanged = app.buttons[DebugAccessibilityID.slotsChangedButton]
+        XCTAssertTrue(slotsChanged.waitForExistence(timeout: timeout))
+        slotsChanged.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        expectBodyRequests(translated, "the slots changed: reader mode sends nothing again", settle: 4)
+        XCTAssertTrue(text.exists, "the temporary article's translation is gone")
+
+        // The article under it: its rows hold every text.
+        button(AccessibilityID.readerCloseButton).tap()
+        waitForAbsence(element(AccessibilityID.readerTitle))
+        closeBrowser()
+        waitForBlock(0, startingWith: "译[zh-Hans]：")
+        expectBodyRequests(translated, "the article sends nothing again", settle: 3)
+    }
+
+    /// Review round 4 (L2): the only chunk is accepted and shown, but its
+    /// rows cannot be written (the first write fails, a debug seam): the
+    /// banner says so, with Retry. Retry writes the accepted texts — it
+    /// sends nothing — and the banner goes; the next opening reads them
+    /// and sends nothing either.
+    func testRetryStoresWhatCouldNotBeWritten() {
+        launchWithBodies(environment: [UITestLaunchKey.failFirstBodyWrite: "1"])
+        openBody(Body.markup)
+        let translated = Translation.translated(Body.markupParagraph)
+        waitForBlock(0, translated)
+        waitForBanner("Some text could not be translated · The change could not be saved.")
+        expectBodyRequests(1, "one chunk, accepted, not stored")
+
+        waitFor(button(AccessibilityID.bodyBannerRetry)).tap()
+        waitForAbsence(banner)
+        expectBodyRequests(1, "Retry writes the accepted texts and sends nothing", settle: 3)
+        waitForBlock(0, translated)
+
+        leaveArticle()
+        openBody(Body.markup)
+        waitForBlock(0, translated)
+        expectBodyRequests(1, "stored: the next opening sends nothing", settle: 3)
+        XCTAssertFalse(banner.exists)
+    }
+
+    /// The body requests once they stop growing (two readings 1.5 s apart).
+    private func settledBodyRequests() -> Int {
+        var last = -1
+        for _ in 0..<40 {
+            let now = bodyRequests
+            if now == last, now > 0 {
+                return now
+            }
+            last = now
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+        return last
+    }
+
     /// Criteria 5 and 8: a refused paragraph is stored failed; the rest
     /// goes on; leaving during chunk 4 and returning sends chunks 4–8 and
     /// not chunk 2's failure; the banner stays while the failure is stored;

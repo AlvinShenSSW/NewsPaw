@@ -146,6 +146,19 @@ public actor BodyTranslator {
         try await library.bodyTranslations(ofArticle: id, locale: locale)
     }
 
+    /// Retry after a failed write (RD15 review round 4): stores, as done,
+    /// translations of an article that were accepted and shown but whose
+    /// rows could not be written, with the model of each. Nothing is sent.
+    ///
+    /// - Returns: whether they are stored (false when the write fails
+    ///   again or the article is gone).
+    public func storeAccepted(_ texts: [String: String], models: [String: String], ofArticle id: UUID, locale: ReadingLocale) async -> Bool {
+        let records = texts.map { hash, text in
+            BodyTextRecord(hash: hash, state: .done, text: text, failure: nil, model: models[hash])
+        }
+        return await write(records, article: id, locale: locale) == .written
+    }
+
     /// The article's title translation (RD14's row) in `locale`, from this
     /// translator's library: what an excerpt shown as the body is pre-filled
     /// from, read in the opening's own language.
@@ -391,6 +404,12 @@ public actor BodyTranslator {
     }
 
     private func write(_ records: [BodyTextRecord], article: UUID, locale: ReadingLocale) async -> Written {
+        #if DEBUG
+        if writesToFail > 0 {
+            writesToFail -= 1
+            return .failed
+        }
+        #endif
         // In a task of its own: a write refuses to start in a cancelled
         // task, and an accepted reply is worth keeping.
         let library = library
@@ -415,6 +434,17 @@ public actor BodyTranslator {
     }
 
     // MARK: - For the tests
+
+    #if DEBUG
+    /// How many of the next writes of results fail, as a full disk would
+    /// (RD15 review round 4). Set only by the tests and by the app under a
+    /// UI-test library directory.
+    private var writesToFail = 0
+
+    public func failNextWrites(_ count: Int) {
+        writesToFail = count
+    }
+    #endif
 
     /// Where the race tests hold the translator: just before the `await`
     /// whose window they test. Nothing holds it in the app.

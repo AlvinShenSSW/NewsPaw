@@ -664,12 +664,25 @@ struct PageTranslationScriptTests {
     func hugePage() async throws {
         let page = ScriptPage()
         await page.load(Self.longPage(items: 60_000, animated: false))
-        // The test holds its interleaving: the collect walks the viewport
-        // asked for, once the page reports it.
-        try await page.scrollWindow(to: "document.body.scrollHeight / 2")
-        try await page.settle()
-        let runs = try await page.runs()
-        let numbers = runs.compactMap { Int($0.text.replacingOccurrences(of: "項目 ", with: "")) }
+        // The test holds its interleaving: only a collect made while the
+        // page reported the position asked for, before and after it, is
+        // judged. On the iOS 26.5 simulator the web view can put the page
+        // back at the top after it reported the position (its scroll view
+        // learns the page's height later); the window is then scrolled
+        // again, a bounded number of times.
+        let position = #"Math.round(window.scrollY)"#
+        var numbers: [Int] = []
+        var judged = false
+        for _ in 0..<10 where !judged {
+            try await page.scrollWindow(to: "document.body.scrollHeight / 2")
+            try await page.settle()
+            let asked = try await page.pageInt("return \(position)")
+            let runs = try await page.runs()
+            guard try await page.pageInt("return \(position)") == asked, asked > 0 else { continue }
+            numbers = runs.compactMap { Int($0.text.replacingOccurrences(of: "項目 ", with: "")) }
+            judged = true
+        }
+        #expect(judged, "the page never stayed at the position asked for")
         #expect(numbers.contains { (29_000...31_500).contains($0) }, "\(numbers.prefix(5))")
     }
 

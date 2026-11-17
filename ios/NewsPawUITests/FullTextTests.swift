@@ -146,6 +146,11 @@ final class FullTextTests: FullTextTestCase {
         alert.buttons.matching(NSPredicate(format: "label == %@", "Replace")).firstMatch.tap()
         waitFor(button(AccessibilityID.configurationDoneButton)).tap()
         waitForAbsence(button(AccessibilityID.configurationDoneButton))
+        // On the panes Data is pushed on Settings, whose root holds the
+        // sidebar's button.
+        if !usesTabs {
+            goBack()
+        }
 
         openSourceList(FullText.source, in: FullText.category)
         chooseFilter("All")

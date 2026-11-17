@@ -70,7 +70,7 @@ extension NewsPawUITestCase {
     func hideKeyboardByDragging() {
         guard app.keyboards.firstMatch.exists else { return }
         let list = element(AccessibilityID.searchList).frame
-        let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: list.midX, dy: list.minY + 200))
+        let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: list.midX, dy: list.midY - 50))
         start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 150)), withVelocity: 800, thenHoldForDuration: 0.2)
         waitForAbsence(app.keyboards.firstMatch)
     }

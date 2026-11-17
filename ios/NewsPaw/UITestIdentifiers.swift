@@ -254,6 +254,15 @@ enum AccessibilityID {
 
     // Reader mode (RD12)
     static let browserReaderButton = "browser.reader"
+    // Page translation (RD16)
+    static let browserTranslateButton = "browser.translate"
+    static let pageTranslationLine = "browser.translationLine"
+    static let pageTranslationShowOriginal = "browser.translationLine.showOriginal"
+    static let pageTranslationRetry = "browser.translationLine.retry"
+    static let pageTranslationRetryBackup = "browser.translationLine.retryBackup"
+    static let pageTranslationContinue = "browser.translationLine.continue"
+    static let pageTranslationOpenSettings = "browser.translationLine.openSettings"
+    static let alwaysTranslateToggle = "browser.alwaysTranslate"
     /// The temporary article shown in place of the page.
     static let readerArticle = "reader.article"
     static let readerTitle = "reader.title"
@@ -377,6 +386,10 @@ enum UITestLaunchKey {
     /// A whole number stored as the daily automatic limit (RD14 decision
     /// 8); honoured only with `libraryDirectory`.
     static let dailyAutomaticLimit = "NEWSPAW_UITEST_DAILY_AUTOMATIC_LIMIT"
+    /// A whole number of at least 1: the requests page translation sends
+    /// in one period before it pauses (RD16 decision 11), lowered for the
+    /// paused line's test. Honoured only with `libraryDirectory`.
+    static let pageTranslationCeiling = "NEWSPAW_UITEST_PAGE_TRANSLATION_CEILING"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.
@@ -385,13 +398,15 @@ enum DebugAccessibilityID {
     /// 4): its label is `file=<0|1> pool=<open|closed>
     /// library=<held|released> workspace=<none|held|released>
     /// browser=<none|held|released> sessions=<number> pages=<number>
-    /// translationRequests=<number> bodyRequests=<number>
+    /// translationRequests=<number> neverSent=<number> bodyRequests=<number>
     /// readerBlock=<number|none>`. `pool` is whether connections are open
     /// on the file; the other three are whether the objects are gone from
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
     /// requests the translator fixture has answered in this process (RD14
-    /// criterion 13); `bodyRequests` is how many usage rows of body
+    /// criterion 13); `neverSent` how many texts holding the sentinel
+    /// `fixture:never` it received (RD16 criterion 5); `bodyRequests` is
+    /// how many usage rows of body
     /// requests the normal library holds (RD15 decision 16);
     /// `readerBlock` the block the reading screen last reported at its top
     /// (RD15 criterion 7).

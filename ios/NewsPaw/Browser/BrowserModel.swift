@@ -45,6 +45,21 @@ struct BrowserReader {
     let images: BodyImageLoader
 }
 
+/// What page translation works with (RD16 decision 13): the workspace
+/// library's translator maker — `nil` where the library has no models of
+/// its own (the adult workspace until RD19), so that no text of one
+/// library goes through another's models — and the reading language.
+struct BrowserPageTranslation {
+    let makeTranslator: (@MainActor () -> PageTranslator)?
+    let readingLocale: @MainActor () -> ReadingLocale
+
+    /// Whether the line's "Set up a model to translate" links to Settings:
+    /// only where Settings shows this library's own models.
+    var opensSettings: Bool {
+        makeTranslator != nil
+    }
+}
+
 /// A page shown as an article by reader mode (RD12 decision 7; ux S5): a
 /// state of its browser session, in memory only. It is never stored, has
 /// no star, read state, previous or next, and ends with its session.
@@ -125,16 +140,19 @@ final class BrowserModel {
     @ObservationIgnored private let sources: SourceModel
     /// What reader mode fetches and extracts with (RD12).
     @ObservationIgnored let reader: BrowserReader
+    /// What page translation works with (RD16 decision 13).
+    @ObservationIgnored let pages: BrowserPageTranslation
 
     init(
         dataStore: WKWebsiteDataStore, navigation: NavigationModel, sources: SourceModel, reader: BrowserReader,
-        addressMap: BrowserAddressMap = BrowserAddressMap(), schemeHandlers: [String: any WKURLSchemeHandler] = [:],
-        allowsPictureInPicture: Bool = true
+        pages: BrowserPageTranslation, addressMap: BrowserAddressMap = BrowserAddressMap(),
+        schemeHandlers: [String: any WKURLSchemeHandler] = [:], allowsPictureInPicture: Bool = true
     ) {
         self.dataStore = dataStore
         self.navigation = navigation
         self.sources = sources
         self.reader = reader
+        self.pages = pages
         self.addressMap = addressMap
         self.schemeHandlers = schemeHandlers
         self.allowsPictureInPicture = allowsPictureInPicture
@@ -174,6 +192,11 @@ final class BrowserModel {
             #endif
             if mediaIsSuspended {
                 next?.suspendMedia()
+            }
+            // A web-page source with "Translate When Opened" opens
+            // translating (RD16 decision 14).
+            if let sourceID, sources.summary(sourceID)?.translatePage == true {
+                next?.translation.turnOn()
             }
             next?.load(start)
         }
@@ -230,6 +253,7 @@ final class BrowserModel {
         mediaIsSuspended = false
         for session in [librarySession, starredSession].compactMap(\.self) {
             session.allowMedia()
+            session.translation.becameSeen()
         }
     }
 
@@ -270,8 +294,15 @@ final class BrowserModel {
             && session.temporaryArticle == nil
     }
 
+    /// Whether `session`'s page is seen (RD16 decision 11): its stack's tab
+    /// is selected, the app is active, and no temporary article covers it.
+    /// Page translation calls into a page only then, except to end.
+    func isSeen(_ session: BrowserSession) -> Bool {
+        !isStopped && !mediaIsSuspended && isOnScreen(session) && session.temporaryArticle == nil
+    }
+
     /// Whether `session` is the session of the selected tab's stack.
-    private func isOnScreen(_ session: BrowserSession) -> Bool {
+    func isOnScreen(_ session: BrowserSession) -> Bool {
         switch navigation.currentTab {
         case .library: session === librarySession
         case .starred: session === starredSession
@@ -337,6 +368,8 @@ final class BrowserSession: NSObject {
     private(set) var temporaryArticle: TemporaryArticle?
     /// Whether "This page has no readable article" is shown.
     var isShowingNoReadableArticle = false
+    /// In-place translation of the session's pages (RD16).
+    @ObservationIgnored let translation: PageTranslationSession
 
     @ObservationIgnored private weak var model: BrowserModel?
     /// Reader mode's fetch and extraction in flight, and the address it
@@ -376,12 +409,19 @@ final class BrowserSession: NSObject {
         self.sourceID = sourceID
         self.model = model
         map = model.addressMap
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        self.webView = webView
         // No link previews and no swipes: the page's back and forward are
         // the bar's buttons.
         webView.allowsLinkPreview = false
         webView.allowsBackForwardNavigationGestures = false
+        let seen = SeenCheck(model: model)
+        translation = PageTranslationSession(
+            scripting: PageScriptBridge(webView: webView), translator: model.pages.makeTranslator?(),
+            readingLocale: model.pages.readingLocale, isSeen: { seen.check() }
+        )
         super.init()
+        seen.session = self
         webView.navigationDelegate = self
         webView.uiDelegate = self
         observe()
@@ -409,6 +449,11 @@ final class BrowserSession: NSObject {
             },
             webView.observe(\.canGoForward, options: [.initial, .new]) { [weak self] webView, _ in
                 MainActor.assumeIsolated { self?.canGoForward = webView.canGoForward }
+            },
+            // The page's scrolling, without taking the scroll view's
+            // delegate, which the web view owns (RD16 assumption A10).
+            webView.scrollView.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.translation.scrolled() }
             },
         ]
     }
@@ -438,6 +483,7 @@ final class BrowserSession: NSObject {
     /// The session's route left its stack: the page stops and lets go of
     /// the app.
     func end() {
+        translation.close()
         cancelReaderMode()
         temporaryArticle = nil
         isShowingNoReadableArticle = false
@@ -623,9 +669,10 @@ final class BrowserSession: NSObject {
         temporaryArticle = TemporaryArticle(title: title.isEmpty ? host : title, host: host, address: url, content: content)
     }
 
-    /// Close: the page again, as it was.
+    /// Close: the page again, as it was; its translation goes on.
     func closeTemporaryArticle() {
         temporaryArticle = nil
+        translation.becameSeen()
     }
 
     /// A link tapped in the temporary article: loaded by the session,
@@ -767,6 +814,9 @@ extension BrowserSession: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         defer { dropReaderModeIfMoved() }
         let started = provisional?.navigation === navigation ? provisional : nil
+        // A new document generation for page translation (RD16 decision
+        // 9), at the address it committed at, as the bar shows it.
+        translation.documentCommitted(starting == .browser ? started?.url : webView.url.map(map.toShown))
         if started != nil {
             provisional = nil
         }
@@ -799,6 +849,8 @@ extension BrowserSession: WKNavigationDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        // The page is gone: its translation's work is dropped (RD16).
+        translation.documentCommitted(nil)
         let url = shownURL
         provisional = nil
         starting = nil
@@ -838,5 +890,22 @@ extension BrowserSession: WKUIDelegate {
         _ webView: WKWebView, requestDeviceOrientationAndMotionPermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo
     ) async -> WKPermissionDecision {
         .deny
+    }
+}
+
+/// Whether a session's page is seen, asked by its page translation: the
+/// model and the session are held weakly, so that neither keeps the other.
+@MainActor
+private final class SeenCheck {
+    weak var model: BrowserModel?
+    weak var session: BrowserSession?
+
+    init(model: BrowserModel) {
+        self.model = model
+    }
+
+    func check() -> Bool {
+        guard let model, let session else { return false }
+        return model.isSeen(session)
     }
 }

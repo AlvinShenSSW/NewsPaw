@@ -183,6 +183,7 @@ final class AppModel {
         let adultIsEnabled = BuildFeatures.adultPartition && !(options.libraryDirectory != nil && options.adultFeatureOff)
         showsDebugReport = options.libraryDirectory != nil
         slowNextSave = options.slowNextSave
+        let pageCeiling = options.libraryDirectory.flatMap { _ in options.pageTranslationCeiling } ?? PageTranslator.standardCeiling
         #else
         let directory = LibraryStore.defaultDirectory()
         let transport: any Transport = URLSessionTransport()
@@ -195,6 +196,7 @@ final class AppModel {
         let authenticator: any DeviceAuthenticator = SystemDeviceAuthenticator()
         let adultKeys = KeychainKeyStore(partition: .adult)
         let adultIsEnabled = BuildFeatures.adultPartition
+        let pageCeiling = PageTranslator.standardCeiling
         #endif
         self.now = now
         do {
@@ -209,6 +211,7 @@ final class AppModel {
                 readingSettings: ReadingSettings(preferences: preferences),
                 models: models,
                 translationSettings: TranslationSettings(preferences: preferences),
+                pageCeiling: pageCeiling,
                 // The models are the normal library's: its workspace's
                 // translation resumes, whichever workspace's Settings saved.
                 slotsChanged: { [weak self] in self?.normal?.translation?.slotsChanged() }
@@ -743,6 +746,7 @@ final class AppModel {
             + "browser=\(state(lastAdultBrowser)) sessions=\(BrowserModel.sessionsMade) "
             + "pages=\((parts?.transport as? FixtureTransport)?.pageRequests ?? -1) "
             + "translationRequests=\(FixtureModelHTTP.translationRequests) "
+            + "neverSent=\(FixtureModelHTTP.neverSent) "
             + "bodyRequests=\((try? await normal?.reading.library.usageCount(purpose: .body)) ?? -1) "
             + "readerBlock=\(normal?.reading.lastReportedPosition.map(String.init) ?? "none")"
     }

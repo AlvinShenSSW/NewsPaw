@@ -324,6 +324,17 @@
         }
       }
     },
+    "Always Translate This Source" : {
+      "comment" : "Browser More menu switch for a web-page source: open its pages translated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "总是翻译这个来源"
+          }
+        }
+      }
+    },
     "Article Info" : {
       "comment" : "Reading screen, More menu, and the title of its sheet: where the body came from and how it was translated.",
       "localizations" : {
@@ -2112,6 +2123,17 @@
         }
       }
     },
+    "Nothing to translate on this page" : {
+      "comment" : "Browser translation line: the page is already in the reading language.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个页面没有需要翻译的文字"
+          }
+        }
+      }
+    },
     "OK" : {
       "comment" : "Button: dismisses an alert.",
       "localizations" : {
@@ -2651,17 +2673,6 @@
         }
       }
     },
-    "Saved now; used once page translation is available." : {
-      "comment" : "Source settings footnote under a web page's options.",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "现在先保存，网页翻译可用后生效。"
-          }
-        }
-      }
-    },
     "Sends one short request with what the form shows. Saving does not test." : {
       "comment" : "Footer of the Test section in the model form.",
       "localizations" : {
@@ -2783,6 +2794,17 @@
         }
       }
     },
+    "Show Original" : {
+      "comment" : "Browser translation line action: puts the page's own text back.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示原文"
+          }
+        }
+      }
+    },
     "Show Original Titles in Lists" : {
       "comment" : "Settings switch: a list row shows the original title under its translation.",
       "localizations" : {
@@ -2867,6 +2889,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "部分文字没有翻译成功"
+          }
+        }
+      }
+    },
+    "Some text could not be translated · %@" : {
+      "comment" : "Browser translation line: part of the page failed; the reason follows the dot.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分文字没有翻译成功 · %@"
           }
         }
       }
@@ -3254,6 +3287,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "模型会保留，需要重新填入 Key 才能再次使用。"
+          }
+        }
+      }
+    },
+    "The page did not respond" : {
+      "comment" : "Browser translation line: the page did not answer the app's script.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "页面没有响应"
           }
         }
       }
@@ -3658,6 +3702,17 @@
         }
       }
     },
+    "Translated to %@" : {
+      "comment" : "Browser translation line: the page is translated into the reading language, named here.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已翻译成%@"
+          }
+        }
+      }
+    },
     "Translating %lld of %lld" : {
       "comment" : "Reading screen progress line: chunks of the body translated so far, of all chunks.",
       "localizations" : {
@@ -3687,6 +3742,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "翻译"
+          }
+        }
+      }
+    },
+    "Translation paused on this long page" : {
+      "comment" : "Browser translation line: the request ceiling was reached; Continue allows more.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "长页面的翻译已暂停"
           }
         }
       }

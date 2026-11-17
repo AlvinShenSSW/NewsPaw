@@ -24,16 +24,19 @@ struct BrowserPane: View {
 
 /// The page, the failure state in its place, and the bars: the title in
 /// one line (the host while there is none) with the host under it and a
-/// progress line while a page loads; Back, Forward, Reader Mode and More
-/// below. The place of Translate stays empty until RD16. Reader mode's
-/// temporary article (RD12) stands in place of the page, with its own bar.
+/// progress line while a page loads; Back, Forward, Translate, Reader Mode
+/// and More below, and page translation's status line under the top bar
+/// (RD16). Reader mode's temporary article (RD12) stands in place of the
+/// page, with its own bar.
 struct BrowserView: View {
     @Environment(\.accent) private var accent
+    @Environment(BrowserModel.self) private var browser
     let session: BrowserSession
     let close: (() -> Void)?
     @Environment(SourceModel.self) private var sources
     @Environment(ReadingSettings.self) private var settings
     @Environment(TranslationModel.self) private var translation: TranslationModel?
+    @Environment(NavigationModel.self) private var navigation
     @Environment(\.openURL) private var openURL
     @State private var isShowingReadingSettings = false
 
@@ -109,6 +112,27 @@ struct BrowserView: View {
                         .accessibilityIdentifier(AccessibilityID.browserProgress)
                 }
             }
+            // Page translation's line, a top inset of the page (RD16
+            // decision 10, assumption A9).
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let line = session.translation.line {
+                    PageTranslationLineView(line: line, opensSettings: browser.pages.opensSettings) { step in
+                        take(step)
+                    }
+                }
+            }
+    }
+
+    /// A step of the translation line.
+    private func take(_ step: PageTranslationStep) {
+        let pages = session.translation
+        switch step {
+        case .showOriginal: pages.showOriginal()
+        case .retry: pages.retry()
+        case .retryWithBackup: pages.retryWithBackup()
+        case .continueTranslating: pages.continueTranslating()
+        case .openSettings: navigation.openModelSettings()
+        }
     }
 
     // MARK: - Failure (decision 7)
@@ -172,9 +196,23 @@ struct BrowserView: View {
             .disabled(!session.forwardEnabled)
             .accessibilityIdentifier(AccessibilityID.browserForwardButton)
             Spacer()
+            translateButton
             readerButton
             moreMenu
         }
+    }
+
+    /// Translate (RD16; ux S5): on and off, shown active while on.
+    private var translateButton: some View {
+        let pages = session.translation
+        // Closure literals for the binding (CI's compiler, see RD15).
+        return Toggle(isOn: Binding(get: { pages.isOn }, set: { _ in pages.toggle() })) {
+            Label("Translate", systemImage: "translate")
+        }
+        .toggleStyle(.button)
+        .accessibilityLabel(Text("Translate"))
+        .accessibilityValue(pages.isOn ? Text("On") : Text("Off"))
+        .accessibilityIdentifier(AccessibilityID.browserTranslateButton)
     }
 
     /// Reader Mode (RD12 decision 7): activity while the page is fetched
@@ -230,7 +268,8 @@ struct BrowserView: View {
     }
 
     /// Reload, Share, Open in Safari, Save This Page as a Source, Copy Link,
-    /// and Source Settings when the browser shows a web-page source.
+    /// and, when the browser shows a web-page source, Source Settings and
+    /// "Always Translate This Source".
     private var moreMenu: some View {
         Menu("More", systemImage: "ellipsis.circle") {
             Button("Reload", systemImage: "arrow.clockwise") {
@@ -254,6 +293,21 @@ struct BrowserView: View {
                 Button("Source Settings", systemImage: "gearshape") {
                     sources.beginSettings(id)
                 }
+                // RD16 decision 14: stored at once; turning it on also
+                // translates the page shown.
+                let pages = session.translation
+                Toggle(isOn: Binding(
+                    get: { sources.summary(id)?.translatePage ?? false },
+                    set: { on in
+                        sources.setTranslatePage(id, on)
+                        if on, !pages.isOn {
+                            pages.turnOn()
+                        }
+                    }
+                )) {
+                    Label("Always Translate This Source", systemImage: "translate")
+                }
+                .accessibilityIdentifier(AccessibilityID.alwaysTranslateToggle)
             }
         }
         .accessibilityIdentifier(AccessibilityID.browserMoreMenu)

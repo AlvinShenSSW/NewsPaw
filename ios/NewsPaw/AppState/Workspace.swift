@@ -24,6 +24,9 @@ struct WorkspaceParts {
     /// The translation settings (RD14 decision 1): global, one object for
     /// the app.
     let translationSettings: TranslationSettings
+    /// The requests page translation sends in one period (RD16 decision
+    /// 11): `PageTranslator.standardCeiling`, lowered only by a UI test.
+    let pageCeiling: Int
     /// Called after a slot of `models` changed, from the Settings of any
     /// workspace: the translation of the models' library resumes.
     let slotsChanged: @MainActor () -> Void
@@ -84,6 +87,21 @@ final class Workspace: Identifiable {
             isInFront: { UIApplication.shared.applicationState == .active },
             navigation: navigation, sources: sources, refresh: refresh
         )
+        // Translation only where the library has its own models (RD14
+        // decision 12): the same rule makes the browser's page translators
+        // (RD16 decision 13). Once RD19 gives the adult library its models,
+        // both are made from the workspace's own `LibraryModels`.
+        let ownsModels = parts.models.belong(to: library)
+        let models = parts.models
+        let ceiling = parts.pageCeiling
+        let sharedTranslationSettings = parts.translationSettings
+        var makeTranslator: (@MainActor () -> PageTranslator)?
+        if ownsModels {
+            makeTranslator = { PageTranslator(models: models, ceiling: ceiling) }
+        }
+        let pages = BrowserPageTranslation(
+            makeTranslator: makeTranslator, readingLocale: { sharedTranslationSettings.readingLocale }
+        )
         let browser = BrowserModel(
             dataStore: setup.dataStore, navigation: navigation, sources: sources,
             // Reader mode's images are fetched like a body's and not kept:
@@ -92,11 +110,11 @@ final class Workspace: Identifiable {
                 transport: parts.transport, extractor: extractor,
                 images: BodyImageLoader(transport: parts.transport, cache: library.imageCache, stores: false)
             ),
-            addressMap: setup.addressMap, schemeHandlers: setup.schemeHandlers,
+            pages: pages, addressMap: setup.addressMap, schemeHandlers: setup.schemeHandlers,
             allowsPictureInPicture: setup.allowsPictureInPicture
         )
         let modelSettings = ModelSettingsModel(models: parts.models, navigation: navigation)
-        let translation = parts.models.belong(to: library)
+        let translation = ownsModels
             ? TranslationModel(models: parts.models, settings: parts.translationSettings, reading: reading, now: parts.now)
             : nil
         reading.translationLocale = { [weak translation] in translation?.settings.readingLocale }

@@ -225,8 +225,9 @@ public final class PageTranslationSession {
         guard !closed, isOn, var document, let translator else { return }
         // In document order (the runs' numbers follow it).
         let failed = document.failed.values.sorted { ($0.runs.first?.id ?? 0) < ($1.runs.first?.id ?? 0) }
+        // The failed runs stay out of new collections until they are sent
+        // again (`start` lets them go).
         document.failed = [:]
-        document.failedRuns = []
         document.refused = [:]
         document.failure = nil
         document.stopped = false
@@ -256,7 +257,6 @@ public final class PageTranslationSession {
         for group in refused {
             document.failed[group.block] = nil
         }
-        document.failedRuns = Set(document.failed.values.flatMap { $0.runs.map(\.id) })
         document.refused = [:]
         document.failure = document.failed.isEmpty ? nil : document.failure
         self.document = document
@@ -491,6 +491,7 @@ public final class PageTranslationSession {
     private func start(_ unit: PageUnit, route: PageRoute) {
         guard let translator, var document else { return }
         document.inFlight.formUnion(unit.runIDs)
+        document.failedRuns.subtract(unit.runIDs)
         document.didSomething = true
         document.nothing = false
         self.document = document

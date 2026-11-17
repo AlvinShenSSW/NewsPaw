@@ -39,6 +39,9 @@ struct DebugLaunchOptions {
     /// The daily automatic limit to store (RD14 decision 8). Applied only
     /// together with `libraryDirectory`.
     let dailyAutomaticLimit: Int?
+    /// The page translation ceiling per period (RD16 decision 11).
+    /// Applied only together with `libraryDirectory`.
+    let pageTranslationCeiling: Int?
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -82,6 +85,11 @@ struct DebugLaunchOptions {
             dailyAutomaticLimit = limit
         } else {
             dailyAutomaticLimit = nil
+        }
+        if let text = environment[UITestLaunchKey.pageTranslationCeiling], let ceiling = Int(text), ceiling >= 1 {
+            pageTranslationCeiling = ceiling
+        } else {
+            pageTranslationCeiling = nil
         }
     }
 

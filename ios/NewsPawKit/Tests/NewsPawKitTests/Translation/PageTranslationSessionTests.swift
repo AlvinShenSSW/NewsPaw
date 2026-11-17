@@ -484,8 +484,8 @@ struct PageTranslationSessionTests {
         await harness.turnOn()
         await harness.eventually { harness.session.line == .failed(.content(.refused), offersBackup: true) }
         #expect(service.requests.map(\.texts.count) == [2, 1, 1])
-        #expect(Set(harness.page.written.map(\.id)) == [1])
-        #expect(harness.page.applies.contains { $0.settle.contains(2) })
+        await harness.eventually { harness.page.written.map(\.id).contains(1) && harness.page.applies.contains { $0.settle.contains(2) } }
+        #expect(!harness.page.written.contains { $0.id == 2 })
         #expect(service.requests(to: TranslatorFixture.backupHost).isEmpty)
         let primary = service.requests.count
         harness.session.retryWithBackup()

@@ -216,6 +216,15 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
                 <p><a href="/hidden-asker">Hidden asker</a></p>
                 <p><a href="/media">Media page</a></p>
                 """))
+        case (PageTranslationFixtures.host, PageTranslationFixtures.neverImage):
+            // Never answered: the page's load never ends (RD16 criterion 15).
+            break
+        case (PageTranslationFixtures.host, let path):
+            if let html = PageTranslationFixtures.html(path) {
+                send(task, html: html)
+            } else {
+                fail(task)
+            }
         default:
             fail(task)
         }

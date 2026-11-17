@@ -248,6 +248,23 @@ public actor TitleTranslator {
         }
     }
 
+    /// How often `untilSettled()` looks.
+    static let settlePolling = Duration.milliseconds(100)
+
+    /// Returns once the translator has nothing to do: no worker and no pass
+    /// or slot read is running and nothing is queued (RD24: what a
+    /// background run waits for). It also returns when the translator is
+    /// stopped, or not configured (nothing can run then), and when the
+    /// calling task is cancelled, whatever the translator is doing. It
+    /// polls: it looks every `settlePolling` and changes nothing, and a
+    /// pause's timer does not count.
+    public func untilSettled() async {
+        while !Task.isCancelled, !isStopped, configuration != nil,
+              worker != nil || sideWork > 0 || !manualQueue.isEmpty || !screenQueue.isEmpty || !passQueue.isEmpty {
+            try? await Task.sleep(for: Self.settlePolling)
+        }
+    }
+
     /// The workspace is dropped: the request in flight is cancelled and
     /// nothing is stored for it; nothing starts from here on.
     public func stop() {

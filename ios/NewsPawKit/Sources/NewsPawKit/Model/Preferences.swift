@@ -68,11 +68,12 @@ public enum ReadingTypeface: String, Sendable, CaseIterable {
 }
 
 /// The settings kept in the system preferences store (spec section 4): the
-/// two refresh settings and the three translation settings (RD14), under the
-/// names the configuration file uses; the three reading settings (RD11) and
-/// the two device settings of the adult partition (RD18), which the
-/// configuration file never carries. A stored value outside its set reads
-/// as the default. Nothing about a partition's content is kept here.
+/// two refresh settings, background refresh (RD24) and the three
+/// translation settings (RD14), under the names the configuration file
+/// uses; the three reading settings (RD11), the two device settings of the
+/// adult partition (RD18) and the record of background runs (RD24), which
+/// the configuration file never carries. A stored value outside its set
+/// reads as the default. Nothing about a partition's content is kept here.
 ///
 /// Sendable by hand: its one stored property is a `UserDefaults`, which the
 /// system documents as safe to use from any thread and does not mark so.
@@ -87,6 +88,13 @@ public struct Preferences: @unchecked Sendable {
     static let readingLocaleKey = "reading_locale"
     static let autoTranslateTitlesKey = "auto_translate_titles"
     static let showOriginalTitlesKey = "show_original_titles"
+    static let backgroundRefreshKey = "background_refresh"
+    static let backgroundRunsKey = "background_refresh_runs"
+
+    /// How far back the record of background runs reaches (RD24).
+    public static let backgroundRunWindow: TimeInterval = 7 * 24 * 60 * 60
+    /// The most background runs the record keeps.
+    public static let backgroundRunLimit = 100
 
     private let defaults: UserDefaults
 
@@ -178,6 +186,36 @@ public struct Preferences: @unchecked Sendable {
         nonmutating set {
             defaults.set(newValue, forKey: Self.showOriginalTitlesKey)
         }
+    }
+
+    /// Whether the system may refresh the library in the background (spec
+    /// N04, section 4; RD24 decision 5): a global setting, on until turned
+    /// off. Anything stored that is not a truth value reads as on.
+    public var backgroundRefresh: Bool {
+        get { truthValue(Self.backgroundRefreshKey) ?? true }
+        nonmutating set {
+            defaults.set(newValue, forKey: Self.backgroundRefreshKey)
+        }
+    }
+
+    /// When background runs started, oldest first (RD24 decision 6): device
+    /// state, never exported. Anything stored that is not a list of dates
+    /// reads as none; an entry that is not a date is skipped.
+    public var backgroundRuns: [Date] {
+        (defaults.array(forKey: Self.backgroundRunsKey) ?? []).compactMap { $0 as? Date }
+    }
+
+    /// The background runs of the seven days before `now`, oldest first.
+    public func backgroundRuns(before now: Date) -> [Date] {
+        backgroundRuns.filter { $0 > now.addingTimeInterval(-Self.backgroundRunWindow) }
+    }
+
+    /// Records that a background run started at `date`, and keeps only the
+    /// runs of the seven days before it, at most `backgroundRunLimit`, the
+    /// latest.
+    public func recordBackgroundRun(at date: Date) {
+        let kept = (backgroundRuns(before: date) + [date]).suffix(Self.backgroundRunLimit)
+        defaults.set(Array(kept), forKey: Self.backgroundRunsKey)
     }
 
     /// A stored truth value, or `nil` for nothing or anything else.

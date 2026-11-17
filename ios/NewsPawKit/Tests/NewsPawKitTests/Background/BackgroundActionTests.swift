@@ -20,7 +20,10 @@ struct BackgroundActionTests {
 
     // MARK: - G1: the shared preparation
 
-    @Test("G1: a held preparation; the action's task is cancelled; the action returns while it is still held; a later start gets the finished preparation without running it again")
+    // A wait that ignores the cancellation never returns: the time limit
+    // ends it.
+    @Test("G1: a held preparation; the action's task is cancelled; the action returns while it is still held; a later start gets the finished preparation without running it again",
+          .timeLimit(.minutes(1)))
     func cancelledWaitLeavesThePreparation() async throws {
         let preparation = SharedPreparation()
         let held = Signal()

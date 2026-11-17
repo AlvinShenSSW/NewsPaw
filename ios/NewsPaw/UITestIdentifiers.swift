@@ -330,7 +330,8 @@ enum UITestLaunchKey {
     static let slowNextSave = "NEWSPAW_UITEST_SLOW_NEXT_SAVE"
     /// "1" makes the next source save fail.
     static let failNextSourceSave = "NEWSPAW_UITEST_FAIL_NEXT_SOURCE_SAVE"
-    /// "1" makes the next search read fail (RD25: the failure state).
+    /// "1" makes the next search read fail (RD25: the failure state);
+    /// honoured only with `libraryDirectory`.
     static let failNextSearch = "NEWSPAW_UITEST_FAIL_NEXT_SEARCH"
     /// A whole number of days added to the app's clock; honoured only with
     /// `libraryDirectory`.

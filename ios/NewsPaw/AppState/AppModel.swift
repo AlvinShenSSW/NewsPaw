@@ -261,7 +261,8 @@ final class AppModel {
             workspace.categories.failNextSave = options.failNextSave
             workspace.categories.slowNextSave = options.slowNextSave
             workspace.sources.failNextSave = options.failNextSourceSave
-            workspace.reading.failNextSearch = options.failNextSearch
+            // Only under a UI-test library: never on the owner's library.
+            workspace.reading.failNextSearch = options.libraryDirectory != nil && options.failNextSearch
             #endif
             await workspace.load()
             // The gate: the only way to the adult library from here on.

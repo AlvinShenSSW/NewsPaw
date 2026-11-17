@@ -90,6 +90,10 @@ const EXCLUDED = new Set(["head", "title", "script", "style", "noscript", "templ
   "video", "audio"]);
 const FIELDS = new Set(["input", "textarea", "select", "iframe", "frame", "object", "embed"]);
 const FOCUSABLE = new Set(["a", "area", "button", "summary", "details", "audio", "video", "body", "html"]);
+// The standard elements that can host a shadow root (body aside: focus
+// rests there by default).
+const HOSTS = new Set(["article", "aside", "blockquote", "div", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "main",
+  "nav", "p", "section", "span"]);
 const VISIT_BOUND = 50000;
 const OUTSIDE_BOUND = 300;
 const RUNS_BOUND = 500;
@@ -206,11 +210,32 @@ function clipsAway(style, box) {
   return false;
 }
 
+// Whether an element is the containing block of its fixed-position
+// descendants (a transform, a filter, layout or paint containment, a
+// container, or a will-change naming one of them): its overflow, and its
+// ancestors', clips them as any other descendant. When in doubt it counts
+// as one, so that text is left out rather than sent.
+const NONE_UNLESS_CONTAINING = ["transform", "translate", "rotate", "scale", "perspective", "filter", "backdrop-filter",
+  "-webkit-backdrop-filter"];
+function containsFixed(style) {
+  for (const property of NONE_UNLESS_CONTAINING) {
+    const value = style.getPropertyValue(property);
+    if (value && value !== "none") return true;
+  }
+  if (/(^|\s)(layout|paint|strict|content)(\s|$)/.test(style.getPropertyValue("contain") || "")) return true;
+  const container = style.getPropertyValue("container-type");
+  if (container && container !== "normal") return true;
+  const willChange = style.getPropertyValue("will-change") || "";
+  return /(^|[\s,])(transform|translate|rotate|scale|perspective|filter|backdrop-filter|-webkit-backdrop-filter|contain)([\s,]|$)/.test(willChange);
+}
+
 // What an element does to the text inside it, read once per collection:
 // whether it hides it whatever its place (a box under 2 points with a clip,
 // a clip-path or clip that leaves no area), which axes its overflow (or
-// `contain: paint`) clips and its clipping box, and whether it is fixed in
-// place (its descendants then escape its ancestors' overflow).
+// `contain: paint`) clips and its clipping box, whether it is fixed in place
+// (its descendants then escape the overflow of the ancestors above it, up to
+// the nearest containing block of fixed descendants), and whether it is
+// such a containing block.
 function clipInfoOf(element, cache) {
   if (cache.has(element)) return cache.get(element);
   const style = styleOf.call(G, element);
@@ -226,7 +251,10 @@ function clipInfoOf(element, cache) {
   const clipsX = name !== "html" && name !== "body" && (paint || (overflowX && overflowX !== "visible"));
   const clipsY = name !== "html" && name !== "body" && (paint || (overflowY && overflowY !== "visible"));
   const clipping = clipsX || clipsY || (clip && clip !== "auto") || (clipPath && clipPath !== "none");
-  const info = { hidden: false, clipsX: clipsX, clipsY: clipsY, box: null, fixed: style.getPropertyValue("position") === "fixed" };
+  const info = {
+    hidden: false, clipsX: clipsX, clipsY: clipsY, box: null, fixed: style.getPropertyValue("position") === "fixed",
+    containing: containsFixed(style)
+  };
   if (clipping) {
     const box = boxOf.call(element);
     info.hidden = box.width < 2 || box.height < 2 || clipsAway(style, box);
@@ -243,8 +271,10 @@ function clipInfoOf(element, cache) {
 // Displayed: the parent is visible, the text has a rectangle of at least
 // 2 by 2 points, no ancestor hides it, and at least one of its rectangles
 // overlaps, by 2 points or more on each clipped axis, the clipping box of
-// every ancestor whose overflow clips it, up to a fixed-position ancestor,
-// whose own descendants escape the overflow of the ancestors above it.
+// every ancestor whose overflow clips it. A fixed-position ancestor's
+// descendants escape the overflow of the ancestors above it only up to the
+// nearest one that is the containing block of fixed descendants: from that
+// one upwards the clipping applies again.
 function isDisplayed(node, rects, caches) {
   if (rects.length === 0) return false;
   const parent = parentOf.call(node);
@@ -255,6 +285,7 @@ function isDisplayed(node, rects, caches) {
   while (element) {
     const info = clipInfoOf(element, caches.clip);
     if (info.hidden) return false;
+    if (info.containing) escaped = false;
     if (!escaped && info.box) {
       const box = info.box;
       shown = shown.filter((rect) =>
@@ -328,10 +359,11 @@ function focusHeld() {
       continue;
     }
     if (FOCUSABLE.has(name)) return false;
-    // Focus reported on an element that is not focusable itself: it is the
-    // host of a closed shadow root that holds the focus, or a custom
-    // element; counted as a field.
-    if (name.indexOf("-") >= 0) return true;
+    // An element that can host a shadow root and shows none: it may host a
+    // closed one whose field holds the focus, which the script cannot see
+    // into. Counted as a field, whatever its tabindex.
+    if (name.indexOf("-") >= 0 || HOSTS.has(name)) return true;
+    // Focus reported on another element that is not focusable itself.
     return !hasAttribute.call(element, "tabindex");
   }
   return false;

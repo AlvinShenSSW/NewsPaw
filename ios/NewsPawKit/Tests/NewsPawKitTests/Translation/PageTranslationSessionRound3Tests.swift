@@ -219,4 +219,75 @@ struct PageTranslationSessionRound3Tests {
         #expect(third.period != second.period)
         await harness.eventually { harness.session.line == .translated(.english) }
     }
+
+    // MARK: - Review round 4
+
+    @Test("review round 4: after a collect that was not answered, the next one names a new period, and an unchanged answer decides nothing")
+    func unansweredCollect() async throws {
+        let fixture = try await TranslatorFixture.make()
+        defer { fixture.remove() }
+        let harness = Harness(fixture: fixture)
+        harness.session.documentCommitted(Self.address)
+        var first: String?
+        harness.page.collection = { [unowned harness] in
+            let period = harness.page.collectedFor.last?.period ?? ""
+            guard let first else {
+                first = period
+                return .failure(.timedOut)
+            }
+            // The script walked during the unanswered call and cleared its
+            // flag: the same period answers unchanged.
+            return period == first
+                ? .success(.unchanged(loaded: true))
+                : .success(.runs(PageTranslationSessionTests.runs(PageTranslationSessionTests.japanese), loaded: true))
+        }
+        await harness.turnOn()
+        await harness.eventually { harness.session.line == .didNotRespond }
+        harness.session.retry()
+        await harness.eventually { harness.session.line == .translated(.simplifiedChinese) }
+        #expect(harness.session.isOn)
+        #expect(fixture.service.requests.count == 1)
+    }
+
+    @Test("review round 4: an unchanged answer after a collect that was not answered decides nothing: no Nothing to translate, translation stays on")
+    func noDecisionAfterUnanswered() async throws {
+        let fixture = try await TranslatorFixture.make()
+        defer { fixture.remove() }
+        let harness = Harness(fixture: fixture)
+        harness.session.documentCommitted(Self.address)
+        var answered = false
+        // A page whose script cleared its flag in the unanswered call and,
+        // whatever the period, answers unchanged.
+        harness.page.collection = {
+            guard answered else {
+                answered = true
+                return .failure(.timedOut)
+            }
+            return .success(.unchanged(loaded: true))
+        }
+        await harness.turnOn()
+        await harness.eventually { harness.session.line == .didNotRespond }
+        harness.session.retry()
+        let collects = harness.page.collects
+        await harness.eventually { harness.page.collects > collects + 3 }
+        #expect(harness.session.isOn)
+        #expect(harness.session.line != .nothingToTranslate(brief: true))
+        harness.page.collection = { .success(.runs(PageTranslationSessionTests.runs(PageTranslationSessionTests.japanese), loaded: true)) }
+        await harness.eventually { harness.session.line == .translated(.simplifiedChinese) }
+    }
+
+    @Test("review round 4: while collection is held the line says Translating…, also on a page translated before; then Translated again")
+    func heldLine() async throws {
+        let fixture = try await TranslatorFixture.make()
+        defer { fixture.remove() }
+        let harness = Harness(fixture: fixture)
+        harness.session.documentCommitted(Self.address)
+        harness.page.collection = { .success(.runs(PageTranslationSessionTests.runs(PageTranslationSessionTests.japanese), loaded: true)) }
+        await harness.turnOn()
+        await harness.eventually { harness.session.line == .translated(.simplifiedChinese) }
+        harness.page.collection = { .success(.held(loaded: true)) }
+        await harness.eventually { harness.session.line == .translating }
+        harness.page.collection = { .success(.unchanged(loaded: true)) }
+        await harness.eventually { harness.session.line == .translated(.simplifiedChinese) }
+    }
 }

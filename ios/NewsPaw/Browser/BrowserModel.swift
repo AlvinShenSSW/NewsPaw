@@ -253,6 +253,15 @@ final class BrowserModel {
         mediaIsSuspended = false
         for session in [librarySession, starredSession].compactMap(\.self) {
             session.allowMedia()
+        }
+    }
+
+    /// The scene is active again (whichever workspace is shown, and
+    /// whatever the adult media rule): each session's page translation is
+    /// told it may be seen again, so that a call into a page that spanned
+    /// the absence is not taken for a page that does not respond (RD16).
+    func sceneDidActivate() {
+        for session in [librarySession, starredSession].compactMap(\.self) {
             session.translation.becameSeen()
         }
     }

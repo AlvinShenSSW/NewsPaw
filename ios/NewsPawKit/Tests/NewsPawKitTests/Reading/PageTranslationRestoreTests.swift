@@ -27,6 +27,35 @@ struct PageTranslationRestoreTests {
         "/b.html": "<!doctype html><html><body><p>12345</p></body></html>",
     ]
 
+    /// The page's real bridge, except that the answers of the first
+    /// `drops` collects are lost: the script ran, but its answer missed the
+    /// deadline.
+    @MainActor
+    final class DroppingScripting: PageScripting {
+        let inner: any PageScripting
+        var drops: Int
+
+        init(_ inner: any PageScripting, drops: Int) {
+            self.inner = inner
+            self.drops = drops
+        }
+
+        func collect(period: String, locale: ReadingLocale) async -> Result<PageCollection, PageCallFailure> {
+            let answer = await inner.collect(period: period, locale: locale)
+            guard drops > 0 else { return answer }
+            drops -= 1
+            return .failure(.timedOut)
+        }
+
+        func apply(_ request: PageApplyRequest) async -> Result<PageApplied, PageCallFailure> {
+            await inner.apply(request)
+        }
+
+        func end(restore: Bool) async -> Result<PageEnded, PageCallFailure> {
+            await inner.end(restore: restore)
+        }
+    }
+
     /// A server, a page in a window, a translator over stubbed HTTP, and a
     /// session over the page's real bridge, seen, with a fast poll.
     @MainActor
@@ -37,7 +66,9 @@ struct PageTranslationRestoreTests {
         var locale = ReadingLocale.simplifiedChinese
         private(set) var session: PageTranslationSession!
 
-        init(service: TranslationService) async throws {
+        private var scripting: (any PageScripting)?
+
+        init(service: TranslationService, dropsCollects: Int = 0) async throws {
             server = try LoopbackServer { request, _ in
                 guard let html = PageTranslationRestoreTests.pages[request.path] else { return LoopbackServer.Reply("404 Not Found") }
                 return LoopbackServer.Reply(headers: ["Content-Type: text/html; charset=utf-8"], body: Data(html.utf8))
@@ -47,8 +78,10 @@ struct PageTranslationRestoreTests {
             timing.poll = .milliseconds(50)
             timing.afterScroll = .milliseconds(1)
             timing.decideAfter = .seconds(600)
+            let scripting: any PageScripting = dropsCollects > 0 ? DroppingScripting(page.bridge, drops: dropsCollects) : page.bridge
+            self.scripting = scripting
             session = PageTranslationSession(
-                scripting: page.bridge, translator: PageTranslator(models: fixture.models), readingLocale: { [weak self] in
+                scripting: scripting, translator: PageTranslator(models: fixture.models), readingLocale: { [weak self] in
                     self?.locale ?? .simplifiedChinese
                 }, isSeen: { true }, timing: timing
             )
@@ -162,5 +195,20 @@ struct PageTranslationRestoreTests {
         try await rig.eventually { try await rig.reads("EN:") }
         try await rig.eventually { rig.session.line == .translated(.english) }
         #expect(service.requests.last?.system.contains("English") == true)
+    }
+
+    @Test("review round 4: a collect that ran but whose answer missed the deadline loses no runs: after Retry the page is walked again and translated, not called Nothing to translate")
+    func collectAnswerLost() async throws {
+        let service = TranslationService()
+        let rig = try await Rig(service: service, dropsCollects: 1)
+        defer { rig.end() }
+        await rig.open("a.html")
+        rig.session.turnOn()
+        try await rig.eventually { rig.session.line == .didNotRespond }
+        rig.session.retry()
+        try await rig.eventually { try await rig.reads("T:") }
+        try await rig.eventually { rig.session.line == .translated(.simplifiedChinese) }
+        #expect(rig.session.isOn)
+        #expect(service.requests.count == 1)
     }
 }

@@ -601,6 +601,10 @@ final class AppModel {
         // The adult workspace is still shown: its pages may play again. One
         // that the lock dropped stays suspended for good.
         adult?.browser.allowMedia()
+        // Both workspaces' pages may be seen again: page translation counts
+        // nothing that failed across the absence against the page (RD16).
+        normal?.browser.sceneDidActivate()
+        adult?.browser.sceneDidActivate()
         if wasInBackground {
             wasInBackground = false
             // Every return from the background is an entry (RD06 decision
@@ -743,6 +747,13 @@ final class AppModel {
             .contains { $0.translation.isOn }
     }
 
+    /// How many times the normal workspace's page translations were told
+    /// they are seen again.
+    private var pageTranslationSeenAgain: Int {
+        guard let browser = normal?.browser else { return -1 }
+        return [browser.session(.library), browser.session(.starred)].compactMap(\.self).map(\.translation.timesSeenAgain).reduce(0, +)
+    }
+
     func adultDebugReport() async -> String {
         guard let gate else { return "" }
         let file = gate.adultLibraryFileExists ? 1 : 0
@@ -757,6 +768,7 @@ final class AppModel {
             + "translationRequests=\(FixtureModelHTTP.translationRequests) "
             + "neverSent=\(FixtureModelHTTP.neverSent) "
             + "translateOn=\(pageTranslationIsOn ? 1 : 0) "
+            + "seenAgain=\(pageTranslationSeenAgain) "
             + "bodyRequests=\((try? await normal?.reading.library.usageCount(purpose: .body)) ?? -1) "
             + "readerBlock=\(normal?.reading.lastReportedPosition.map(String.init) ?? "none")"
     }

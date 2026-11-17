@@ -114,6 +114,7 @@ struct PageTranslationScriptTests {
         <p style="position:absolute;left:-9999px">fixture:never far left</p>
         <div style="clip-path: inset(100%)">fixture:never clip-path inset</div>
         <div style="position:relative;overflow:hidden;height:40px"><p style="position:absolute;top:200px;margin:0">fixture:never outside its parent</p></div>
+        <div style="transform:translateX(0);overflow:hidden;height:40px"><p style="position:fixed;top:200px;left:0;margin:0">fixture:never fixed outside its transformed box</p></div>
         <script>
         document.getElementById("filled").value = "fixture:never typed";
         document.getElementById("host").attachShadow({mode: "open"}).innerHTML = "<p>fixture:never shadow</p>";
@@ -543,6 +544,61 @@ struct PageTranslationScriptTests {
         // into the page any more.
         _ = try await page.collect()
         #expect(try await page.collect().written == false)
+    }
+
+    @Test("review round 4: a fixed-position text escapes a clipping ancestor only above its containing block; outside a transformed, filtered, will-change or container box that clips it, it is not displayed; inside one, and a plain fixed header, it is")
+    func fixedContainingBlock() async throws {
+        let page = ScriptPage()
+        await page.load("""
+            <!doctype html><html lang="ja"><head><meta name="viewport" content="width=device-width">
+            <style>body{margin:0} .box{width:300px;height:60px;margin:4px 0;overflow:hidden} p{margin:0}
+            .out{position:fixed;top:300px;left:0} .in{position:fixed;top:10px;left:0}</style></head><body>
+            <div class="box" style="transform:translateX(0)"><p class="out">変形した箱の外の固定文</p></div>
+            <div class="box" style="filter:opacity(1)"><p class="out">フィルターの箱の外の固定文</p></div>
+            <div class="box" style="will-change:transform"><p class="out">予告された箱の外の固定文</p></div>
+            <div class="box" style="container-type:inline-size"><p class="out">コンテナの箱の外の固定文</p></div>
+            <div class="box" style="transform:translateX(0)"><div style="overflow:hidden;height:10px"><p class="out">間の箱を越えて外にある固定文</p></div></div>
+            <div class="box" style="transform:translateX(0)"><p class="in">変形した箱の中の固定文</p></div>
+            <div style="overflow:hidden;height:10px;margin-top:20px"><div style="position:fixed;top:0;left:0">固定されたヘッダー</div></div>
+            </body></html>
+            """)
+        let texts = Set(try await page.runs().map(\.text))
+        for hidden in ["変形した箱の外の固定文", "フィルターの箱の外の固定文", "予告された箱の外の固定文", "コンテナの箱の外の固定文", "間の箱を越えて外にある固定文"] {
+            #expect(!texts.contains(hidden), "\(hidden)")
+        }
+        for shown in ["変形した箱の中の固定文", "固定されたヘッダー"] {
+            #expect(texts.contains(shown), "\(shown)")
+        }
+    }
+
+    @Test("review round 4: focus on a block that may host a closed shadow root holds collection, whatever its tabindex; after it leaves the echo is collected; a focused link does not hold")
+    func focusOnAPossibleHost() async throws {
+        let page = ScriptPage()
+        await page.load("""
+            <!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head><body>
+            <p>検索してください</p>
+            <div id="host" tabindex="0"></div><div id="echo"></div>
+            <p><a id="link" href="#x">リンクの文</a></p>
+            <script>
+            const root = document.getElementById("host").attachShadow({mode: "closed"});
+            root.innerHTML = "<input id='c'>";
+            const field = root.getElementById("c");
+            field.addEventListener("input", () => { document.getElementById("echo").textContent = "入力：" + field.value; });
+            window.closedField = field;
+            </script></body></html>
+            """)
+        try await page.page(#"window.closedField.focus(); window.closedField.value = "fixture:never typed"; window.closedField.dispatchEvent(new Event("input"))"#)
+        try await page.settle()
+        #expect(try await page.pageString("return document.activeElement.id") == "host")
+        #expect(try await page.collect().isHeld)
+        // Focus leaves: the echo is displayed text.
+        try await page.page("window.closedField.blur()")
+        let runs = try await page.runs()
+        #expect(runs.contains { $0.text.hasPrefix("入力：") })
+        // A focused link is not a field.
+        try await page.page(#"document.getElementById("link").focus()"#)
+        #expect(try await page.pageString("return document.activeElement.id") == "link")
+        #expect(try await page.collect().isHeld == false)
     }
 
     @Test("a run of more than 20,000 UTF-16 code units is never returned")

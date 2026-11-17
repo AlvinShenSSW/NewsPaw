@@ -44,6 +44,9 @@ struct BrowserView: View {
         @Bindable var session = session
         content
             .stackBackground(Theme.background)
+            // The tab or the screen is back: page translation may be seen
+            // again (RD16).
+            .onAppear { session.translation.becameSeen() }
             .navigationTitle(Text(verbatim: session.displayTitle))
             .navigationSubtitle(Text(verbatim: session.host))
             .navigationBarTitleDisplayMode(.inline)

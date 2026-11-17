@@ -132,6 +132,21 @@ public final class PageTranslationSession {
         var paused = false
         /// A `collect` of this document is outstanding.
         var collecting = false
+        /// The latest collection was held (a field has focus): what the page
+        /// shows meanwhile is not known.
+        var held = false
+        /// A `collect` was not answered in time, or was answered by another
+        /// script state: the script may have walked and cleared its flag
+        /// without the session getting the runs. The next collect names a
+        /// new period (`walks`), so it walks again, and nothing is decided
+        /// from an `unchanged` until a walk's runs have come.
+        var walkOwed = false
+        var walks = 0
+
+        /// The period the next `collect` names.
+        var period: String {
+            walks == 0 ? String(generation) : "\(generation).\(walks)"
+        }
 
         /// Whether a run is in a request, queued, failed, waiting for its
         /// write or written: a collection does not send it again.
@@ -152,6 +167,11 @@ public final class PageTranslationSession {
         var hasRefused: Bool {
             failures.contains { $0.reason == .content(.refused) }
         }
+
+        mutating func oweWalk() {
+            walkOwed = true
+            walks += 1
+        }
     }
 
     @ObservationIgnored private var generation = 0
@@ -169,6 +189,11 @@ public final class PageTranslationSession {
     /// the page's process may be suspended) does not say the page is
     /// unresponsive; the next step asks again.
     @ObservationIgnored private var seenAgain = 0
+    /// How many times the session was told it is seen again (the app's
+    /// debug report).
+    public var timesSeenAgain: Int {
+        seenAgain
+    }
     @ObservationIgnored private var closed = false
     @ObservationIgnored private var units: [UUID: Task<Void, Never>] = [:]
     /// What waits to be written into the page while the session is not
@@ -497,7 +522,7 @@ public final class PageTranslationSession {
         document.collecting = true
         self.document = document
         let since = seenAgain
-        let collected = await scripting.collect(period: String(generation), locale: document.locale)
+        let collected = await scripting.collect(period: document.period, locale: document.locale)
         // An answer of an older document, or one that came after Show
         // Original, is dropped.
         guard isCurrent(generation), var document = self.document else { return }
@@ -505,6 +530,7 @@ public final class PageTranslationSession {
         // state ended and made again) addresses other nodes: dropped.
         if case .success(let collection) = collected, let token = document.token, collection.state != token {
             document.collecting = false
+            document.oweWalk()
             self.document = document
             return
         }
@@ -512,6 +538,8 @@ public final class PageTranslationSession {
         switch collected {
         case .failure:
             document.collecting = false
+            // The script may have walked: the next collect walks again.
+            document.oweWalk()
             // Across a time in the background the next step asks again.
             if counts(since: since) {
                 document.unresponsive = true
@@ -532,6 +560,7 @@ public final class PageTranslationSession {
             document.didSomething = true
             document.nothing = false
         }
+        document.held = result.isHeld
         switch result {
         case .held:
             // A field has focus: nothing is decided until it leaves.
@@ -540,11 +569,15 @@ public final class PageTranslationSession {
         case .unchanged(let loaded, _, _):
             document.collecting = false
             self.document = document
-            decide(loaded: loaded)
+            // Not from an unchanged that follows an unanswered collect.
+            if !document.walkOwed {
+                decide(loaded: loaded)
+            }
             // What waits (the page was not seen, or both slots were busy)
             // goes now.
             dispatch()
         case .runs(let runs, let loaded, _, _):
+            document.walkOwed = false
             if runs.contains(where: { TextLanguage.Units($0.text).kana > 0 }) {
                 document.hasKana = true
             }
@@ -784,6 +817,10 @@ public final class PageTranslationSession {
         } else if let failure = document.latestFailure {
             // Not while stopped: nothing is sent until Retry.
             line = .failed(failure, offersBackup: failure == .content(.refused) && hasBackup && document.hasRefused && !document.stopped)
+        } else if document.held {
+            // Held while a field has focus: what the page shows meanwhile is
+            // not known, so neither "Translated" nor "Nothing to translate".
+            line = .translating
         } else if document.nothing && units.isEmpty && document.pending.isEmpty && document.queue.isEmpty {
             line = .nothingToTranslate(brief: false)
         } else if !units.isEmpty || !document.decided || !document.pending.isEmpty || !document.queue.isEmpty || !queued.isEmpty

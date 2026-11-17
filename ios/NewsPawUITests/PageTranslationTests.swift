@@ -207,6 +207,47 @@ final class PageTranslationTests: PageTranslationTestCase {
         XCTAssertEqual(neverSent, 0, report)
     }
 
+    // MARK: - Review round 4: told it is seen again
+
+    /// The normal workspace's page translation is told it may be seen again
+    /// when the app comes back to the front, and (with a tab bar) when the
+    /// browser's tab is shown again: a call into the page that spanned the
+    /// absence is then not taken for a page that does not respond.
+    func testANormalPageIsToldItIsSeenAgain() {
+        launchPages()
+        openListSource()
+        tapTranslate()
+        waitForWebText(Self.translated(Pages.item(1)))
+        let before = seenAgain
+        XCTAssertGreaterThanOrEqual(before, 0, report)
+        XCUIDevice.shared.press(.home)
+        sleep(2)
+        app.activate()
+        waitForPage(Pages.listTitle)
+        XCTAssertTrue(eventually { self.seenAgain > before }, "not told after the app came back: \(report)")
+        if app.tabBars.firstMatch.exists {
+            let back = seenAgain
+            app.tabBars.buttons["Settings"].tap()
+            app.tabBars.buttons["Library"].tap()
+            waitForPage(Pages.listTitle)
+            XCTAssertTrue(eventually { self.seenAgain > back }, "not told after its tab came back: \(report)")
+        }
+    }
+
+    private var seenAgain: Int {
+        guard let match = report.firstMatch(of: /seenAgain=(-?\d+)/) else { return -2 }
+        return Int(match.1) ?? -2
+    }
+
+    private func eventually(_ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline {
+            if condition() { return true }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        return condition()
+    }
+
     // MARK: - Criterion 6: markup as text
 
     func testMarkupIsWrittenAsText() {

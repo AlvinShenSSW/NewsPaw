@@ -80,7 +80,18 @@ final class OverviewScreenshotTests: OverviewTestCase {
         // The captures, at a limit of 0 so that nothing is written by
         // itself; "Limited" is added then, and its card says why.
         launchOverviews(limit: 0, arguments: capture.arguments, landscape)
-        addSource(Fixture.longCounting, to: "Limited")
+        // Not `addSource`: in the iPad's landscape sidebar the add button
+        // lies below the expanded categories.
+        if app.tabBars.firstMatch.exists {
+            addSource(Fixture.longCounting, to: "Limited")
+        } else {
+            openSidebarIfNeeded()
+            scrollTo(button(AccessibilityID.addSourceButton)).tap()
+            waitFor(app.textFields[AccessibilityID.addressField])
+            detect(Fixture.longCounting)
+            waitFor(element(AccessibilityID.confirmAddress))
+            chooseCategoryAndSave("Limited")
+        }
         refreshRun(in: "Limited")
         waitFor(summary(Translation.category))
         shoot(capture, "today-top")

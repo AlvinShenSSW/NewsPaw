@@ -186,6 +186,10 @@ final class AddSourceModel {
                 choose(.feed(releases.address))
             }
             path = [.confirm]
+        case .huggingFace(let account):
+            // The account's list, the only thing to save (RD26 decision 9).
+            choose(.feed(account.candidate.address))
+            path = [.confirm]
         case .page(let page) where !page.candidates.isEmpty:
             let firstUsable = page.candidates.first { candidate in
                 if case .usable = candidate.state { true } else { false }
@@ -202,10 +206,10 @@ final class AddSourceModel {
     // MARK: - Confirm
 
     /// Whether there is anything to save: a feed, a page with declared feeds,
-    /// a repository, or a web page the owner asked for.
+    /// a repository, an account, or a web page the owner asked for.
     var canConfirm: Bool {
         switch detection {
-        case .feed, .github: true
+        case .feed, .github, .huggingFace: true
         case .page(let page): !page.candidates.isEmpty || savingAsWebPage
         case .failed(let failure): failure.offersWebPage && savingAsWebPage
         case .invalidAddress, .duplicate, nil: false
@@ -218,7 +222,7 @@ final class AddSourceModel {
         case .page(let page): page.address
         case .github(let repository): repository.address
         case .failed(let failure) where failure.offersWebPage: failure.address
-        case .feed, .failed, .invalidAddress, .duplicate, nil: nil
+        case .feed, .huggingFace, .failed, .invalidAddress, .duplicate, nil: nil
         }
     }
 
@@ -245,6 +249,8 @@ final class AddSourceModel {
         switch detection {
         case .feed(let candidate) where candidate.address == address:
             return candidate
+        case .huggingFace(let account) where account.candidate.address == address:
+            return account.candidate
         case .page, .github:
             for candidate in declaredCandidates where candidate.address == address {
                 if case .usable(let feed) = candidate.state {
@@ -290,6 +296,10 @@ final class AddSourceModel {
             guard case .feed = choice, let feed = chosenGitHubFeed, feed != .releases else { return name }
             let feedName = SourceWording.gitHubFeed(feed)
             return String(localized: "\(name) · \(feedName)", comment: "The suggested name of a GitHub source of Tags or Commits: the repository (owner/name) and the feed's name.")
+        }
+        // An account's: its name as the Hub writes it (RD26 decision 9).
+        if case .huggingFace(let account) = detection {
+            return account.account.name
         }
         let title: String?
         let address: String?

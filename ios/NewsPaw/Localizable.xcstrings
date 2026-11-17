@@ -3610,6 +3610,28 @@
         }
       }
     },
+    "There is no Hugging Face account with this name." : {
+      "comment" : "Under the failure of a Hugging Face account address whose account and page do not exist (RD26).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有这个名字的 Hugging Face 账号。"
+          }
+        }
+      }
+    },
+    "This account has no public models yet" : {
+      "comment" : "Preview of a Hugging Face account that lists no public model (RD26).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个账号还没有公开的模型"
+          }
+        }
+      }
+    },
     "This address is already in “%@” as “%@”." : {
       "comment" : "Add source outcome. The first %@ is the category's name, the second the source's name.",
       "localizations" : {

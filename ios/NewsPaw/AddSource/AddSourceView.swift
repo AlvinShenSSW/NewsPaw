@@ -191,6 +191,11 @@ struct AddressStepView: View {
             Section {
                 VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
                     Text("Could not read this address · \(SourceWording.reason(failure.reason))")
+                    if failure.missingHuggingFaceAccount {
+                        Text("There is no Hugging Face account with this name.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.secondaryText)
+                    }
                     if failure.addedScheme, failure.reason == .unreachable || failure.reason == .timedOut {
                         Text("If this site only supports http, type http:// in front of the address.")
                             .font(.footnote)
@@ -205,7 +210,7 @@ struct AddressStepView: View {
                 }
             }
             .listRowBackground(Theme.surface)
-        case .page, .feed, .github, .invalidAddress, nil:
+        case .page, .feed, .github, .huggingFace, .invalidAddress, nil:
             EmptyView()
         }
     }

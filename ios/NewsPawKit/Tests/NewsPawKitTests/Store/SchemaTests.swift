@@ -105,6 +105,13 @@ struct SchemaTests {
         "seen": [["source_id", "external_id_hash"]],
     ]
 
+    /// What the search migration adds to the schema (RD25), as "type name".
+    static let searchMigrationObjects: Set<String> = [
+        "table search_text", "index article_search_order",
+        "trigger search_article_insert", "trigger search_article_title", "trigger search_translation_insert",
+        "trigger search_translation_update", "trigger search_translation_delete",
+    ]
+
     // MARK: - Criterion 2: the first migration
 
     @Test("v1 creates the five tables with their columns, nullability and defaults")
@@ -231,10 +238,14 @@ struct SchemaTests {
             }
             return (migrations, columns, indexes)
         }
-        #expect(migrations == ["v1", "v2", "v3", "v4", "v5", "v6"])
+        #expect(migrations == ["v1", "v2", "v3", "v4", "v5", "v6", Schema.searchMigration])
         #expect(columns == Self.expectedColumns["article"]! + [ColumnInfo("content_html", "TEXT", notNull: false)])
         // v4 adds the order index (RD09).
-        #expect(indexes == ["article_url": ["url"], "article_order": ["<expression>", "first_seen_at"]])
+        #expect(indexes == [
+            "article_url": ["url"], "article_order": ["<expression>", "first_seen_at"],
+            // The search migration's covering index (RD25).
+            "article_search_order": ["id", "<expression>", "first_seen_at"],
+        ])
     }
 
     @Test("the version-1 fixture migrates to v2, v3, v4 and v5 with its rows intact")
@@ -248,7 +259,7 @@ struct SchemaTests {
         let library = try await LibraryStore(directory: directory).openNormal()
 
         let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
-        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6"])
+        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6", Schema.searchMigration])
         #expect(after.rows["setting"] == [])
         for table in ["category", "source", "article_body", "seen"] {
             #expect(after.rows[table] == before.rows[table], "rows of \(table)")
@@ -302,7 +313,7 @@ struct SchemaTests {
         let library = try await LibraryStore(directory: directory).openNormal()
 
         let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
-        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6"])
+        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6", Schema.searchMigration])
         for table in ["category", "source", "article", "article_body", "seen"] {
             #expect(after.rows[table] == before.rows[table], "rows of \(table)")
         }
@@ -319,7 +330,7 @@ struct SchemaTests {
             try db.execute(sql: "CREATE TABLE test_after_v3 (note TEXT)")
         }
         let before = try await buildDatabase(in: directory, migrator: newer)
-        #expect(before.appliedMigrations == ["test_after_v3", "v1", "v2", "v3", "v4", "v5", "v6"])
+        #expect(before.appliedMigrations == ["test_after_v3", "v1", "v2", "v3", "v4", "v5", "v6", Schema.searchMigration])
 
         try await expectRefusal(in: directory, migrator: Schema.migrator)
 
@@ -358,14 +369,18 @@ struct SchemaTests {
         let library = try await LibraryStore(directory: directory).openNormal()
 
         let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
-        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6"])
+        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6", Schema.searchMigration])
         for table in ["category", "source", "article", "article_body", "seen", "setting"] {
             #expect(after.rows[table] == before.rows[table], "rows of \(table)")
         }
         #expect(after.integrity == ["ok"])
         // The only schema change of v4 is the order index; v5's tables and
-        // index (RD13) and v6's table (RD14) are left out here.
-        let added = after.schema.filter { !before.schema.contains($0) && !["model_slot", "usage", "translation"].contains($0[2]) }
+        // index (RD13), v6's table (RD14) and the search migration's
+        // objects (RD25) are left out here.
+        let added = after.schema.filter {
+            !before.schema.contains($0) && !["model_slot", "usage", "translation", "search_text"].contains($0[2])
+                && !Self.searchMigrationObjects.contains("\($0[0] ?? "") \($0[1] ?? "")")
+        }
         #expect(added == [["index", "article_order", "article",
                            "CREATE INDEX article_order ON article(COALESCE(published_at, first_seen_at), first_seen_at)"]])
         #expect(before.schema.allSatisfy { after.schema.contains($0) })
@@ -393,6 +408,80 @@ struct SchemaTests {
             #expect(plan.contains { $0.contains("article_order") }, "\(name): \(plan)")
             #expect(!plan.contains { $0.contains("TEMP B-TREE") }, "\(name) sorts: \(plan)")
         }
+    }
+
+    // MARK: - RD25 criterion 4: the search migration
+
+    /// A migrator holding every migration before the search migration.
+    static var migratorBeforeSearch: DatabaseMigrator {
+        var migrator = DatabaseMigrator()
+        Schema.registerV1(in: &migrator)
+        Schema.registerV2(in: &migrator)
+        Schema.registerV3(in: &migrator)
+        Schema.registerV4(in: &migrator)
+        Schema.registerV5(in: &migrator)
+        Schema.registerV6(in: &migrator)
+        return migrator
+    }
+
+    @Test("a library before the search migration, with titled and untitled articles and translations in every state and two languages, migrates; search_text equals the derivation; the table, five triggers and the covering index exist")
+    func searchMigrationBackfills() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = TestClock()
+        let before: DatabaseSnapshot
+        do {
+            let library = try await LibraryStore(directory: directory, now: clock.now)
+                .open(.normal, migrator: Self.migratorBeforeSearch, create: true)
+            let world = try await library.createCategory(name: "World", icon: .globe)
+            try await Sample.fill(library, category: world.id, prefix: "ＡＰＰＬＥ", at: clock.now())
+            let sources = try await library.sources()
+            var untitled = Sample.article(in: sources[0].id, externalID: "untitled", title: "", at: clock.now())
+            untitled.title = nil
+            try await library.insert(untitled)
+            let articles = try await library.articles().map(\.id)
+            var records: [TranslationRecord] = []
+            for (index, id) in articles.enumerated() {
+                let state: TranslationState = [.done, .failed, .none][index % 3]
+                records.append(TranslationRecord(
+                    articleID: id, locale: .simplifiedChinese, state: state, title: state == .done ? "译名 \(index)" : nil,
+                    excerpt: nil, failure: state == .failed ? .count : nil, model: "fixture-model"
+                ))
+                records.append(TranslationRecord(
+                    articleID: id, locale: .japanese, state: .done, title: index == 0 ? nil : "訳題 ｶﾀｶﾅ \(index)",
+                    excerpt: nil, failure: nil, model: "fixture-model"
+                ))
+            }
+            try await library.storeTranslations(records)
+            before = try await library.pool.read { try DatabaseSnapshot.read($0) }
+        }
+        #expect(before.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6"])
+        #expect(before.rows["translation"]?.count == 10)
+        #expect(!before.schema.contains { $0[1] == "search_text" })
+
+        let library = try await LibraryStore(directory: directory).openNormal()
+
+        let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
+        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6", Schema.searchMigration])
+        for (table, rows) in before.rows where table != "grdb_migrations" {
+            #expect(after.rows[table] == rows, "rows of \(table)")
+        }
+        #expect(after.integrity == ["ok"])
+        // Four titled articles, two done Chinese rows, four titled done Japanese rows.
+        #expect(try await expectSearchTextMatchesDerivation(library) == 4 + 2 + 4)
+        let added = Set(after.schema.filter { !before.schema.contains($0) }.map { "\($0[0] ?? "") \($0[1] ?? "")" })
+        #expect(added == Self.searchMigrationObjects)
+        #expect(before.schema.allSatisfy { after.schema.contains($0) })
+        // The function is registered on the migrated library's connections:
+        // an article inserted now is indexed.
+        let fixture = try #require(try await library.sources().first)
+        try await library.insert(Sample.article(in: fixture.id, externalID: "after", title: "Ｆｕｌｌ width after", at: clock.now()))
+        #expect(try await expectSearchTextMatchesDerivation(library) == 11)
+        #expect(try await library.articleRows(.library, filter: .all, matching: SearchQuery("full WIDTH")!).map(\.title) == ["Ｆｕｌｌ width after"])
+        #expect(try await library.articleRows(.library, filter: .all, matching: SearchQuery("apple")!).count == 4)
+        #expect(try await library.articleRows(
+            .library, filter: .all, translationsIn: .japanese, matching: SearchQuery("カタカナ")!
+        ).count == 4)
     }
 
     @Test("the recorded refresh time round-trips through setting")

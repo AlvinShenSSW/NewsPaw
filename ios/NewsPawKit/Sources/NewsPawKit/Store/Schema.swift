@@ -9,6 +9,10 @@ import GRDB
 /// `purpose`, `outcome`, and from `v6` `translation.state` and
 /// `translation.error`) also ships with a migration, even an empty one, so
 /// that an older build refuses the database as newer.
+///
+/// From the search migration on, `article` and `translation` carry
+/// triggers that call the SQL function `newspaw_search_fold`: only a
+/// connection made by `LibraryStore` can write them (`registerSearch`).
 enum Schema {
     /// The migrator the app opens libraries with.
     static var migrator: DatabaseMigrator {
@@ -19,8 +23,14 @@ enum Schema {
         registerV4(in: &migrator)
         registerV5(in: &migrator)
         registerV6(in: &migrator)
+        registerSearch(in: &migrator)
         return migrator
     }
+
+    /// The name of the search migration (RD25). The one place that names
+    /// it: tests refer to this constant, so that renumbering it, should
+    /// another migration land after `v6` first, changes one line.
+    static let searchMigration = "v7"
 
     /// `v1`: categories, sources, articles, article bodies and seen
     /// identifiers (spec section 4). The closed sets have no `CHECK`
@@ -179,6 +189,67 @@ enum Schema {
                     PRIMARY KEY (article_id, locale)
                 );
                 ALTER TABLE usage ADD COLUMN automatic INTEGER NOT NULL DEFAULT 0;
+                """)
+        }
+    }
+
+    /// The search migration (`searchMigration`; RD25 decisions 4 to 6): the
+    /// folded titles that search scans, kept current by five triggers, and
+    /// the covering index that sorts the matches into a page.
+    ///
+    /// `search_text` is derived data: one row per article with a title
+    /// (`locale` '') and one per `done` translation with a title (`locale`
+    /// the translation's). `text` is `newspaw_search_fold(title)`, the SQL
+    /// function every connection of a library registers
+    /// (`LibraryStore.makeLibrary`); the triggers call it, so a connection
+    /// without it cannot insert an article or change a translation — it
+    /// fails, it never leaves an article unindexed. Rows go with their
+    /// article through the foreign key's cascade.
+    ///
+    /// A migration that rebuilds `article` or `translation` (create, copy,
+    /// drop, rename) recreates these triggers and `article_search_order`;
+    /// a change of the folding rules rebuilds `search_text`. `ADD COLUMN`
+    /// and `RENAME COLUMN` keep them.
+    ///
+    /// The backfill runs inside the migration's transaction: one pass over
+    /// each table.
+    static func registerSearch(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration(searchMigration) { db in
+            try db.execute(sql: """
+                CREATE TABLE search_text (
+                    article_id TEXT NOT NULL REFERENCES article(id) ON DELETE CASCADE,
+                    locale TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    PRIMARY KEY (article_id, locale)
+                ) WITHOUT ROWID;
+                CREATE INDEX article_search_order ON article(id, COALESCE(published_at, first_seen_at), first_seen_at);
+                CREATE TRIGGER search_article_insert AFTER INSERT ON article WHEN new.title IS NOT NULL BEGIN
+                    INSERT INTO search_text (article_id, locale, text) VALUES (new.id, '', newspaw_search_fold(new.title));
+                END;
+                CREATE TRIGGER search_article_title AFTER UPDATE OF title ON article BEGIN
+                    DELETE FROM search_text WHERE article_id = old.id AND locale = '';
+                    INSERT INTO search_text (article_id, locale, text)
+                        SELECT new.id, '', newspaw_search_fold(new.title) WHERE new.title IS NOT NULL;
+                END;
+                CREATE TRIGGER search_translation_insert AFTER INSERT ON translation
+                    WHEN new.state = 'done' AND new.title IS NOT NULL BEGIN
+                    INSERT OR REPLACE INTO search_text (article_id, locale, text)
+                        VALUES (new.article_id, new.locale, newspaw_search_fold(new.title));
+                END;
+                CREATE TRIGGER search_translation_update AFTER UPDATE ON translation BEGIN
+                    DELETE FROM search_text WHERE article_id = old.article_id AND locale = old.locale;
+                    INSERT INTO search_text (article_id, locale, text)
+                        SELECT new.article_id, new.locale, newspaw_search_fold(new.title)
+                        WHERE new.state = 'done' AND new.title IS NOT NULL;
+                END;
+                CREATE TRIGGER search_translation_delete AFTER DELETE ON translation BEGIN
+                    DELETE FROM search_text WHERE article_id = old.article_id AND locale = old.locale;
+                END;
+                INSERT INTO search_text (article_id, locale, text)
+                    SELECT id, '', newspaw_search_fold(title) FROM article WHERE title IS NOT NULL;
+                INSERT INTO search_text (article_id, locale, text)
+                    SELECT article_id, locale, newspaw_search_fold(title) FROM translation
+                    WHERE state = 'done' AND title IS NOT NULL;
                 """)
         }
     }

@@ -383,8 +383,7 @@ final class XMLFeedReader: NSObject, XMLParserDelegate {
             default:
                 break
             }
-        case .json:
-            break
+        case .json, .huggingFace: break
         }
     }
 

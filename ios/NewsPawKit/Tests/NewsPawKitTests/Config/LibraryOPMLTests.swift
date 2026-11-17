@@ -392,6 +392,28 @@ struct LibraryOPMLTests {
         #expect(!text.contains("page.example"))
     }
 
+    @Test("RD26 criterion 11: a Hugging Face source is not exported; only feed and GitHub sources store a feed address")
+    func exportLeavesHuggingFaceOut() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.close() }
+        let library = fixture.library
+        let models = try await library.createCategory(name: "Models", icon: .cpu)
+        var hub = Sample.source(in: models.id, url: "https://huggingface.co/lamplight-lab", name: "lamplight-lab", at: fixture.clock.now())
+        hub.kind = .huggingface
+        hub.siteURL = "https://huggingface.co/lamplight-lab"
+        try await library.insert(hub)
+        try await library.insert(Sample.source(in: models.id, url: "https://b.example/feed", name: "beta", at: fixture.clock.now()))
+
+        let text = try #require(String(data: try await library.opmlExport(), encoding: .utf8))
+        #expect(text.contains(#"xmlUrl="https://b.example/feed""#))
+        #expect(!text.contains("huggingface.co"))
+        #expect(!text.contains("lamplight-lab"))
+
+        // The export button's condition.
+        #expect(SourceKind.allCases.filter(\.storesFeedAddress) == [.feed, .github])
+        #expect(SourceKind.allCases.filter(\.isCollectedAsFeed) == [.feed, .github, .huggingface])
+    }
+
     // MARK: - Criterion 7: round trip
 
     @Test("criterion 7: an export imported into an empty library gives the same categories and feeds")

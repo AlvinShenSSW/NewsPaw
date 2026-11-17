@@ -119,6 +119,51 @@ struct FeedFetcherTests {
         #expect(throws: CancellationError.self) { try result.get() }
     }
 
+    // MARK: - Hugging Face sources (RD26 decision 6)
+
+    @Test("a Hugging Face source: the list built from its stored page is requested with the validators and read as a list")
+    func huggingFaceList() async throws {
+        let transport = FakeTransport.answering(
+            body: try HubFixture.data("models-reduced.json"),
+            headers: ["ETag": #"W/"d6b-1""#, "Content-Type": "application/json; charset=utf-8"]
+        )
+        let result = try await FeedFetcher(transport: transport)
+            .fetch("https://huggingface.co/lamplight-lab", etag: #"W/"old""#, lastModified: "x", kind: .huggingface)
+        guard case .feed(let fetched) = result else {
+            Issue.record("expected a list, got \(result)")
+            return
+        }
+        #expect(fetched.feed.format == .huggingFace)
+        #expect(fetched.feed.items.count == 5)
+        #expect(fetched.validators == Validators(etag: #"W/"d6b-1""#, lastModified: nil))
+        let list = "https://huggingface.co/api/models?author=lamplight-lab&sort=createdAt&direction=-1&limit=30&expand=createdAt"
+        #expect(transport.received == [TransportRequest(url: URL(string: list)!, etag: #"W/"old""#, lastModified: "x")])
+
+        let unchanged = FakeTransport.answering(status: 304)
+        #expect(try await FeedFetcher(transport: unchanged).fetch("https://huggingface.co/lamplight-lab", etag: "e", kind: .huggingface)
+            == .notModified)
+    }
+
+    @Test("a Hugging Face source whose stored address is not an account's page fails without a request",
+          arguments: ["https://example.invalid/feed.xml", "https://huggingface.co/a/b", "https://huggingface.co/",
+                      "https://huggingface.co/api/models?author=a", "not an address"])
+    func huggingFaceUnsupported(_ stored: String) async throws {
+        let transport = FakeTransport.answering(body: try HubFixture.data("models-reduced.json"))
+        #expect(try await FeedFetcher(transport: transport).fetch(stored, kind: .huggingface) == .failed(.unsupportedAddress))
+        #expect(transport.received.isEmpty)
+    }
+
+    @Test("a Hugging Face source's failures are a feed's")
+    func huggingFaceFailures() async throws {
+        let page = "https://huggingface.co/lamplight-lab"
+        #expect(try await FeedFetcher(transport: FakeTransport.answering(status: 429)).fetch(page, kind: .huggingface)
+            == .failed(.httpStatus(429)))
+        #expect(try await FeedFetcher(transport: FakeTransport.answering(status: 404)).fetch(page, kind: .huggingface)
+            == .failed(.gone))
+        #expect(try await FeedFetcher(transport: FakeTransport.failing(.timedOut)).fetch(page, kind: .huggingface)
+            == .failed(.timedOut))
+    }
+
     @Test("the content type header is read into a media type and a charset")
     func contentType() {
         #expect(ContentType("application/rss+xml; charset=UTF-8").mediaType == "application/rss+xml")

@@ -400,8 +400,9 @@ struct FeedCollectorTests {
         let transport = feedResponse(try FeedFixture.data("rss2.xml"))
         let collector = FeedCollector(transport: transport)
         #expect(try await collector.collect(UUID(), in: fixture.library) == .nothingDone)
-        // A GitHub source is collected as a feed since RD07 (decision 10).
-        for kind in ["webpage", "huggingface", "a-kind-from-a-later-version"] {
+        // A GitHub source is collected as a feed since RD07 (decision 10),
+        // a Hugging Face source since RD26 (decision 7).
+        for kind in ["webpage", "a-kind-from-a-later-version"] {
             let other = try await fixture.addSource(url: "https://\(kind).example.invalid/")
             try await fixture.library.pool.write { db in
                 try db.execute(sql: "UPDATE source SET kind = ? WHERE id = ?", arguments: [kind, other.id.databaseKey])
@@ -461,6 +462,77 @@ struct FeedCollectorTests {
         let source = try await fixture.storedSource()
         #expect(source.kind == .github)
         #expect(source.lastError == "http:500")
+    }
+
+    // MARK: - Hugging Face sources (RD26 criterion 10)
+
+    /// The collection fixture's source made a Hugging Face source at the
+    /// page `address`.
+    private func hubFixture(_ address: String = "https://huggingface.co/lamplight-lab") async throws -> CollectionFixture {
+        let fixture = try await CollectionFixture.make(url: address)
+        try await fixture.library.pool.write { db in
+            try db.execute(sql: "UPDATE source SET kind = 'huggingface' WHERE id = ?", arguments: [fixture.source.id.databaseKey])
+        }
+        return fixture
+    }
+
+    @Test("a Hugging Face source: the list built from its page, conditional requests, new models as articles, identity kept, a failure recorded")
+    func huggingFaceSource() async throws {
+        let fixture = try await hubFixture()
+        defer { fixture.remove() }
+        let reduced = try HubFixture.data("models-reduced.json")
+        // One more model on top of the five.
+        var grown = try #require(try JSONSerialization.jsonObject(with: reduced) as? [Any])
+        grown.insert(["_id": "6ad2e0265a59c8bc18700006", "id": "lamplight-lab/Wick-8B", "createdAt": "2026-11-05T00:00:00.000Z"], at: 0)
+        let answers = Mutex<[TransportResponse]>([
+            TransportResponse(finalURL: fixtureBase, status: 200, headers: ["ETag": #"W/"h1""#], body: reduced),
+            TransportResponse(finalURL: fixtureBase, status: 304, headers: [:], body: Data()),
+            TransportResponse(finalURL: fixtureBase, status: 200, headers: ["ETag": #"W/"h2""#], body: try JSONSerialization.data(withJSONObject: grown)),
+            TransportResponse(finalURL: fixtureBase, status: 429, headers: [:], body: Data()),
+            TransportResponse(finalURL: fixtureBase, status: 200, headers: [:], body: try FeedFixture.data("atom.xml")),
+        ])
+        let transport = FakeTransport { _ in answers.withLock { $0.removeFirst() } }
+        let collector = FeedCollector(transport: transport)
+
+        #expect(try await collector.collect(fixture.source.id, in: fixture.library) == .collected(newArticles: 5, complete: true))
+        #expect(try await fixture.storedSource().etag == #"W/"h1""#)
+        fixture.clock.advance(seconds: 60)
+        #expect(try await collector.collect(fixture.source.id, in: fixture.library) == .notModified)
+        fixture.clock.advance(seconds: 60)
+        #expect(try await collector.collect(fixture.source.id, in: fixture.library) == .collected(newArticles: 1, complete: true))
+        fixture.clock.advance(seconds: 60)
+        #expect(try await collector.collect(fixture.source.id, in: fixture.library) == .failed(.httpStatus(429)))
+        #expect(try await fixture.storedSource().lastError == "http:429")
+        fixture.clock.advance(seconds: 60)
+        // A feed where the list should be: not a feed, with no fallback.
+        #expect(try await collector.collect(fixture.source.id, in: fixture.library) == .failed(.notAFeed))
+
+        let requests = transport.received
+        let list = "https://huggingface.co/api/models?author=lamplight-lab&sort=createdAt&direction=-1&limit=30&expand=createdAt"
+        #expect(requests.map(\.url.absoluteString) == Array(repeating: list, count: 5))
+        #expect(requests.map(\.etag) == [nil, #"W/"h1""#, #"W/"h1""#, #"W/"h2""#, #"W/"h2""#])
+        let articles = try await fixture.articles()
+        #expect(articles.count == 6)
+        #expect(Set(articles.map(\.externalID)) == Set((1...6).map { "6ad2e0265a59c8bc1870000\($0)" }))
+        let newest = try #require(articles.first { $0.externalID == "6ad2e0265a59c8bc18700006" })
+        #expect(newest.title == "lamplight-lab/Wick-8B")
+        #expect(newest.url == "https://huggingface.co/lamplight-lab/Wick-8B")
+        #expect(newest.publishedAt == date("2026-11-05T00:00:00Z"))
+        let source = try await fixture.storedSource()
+        #expect(source.kind == .huggingface)
+        #expect(source.url == "https://huggingface.co/lamplight-lab")
+        #expect(source.lastError == "not_a_feed")
+    }
+
+    @Test("a Hugging Face source whose stored address is not an account's page fails unsupportedAddress with no request")
+    func huggingFaceUnsupported() async throws {
+        let fixture = try await hubFixture("https://huggingface.co/lamplight-lab/Wick-7B")
+        defer { fixture.remove() }
+        let transport = feedResponse(try HubFixture.data("models-reduced.json"))
+        #expect(try await FeedCollector(transport: transport).collect(fixture.source.id, in: fixture.library) == .failed(.unsupportedAddress))
+        #expect(transport.received.isEmpty)
+        #expect(try await fixture.storedSource().lastError == "unsupported_address")
+        #expect(try await fixture.articles().isEmpty)
     }
 
     @Test("a feed source reading the same bytes keeps the image")

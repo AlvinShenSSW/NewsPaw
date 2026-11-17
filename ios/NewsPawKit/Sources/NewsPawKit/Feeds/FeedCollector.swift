@@ -1,8 +1,9 @@
 import Foundation
 
 /// Collects one feed source of one library (spec N03, N04): reads the
-/// source, fetches its address under the transport's rules, and stores the
-/// new articles and the source's status.
+/// source, fetches its address — for a Hugging Face account, the list built
+/// from it (RD26) — under the transport's rules, and stores the new
+/// articles and the source's status.
 ///
 /// A feed-level failure is an outcome recorded on the source, never a thrown
 /// error; only cancellation and a storage failure throw. The collector does
@@ -23,7 +24,7 @@ public struct FeedCollector: Sendable {
         guard let target = try await library.collectionTarget(sourceID) else {
             return .nothingDone
         }
-        let result = try await fetcher.fetch(target.url, etag: target.etag, lastModified: target.lastModified)
+        let result = try await fetcher.fetch(target.url, etag: target.etag, lastModified: target.lastModified, kind: target.kind)
         try Task.checkCancellation()
         return try await library.storeCollection(result, for: target, at: library.now())
     }

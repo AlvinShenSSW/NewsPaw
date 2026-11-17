@@ -16,8 +16,20 @@ public enum SourceKind: String, Sendable, Codable, CaseIterable {
 extension SourceKind {
     /// Whether sources of this kind are collected as feeds: refreshed,
     /// fetched with validators and stored by the collector (RD07 decision
-    /// 10). A GitHub source stores one of its repository's Atom feeds.
+    /// 10). A GitHub source stores one of its repository's Atom feeds; a
+    /// Hugging Face source stores its account's page, from which the list
+    /// of its models is built at every fetch (RD26 decision 7).
     public var isCollectedAsFeed: Bool {
+        switch self {
+        case .feed, .github, .huggingface: true
+        case .webpage: false
+        }
+    }
+
+    /// Whether a source of this kind stores a feed's address, which an OPML
+    /// file can carry (RD26 decision 8). A Hugging Face source stores a
+    /// page, not a feed.
+    public var storesFeedAddress: Bool {
         switch self {
         case .feed, .github: true
         case .huggingface, .webpage: false

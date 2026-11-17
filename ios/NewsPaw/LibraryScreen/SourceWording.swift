@@ -60,6 +60,7 @@ enum SourceWording {
         case .rss, .rdf: "RSS"
         case .atom: "Atom"
         case .json: "JSON Feed"
+        case .huggingFace: "Hugging Face"
         }
     }
 

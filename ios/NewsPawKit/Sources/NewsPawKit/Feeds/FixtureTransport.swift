@@ -129,6 +129,20 @@ public final class FixtureTransport: Transport {
         /// A repository whose Tags feed answers after the candidate limit on
         /// a transport's first request for it, at once afterwards.
         public static let gitHubSlow = "https://github.com/NewsPaw-Fixture/Slow"
+        /// A Hugging Face organisation (RD26), typed in another letter case
+        /// than the Hub's `newspaw-fixture`: its overview answers in any
+        /// case, the user overview 404, and its list three models plus, at
+        /// every answer, one created now that no earlier answer had, in
+        /// this process or another. Its address is on the Hub's host
+        /// because recognition is bound to it; nothing is requested from
+        /// that host, and no UI test opens a model's page.
+        public static let huggingFaceOrganization = "https://huggingface.co/NewsPaw-Fixture"
+        /// A Hugging Face user with no public model: the organisation
+        /// overview 404, the user overview 200, the list `[]`.
+        public static let huggingFaceEmpty = "https://huggingface.co/newspaw-empty"
+        /// A name that is no Hugging Face account: both overviews and the
+        /// page 404.
+        public static let huggingFaceMissing = "https://huggingface.co/newspaw-missing"
     }
 
     /// The feed addresses of the fixture repositories, as detection builds
@@ -261,6 +275,10 @@ public final class FixtureTransport: Transport {
             return answer(Self.gitHubTags(repository: "slow"), type: atomType)
         case GitHubFeedAddress.of("slow", "commits"):
             return answer(Self.gitHubCommits(repository: "slow"), type: atomType)
+        case let address where address.hasPrefix(Self.hubAPI):
+            return try hubAnswer(String(address.dropFirst(Self.hubAPI.count)), at: url)
+        case Address.huggingFaceMissing:
+            return answer("", type: html, status: 404)
         case let address where address.hasPrefix(Address.readingImages):
             return try readingImage(String(address.dropFirst(Address.readingImages.count)), at: url)
         case Address.fullText:
@@ -666,6 +684,55 @@ public final class FixtureTransport: Transport {
             </channel></rss>
             """
     }()
+
+    // MARK: - Hugging Face accounts (RD26)
+
+    private static let hubAPI = "https://huggingface.co/api/"
+
+    /// The Hub's answers for the fixture accounts, by the address after
+    /// `hubAPI`; any other address does not answer.
+    private func hubAnswer(_ path: String, at url: URL) throws -> TransportResponse {
+        func json(_ body: String, status: Int = 200) -> TransportResponse {
+            TransportResponse(finalURL: url, status: status, headers: ["Content-Type": "application/json; charset=utf-8"], body: Data(body.utf8))
+        }
+        let notFound = json(#"{"error":"Not Found"}"#, status: 404)
+        // The overviews answer whatever the letter case, as the Hub does.
+        switch path.lowercased() {
+        case "organizations/newspaw-fixture/overview":
+            return json(#"{"_id":"6a0000000000000000000001","fullname":"NewsPaw Fixture","name":"newspaw-fixture","numModels":3}"#)
+        case "users/newspaw-fixture/overview", "organizations/newspaw-empty/overview",
+             "organizations/newspaw-missing/overview", "users/newspaw-missing/overview":
+            return notFound
+        case "users/newspaw-empty/overview":
+            return json(#"{"_id":"6a0000000000000000000002","fullname":"NewsPaw Empty","user":"newspaw-empty","type":"user","numModels":0}"#)
+        default:
+            break
+        }
+        switch path {
+        case "models?author=newspaw-fixture&sort=createdAt&direction=-1&limit=30&expand=createdAt":
+            return json(Self.hubModels(fresh: String(UUID().uuidString.prefix(8)).lowercased()))
+        case "models?author=newspaw-empty&sort=createdAt&direction=-1&limit=30&expand=createdAt":
+            return json("[]")
+        default:
+            throw TransportFailure.unreachable
+        }
+    }
+
+    /// The organisation's list, newest first: one model created now, named
+    /// with `fresh`, then three fixed ones.
+    private static func hubModels(fresh: String) -> String {
+        let models = [
+            ("6a00000000000000000000f1", "newspaw-fixture/Lantern-7B-Instruct", 5),
+            ("6a00000000000000000000f2", "newspaw-fixture/Lantern-7B", 30),
+            ("6a00000000000000000000f3", "newspaw-fixture/Harbour-Vision", 300),
+        ]
+        let now = ISO8601DateFormatter().string(from: Date())
+        let freshEntry = #"{"_id":"6a\#(fresh)00000000000000","id":"newspaw-fixture/Nightly-\#(fresh)","createdAt":"\#(now)"}"#
+        let fixed = models.map { id, name, hours in
+            #"{"_id":"\#(id)","id":"\#(name)","createdAt":"\#(isoDate(hoursAgo: hours))"}"#
+        }
+        return "[" + ([freshEntry] + fixed).joined(separator: ",") + "]"
+    }
 
     // MARK: - GitHub repositories (RD07)
 

@@ -203,7 +203,7 @@ struct DataSettingsView: View {
                     .frame(minHeight: Theme.minimumTapTarget)
                 }
                 // Only feeds and GitHub sources are written.
-                .disabled(isExporting || !sources.summaries.contains { $0.kind.isCollectedAsFeed })
+                .disabled(isExporting || !sources.summaries.contains { $0.kind.storesFeedAddress })
                 .accessibilityIdentifier(AccessibilityID.exportOPMLButton)
                 // On the row, not on the list: the list carries the import's
                 // sheet and alert, and two of a kind on one view do not both

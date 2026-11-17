@@ -126,11 +126,14 @@ final class OverviewScreenshotTests: OverviewTestCase {
         // Criterion 19: the card above "All caught up".
         openCategoryList("Manual")
         button(AccessibilityID.markAllReadButton).tap()
-        waitFor(app.alerts.firstMatch).buttons.element(boundBy: app.alerts.firstMatch.buttons.count - 1).tap()
+        // By its label: at the largest text size the alert stacks its
+        // buttons in another order.
+        let mark = waitFor(app.alerts.firstMatch).buttons.matching(NSPredicate(format: "label IN %@", ["Mark as Read", "标为已读"])).firstMatch
+        waitFor(mark).tap()
         waitForAbsence(app.alerts.firstMatch)
         showToday()
         openCategoryList("Manual")
-        waitFor(element(AccessibilityID.categoryEmpty))
+        scrollTo(element(AccessibilityID.categoryEmpty))
         shoot(capture, "list-card-and-all-caught-up")
     }
 

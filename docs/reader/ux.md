@@ -155,7 +155,7 @@ A grouped list:
 | Row | Contents |
 | --- | --- |
 | Models & translation | Reading language; translate titles automatically; translate the body when an article opens; show original titles in lists; the normal partition's primary and backup model slots |
-| Refresh | Interval; background refresh; retention |
+| Refresh | Interval; background refresh, which shows how often it ran in the last 7 days; retention |
 | Reading | Text size, line spacing, typeface, default display mode |
 | Adult partition | See S10 |
 | Data | Export configuration, Import configuration, OPML import / export, cache size and Clear |

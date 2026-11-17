@@ -811,6 +811,9 @@ final class AppModel {
             let gate = gate
             Task { await gate?.lock() }
         }
+        // Overviews are written in front only (RD23 review round 1, R1).
+        normal?.overviews.enteredBackground()
+        adult?.overviews.enteredBackground()
         let locks = absence.didEnterBackground(at: now(), timing: lockTiming)
         applyCoverRule()
         if locks {

@@ -38,10 +38,12 @@ private struct ArticleListContent: View {
                         top: Theme.Spacing.small, leading: Theme.Spacing.standard, bottom: Theme.Spacing.small,
                         trailing: Theme.Spacing.standard
                     ))
+                    // Kept while the card is in the list, scrolled off or
+                    // not; zeroed only when the card is removed (review
+                    // round 1, G3).
                     .onGeometryChange(for: Double.self) { $0.size.height } action: { height in
                         model.cardMeasured(height: height + 2 * Theme.Spacing.small)
                     }
-                    .onDisappear { model.cardMeasured(height: 0) }
                 if showsEmptyState {
                     // Below the card, as a row: an overlay would cover it.
                     emptyState
@@ -60,6 +62,11 @@ private struct ArticleListContent: View {
         .overlay {
             if showsEmptyState, card == nil {
                 emptyState
+            }
+        }
+        .onChange(of: card == nil, initial: true) { _, removed in
+            if removed {
+                model.cardMeasured(height: 0)
             }
         }
         .listStyle(.plain)

@@ -492,6 +492,57 @@ final class ArticleListTests: ArticleTestCase {
         record("list-top", "first row \(rowHeight) pt; at its top when scrolled \(rowHeight / 3) pt, not when scrolled \(rowHeight * 2.5) pt")
     }
 
+    /// RD23 review round 1 (G3): a category list whose overview card is
+    /// tall, scrolled until the card has left the screen with the first
+    /// article row still on it, counts as at its top: a refresh run it did
+    /// not start reads it again. (The card's height is kept while it is in
+    /// the list, not zeroed when it scrolls off.) In the tab structure only:
+    /// the run is started from Today's tab while the list stays on its own.
+    func testTallOverviewCardScrolledOffKeepsTheListAtItsTop() throws {
+        let application = XCUIApplication()
+        application.launchEnvironment[UITestLaunchKey.translationModels] = "primary"
+        launch(application)
+        rotate(.portrait)
+        requireFullWidth()
+        guard usesTabs else {
+            throw XCTSkip("in the panes Today replaces the list; the tab structure keeps it while a run starts elsewhere")
+        }
+        createCategory("World")
+        addSource(Fixture.longCounting, to: "World")
+        openCategoryList("World")
+        // The list's own run writes the overview: the done card, expanded.
+        waitFor(button(AccessibilityID.listMenu)).tap()
+        waitFor(app.buttons.matching(NSPredicate(format: "label == %@", "Refresh")).firstMatch).tap()
+        let summary = element(AccessibilityID.overview("summary", "World"))
+        let written = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true"), object: summary)
+        XCTAssertEqual(XCTWaiter.wait(for: [written], timeout: 30), .completed, "no overview was written")
+        waitFor(button(AccessibilityID.overview("expand", "World"))).tap()
+        waitFor(element(AccessibilityID.overview("note", "World")))
+        let card = waitFor(element(AccessibilityID.overview("card", "World")))
+        let first = try XCTUnwrap(topRowTitle())
+        let row = waitFor(articleRow(first))
+
+        // The card off the screen, the first row a third scrolled.
+        let distance = card.frame.height + 16 + row.frame.height / 3
+        let point = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: window.midX, dy: window.maxY - 150))
+        point.press(forDuration: 0.1, thenDragTo: point.withOffset(CGVector(dx: 0, dy: -distance)), withVelocity: .slow, thenHoldForDuration: 0.5)
+        XCTAssertFalse(card.exists && card.isHittable, "the card has left the screen: \(card.frame)")
+        XCTAssertTrue(row.isHittable, "the first row is still on screen: \(row.frame)")
+        sleep(1)
+
+        // A run the list did not start: a pull on Today.
+        app.tabBars.buttons.element(boundBy: 0).tap()
+        let date = waitFor(element(AccessibilityID.todayDate))
+        let start = date.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 400)), withVelocity: .slow, thenHoldForDuration: 1)
+        let status = waitFor(element(AccessibilityID.todayStatus))
+        let updated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Updated just now"), object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 30), .completed, "the run did not end: \(status.label)")
+        app.tabBars.buttons.element(boundBy: 1).tap()
+        _ = waitForNewTopRow(after: first)
+        record("list-top-tall-card", "card \(card.frame.height) pt, scrolled \(distance) pt; the list was read again")
+    }
+
     /// A list that was scrolled far down, left and entered again starts at
     /// its top and counts as at its top without a scroll: a refresh it did
     /// not start reads it again (RD11, review round 1).

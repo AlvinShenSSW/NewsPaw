@@ -114,7 +114,10 @@ struct CategorySheetView: View {
             Picker("Overviews", selection: $categories.draftOverview) {
                 Text("Automatic").tag(OverviewMode.auto)
                 Text("Manual").tag(OverviewMode.manual)
-                Text("Off").tag(OverviewMode.off)
+                // A key of its own: RD14's "Off" reads 关, and Today says
+                // 概览已关闭 (review round 1, R6).
+                Text("Off, for overviews", comment: "Overviews option in Category Settings: no overview is written; the English reads Off.")
+                    .tag(OverviewMode.off)
             }
             .pickerStyle(.menu)
             .frame(minHeight: Theme.minimumTapTarget)

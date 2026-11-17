@@ -2361,12 +2361,29 @@
       }
     },
     "Off" : {
-      "comment" : "Translate-titles option of a source. Also the Overviews option of Category Settings that turns a category's overviews off (RD23).",
+      "comment" : "Translate-titles option of a source.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "关"
+          }
+        }
+      }
+    },
+    "Off, for overviews" : {
+      "comment" : "Overviews option in Category Settings: no overview is written; the English reads Off (RD23 review round 1).",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
           }
         }
       }

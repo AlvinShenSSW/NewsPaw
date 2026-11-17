@@ -2,32 +2,6 @@ import Foundation
 import NewsPawKit
 import UIKit
 
-/// Why a card shows a failure and its step (RD23 decision 12): a stored
-/// `failed` row, or a block of the writer.
-enum OverviewIssue: Hashable {
-    case stored(TranslationFailure)
-    case blocked(OverviewBlock.Reason)
-}
-
-/// What a category's card shows (decision 12, first match wins).
-enum OverviewCardState: Equatable {
-    /// Overviews off: the compact row with the unread count.
-    case off
-    /// Today's `done` overview in the reading language; `working` while a
-    /// Rewrite runs.
-    case done(StoredOverview, working: Bool)
-    /// "Writing overview…".
-    case working
-    /// A stored failure or a block of today and this language.
-    case failed(OverviewIssue)
-    /// No primary slot: "Set up a model to get overviews".
-    case noModel
-    /// "⟨N⟩ new articles, no overview for today yet" and Write Overview.
-    case write(count: Int)
-    /// The compact "Nothing new today" row.
-    case nothingNew
-}
-
 /// A manual job that stored nothing, or a failed Rewrite, asked from the
 /// shell (decision 12).
 struct OverviewQuestion: Identifiable, Equatable {
@@ -72,14 +46,14 @@ final class OverviewModel {
     /// adult accent through the environment, nothing else.
     let partition: Partition
 
-    @ObservationIgnored private let writer: OverviewWriter
+    /// The writer, reached only through this chain (review round 1, G1).
+    @ObservationIgnored private let chain: OverviewChain
     @ObservationIgnored private let library: Library
     @ObservationIgnored private let models: LibraryModels
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private let calendar: Calendar
     @ObservationIgnored private weak var reading: ReadingModel?
     @ObservationIgnored private let navigation: NavigationModel
-    @ObservationIgnored private var chain: Task<Void, Never>?
     @ObservationIgnored private var isReading = false
     @ObservationIgnored private var readAgain = false
     @ObservationIgnored private var midnight: Task<Void, Never>?
@@ -102,14 +76,13 @@ final class OverviewModel {
         self.calendar = calendar
         partition = library.partition
         day = OverviewDay.key(for: now(), calendar: calendar)
-        writer = OverviewWriter(models: models, now: now, calendar: calendar)
+        chain = OverviewChain(writer: OverviewWriter(models: models, now: now, calendar: calendar))
         settings.addListener(self)
     }
 
     /// Starts the writer with the reading language and reads the cards.
     func start() async {
-        let writer = writer
-        await writer.setObserver { [weak self] event in
+        await chain.writer.setObserver { [weak self] event in
             await self?.handle(event)
         }
         let locale = settings.readingLocale
@@ -127,30 +100,10 @@ final class OverviewModel {
 
     func state(of category: LibraryCategory) -> OverviewCardState {
         let id = category.id
-        if category.overview == .off {
-            return .off
-        }
-        let isWorking = working.contains(id) || requested.contains(id)
-        let row = today[id]
-        if let row, row.state == .done {
-            return .done(row, working: isWorking)
-        }
-        if isWorking {
-            return .working
-        }
-        if let row, row.state == .failed {
-            return .failed(.stored(row.failure ?? .malformed))
-        }
-        if let block = blocks[id], block.day == day, block.locale == settings.readingLocale {
-            return .failed(.blocked(block.reason))
-        }
-        if !hasPrimary {
-            return .noModel
-        }
-        if let count = inputCounts[id], count > 0 {
-            return .write(count: count)
-        }
-        return .nothingNew
+        return OverviewCardRule.state(
+            mode: category.overview, row: today[id], working: working.contains(id) || requested.contains(id), block: blocks[id],
+            hasPrimary: hasPrimary, newCount: inputCounts[id] ?? 0, day: day, locale: settings.readingLocale
+        )
     }
 
     /// The Earlier Overviews of a category: its `done` rows in the reading
@@ -172,9 +125,11 @@ final class OverviewModel {
         guard !isStopped, !requested.contains(category) else { return }
         question = nil
         requested.insert(category)
-        let writer = writer
+        let chain = chain
         Task {
-            let outcome = await writer.write(category: category)
+            // After every call sent before it — a change of the reading
+            // language included (review round 1, G1).
+            let outcome = await chain.write(category: category)
             requested.remove(category)
             guard !isStopped else { return }
             switch outcome {
@@ -221,11 +176,20 @@ final class OverviewModel {
         Task { await read() }
     }
 
-    /// The app came to the front: the cards are read and the day's change
-    /// is waited for afresh.
+    /// The app came to the front: the writer may take jobs again (it starts
+    /// none), the cards are read and the day's change is waited for afresh.
     func cameToFront() {
         guard !isStopped else { return }
+        enqueue { await $0.cameToFront() }
         dayMayHaveChanged()
+    }
+
+    /// The app entered the background (design: foreground only; review
+    /// round 1, R1): the writer cancels its job in flight, drops its queue
+    /// and refuses due checks and jobs until the app comes to the front.
+    func enteredBackground() {
+        guard !isStopped else { return }
+        enqueue { await $0.enteredBackground() }
     }
 
     /// A slot of this library was saved or removed, or its key removed: its
@@ -256,7 +220,7 @@ final class OverviewModel {
             NotificationCenter.default.removeObserver(timeObserver)
         }
         timeObserver = nil
-        let writer = writer
+        let writer = chain.writer
         Task { await writer.stop() }
     }
 
@@ -315,12 +279,7 @@ final class OverviewModel {
 
     /// Sends a call to the writer after every call sent before it.
     private func enqueue(_ call: @escaping @Sendable (OverviewWriter) async -> Void) {
-        let previous = chain
-        let writer = writer
-        chain = Task {
-            await previous?.value
-            await call(writer)
-        }
+        chain.send(call)
     }
 
     // MARK: - The day (decision 3)

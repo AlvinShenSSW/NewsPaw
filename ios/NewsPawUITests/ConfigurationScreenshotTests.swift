@@ -52,8 +52,8 @@ final class ConfigurationScreenshotTests: AdultTestCase {
         button(AccessibilityID.importConfigurationButton).tap()
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: timeout))
         capture("question")
-        // "Unlock" in either language: the alert's first button.
-        app.alerts.firstMatch.buttons.element(boundBy: 0).tap()
+        // "Unlock" in either language.
+        app.alerts.firstMatch.buttons.matching(NSPredicate(format: "label IN %@", ["Unlock", "解锁"])).firstMatch.tap()
         waitFor(element(AccessibilityID.configurationCounts("adult")))
         capture("preview")
         scrollDownAndCapture("preview-end")
@@ -73,9 +73,9 @@ final class ConfigurationScreenshotTests: AdultTestCase {
         scrollTo(button(AccessibilityID.configurationReplaceButton)).tap()
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: timeout))
         capture("replace-now")
-        // Cancel: the alert's cancel button.
+        // Cancel, by its label: iOS 27 lists an alert's buttons twice.
         let alert = app.alerts.firstMatch
-        alert.buttons.element(boundBy: alert.buttons.count - 1).tap()
+        alert.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "取消"])).firstMatch.tap()
         waitForAbsence(alert)
         goBack()
         scrollTo(button(AccessibilityID.configurationMergeButton)).tap()

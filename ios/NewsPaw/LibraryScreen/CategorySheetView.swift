@@ -107,8 +107,9 @@ struct CategorySheetView: View {
     /// RD19 decision 11), while the partition is on. In the normal
     /// partition it unlocks and switches first, carrying the move across;
     /// in the adult partition it begins the move. Not while the sheet has
-    /// unsaved changes, a save or a move runs, or the system's
-    /// authentication is asked for.
+    /// unsaved changes, a save or a move runs, the system's authentication
+    /// is asked for, or, in the normal partition, the adult browser's data
+    /// are cleared (no unlock meanwhile; RD19 review round 2).
     private func moveSection(_ id: UUID, locked: Bool) -> some View {
         Section {
             Button {
@@ -131,7 +132,10 @@ struct CategorySheetView: View {
                 .frame(maxWidth: .infinity, minHeight: Theme.minimumTapTarget, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .disabled(locked || categories.isMoving || model.isAuthenticating || categories.sheetHasChanges(id))
+            .disabled(
+                locked || categories.isMoving || model.isAuthenticating || categories.sheetHasChanges(id)
+                    || (categories.partition == .normal && model.isClearingBrowsingData)
+            )
             .accessibilityIdentifier(AccessibilityID.moveCategoryButton)
         }
         .listRowBackground(Theme.surface)

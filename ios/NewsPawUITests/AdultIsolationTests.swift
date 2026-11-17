@@ -277,6 +277,27 @@ final class AdultIsolationTests: IsolationTestCase {
         XCTAssertEqual(sessionsMade, before + 1, report)
     }
 
+    /// Cleared from the normal partition (held 30 s), the switch is dimmed
+    /// while Clear runs, so no unlock starts; once it has ended the adult
+    /// partition opens again.
+    func testNoUnlockWhileClearRuns() {
+        app.terminate()
+        let application = XCUIApplication()
+        application.launchEnvironment[UITestLaunchKey.clearPause] = "30"
+        launch(application, authentication: ["passed", "passed"])
+        rotate(.portrait)
+        requireFullWidth()
+        turnOnAdult()
+        scrollTo(clearBrowsingButton).tap()
+        waitFor(button(AccessibilityID.confirmClearBrowsingDataButton)).tap()
+        revealSwitchPlace()
+        XCTAssertFalse(waitFor(partitionSwitch).isEnabled, "the switch could unlock while Clear ran")
+
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: partitionSwitch)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 60), .completed, "the switch stayed dimmed after Clear")
+        enterAdult()
+    }
+
     // MARK: - Criterion 7
 
     /// Delete removes the adult browser's data with the rest: after

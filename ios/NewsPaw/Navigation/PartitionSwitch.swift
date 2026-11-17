@@ -65,7 +65,11 @@ struct PartitionMenu: View {
         }
         .menuStyle(.button)
         .buttonStyle(CapsuleButtonStyle())
-        .disabled(model.isAuthenticating)
+        // In the normal partition the only choice is Adult, which is not
+        // unlocked while the adult browser's data are cleared (RD19 review
+        // round 2): the capsule is dimmed for that time instead of doing
+        // nothing. In the adult partition locking stays possible.
+        .disabled(model.isAuthenticating || (!isAdult && model.isClearingBrowsingData))
         .accessibilityLabel(isAdult ? Text("Partition: Adult") : Text("Partition: Normal"))
         .accessibilityIdentifier(AccessibilityID.partitionSwitch)
     }

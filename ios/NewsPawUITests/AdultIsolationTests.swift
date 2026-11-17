@@ -122,7 +122,7 @@ final class AdultIsolationTests: IsolationTestCase {
         question.buttons["Open Settings"].tap()
         waitFor(adultPrimaryRow)
         XCTAssertFalse(element(AccessibilityID.primaryModelRow).exists, "the normal slots were opened")
-        waitFor(turnOffButton)
+        scrollTo(turnOffButton)
 
         // The normal key is still there, and still used.
         tapLock()
@@ -323,7 +323,7 @@ final class AdultIsolationTests: IsolationTestCase {
         // The page stays open on the Library stack: Delete comes from
         // Settings.
         openAdultSettings()
-        turnOffButton.tap()
+        scrollTo(turnOffButton).tap()
         answerAlert(Wording.turnOffQuestion, with: "Delete Data")
         answerAlert(Wording.deleteQuestion, with: "Delete")
         waitFor(adultRow)

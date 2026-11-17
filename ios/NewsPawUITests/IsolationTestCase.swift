@@ -65,7 +65,7 @@ class IsolationTestCase: AdultTestCase {
     /// opens without asking) or with the stand-in's next answer.
     func openAdultSettings() {
         tapAdultRow()
-        waitFor(turnOffButton)
+        waitForAdultSettings()
     }
 
     var adultPrimaryRow: XCUIElement { element(AccessibilityID.adultPrimaryModelRow) }

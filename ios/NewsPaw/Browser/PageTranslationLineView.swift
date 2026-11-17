@@ -94,10 +94,13 @@ enum PageTranslationWording {
 /// (ux S5; RD16 decision 10): the sentence, then its action at the
 /// trailing end; with two actions, or at the accessibility sizes, the
 /// actions go under the sentence and everything wraps. One element for accessibility, holding
-/// its actions as buttons of at least 44 points.
+/// its actions as buttons of at least 44 points. While an action of the
+/// owner's is under way the session's buttons are disabled: a tap then would
+/// be refused (RD16 review round 3).
 struct PageTranslationLineView: View {
     let line: PageTranslationLine
     let opensSettings: Bool
+    var isActing = false
     let take: (PageTranslationStep) -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accent) private var accent
@@ -143,6 +146,7 @@ struct PageTranslationLineView: View {
                         }
                         .buttonStyle(.borderless)
                         .foregroundStyle(accent)
+                        .disabled(isActing && step != .openSettings)
                         .accessibilityIdentifier(PageTranslationWording.identifier(step))
                     }
                 }

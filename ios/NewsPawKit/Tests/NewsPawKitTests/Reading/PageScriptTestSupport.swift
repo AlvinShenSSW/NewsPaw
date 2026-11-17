@@ -62,6 +62,20 @@ final class ScriptPage: NSObject, WKNavigationDelegate {
         await withCheckedContinuation { finished.append($0) }
     }
 
+    /// Loads `url` (a page the test serves) and returns once it has
+    /// finished loading.
+    func open(_ url: URL) async {
+        webView.load(URLRequest(url: url))
+        await withCheckedContinuation { finished.append($0) }
+    }
+
+    /// Back, and returns once the page shown again has finished loading
+    /// (from the back-forward cache, it reports `didFinish` too, A4).
+    func back() async {
+        webView.goBack()
+        await withCheckedContinuation { finished.append($0) }
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         let waiting = finished
         finished = []
@@ -82,6 +96,27 @@ final class ScriptPage: NSObject, WKNavigationDelegate {
         try #require((try await page(body) as? NSNumber)?.intValue)
     }
 
+    /// Scrolls the window to the position the page expression `target`
+    /// gives (kept within the page), then waits, bounded, until the page
+    /// reports that position: the scroll can land after the call that asked
+    /// for it has returned (the iOS 26.5 simulator, a page of 120,000
+    /// nodes), and a collect before it would walk the old viewport.
+    func scrollWindow(to target: String, sourceLocation: SourceLocation = #_sourceLocation) async throws {
+        let asked = try await pageInt("""
+            const y = Math.max(0, Math.min(Math.round(\(target)), document.documentElement.scrollHeight - window.innerHeight));
+            window.scrollTo(0, y);
+            return y;
+            """)
+        let deadline = ContinuousClock.now + .seconds(30)
+        while abs(try await pageInt("return Math.round(window.scrollY)") - asked) > 1 {
+            guard ContinuousClock.now < deadline else {
+                Issue.record("the window did not reach \(asked) within 30 s", sourceLocation: sourceLocation)
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
     /// The document's markup as the page serialises it.
     func markup() async throws -> String {
         try await pageString("return document.documentElement.outerHTML")
@@ -91,9 +126,13 @@ final class ScriptPage: NSObject, WKNavigationDelegate {
     /// `apply` carries it unless a request names one.
     private(set) var token: String?
 
+    /// The period and the reading language each `collect` names.
+    var period = "1"
+    var locale = ReadingLocale.simplifiedChinese
+
     /// One `collect`, which must succeed.
     func collect(sourceLocation: SourceLocation = #_sourceLocation) async throws -> PageCollection {
-        switch await bridge.collect() {
+        switch await bridge.collect(period: period, locale: locale) {
         case .success(let collection):
             token = collection.state
             return collection

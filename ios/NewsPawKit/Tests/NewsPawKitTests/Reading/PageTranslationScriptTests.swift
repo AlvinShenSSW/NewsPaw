@@ -448,7 +448,7 @@ struct PageTranslationScriptTests {
             <div style="height:3000px"></div></body></html>
             """)
         // The paragraph's first line just above the viewport, its end in it.
-        try await page.page(#"window.scrollTo(0, document.getElementById("p").offsetTop + 80)"#)
+        try await page.scrollWindow(to: #"document.getElementById("p").offsetTop + 80"#)
         try await page.settle()
         let runs = try await page.runs()
         let paragraph = runs.filter { ["段落の始まり", "リンク", "段落の終わり"].contains($0.text) }
@@ -504,6 +504,47 @@ struct PageTranslationScriptTests {
         #expect(seen.contains("内側の箱の奥の文"), "\(seen); scrollTop \(String(describing: scrollTop))")
     }
 
+    @Test("N1, N2: a new period walks the page again and gives settled runs again; a new reading language puts back what was written for the old one, unless the page changed it, and gives those runs again")
+    func periodAndLocale() async throws {
+        let page = ScriptPage()
+        await page.load("""
+            <!doctype html><html lang="ja"><head><meta name="viewport" content="width=device-width"></head><body>
+            <p id="a">一つ目の段落です</p><p id="b">二つ目の段落です</p><p id="c">三つ目の段落です</p><p id="d">四つ目の段落です</p>
+            </body></html>
+            """)
+        func text(_ id: String) async throws -> String {
+            try await page.pageString("return document.getElementById('\(id)').firstChild.data")
+        }
+        let runs = try await page.runs()
+        let ids = Dictionary(uniqueKeysWithValues: runs.map { ($0.text, $0.id) })
+        let a = try #require(ids["一つ目の段落です"]), b = try #require(ids["二つ目の段落です"])
+        let c = try #require(ids["三つ目の段落です"]), d = try #require(ids["四つ目の段落です"])
+        _ = try await page.apply(PageApplyRequest(writes: [PageWrite(id: a, text: "ZH-a"), PageWrite(id: d, text: "ZH-d")], settle: [b]))
+        // The same period: what is written or settled is not given again,
+        // and then nothing changed.
+        #expect(Set(try await page.runs().map(\.id)) == [c])
+        #expect(try await page.collect().isUnchanged)
+        // A new period, nothing moved: walked again; the settled run comes
+        // back, the written ones do not.
+        page.period = "2"
+        #expect(Set(try await page.runs().map(\.id)) == [b, c])
+        // The page changes one translated node; then the reading language
+        // changes: the other is put back and given again; the page's own
+        // change stays.
+        try await page.page(#"document.getElementById("d").firstChild.data = "ページが変えた文""#)
+        _ = try await page.collect()
+        page.locale = .english
+        let again = try await page.runs()
+        #expect(try await text("a") == "一つ目の段落です")
+        #expect(try await text("d") == "ページが変えた文")
+        #expect(again.contains { $0.id == a && $0.text == "一つ目の段落です" })
+        #expect(again.contains { $0.text == "ページが変えた文" })
+        // The observer saw the restore: one more walk; nothing is written
+        // into the page any more.
+        _ = try await page.collect()
+        #expect(try await page.collect().written == false)
+    }
+
     @Test("a run of more than 20,000 UTF-16 code units is never returned")
     func longRun() async throws {
         let page = ScriptPage()
@@ -537,7 +578,7 @@ struct PageTranslationScriptTests {
         #expect(first.count < 200, "the band of the top of the page only: \(first.count)")
         let unchanged = try await clock.measure { _ = try await page.collect() }
         // The middle of the page.
-        try await page.page("window.scrollTo(0, 100000)")
+        try await page.scrollWindow(to: "100000")
         try await page.settle()
         var middle: [PageRun] = []
         let moved = try await clock.measure { middle = try await page.runs() }
@@ -547,7 +588,7 @@ struct PageTranslationScriptTests {
 
         let animated = ScriptPage()
         await animated.load(Self.longPage(items: 10_000, animated: true))
-        try await animated.page("window.scrollTo(0, 100000)")
+        try await animated.scrollWindow(to: "100000")
         try await animated.settle()
         _ = try await animated.runs()
         var flagged: Duration = .zero
@@ -567,7 +608,9 @@ struct PageTranslationScriptTests {
     func hugePage() async throws {
         let page = ScriptPage()
         await page.load(Self.longPage(items: 60_000, animated: false))
-        try await page.page("window.scrollTo(0, document.body.scrollHeight / 2)")
+        // The test holds its interleaving: the collect walks the viewport
+        // asked for, once the page reports it.
+        try await page.scrollWindow(to: "document.body.scrollHeight / 2")
         try await page.settle()
         let runs = try await page.runs()
         let numbers = runs.compactMap { Int($0.text.replacingOccurrences(of: "項目 ", with: "")) }

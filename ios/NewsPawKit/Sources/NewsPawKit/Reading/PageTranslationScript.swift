@@ -14,7 +14,11 @@ import Foundation
 ///   observer and a passive capture-phase `scroll` listener that only set a
 ///   dirty flag. It answers `{held: true}` while a field has focus,
 ///   `{unchanged: true}` when nothing changed since the last walk, and
-///   otherwise the displayed runs in and near the viewport.
+///   otherwise the displayed runs in and near the viewport. Its input names
+///   the app's `period` (the document generation) and the reading `locale`:
+///   a new period walks the page again and forgets what the app settled; a
+///   new locale puts back what was written for the old one, and those runs
+///   are given again.
 /// - `apply`: writes translations into recorded text nodes that still hold
 ///   exactly their original and are under no excluded element; marks runs
 ///   the app has settled; reports which runs still hold their original.
@@ -106,7 +110,7 @@ function makeToken() {
 function makeState() {
   const state = {
     token: makeToken(), ids: new WeakMap(), records: new Map(), nextId: 1, recorded: 0, written: 0, blocks: new WeakMap(),
-    nextBlock: 1, dirty: true, view: null, observer: null, onScroll: null
+    nextBlock: 1, dirty: true, view: null, observer: null, onScroll: null, period: null, locale: null
   };
   state.observer = new MutationObserver(() => { state.dirty = true; });
   state.observer.observe(doc, { subtree: true, childList: true, characterData: true, attributes: true });
@@ -337,11 +341,47 @@ function sameView(left, right) {
   return right !== null && left.every((value, index) => value === right[index]);
 }
 
-function collect(state) {
+// What the state kept from before this call that the app no longer knows
+// of. Writes made for another reading language are put back where the node
+// still holds them (the page's own change wins: that record is forgotten),
+// and their runs are given again. A new period (a document generation of
+// the app: a page shown again from the back-forward cache, translation
+// turned on again) forgets what the app settled, and walks the page even if
+// nothing moved: the app has dropped what it had collected.
+function follow(state, input) {
+  const period = typeof input.period === "string" ? input.period : "";
+  const locale = typeof input.locale === "string" ? input.locale : "";
+  if (state.locale !== null && state.locale !== locale) {
+    for (const [id, record] of state.records) {
+      if (record.state !== "written") continue;
+      if (dataOf.call(record.node) === record.written) {
+        setData.call(record.node, record.original);
+        record.state = "seen";
+        record.written = null;
+      } else {
+        state.records.delete(id);
+        state.ids.delete(record.node);
+      }
+      state.written -= 1;
+    }
+    state.dirty = true;
+  }
+  state.locale = locale;
+  if (state.period !== period) {
+    for (const record of state.records.values()) {
+      if (record.state === "settled") record.state = "seen";
+    }
+    state.period = period;
+    state.dirty = true;
+  }
+}
+
+function collect(state, input) {
   const loaded = readyStateOf.call(doc) === "complete";
-  const written = state.written > 0;
   const token = state.token;
-  if (focusHeld()) return { held: true, loaded: loaded, written: written, state: token };
+  if (focusHeld()) return { held: true, loaded: loaded, written: state.written > 0, state: token };
+  follow(state, input);
+  const written = state.written > 0;
   const view = [windowValue("scrollX"), windowValue("scrollY"), windowValue("innerWidth"), windowValue("innerHeight")];
   if (!state.dirty && sameView(view, state.view)) return { unchanged: true, loaded: loaded, written: written, state: token };
   state.dirty = false;
@@ -372,7 +412,11 @@ function collect(state) {
       if (record.state === "written" && data === record.written) taken = true;
       else if (record.state === "settled" && data === record.original) taken = true;
       else if (record.state === "seen" && data === record.original) taken = false;
-      else { state.records.delete(id); state.ids.delete(node); record = undefined; id = undefined; }
+      else {
+        // The page changed the node: a translation it held no longer counts.
+        if (record.state === "written") state.written -= 1;
+        state.records.delete(id); state.ids.delete(node); record = undefined; id = undefined;
+      }
     }
     const rects = rectsOf(node, range);
     if (rects.length === 0) return;
@@ -514,7 +558,7 @@ function end(state, input) {
 }
 
 const existing = own.call(G, NAME) ? G[NAME] : null;
-if (command === "collect") return collect(existing || makeState());
+if (command === "collect") return collect(existing || makeState(), input || {});
 if (command === "apply") return apply(existing, input || {});
 if (command === "end") return end(existing, input || {});
 return { error: "command" };

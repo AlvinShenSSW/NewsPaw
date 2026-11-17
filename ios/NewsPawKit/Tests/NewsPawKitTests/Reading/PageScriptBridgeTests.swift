@@ -31,7 +31,7 @@ struct PageScriptBridgeTests {
     @Test("an answer before the deadline resumes the caller with it; a second answer is ignored")
     func answer() async throws {
         let (bridge, standIn) = Self.bridge(deadline: .seconds(600))
-        async let result = bridge.collect()
+        async let result = bridge.collect(period: "1", locale: .simplifiedChinese)
         while standIn.calls.isEmpty {
             await Task.yield()
         }
@@ -44,7 +44,7 @@ struct PageScriptBridgeTests {
     @Test("A3: a call the page never answers expires at the deadline; its late answer resumes nothing")
     func deadline() async throws {
         let (bridge, standIn) = Self.bridge(deadline: .milliseconds(50))
-        let result = await bridge.collect()
+        let result = await bridge.collect(period: "1", locale: .simplifiedChinese)
         #expect(result == .failure(.timedOut))
         // The late answer: nothing is resumed twice (a second resume of a
         // checked continuation would trap).
@@ -64,7 +64,7 @@ struct PageScriptBridgeTests {
     @Test("an error of the call is a failure; an answer of another shape is malformed")
     func failures() async throws {
         let (bridge, standIn) = Self.bridge(deadline: .seconds(600))
-        async let failed = bridge.collect()
+        async let failed = bridge.collect(period: "1", locale: .simplifiedChinese)
         while standIn.calls.isEmpty {
             await Task.yield()
         }

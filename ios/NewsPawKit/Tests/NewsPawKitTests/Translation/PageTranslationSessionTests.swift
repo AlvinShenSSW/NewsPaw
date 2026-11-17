@@ -49,8 +49,12 @@ final class StubPage: PageScripting {
     private var writtenIDs = Set<Int>()
     private var settledIDs = Set<Int>()
 
-    func collect() async -> Result<PageCollection, PageCallFailure> {
+    /// The period and language of each `collect`, in order.
+    private(set) var collectedFor: [(period: String, locale: ReadingLocale)] = []
+
+    func collect(period: String, locale: ReadingLocale) async -> Result<PageCollection, PageCallFailure> {
         calls.append(.collect)
+        collectedFor.append((period, locale))
         var answer = collection()
         if case .success(.runs(let runs, let loaded, let written, let state)) = answer {
             let left = runs.filter { !writtenIDs.contains($0.id) && !settledIDs.contains($0.id) }
@@ -68,6 +72,27 @@ final class StubPage: PageScripting {
         settledIDs = []
     }
 
+    /// Applies that check runs (Retry's question) wait while this is set,
+    /// until `releaseChecks()`.
+    var holdsChecks = false
+    private var heldChecks: [CheckedContinuation<Void, Never>] = []
+
+    var heldCheckCount: Int {
+        heldChecks.count
+    }
+
+    func releaseChecks() {
+        holdsChecks = false
+        let held = heldChecks
+        heldChecks = []
+        held.forEach { $0.resume() }
+    }
+
+    /// Collects that wait.
+    var heldCollectCount: Int {
+        heldCollects.count
+    }
+
     func releaseCollects() {
         holdsCollects = false
         let held = heldCollects
@@ -77,6 +102,9 @@ final class StubPage: PageScripting {
 
     func apply(_ request: PageApplyRequest) async -> Result<PageApplied, PageCallFailure> {
         calls.append(.apply(request))
+        if holdsChecks, !request.check.isEmpty {
+            await withCheckedContinuation { heldChecks.append($0) }
+        }
         defer { afterApply?() }
         let result = applyAnswer?(request) ?? .success(PageApplied(written: request.writes.map(\.id), skipped: [], holding: request.check))
         if case .success(let applied) = result {
@@ -132,8 +160,10 @@ struct PageTranslationSessionTests {
             session.close()
         }
 
-        /// Turns translation on and waits until it is.
+        /// Turns translation on and waits until it is: the owner's tap, once
+        /// the button is enabled again (no other action under way).
         func turnOn() async {
+            await eventually { !self.session.isActing }
             session.turnOn()
             await eventually { self.session.isOn }
         }

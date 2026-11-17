@@ -114,7 +114,13 @@ public struct PageEnded: Sendable, Hashable {
 /// or a stand-in in the session's tests.
 @MainActor
 public protocol PageScripting: AnyObject {
-    func collect() async -> Result<PageCollection, PageCallFailure>
+    /// The page's runs. `period` names the session's document generation:
+    /// the first collect of a new one walks the page again and gives every
+    /// run not written, also of a state kept from before (a page shown again
+    /// from the back-forward cache). `locale` is the language the document
+    /// is translated into: what the state wrote for another is put back
+    /// and given again.
+    func collect(period: String, locale: ReadingLocale) async -> Result<PageCollection, PageCallFailure>
     func apply(_ request: PageApplyRequest) async -> Result<PageApplied, PageCallFailure>
     func end(restore: Bool) async -> Result<PageEnded, PageCallFailure>
 }
@@ -171,8 +177,8 @@ public final class PageScriptBridge: PageScripting {
 
     // MARK: - The commands
 
-    public func collect() async -> Result<PageCollection, PageCallFailure> {
-        await call("collect", [:], read: { Self.collection($0) })
+    public func collect(period: String, locale: ReadingLocale) async -> Result<PageCollection, PageCallFailure> {
+        await call("collect", ["period": period, "locale": locale.rawValue], read: { Self.collection($0) })
     }
 
     public func apply(_ request: PageApplyRequest) async -> Result<PageApplied, PageCallFailure> {

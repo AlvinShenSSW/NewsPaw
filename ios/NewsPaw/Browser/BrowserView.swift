@@ -116,7 +116,7 @@ struct BrowserView: View {
             // decision 10, assumption A9).
             .safeAreaInset(edge: .top, spacing: 0) {
                 if let line = session.translation.line {
-                    PageTranslationLineView(line: line, opensSettings: browser.pages.opensSettings) { step in
+                    PageTranslationLineView(line: line, opensSettings: browser.pages.opensSettings, isActing: session.translation.isActing) { step in
                         take(step)
                     }
                 }
@@ -211,6 +211,8 @@ struct BrowserView: View {
             Label("Translate", systemImage: "translate")
         }
         .toggleStyle(.button)
+        // Refused while an action of the owner's is under way.
+        .disabled(pages.isActing)
         .accessibilityLabel(Text("Translate"))
         .accessibilityValue(pages.isOn ? Text("On") : Text("Off"))
         .accessibilityAddTraits(pages.isOn ? .isSelected : [])
@@ -309,6 +311,7 @@ struct BrowserView: View {
                 )) {
                     Label("Always Translate This Source", systemImage: "translate")
                 }
+                .disabled(pages.isActing)
                 .accessibilityIdentifier(AccessibilityID.alwaysTranslateToggle)
             }
         }

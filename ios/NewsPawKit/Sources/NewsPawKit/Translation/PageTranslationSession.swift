@@ -64,6 +64,11 @@ public final class PageTranslationSession {
     public private(set) var isOn = false
     /// The status line, or `nil` for none.
     public private(set) var line: PageTranslationLine?
+    /// An owner's action (Translate, Show Original, Retry, Retry with the
+    /// Backup Model, Continue) is between its tap and the end of its awaits:
+    /// every other action is refused meanwhile, and the line's buttons and
+    /// the Translate button show it.
+    public private(set) var isActing = false
 
     @ObservationIgnored private let scripting: any PageScripting
     @ObservationIgnored private let translator: PageTranslator?
@@ -131,8 +136,13 @@ public final class PageTranslationSession {
         /// Whether a run is in a request, queued, failed, waiting for its
         /// write or written: a collection does not send it again.
         func isTaken(_ id: Int) -> Bool {
-            inFlight.contains(id) || awaitingWrite.contains(id) || written.contains(id)
-                || queue.contains { $0.unit.runIDs.contains(id) } || failures.contains { $0.group.runs.contains { $0.id == id } }
+            isUnderWay(id) || failures.contains { $0.group.runs.contains { $0.id == id } }
+        }
+
+        /// Whether a run is in a request, queued, waiting for its write or
+        /// written.
+        func isUnderWay(_ id: Int) -> Bool {
+            inFlight.contains(id) || awaitingWrite.contains(id) || written.contains(id) || queue.contains { $0.unit.runIDs.contains(id) }
         }
 
         var latestFailure: PageFailureReason? {
@@ -152,7 +162,13 @@ public final class PageTranslationSession {
     /// back-forward cache while off is restored (decision 8).
     @ObservationIgnored private var translatedAny = false
     @ObservationIgnored private var hasBackup = false
-    @ObservationIgnored private var turningOn = false
+    /// The number of the owner's action under way, or of the last one.
+    @ObservationIgnored private var action = 0
+    /// Counts the times the session became seen again: a call into the page
+    /// that fails across such a time (the app was in the background, where
+    /// the page's process may be suspended) does not say the page is
+    /// unresponsive; the next step asks again.
+    @ObservationIgnored private var seenAgain = 0
     @ObservationIgnored private var closed = false
     @ObservationIgnored private var units: [UUID: Task<Void, Never>] = [:]
     /// What waits to be written into the page while the session is not
@@ -198,19 +214,19 @@ public final class PageTranslationSession {
     /// Opened"): a period begins. Without a usable primary model it says
     /// so and stays off; nothing is collected.
     public func turnOn() {
-        guard !closed, !isOn, !turningOn else { return }
+        guard !closed, !isOn, !isActing else { return }
         brief?.cancel()
         guard let translator else {
             line = .noModel(opensSettings: false)
             return
         }
-        turningOn = true
+        guard let number = beginAction() else { return }
         Task {
+            defer { endAction(number) }
             let readiness = await translator.readiness()
             if case .ready = readiness {
                 await translator.beginPeriod()
             }
-            turningOn = false
             guard !closed, !isOn else { return }
             guard case .ready(let backup) = readiness else {
                 line = .noModel(opensSettings: true)
@@ -235,7 +251,7 @@ public final class PageTranslationSession {
     /// are cancelled (nothing of them is written or stored), the poll stops,
     /// and the page's own text is put back.
     public func showOriginal() {
-        guard !closed else { return }
+        guard !closed, let number = beginAction() else { return }
         if isOn {
             isOn = false
             stopWork()
@@ -248,6 +264,7 @@ public final class PageTranslationSession {
         line = nil
         let generation = generation
         Task {
+            defer { endAction(number) }
             let ended = await scripting.end(restore: true)
             guard !closed, !isOn, generation == self.generation else { return }
             if case .failure = ended {
@@ -262,7 +279,7 @@ public final class PageTranslationSession {
     /// the page has said which runs still hold their originals: if it does
     /// not answer, they stay, and the line says the page did not respond.
     public func retry() {
-        guard !closed, isOn, var document, let translator else { return }
+        guard !closed, isOn, var document, let translator, let number = beginAction() else { return }
         let failures = document.failures
         document.stopped = false
         document.unresponsive = false
@@ -271,6 +288,7 @@ public final class PageTranslationSession {
         refreshLine()
         let generation = document.generation
         Task {
+            defer { endAction(number) }
             await translator.beginPeriod()
             guard isCurrent(generation) else { return }
             await resend(failures, route: .primary, generation: generation)
@@ -281,11 +299,22 @@ public final class PageTranslationSession {
     /// Retry with the Backup Model: the refused runs that still hold their
     /// originals go once to the backup, through the same dispatcher as the
     /// rest (two in flight, only while seen).
+    ///
+    /// The backup slot is read again first: when it is no longer usable,
+    /// nothing is sent and the line stops offering it.
     public func retryWithBackup() {
-        guard !closed, isOn, let document else { return }
+        guard !closed, isOn, let document, let translator, let number = beginAction() else { return }
         let refused = document.failures.filter { $0.reason == .content(.refused) }
         let generation = document.generation
         Task {
+            defer { endAction(number) }
+            let readiness = await translator.readiness()
+            guard isCurrent(generation) else { return }
+            guard case .ready(hasBackup: true) = readiness else {
+                hasBackup = false
+                refreshLine()
+                return
+            }
             await resend(refused, route: .backupOnly, generation: generation)
         }
     }
@@ -300,17 +329,30 @@ public final class PageTranslationSession {
             return
         }
         let groups = failures.map(\.group)
-        let ids = Set(groups.flatMap { $0.runs.map(\.id) })
+        let since = seenAgain
         let answer = await holding(groups, generation: generation)
         guard isCurrent(generation), var document = self.document else { return }
         guard let holding = answer else {
-            document.unresponsive = true
-            self.document = document
+            // Across a time in the background the failures simply stay.
+            if counts(since: since) {
+                document.unresponsive = true
+                self.document = document
+            }
             refreshLine()
             return
         }
-        document.failures.removeAll { failure in failure.group.runs.contains { ids.contains($0.id) } }
-        document.queue += PageBatcher.units(holding).map { PageWork(unit: $0, route: route) }
+        // What was captured before the await is read again: only runs that
+        // are still failed, and not sent, queued or written meanwhile, are
+        // queued, and only their failures are forgotten.
+        let failed = Set(groups.flatMap { $0.runs.map(\.id) }).filter { id in
+            document.failures.contains { $0.group.runs.contains { $0.id == id } }
+        }
+        let resent = holding.compactMap { group in
+            let runs = group.runs.filter { failed.contains($0.id) && !document.isUnderWay($0.id) }
+            return runs.isEmpty ? nil : PageGroup(block: group.block, runs: runs)
+        }
+        document.failures.removeAll { failure in failure.group.runs.contains { failed.contains($0.id) } }
+        document.queue += PageBatcher.units(resent).map { PageWork(unit: $0, route: route) }
         self.document = document
         dispatch()
         refreshLine()
@@ -318,17 +360,33 @@ public final class PageTranslationSession {
 
     /// Continue, at the ceiling: a period begins and sending goes on.
     public func continueTranslating() {
-        guard !closed, isOn, var document, let translator else { return }
+        guard !closed, isOn, var document, let translator, let number = beginAction() else { return }
         document.paused = false
         self.document = document
         refreshLine()
         let generation = document.generation
         Task {
+            defer { endAction(number) }
             await translator.beginPeriod()
             guard isCurrent(generation) else { return }
             dispatch()
             refreshLine()
         }
+    }
+
+    /// Begins an owner's action: its number, or `nil` while another action
+    /// is under way (the tap is refused).
+    private func beginAction() -> Int? {
+        guard !isActing else { return nil }
+        action += 1
+        isActing = true
+        return action
+    }
+
+    /// The action's awaits have ended.
+    private func endAction(_ number: Int) {
+        guard action == number else { return }
+        isActing = false
     }
 
     // MARK: - The browser's events
@@ -374,6 +432,7 @@ public final class PageTranslationSession {
     /// The session became seen again (its tab selected, the app active, a
     /// temporary article closed): the poll goes on at once.
     public func becameSeen() {
+        seenAgain += 1
         guard isOn, !closed else { return }
         Task { await tick() }
     }
@@ -383,6 +442,7 @@ public final class PageTranslationSession {
     public func close() {
         closed = true
         isOn = false
+        isActing = false
         stopWork()
         brief?.cancel()
         line = nil
@@ -430,12 +490,14 @@ public final class PageTranslationSession {
     /// for its runs, which are judged, looked up and sent.
     func tick() async {
         guard isOn, !closed, document != nil, isSeen() else { return }
+        followReadingLocale()
         await flush()
         guard isOn, !closed, var document, !document.unresponsive, !document.collecting, let translator else { return }
         let generation = document.generation
         document.collecting = true
         self.document = document
-        let collected = await scripting.collect()
+        let since = seenAgain
+        let collected = await scripting.collect(period: String(generation), locale: document.locale)
         // An answer of an older document, or one that came after Show
         // Original, is dropped.
         guard isCurrent(generation), var document = self.document else { return }
@@ -450,7 +512,10 @@ public final class PageTranslationSession {
         switch collected {
         case .failure:
             document.collecting = false
-            document.unresponsive = true
+            // Across a time in the background the next step asks again.
+            if counts(since: since) {
+                document.unresponsive = true
+            }
             self.document = document
             refreshLine()
             return
@@ -504,6 +569,30 @@ public final class PageTranslationSession {
             await flush()
         }
         refreshLine()
+    }
+
+    /// The reading language changed under the document (Settings, in any
+    /// tab): the same rule as a document shown again after the change. A
+    /// new generation of the document in the new language: what was in
+    /// flight, queued or failed for the old one is dropped, and the next
+    /// `collect`, naming the new language, has the page put back what it
+    /// wrote for the old one and give those runs again.
+    private func followReadingLocale() {
+        guard let document else { return }
+        let locale = readingLocale()
+        guard locale != document.locale else { return }
+        generation += 1
+        cancelUnits()
+        queued = PageApplyRequest()
+        self.document = Document(generation: generation, host: document.host, locale: locale, startedHere: document.startedHere)
+        refreshLine()
+    }
+
+    /// Whether a call into the page that failed counts against the page:
+    /// it does not when the session became seen again since the call
+    /// began, or is not seen now.
+    private func counts(since: Int) -> Bool {
+        seenAgain == since && isSeen()
     }
 
     /// Decides the document once it has loaded, or `decideAfter` after its
@@ -651,6 +740,7 @@ public final class PageTranslationSession {
         request.state = document.token
         queued = PageApplyRequest()
         let generation = document.generation
+        let since = seenAgain
         let applied = await scripting.apply(request)
         guard isCurrent(generation), var document = self.document else { return }
         document.awaitingWrite.subtract(request.writes.map(\.id))
@@ -661,7 +751,9 @@ public final class PageTranslationSession {
                 translatedAny = true
             }
         case .failure:
-            document.unresponsive = true
+            if counts(since: since) {
+                document.unresponsive = true
+            }
         }
         self.document = document
         refreshLine()
@@ -690,7 +782,8 @@ public final class PageTranslationSession {
         } else if document.unresponsive {
             line = .didNotRespond
         } else if let failure = document.latestFailure {
-            line = .failed(failure, offersBackup: failure == .content(.refused) && hasBackup && document.hasRefused)
+            // Not while stopped: nothing is sent until Retry.
+            line = .failed(failure, offersBackup: failure == .content(.refused) && hasBackup && document.hasRefused && !document.stopped)
         } else if document.nothing && units.isEmpty && document.pending.isEmpty && document.queue.isEmpty {
             line = .nothingToTranslate(brief: false)
         } else if !units.isEmpty || !document.decided || !document.pending.isEmpty || !document.queue.isEmpty || !queued.isEmpty

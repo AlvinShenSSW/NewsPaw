@@ -144,6 +144,14 @@ final class BrowserModel {
         stack == .starred ? starredSession : librarySession
     }
 
+    /// Told when a session's temporary article ends (RD15 decision 14):
+    /// its translation is let go. Set by the workspace.
+    @ObservationIgnored var onTemporaryArticleEnded: @MainActor (UUID) -> Void = { _ in }
+
+    func temporaryArticleEnded(_ id: UUID) {
+        onTemporaryArticleEnded(id)
+    }
+
     // MARK: - Sessions
 
     /// A stack changed: the browser route on top of each stack has its
@@ -334,7 +342,15 @@ final class BrowserSession: NSObject {
     /// Reader mode is fetching and extracting the shown page (RD12).
     private(set) var isExtractingArticle = false
     /// The page shown as an article by reader mode, in place of the page.
-    private(set) var temporaryArticle: TemporaryArticle?
+    private(set) var temporaryArticle: TemporaryArticle? {
+        didSet {
+            // Closed, left by a navigation, or the session ended or
+            // replaced: the article's translation ends with it (RD15).
+            if let old = oldValue, old.id != temporaryArticle?.id {
+                model?.temporaryArticleEnded(old.id)
+            }
+        }
+    }
     /// Whether "This page has no readable article" is shown.
     var isShowingNoReadableArticle = false
 

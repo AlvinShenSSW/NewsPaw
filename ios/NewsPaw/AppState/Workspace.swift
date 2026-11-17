@@ -118,6 +118,7 @@ final class Workspace: Identifiable {
         navigation.onListEntered = { [weak reading] list in reading?.entered(list) }
         navigation.isWebPageSource = { [weak sources] id in sources?.summary(id)?.kind == .webpage }
         navigation.onStacksChanged = { [weak browser] in browser?.stacksChanged() }
+        browser.onTemporaryArticleEnded = { [weak translation] id in translation?.body.readerClosed(id) }
         navigation.onSettingsPathChanged = { [weak modelSettings] path in modelSettings?.settingsPathChanged(path) }
         self.categories = categories
         self.sources = sources

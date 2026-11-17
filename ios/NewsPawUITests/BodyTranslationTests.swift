@@ -42,6 +42,39 @@ final class BodyTranslationTests: BodyTranslationTestCase {
         XCTAssertFalse(progressLine.exists)
     }
 
+    /// Review round 2 (G1): the app going to the background stops the
+    /// shown body's work as leaving its screen does. At "Translating 3 of
+    /// 8" chunk 4 is in flight (it stalls for 60 seconds); Home cancels it
+    /// — a usage row of its own — and the return resumes at chunk 4: the
+    /// body requests end at 9 (chunks 1–3, chunk 4 cancelled, chunks 4–8),
+    /// and the first three are not sent again. Kept running in the
+    /// background, the stalled request would have been answered after the
+    /// return and the requests would end at 8.
+    func testBackgroundStopsTheWork() {
+        launchWithBodies()
+        openBody(Body.long)
+        waitForProgress("Translating 3 of 8")
+        expectBodyRequests(3, "chunks 1–3 answered, chunk 4 stalled", settle: 0)
+
+        XCUIDevice.shared.press(.home)
+        let backgrounded = app.wait(for: .runningBackground, timeout: 10) || app.wait(for: .runningBackgroundSuspended, timeout: 5)
+        XCTAssertTrue(backgrounded, "the app did not go to the background: \(app.state.rawValue)")
+        Thread.sleep(forTimeInterval: 3)
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: timeout))
+
+        waitForBlock(0, startingWith: Translation.translated(Body.paragraph(1, of: Body.long)))
+        expectBodyRequests(9, "returned: chunk 4 cancelled, chunks 4–8 sent once")
+        waitForAbsence(progressLine)
+        _ = scrollArticle(to: block(at: 15))
+        waitForBlock(15, startingWith: Translation.translated(Body.paragraph(16, of: Body.long)))
+
+        leaveArticle()
+        openBody(Body.long)
+        waitForBlock(0, startingWith: Translation.translated(Body.paragraph(1, of: Body.long)))
+        expectBodyRequests(9, "opened again: nothing sent", settle: 3)
+    }
+
     /// Criteria 5 and 8: a refused paragraph is stored failed; the rest
     /// goes on; leaving during chunk 4 and returning sends chunks 4–8 and
     /// not chunk 2's failure; the banner stays while the failure is stored;

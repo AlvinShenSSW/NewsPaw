@@ -176,6 +176,13 @@ final class TranslationModel {
         body.cameToFront()
     }
 
+    /// The app went to the background: the bodies' work stops (RD15,
+    /// review round 2). Titles go on as RD14 has them.
+    func appEnteredBackground() {
+        guard !isStopped else { return }
+        body.appEnteredBackground()
+    }
+
     /// A slot was saved or removed, or its key removed: the library's
     /// failed rows were deleted with it, so the rows showing a failure wait
     /// again.

@@ -573,6 +573,12 @@ final class AppModel {
     private func sceneDidEnterBackground() {
         sceneIsActive = false
         wasInBackground = true
+        // The bodies' translation stops (RD15 N06: leaving stops the work);
+        // a mere deactivation (Control Centre, an alert, the app switcher
+        // glimpsed) does not, so that no chunk is cancelled and sent again
+        // for nothing. `cameToFront` resumes what is still shown.
+        normal?.translation?.appEnteredBackground()
+        adult?.translation?.appEnteredBackground()
         // An unlock that is still running is discarded (decision 5).
         if let unlockAttempt {
             unlockAttempt.enteredBackground = true

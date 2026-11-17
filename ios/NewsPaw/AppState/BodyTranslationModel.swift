@@ -151,14 +151,18 @@ final class BodyTranslationModel {
     }
 
     /// Reader mode shows a temporary article: planned with its title
-    /// first. Another temporary article no screen shows is let go.
+    /// first, unless it is planned already (shown again after its screen
+    /// went: its translation lasts while it is open).
     func readerShown(_ id: UUID, title: String, content: ReadingContent) {
-        for key in openings.keys {
-            if case .reader(let other) = key, other != id, appearances[key, default: 0] == 0 {
-                drop(key)
-            }
-        }
         settle(.reader(id), blocks: content.blocks, title: title, isExcerptFallback: false)
+    }
+
+    /// A temporary article ended — closed, left by a navigation, its
+    /// session ended or replaced (RD15 decision 14): its translation goes
+    /// with it. At most one is open per browser session, so two per
+    /// workspace (the Library's and the Starred stack's).
+    func readerClosed(_ id: UUID) {
+        drop(.reader(id))
     }
 
     private func settle(_ key: BodyKey, blocks: [ArticleBlock], title: String?, isExcerptFallback: Bool) {
@@ -391,6 +395,11 @@ final class BodyTranslationModel {
     /// service failure or a cancellation starts again.
     func cameToFront() {
         guard !isStopped else { return }
+        for (key, opening) in openings where isShown(key) && opening.job != nil && opening.cancelSent {
+            // Stopped in the background and its end not arrived yet: the
+            // work starts again when it does.
+            openings[key]?.resumeWhenEnded = true
+        }
         for (key, opening) in openings where isShown(key) && opening.job == nil {
             let resumes: Bool = switch opening.lastEnd {
             case .cancelled?, .stopped(.service)?: true
@@ -401,6 +410,20 @@ final class BodyTranslationModel {
             if !waiting.isEmpty {
                 startJob(key, sending: waiting, route: .primary)
             }
+        }
+    }
+
+    /// The app went to the background (not a mere deactivation): the work
+    /// of every body stops as on leaving its screen (N06) — nothing of the
+    /// request in flight is stored, finished chunks are kept — and
+    /// `cameToFront` starts it again for a body still shown. A screen does
+    /// not disappear when the app goes to the background.
+    func appEnteredBackground() {
+        guard !isStopped else { return }
+        for (key, opening) in openings where opening.job != nil {
+            cancelJob(of: key)
+            openings[key]?.cancelSent = true
+            openings[key]?.resumeWhenEnded = false
         }
     }
 

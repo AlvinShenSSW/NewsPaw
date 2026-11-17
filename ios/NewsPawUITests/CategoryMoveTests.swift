@@ -234,6 +234,26 @@ final class CategoryMoveTests: IsolationTestCase {
         XCTAssertFalse(categoriesShown().contains("Velvet"))
     }
 
+    /// A normal → adult move held between its copy and its deletion:
+    /// Turn Off stays dimmed until the move has ended, so Delete cannot
+    /// remove the library the category was copied into before the move
+    /// deletes it from the normal one.
+    func testTurnOffWaitsForAMove() {
+        launchForMoves(authentication: ["passed", "passed"], pause: 20)
+        createCategory("World")
+        addSource(Fixture.articles, to: "World")
+        turnOnAdult()
+        openCategorySheet("World")
+        tapMove()
+        _ = waitForAlert()
+        waitFor(button(AccessibilityID.confirmMoveButton)).tap()
+        waitForAbsence(app.alerts.firstMatch)
+        openAdultSettings()
+        XCTAssertFalse(scrollTo(turnOffButton).isEnabled, "Turn Off could be used during the move")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: turnOffButton)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 60), .completed, "Turn Off stayed dimmed after the move")
+    }
+
     // MARK: - Criterion 12: a lock during a normal → adult run
 
     /// A normal → adult move whose run a lock overtakes (the run waits

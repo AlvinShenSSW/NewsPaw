@@ -277,9 +277,9 @@ final class AdultIsolationTests: IsolationTestCase {
         XCTAssertEqual(sessionsMade, before + 1, report)
     }
 
-    /// Cleared from the normal partition (held 30 s), the switch is dimmed
-    /// while Clear runs, so no unlock starts; once it has ended the adult
-    /// partition opens again.
+    /// Cleared from the normal partition (held 30 s), the switch and Turn
+    /// Off are dimmed while Clear runs, so no unlock and no Delete starts;
+    /// once it has ended the adult partition opens again.
     func testNoUnlockWhileClearRuns() {
         app.terminate()
         let application = XCUIApplication()
@@ -290,6 +290,8 @@ final class AdultIsolationTests: IsolationTestCase {
         turnOnAdult()
         scrollTo(clearBrowsingButton).tap()
         waitFor(button(AccessibilityID.confirmClearBrowsingDataButton)).tap()
+        // Nor can Delete remove the store the clear is working on.
+        XCTAssertFalse(scrollTo(turnOffButton).isEnabled, "Turn Off could be used while Clear ran")
         revealSwitchPlace()
         XCTAssertFalse(waitFor(partitionSwitch).isEnabled, "the switch could unlock while Clear ran")
 

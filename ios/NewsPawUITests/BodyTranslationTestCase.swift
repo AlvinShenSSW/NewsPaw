@@ -72,6 +72,12 @@ class BodyTranslationTestCase: TranslationTestCase {
         return Int(match.1) ?? -2
     }
 
+    /// The slot changes the body translation saw.
+    var slotChanges: Int {
+        guard let match = report.firstMatch(of: /slotChanges=(-?\d+)/) else { return -2 }
+        return Int(match.1) ?? -2
+    }
+
     /// The block the reading screen last reported at its top.
     var reportedBlock: String {
         report.firstMatch(of: /readerBlock=(\S+)/).map { String($0.1) } ?? "?"

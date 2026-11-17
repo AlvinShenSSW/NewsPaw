@@ -112,9 +112,10 @@ final class BodyTranslationTests: BodyTranslationTestCase {
     /// The article under it is planned again from its rows and sends
     /// nothing either. Settings cannot be reached with a temporary article
     /// open (every way there ends the browser's session), so the slot
-    /// change is the debug stand-in for Settings' save, the same call.
+    /// change is a debug stand-in for Settings' save, the same call, made
+    /// six seconds after the temporary article is translated.
     func testSlotChangeKeepsReaderModeTranslation() {
-        launchTranslating()
+        launchTranslating(environment: [UITestLaunchKey.slotsChangeAfterReader: "1"])
         addFeed("https://fulltext.example.invalid/rss.xml", to: "World")
         openBody("Fetched story")
         waitFor(element(AccessibilityID.readingFullTextNote))
@@ -128,10 +129,10 @@ final class BodyTranslationTests: BodyTranslationTestCase {
         waitFor(text)
         let translated = settledBodyRequests()
         XCTAssertGreaterThan(translated, 0)
+        XCTAssertEqual(slotChanges, 0, "the slots changed before the requests were counted")
 
-        let slotsChanged = app.buttons[DebugAccessibilityID.slotsChangedButton]
-        XCTAssertTrue(slotsChanged.waitForExistence(timeout: timeout))
-        slotsChanged.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let changed = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in self.slotChanges == 1 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 30), .completed, "the slots were not reported changed")
         expectBodyRequests(translated, "the slots changed: reader mode sends nothing again", settle: 4)
         XCTAssertTrue(text.exists, "the temporary article's translation is gone")
 

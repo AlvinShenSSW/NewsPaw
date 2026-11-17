@@ -139,6 +139,16 @@ final class BodyTranslationModel {
     /// the UI tests' report; always 0 when the start check holds.
     static var startsInBackground = 0
 
+    /// Under a UI test only (review round 4): six seconds after the first
+    /// temporary article's work has finished, the slots are reported
+    /// changed through `slotsChangedForUITests` — the stand-in for a save
+    /// in Settings, which cannot be reached while a temporary article is
+    /// open.
+    @ObservationIgnored var changesSlotsAfterReaderTranslated = false
+    @ObservationIgnored var slotsChangedForUITests: @MainActor () -> Void = {}
+    /// The slot changes this process saw, for the UI tests' report.
+    static var slotChanges = 0
+
     /// Under a UI test only: the next `count` writes of results fail
     /// (review round 4).
     func failNextWrites(_ count: Int) {
@@ -481,6 +491,9 @@ final class BodyTranslationModel {
     /// only its failures are cleared, and the rest starts under decision 5.
     func slotsChanged() {
         guard !isStopped else { return }
+        #if DEBUG
+        Self.slotChanges += 1
+        #endif
         for key in openings.keys {
             cancelJob(of: key)
             openings[key]?.job = nil
@@ -595,6 +608,15 @@ final class BodyTranslationModel {
             if resumes {
                 startIfDue(key)
             }
+            #if DEBUG
+            if changesSlotsAfterReaderTranslated, case .reader = key, end == .finished {
+                changesSlotsAfterReaderTranslated = false
+                Task {
+                    try? await Task.sleep(for: .seconds(6))
+                    slotsChangedForUITests()
+                }
+            }
+            #endif
         }
     }
 

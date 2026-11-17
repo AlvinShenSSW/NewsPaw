@@ -384,6 +384,11 @@ enum UITestLaunchKey {
     /// "1" makes the normal workspace's first write of body results fail
     /// (RD15 review round 4); honoured only with `libraryDirectory`.
     static let failFirstBodyWrite = "NEWSPAW_UITEST_FAIL_FIRST_BODY_WRITE"
+    /// "1": six seconds after the first temporary article of the normal
+    /// workspace is translated, its slots are reported changed, as a save
+    /// in Settings reports it (RD15 review round 4); honoured only with
+    /// `libraryDirectory`.
+    static let slotsChangeAfterReader = "NEWSPAW_UITEST_SLOTS_CHANGE_AFTER_READER"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.
@@ -393,7 +398,8 @@ enum DebugAccessibilityID {
     /// library=<held|released> workspace=<none|held|released>
     /// browser=<none|held|released> sessions=<number> pages=<number>
     /// translationRequests=<number> bodyRequests=<number>
-    /// readerBlock=<number|none> bodyStartsInBackground=<number>`. `pool` is whether connections are open
+    /// readerBlock=<number|none> bodyStartsInBackground=<number>
+    /// slotChanges=<number>`. `pool` is whether connections are open
     /// on the file; the other three are whether the objects are gone from
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
@@ -403,11 +409,8 @@ enum DebugAccessibilityID {
     /// `readerBlock` the block the reading screen last reported at its top
     /// (RD15 criterion 7); `bodyStartsInBackground` how many body jobs
     /// started while the application was in the background (RD15 review
-    /// round 3).
+    /// round 3); `slotChanges` how many slot changes the body translation
+    /// saw (RD15 review round 4).
     static let adultReport = "debug.adultReport"
-    /// A one-point button beside the report: the normal workspace is told
-    /// that its slots changed, as a save in Settings tells it (RD15 review
-    /// round 4).
-    static let slotsChangedButton = "debug.slotsChanged"
 }
 #endif

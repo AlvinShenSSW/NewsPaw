@@ -412,7 +412,7 @@ private struct ConfigurationSection: View {
                 }
                 .frame(minHeight: Theme.minimumTapTarget)
             }
-            .disabled(configuration.isImporting)
+            .disabled(!configuration.canBeginImport)
             .accessibilityIdentifier(AccessibilityID.importConfigurationButton)
         } header: {
             Text("Configuration")

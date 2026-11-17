@@ -137,7 +137,7 @@ struct AddressStepView: View {
                     Label("Import Configuration", systemImage: "doc.badge.gearshape")
                         .frame(minHeight: Theme.minimumTapTarget)
                 }
-                .disabled(model.isDetecting || configuration.isImporting)
+                .disabled(model.isDetecting || !configuration.canBeginImport)
                 .accessibilityIdentifier(AccessibilityID.addSourceImportConfigurationButton)
             }
             .listRowBackground(Theme.surface)

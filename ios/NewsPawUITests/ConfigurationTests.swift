@@ -279,10 +279,17 @@ final class ConfigurationTests: AdultTestCase {
     /// second import finds everything here.
     func testMergeKeepsSettings() {
         launchReading("normal")
+        // The file's category is already here; its feed is not.
+        createCategory(Self.normalCategory)
         openDataSettings()
         button(AccessibilityID.importConfigurationButton).tap()
         waitFor(button(AccessibilityID.configurationSettingsRow))
         tapWhenEnabled(AccessibilityID.configurationMergeButton)
+        // Criterion 4: the summary lists what was already here (review
+        // round 1, R1).
+        assertText(AccessibilityID.configurationSummaryRow("alreadyHere", "normal"), contains: ["Already Here", "1 category · 0 sources"])
+        assertText(AccessibilityID.configurationSummaryRow("added", "normal"), contains: ["Added", "0 categories · 1 source"])
+        screenshot("summary-already-here")
         leaveSummary()
         openSettings()
         waitFor(element(AccessibilityID.refreshRow)).tap()
@@ -362,7 +369,7 @@ final class ConfigurationTests: AdultTestCase {
     /// the write's completion waits: back in the normal partition, the
     /// normal list shows the result, and no summary is shown anywhere.
     func testLockDuringWrite() {
-        launchReading("both", authentication: ["passed", "passed", "passed"], writePause: 6)
+        launchReading("both", authentication: ["passed", "passed", "passed"], writePause: 20)
         turnOnAdult()
         enterAdult()
         openDataSettings()
@@ -374,12 +381,48 @@ final class ConfigurationTests: AdultTestCase {
         leaveAndReturn()
         waitForReport(AdultTestCase.closed)
         XCTAssertFalse(button(AccessibilityID.configurationDoneButton).exists)
-        // The completion reloaded the normal workspace.
-        waitForCategory(Self.normalCategory)
-        Thread.sleep(forTimeInterval: 8)
+        // Review round 1, R2: while that write runs no import begins, in
+        // either partition.
+        openDataSettings()
+        let importRow = button(AccessibilityID.importConfigurationButton)
+        XCTAssertFalse(importRow.isEnabled, "an import could begin while another's write runs")
+        // The completion ends the hold.
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: importRow)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 90), .completed, "the write's completion never came")
         XCTAssertFalse(button(AccessibilityID.configurationDoneButton).exists)
+        // The completion reloaded the normal workspace, and, with no summary
+        // to leave, started its refresh: the imported feed is collected
+        // (review round 1, G2). The refresh is not due by the interval.
+        waitForCategory(Self.normalCategory)
+        expand(Self.normalCategory)
+        waitForValue(sourceRow(Self.normalSource), "3 unread")
         enterAdult()
         waitForCategory(Self.adultCategory)
         XCTAssertFalse(button(AccessibilityID.configurationDoneButton).exists)
+    }
+
+    static let normalSource = "Imported Feed"
+
+    // MARK: - Review round 1, G3
+
+    /// Replace deletes the category open in Library: back in Library its
+    /// list is closed, as after an ordinary deletion.
+    func testReplaceClosesADeletedCategory() {
+        launchReading("normal")
+        createCategory("Local")
+        openCategoryList("Local")
+        openDataSettings()
+        button(AccessibilityID.importConfigurationButton).tap()
+        waitFor(element(AccessibilityID.configurationCounts("normal")))
+        replaceEverything(expectingOnlyNormal: true)
+        leaveSummary()
+        if usesTabs {
+            app.tabBars.buttons.element(boundBy: 1).tap()
+        } else {
+            openSidebarIfNeeded()
+        }
+        waitFor(element(AccessibilityID.categoryRow(Self.normalCategory)))
+        XCTAssertFalse(app.navigationBars["Local"].exists, "the deleted category's list is still open")
+        XCTAssertFalse(element(AccessibilityID.categoryRow("Local")).exists)
     }
 }

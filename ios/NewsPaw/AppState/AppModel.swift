@@ -852,13 +852,24 @@ final class AppModel {
         parts.refreshSettings.reload()
         parts.translationSettings.reload()
         parts.slotsChanged()
+        let showsSummary: Bool
         if let workspace, workspace.partition == .adult {
-            guard adult === workspace else { return false }
-            await workspace.reloadAfterImport()
-            workspace.translation.slotsChanged()
-            return adult === workspace
+            if adult === workspace {
+                await workspace.reloadAfterImport()
+                workspace.translation.slotsChanged()
+            }
+            showsSummary = adult === workspace
+        } else {
+            showsSummary = adult == nil
         }
-        return adult == nil
+        // No summary will be left (a lock or a switch took its workspace
+        // away): the refresh that leaving it starts begins now, for each
+        // workspace whose library was written and that still exists
+        // (review round 1, G2).
+        if !showsSummary, !result.changedNothing {
+            configurationSummaryLeft(result)
+        }
+        return showsSummary
     }
 
     /// The summary was left: each workspace whose library was written and

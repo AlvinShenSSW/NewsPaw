@@ -657,16 +657,21 @@ private struct ConfigurationSummaryView: View {
             ForEach(outcomes, id: \.0) { partition, outcome in
                 if case .imported(let plan, let keysNeeded) = outcome {
                     Section {
-                        row(Text("Added"), categories: plan.newCategories.count, sources: plan.newSources.count)
+                        row(Text("Added"), "added", partition, categories: plan.newCategories.count, sources: plan.newSources.count)
+                        // Criterion 4: what was already here (review round 1, R1).
+                        row(
+                            Text("Already Here"), "alreadyHere", partition,
+                            categories: plan.categoriesAlreadyHere.count, sources: plan.sourcesAlreadyHere.count
+                        )
                         // Keys of their own: the review's "Changed" and
                         // "Deleted" say what will happen, these what did.
                         row(
                             Text(LocalizedStringResource("summary.changed", defaultValue: "Changed", comment: "Configuration import summary row: what was changed.")),
-                            categories: plan.changedCategories.count, sources: plan.changedSources.count
+                            "changed", partition, categories: plan.changedCategories.count, sources: plan.changedSources.count
                         )
                         row(
                             Text(LocalizedStringResource("summary.deleted", defaultValue: "Deleted", comment: "Configuration import summary row: what was deleted.")),
-                            categories: plan.deletedCategories.count, sources: plan.deletedSources.count
+                            "deleted", partition, categories: plan.deletedCategories.count, sources: plan.deletedSources.count
                         )
                         if keysNeeded > 0 {
                             Text("\(keysNeeded) models need a key.")
@@ -703,13 +708,15 @@ private struct ConfigurationSummaryView: View {
         [(Partition.normal, result.normal)] + (result.adult.map { [(Partition.adult, $0)] } ?? [])
     }
 
-    private func row(_ label: Text, categories: Int, sources: Int) -> some View {
+    private func row(_ label: Text, _ name: String, _ partition: Partition, categories: Int, sources: Int) -> some View {
         LabeledContent {
             Text("\(categories) categories · \(sources) sources")
                 .foregroundStyle(Theme.secondaryText)
         } label: {
             label
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(AccessibilityID.configurationSummaryRow(name, partition.rawValue))
     }
 }
 

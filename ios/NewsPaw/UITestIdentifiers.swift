@@ -384,6 +384,11 @@ enum AccessibilityID {
         "configuration.keysNeeded." + partition
     }
 
+    /// `row`: `added`, `alreadyHere`, `changed` or `deleted`.
+    static func configurationSummaryRow(_ row: String, _ partition: String) -> String {
+        "configuration.summary.\(row).\(partition)"
+    }
+
     static func configurationSetUpKeys(_ partition: String) -> String {
         "configuration.setUpKeys." + partition
     }

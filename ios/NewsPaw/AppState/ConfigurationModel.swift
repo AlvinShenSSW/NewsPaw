@@ -187,6 +187,14 @@ final class ConfigurationModel {
         origin != nil
     }
 
+    /// Whether an import can begin: none is in progress here, and no
+    /// import's write, category move or turning off runs anywhere — a
+    /// preview built meanwhile would be out of date when it ends (review
+    /// round 1, R2).
+    var canBeginImport: Bool {
+        !isStopped && !isImporting && !context.writeIsHeldBack()
+    }
+
     // MARK: - Export (decision 9)
 
     /// "Export Configuration": the file is built off the main actor,
@@ -207,6 +215,9 @@ final class ConfigurationModel {
                 let data = try await ConfigurationTransfer.export(
                     normal: normal, adult: adult, preferences: preferences, appVersion: appVersion, now: now
                 )
+                // Not written once the workspace was dropped or Data left
+                // (review round 1, R3): a lock has emptied the directory.
+                guard !isStopped, isDataShown else { return }
                 let url = try await Task.detached { try ConfigurationExportFile.write(data, on: now) }.value
                 guard !isStopped, isDataShown, exportedFile == nil else {
                     ConfigurationExportFile.emptyAll()
@@ -237,7 +248,7 @@ final class ConfigurationModel {
     /// "Import Configuration" on `origin`. From Add source, the sheet
     /// closes first and the picker follows from the root.
     func beginImport(from origin: ConfigurationImportOrigin) {
-        guard !isStopped, !isImporting else { return }
+        guard canBeginImport else { return }
         token += 1
         self.origin = origin
         stage = .idle

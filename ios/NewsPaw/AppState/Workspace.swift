@@ -226,6 +226,18 @@ final class Workspace: Identifiable {
     /// screens show is read again, every living list too.
     func reloadAfterImport() async {
         await categories.reload()
+        // A Replace deleted categories: a route or a sheet that showed one
+        // closes as after an ordinary deletion (review round 1, G3). Source
+        // routes are closed by the sources' reload.
+        if categories.loadState == .loaded {
+            let existing = Set(categories.summaries.map(\.category.id))
+            for case .category(let id) in navigation.libraryPath where !existing.contains(id) {
+                navigation.categoryDeleted(id, sources: [])
+            }
+            if case .categorySettings(let id)? = navigation.sheet, !existing.contains(id) {
+                navigation.sheet = nil
+            }
+        }
         await refresh.load()
         await reading.loadSettings()
         await modelSettings.reload()

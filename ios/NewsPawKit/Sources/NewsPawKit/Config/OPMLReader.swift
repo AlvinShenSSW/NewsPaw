@@ -106,29 +106,17 @@ public enum OPMLReader {
     /// refused above the limit without reading; then at most the limit
     /// plus one byte, refused when that byte is there.
     public static func read(contentsOf url: URL) -> Result<OPMLDocument, OPMLRefusal> {
-        if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > maximumBytes {
-            return .failure(.tooLarge)
+        switch BoundedFileRead.read(contentsOf: url, maximumBytes: maximumBytes) {
+        case .success(let data): read(data)
+        case .failure(.tooLarge): .failure(.tooLarge)
+        case .failure(.unreadable): .failure(.unreadable)
         }
-        let data: Data
-        do {
-            let handle = try FileHandle(forReadingFrom: url)
-            defer { try? handle.close() }
-            data = try boundedRead(handle)
-        } catch {
-            return .failure(.unreadable)
-        }
-        return read(data)
     }
 
-    /// Reads from `handle` until its end or until one byte past the limit.
+    /// Reads from `handle` until its end or until one byte past the limit
+    /// (`BoundedFileRead`, shared with the configuration reader).
     static func boundedRead(_ handle: FileHandle) throws -> Data {
-        let limit = maximumBytes + 1
-        var data = Data()
-        while data.count < limit {
-            guard let chunk = try handle.read(upToCount: min(limit - data.count, 1 << 20)), !chunk.isEmpty else { break }
-            data.append(chunk)
-        }
-        return data
+        try BoundedFileRead.read(handle, maximumBytes: maximumBytes)
     }
 
     /// Reads `data`, with the guards of decision 2 in their order.

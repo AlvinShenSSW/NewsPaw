@@ -175,22 +175,30 @@ extension Library {
     /// `standardDailyAutomaticLimit`. A stored value that is not a
     /// non-negative whole number reads as the standard.
     public func dailyAutomaticLimit() async throws -> Int {
-        try await read { db in
-            let text = try String.fetchOne(db, sql: "SELECT value FROM setting WHERE key = ?", arguments: [Self.dailyAutomaticLimitKey])
-            guard let text, let value = Int(text), value >= 0 else { return Self.standardDailyAutomaticLimit }
-            return value
-        }
+        try await read { db in try Self.dailyAutomaticLimit(in: db) }
     }
 
     /// Stores the daily automatic limit (RD17 gives it its screen; a debug
     /// launch option sets it for the UI tests).
     public func setDailyAutomaticLimit(_ limit: Int) async throws {
-        try await write { db in
-            try db.execute(
-                sql: "INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-                arguments: [Self.dailyAutomaticLimitKey, String(max(0, limit))]
-            )
-        }
+        try await write { db in try Self.writeDailyAutomaticLimit(limit, in: db) }
+    }
+
+    /// The daily automatic limit read in `db`: the one rule of the accessor
+    /// and of the configuration file's snapshot (RD20).
+    static func dailyAutomaticLimit(in db: Database) throws -> Int {
+        let text = try String.fetchOne(db, sql: "SELECT value FROM setting WHERE key = ?", arguments: [Self.dailyAutomaticLimitKey])
+        guard let text, let value = Int(text), value >= 0 else { return Self.standardDailyAutomaticLimit }
+        return value
+    }
+
+    /// The one statement that stores the daily automatic limit: run by the
+    /// setter and inside a configuration import's transaction (RD20).
+    static func writeDailyAutomaticLimit(_ limit: Int, in db: Database) throws {
+        try db.execute(
+            sql: "INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            arguments: [Self.dailyAutomaticLimitKey, String(max(0, limit))]
+        )
     }
 
     private static func chunks(_ ids: [UUID]) -> [[UUID]] {

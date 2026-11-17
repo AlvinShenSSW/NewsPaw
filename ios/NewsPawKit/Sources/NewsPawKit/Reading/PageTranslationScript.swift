@@ -62,6 +62,10 @@ const attributeOf = ELEMENT.getAttribute;
 const hasAttribute = ELEMENT.hasAttribute;
 const visibleOf = ELEMENT.checkVisibility;
 const boxOf = ELEMENT.getBoundingClientRect;
+const clientLeftOf = getterOf(ELEMENT, "clientLeft");
+const clientTopOf = getterOf(ELEMENT, "clientTop");
+const clientWidthOf = getterOf(ELEMENT, "clientWidth");
+const clientHeightOf = getterOf(ELEMENT, "clientHeight");
 const makeWalker = DOC.createTreeWalker;
 const pointOf = DOC.elementFromPoint;
 const makeRange = DOC.createRange;
@@ -148,30 +152,113 @@ function rectsOf(node, range) {
   return rects;
 }
 
-function clipsToNothing(element, cache) {
-  if (cache.has(element)) return cache.get(element);
-  const style = styleOf.call(G, element);
-  const overflowX = style.getPropertyValue("overflow-x");
-  const overflowY = style.getPropertyValue("overflow-y");
-  const clip = style.getPropertyValue("clip");
-  const clipPath = style.getPropertyValue("clip-path");
-  let tiny = false;
-  if ((overflowX && overflowX !== "visible") || (overflowY && overflowY !== "visible") || (clip && clip !== "auto") ||
-      (clipPath && clipPath !== "none")) {
-    const box = boxOf.call(element);
-    tiny = box.width < 2 || box.height < 2;
-  }
-  cache.set(element, tiny);
-  return tiny;
+// A length of a clip-path's or clip's computed value in points, against
+// `size` for a percentage; null for anything else (calc(), keywords).
+function lengthOf(text, size) {
+  const match = /^(-?[0-9.]+)(px|%)?$/.exec(text);
+  if (!match) return null;
+  const value = parseFloat(match[1]);
+  return match[2] === "%" ? value * size / 100 : value;
 }
 
+// Whether a clip-path or a legacy clip leaves the element no area, read from
+// the computed value alone: an inset() whose opposite insets reach across
+// the box, a circle() or an ellipse() of radius 0, a zero rect(). Any other
+// shape (a polygon, a path, a reference) counts as leaving area.
+function clipsAway(style, box) {
+  const clipPath = style.getPropertyValue("clip-path");
+  if (clipPath && clipPath !== "none") {
+    let match = /^inset\(([^)]*)\)/.exec(clipPath);
+    if (match) {
+      const parts = match[1].split(" round ")[0].trim().split(/\s+/);
+      const sides = [parts[0], parts[1] || parts[0], parts[2] || parts[0], parts[3] || parts[1] || parts[0]];
+      const top = lengthOf(sides[0], box.height);
+      const right = lengthOf(sides[1], box.width);
+      const bottom = lengthOf(sides[2], box.height);
+      const left = lengthOf(sides[3], box.width);
+      if (top !== null && bottom !== null && top + bottom >= box.height) return true;
+      if (left !== null && right !== null && left + right >= box.width) return true;
+    }
+    match = /^circle\(\s*([^\s)]+)/.exec(clipPath);
+    if (match && lengthOf(match[1], 1) === 0) return true;
+    match = /^ellipse\(\s*([^\s)]+)\s+([^\s)]+)/.exec(clipPath);
+    if (match && (lengthOf(match[1], 1) === 0 || lengthOf(match[2], 1) === 0)) return true;
+  }
+  const position = style.getPropertyValue("position");
+  const clip = style.getPropertyValue("clip");
+  if (clip && clip !== "auto" && (position === "absolute" || position === "fixed")) {
+    const match = /^rect\(([^)]*)\)/.exec(clip);
+    if (match) {
+      const sides = match[1].split(/[\s,]+/).filter((part) => part.length > 0);
+      if (sides.length === 4) {
+        const top = sides[0] === "auto" ? 0 : lengthOf(sides[0], box.height);
+        const right = sides[1] === "auto" ? box.width : lengthOf(sides[1], box.width);
+        const bottom = sides[2] === "auto" ? box.height : lengthOf(sides[2], box.height);
+        const left = sides[3] === "auto" ? 0 : lengthOf(sides[3], box.width);
+        if (top !== null && right !== null && bottom !== null && left !== null && (right - left < 2 || bottom - top < 2)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+// What an element does to the text inside it, read once per collection:
+// whether it hides it whatever its place (a box under 2 points with a clip,
+// a clip-path or clip that leaves no area), which axes its overflow (or
+// `contain: paint`) clips and its clipping box, and whether it is fixed in
+// place (its descendants then escape its ancestors' overflow).
+function clipInfoOf(element, cache) {
+  if (cache.has(element)) return cache.get(element);
+  const style = styleOf.call(G, element);
+  const name = nameOf.call(element);
+  const overflowX = style.getPropertyValue("overflow-x");
+  const overflowY = style.getPropertyValue("overflow-y");
+  const contain = style.getPropertyValue("contain");
+  const paint = /(^|\s)(paint|strict|content)(\s|$)/.test(contain || "");
+  const clip = style.getPropertyValue("clip");
+  const clipPath = style.getPropertyValue("clip-path");
+  // The root's and the body's overflow belong to the viewport, which the
+  // band deals with.
+  const clipsX = name !== "html" && name !== "body" && (paint || (overflowX && overflowX !== "visible"));
+  const clipsY = name !== "html" && name !== "body" && (paint || (overflowY && overflowY !== "visible"));
+  const clipping = clipsX || clipsY || (clip && clip !== "auto") || (clipPath && clipPath !== "none");
+  const info = { hidden: false, clipsX: clipsX, clipsY: clipsY, box: null, fixed: style.getPropertyValue("position") === "fixed" };
+  if (clipping) {
+    const box = boxOf.call(element);
+    info.hidden = box.width < 2 || box.height < 2 || clipsAway(style, box);
+    if (clipsX || clipsY) {
+      const left = box.left + clientLeftOf.call(element);
+      const top = box.top + clientTopOf.call(element);
+      info.box = { left: left, top: top, right: left + clientWidthOf.call(element), bottom: top + clientHeightOf.call(element) };
+    }
+  }
+  cache.set(element, info);
+  return info;
+}
+
+// Displayed: the parent is visible, the text has a rectangle of at least
+// 2 by 2 points, no ancestor hides it, and at least one of its rectangles
+// overlaps, by 2 points or more on each clipped axis, the clipping box of
+// every ancestor whose overflow clips it, up to a fixed-position ancestor,
+// whose own descendants escape the overflow of the ancestors above it.
 function isDisplayed(node, rects, caches) {
   if (rects.length === 0) return false;
   const parent = parentOf.call(node);
   if (!parent || !visibleOf.call(parent, { opacityProperty: true, visibilityProperty: true })) return false;
+  let shown = rects;
+  let escaped = false;
   let element = parent;
-  for (let depth = 0; element && depth < DEPTH_BOUND; depth++) {
-    if (clipsToNothing(element, caches.clip)) return false;
+  while (element) {
+    const info = clipInfoOf(element, caches.clip);
+    if (info.hidden) return false;
+    if (!escaped && info.box) {
+      const box = info.box;
+      shown = shown.filter((rect) =>
+        (!info.clipsX || Math.min(rect.right, box.right) - Math.max(rect.left, box.left) >= 2) &&
+        (!info.clipsY || Math.min(rect.bottom, box.bottom) - Math.max(rect.top, box.top) >= 2));
+      if (shown.length === 0) return false;
+    }
+    if (info.fixed) escaped = true;
     element = parentOf.call(element);
   }
   return true;

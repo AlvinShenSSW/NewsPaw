@@ -112,6 +112,8 @@ struct PageTranslationScriptTests {
         <div id="host"></div>
         <div contenteditable="true">fixture:never contenteditable</div>
         <p style="position:absolute;left:-9999px">fixture:never far left</p>
+        <div style="clip-path: inset(100%)">fixture:never clip-path inset</div>
+        <div style="position:relative;overflow:hidden;height:40px"><p style="position:absolute;top:200px;margin:0">fixture:never outside its parent</p></div>
         <script>
         document.getElementById("filled").value = "fixture:never typed";
         document.getElementById("host").attachShadow({mode: "open"}).innerHTML = "<p>fixture:never shadow</p>";
@@ -409,7 +411,8 @@ struct PageTranslationScriptTests {
         #expect(try await page.runs().map(\.text) == ["二つ目のタブ"])
         #expect(try await page.collect().isUnchanged)
         // The window does not scroll; the box does.
-        try await page.page(#"document.getElementById("box").scrollTop = 2400"#)
+        // Into the box's own view: text the box clips is not displayed.
+        try await page.page(#"const box = document.getElementById("box"); box.scrollTop = box.scrollHeight"#)
         try await page.settle()
         #expect(try await page.runs().contains { $0.text == "箱のさらに奥の文" })
     }
@@ -457,6 +460,40 @@ struct PageTranslationScriptTests {
         let lastOfBlock = runs.lastIndex { paragraph.map(\.id).contains($0.id) } ?? 0
         #expect(lastOfBlock < firstOther)
         #expect(PageBatcher.groups(runs).first?.texts == ["段落の始まり", "リンク", "段落の終わり"])
+    }
+
+    @Test("M1: text that an ancestor clips away is not displayed; text in view inside a clipping box and a fixed header still are; an inner box's text is collected once scrolled into its view")
+    func clippedText() async throws {
+        let page = ScriptPage()
+        await page.load("""
+            <!doctype html><html lang="ja"><head><meta name="viewport" content="width=device-width">
+            <style>body{margin:0} .box{width:300px;height:60px;margin:4px 0} p{margin:0}</style></head><body>
+            <div class="box" style="clip-path: inset(100%)">切り抜き百パーセント</div>
+            <div class="box" style="clip-path: inset(50%)">切り抜き五十パーセント</div>
+            <div class="box" style="clip-path: inset(10px 20px 50px 0px)">上下で消える切り抜き</div>
+            <div class="box" style="clip-path: circle(0)">半径ゼロの円</div>
+            <div class="box" style="clip-path: ellipse(0px 10px)">幅ゼロの楕円</div>
+            <div class="box" style="clip-path: polygon(0 0, 100% 0, 0 100%)">多角形の切り抜き</div>
+            <div class="box" style="clip-path: inset(10%)">少しだけの切り抜き</div>
+            <div class="box" style="position:relative;overflow:hidden"><p style="position:absolute;top:200px">箱の外の文</p><p>箱の中の文</p></div>
+            <div class="box" style="position:relative;overflow:clip"><p style="position:absolute;left:310px;white-space:nowrap">右にはみ出た文</p></div>
+            <div class="box" style="position:relative;contain:paint"><p style="position:absolute;top:-100px">上にはみ出た文</p></div>
+            <p style="position:absolute;width:300px;height:20px;clip:rect(0 0 0 0)">古い切り抜き</p>
+            <div style="overflow:hidden;height:10px;margin-top:20px"><div style="position:fixed;top:0;left:0">固定されたヘッダー</div></div>
+            <div id="inner" class="box" style="overflow:auto"><p>内側の箱の最初の文</p><div style="height:300px"></div><p>内側の箱の奥の文</p></div>
+            </body></html>
+            """)
+        let texts = Set(try await page.runs().map(\.text))
+        for hidden in ["切り抜き百パーセント", "切り抜き五十パーセント", "上下で消える切り抜き", "半径ゼロの円", "幅ゼロの楕円", "箱の外の文",
+                       "右にはみ出た文", "上にはみ出た文", "古い切り抜き", "内側の箱の奥の文"] {
+            #expect(!texts.contains(hidden), "\(hidden)")
+        }
+        for shown in ["多角形の切り抜き", "少しだけの切り抜き", "箱の中の文", "固定されたヘッダー", "内側の箱の最初の文"] {
+            #expect(texts.contains(shown), "\(shown)")
+        }
+        try await page.page(#"document.getElementById("inner").scrollTop = 300"#)
+        try await page.settle()
+        #expect(try await page.runs().map(\.text).contains("内側の箱の奥の文"))
     }
 
     @Test("a run of more than 20,000 UTF-16 code units is never returned")

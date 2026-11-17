@@ -238,4 +238,39 @@ struct PageTranslationSessionReviewTests {
         #expect(fixture.service.requests.count == requests)
         #expect(!harness.page.written.contains { $0.id == 50 })
     }
+
+    // MARK: - Review round 2
+
+    @Test("M2: when another unit stops the document, a running unit sends no further request; Retry sends the rest")
+    func stopReachesARunningUnit() async throws {
+        let service = TranslationService { _, texts, _ in
+            texts.contains { $0.contains("fixture:limit") } ? .status(429) : .texts(TranslationService.marked)
+        }
+        service.hold(request: 1)
+        let fixture = try await TranslatorFixture.make(service: service)
+        defer { fixture.remove() }
+        let harness = Harness(fixture: fixture)
+        harness.session.documentCommitted(Self.address)
+        let long = PageRun(id: 1, block: 1, text: String(repeating: "これは長い段落の一文です。", count: 900), whole: true, inView: true)
+        let limited = PageRun(id: 2, block: 2, text: "制限される文 fixture:limit", whole: true, inView: true)
+        harness.page.collection = { .success(.runs([long], loaded: true)) }
+        await harness.turnOn()
+        // The large group's first piece is held; then the page shows another
+        // block, whose unit fails with a 429 and no backup: the document
+        // stops.
+        await harness.eventually { service.requests.count == 1 }
+        harness.page.collection = { .success(.runs([long, limited], loaded: true)) }
+        await harness.eventually { harness.session.line == .failed(.service(.limited), offersBackup: false) }
+        #expect(service.requests.count == 2)
+        service.release(request: 1)
+        await harness.eventually { harness.session.unitsInFlight == 0 }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(service.requests.count == 2, "\(service.requests.count - 2) requests after the document stopped")
+        // Retry: the rest of the large group (two pieces) and the failed run.
+        service.answer { _, _, _ in .texts(TranslationService.marked) }
+        harness.session.retry()
+        await harness.eventually { Set(harness.page.written.map(\.id)) == [1, 2] }
+        #expect(service.requests.count == 5)
+    }
 }
+

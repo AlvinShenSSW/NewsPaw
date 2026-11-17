@@ -578,9 +578,16 @@ public final class PageTranslationSession {
         }
     }
 
-    /// Whether a unit of `generation` may send its next request.
+    /// Whether a unit of `generation` may send its next request: the same
+    /// conditions as the dispatcher's. Still on and on the same document;
+    /// seen; and the document neither stopped (another unit's service or
+    /// set-up failure: nothing more is sent until Retry), nor paused (the
+    /// ceiling: the attempt would only be deferred by the translator), nor
+    /// unresponsive (its results could not be written until Retry). When it
+    /// may not, the rest of the unit goes back to the queue.
     private func mayContinue(_ generation: Int) -> Bool {
-        isCurrent(generation) && isSeen()
+        guard isCurrent(generation), isSeen(), let document else { return false }
+        return !document.stopped && !document.paused && !document.unresponsive
     }
 
     private func unitEnded(_ id: UUID, work: PageWork, outcome: PageUnitOutcome, generation: Int) {

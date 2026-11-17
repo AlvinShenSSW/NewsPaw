@@ -88,6 +88,13 @@ public final class FixtureTransport: Transport {
         /// Traditional Chinese item, then 60 English items "Foreign story
         /// 01" … "60" with short excerpts, an hour apart.
         public static let translation = "https://translation.example.invalid/rss.xml"
+        /// A feed for search (RD25): "東京で新型ＡＩ発表" (full-width
+        /// letters), "苹果发布新款芯片" and "Kestrel sightings rise in
+        /// spring", an hour apart, newest first.
+        public static let search = "https://search.example.invalid/rss.xml"
+        /// A feed for search in the adult partition (RD25 criterion 10):
+        /// "Nightjar observatory notes".
+        public static let privateSearch = "https://search.example.invalid/private.xml"
 
         /// A feed of one English item whose title holds the translator's
         /// word "fixture:<word>" (`FixtureModelHTTP.Word`: "refuse",
@@ -153,6 +160,13 @@ public final class FixtureTransport: Transport {
         }
     }
 
+    /// How many requests this transport was asked for, whatever their
+    /// address and answer: the request log the UI tests' report shows, so
+    /// that a test can see an action made none (RD25 criterion 11).
+    public var requests: Int {
+        requestCount.withLock { $0 }
+    }
+
     /// How many requests for the full-text pages this transport was asked
     /// for, whatever their answer (RD12): what the UI tests' report shows.
     public var pageRequests: Int {
@@ -169,6 +183,7 @@ public final class FixtureTransport: Transport {
 
     private let sequenceRequests = Mutex(0)
     private let pageRequestCount = Mutex(0)
+    private let requestCount = Mutex(0)
     private let slowTagsRequests = Mutex(0)
     private let stallingRequests = Mutex(0)
     /// When `flaky.png` was first asked for.
@@ -177,6 +192,7 @@ public final class FixtureTransport: Transport {
     public init() {}
 
     public func fetch(_ request: TransportRequest) async throws -> TransportResponse {
+        requestCount.withLock { $0 += 1 }
         try Task.checkCancellation()
         let url = request.url
         func answer(_ body: String, type: String, status: Int = 200) -> TransportResponse {
@@ -248,6 +264,10 @@ public final class FixtureTransport: Transport {
             return answer(Self.readingFeed, type: rss)
         case Address.translation:
             return answer(Self.translationFeed, type: rss)
+        case Address.search:
+            return answer(Self.searchFeed, type: rss)
+        case Address.privateSearch:
+            return answer(Self.privateSearchFeed, type: rss)
         case Address.translationWord("refuse"), Address.translationWord("limit"), Address.translationWord("slow"):
             return answer(Self.translationWordFeed(String(url.deletingPathExtension().lastPathComponent)), type: rss)
         case GitHubFeedAddress.of("project", "releases"):
@@ -566,6 +586,28 @@ public final class FixtureTransport: Transport {
         }
         return channel(title: "Translation Feed", items: items)
     }()
+
+    // MARK: - The search feeds (RD25)
+
+    /// The titles of the search feed, newest first.
+    public static let searchTitles = ["東京で新型ＡＩ発表", "苹果发布新款芯片", "Kestrel sightings rise in spring"]
+    /// The title of the adult search feed's one item.
+    public static let privateSearchTitle = "Nightjar observatory notes"
+
+    private static func searchItem(_ title: String, slug: String, hoursAgo: Int) -> String {
+        "<item><title>\(title)</title><link>https://example.invalid/search/\(slug)</link>"
+            + "<guid>search-\(slug)</guid><description>A story for search.</description>"
+            + "<pubDate>\(date(hoursAgo: hoursAgo))</pubDate></item>"
+    }
+
+    private static let searchFeed = channel(
+        title: "Search Feed",
+        items: searchTitles.enumerated().map { index, title in searchItem(title, slug: "item-\(index + 1)", hoursAgo: index + 1) }
+    )
+
+    private static let privateSearchFeed = channel(
+        title: "Private Search Feed", items: [searchItem(privateSearchTitle, slug: "private-1", hoursAgo: 1)]
+    )
 
     private static func translationWordFeed(_ word: String) -> String {
         let (feed, title) = switch word {

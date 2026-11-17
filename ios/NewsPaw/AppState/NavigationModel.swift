@@ -18,6 +18,9 @@ enum LibraryRoute: Hashable {
     case allUnread
     case category(UUID)
     case source(UUID)
+    /// The Search screen (RD25): a list of the library's articles whose
+    /// titles hold the typed terms.
+    case search
     case article(UUID)
     /// An article's original page in the embedded browser, above the article.
     case page(URL)
@@ -40,12 +43,16 @@ enum ArticleListKind: Hashable {
     case starred
     case category(UUID)
     case source(UUID)
+    /// The Search screen's results (RD25 decision 8): every article of the
+    /// library whose title holds the typed terms.
+    case search
 
     init(_ item: SidebarItem) {
         switch item {
         case .starred: self = .starred
         case .category(let id): self = .category(id)
         case .source(let id): self = .source(id)
+        case .search: self = .search
         case .allUnread, .today, .settings: self = .allUnread
         }
     }
@@ -53,7 +60,7 @@ enum ArticleListKind: Hashable {
     /// The articles the list reads.
     var scope: ArticleScope {
         switch self {
-        case .allUnread: .library
+        case .allUnread, .search: .library
         case .starred: .starred
         case .category(let id): .category(id)
         case .source(let id): .source(id)
@@ -61,10 +68,11 @@ enum ArticleListKind: Hashable {
     }
 
     /// What its Refresh collects: the category, the source, or the whole
-    /// library for All Unread and Starred (decision 12).
+    /// library for All Unread and Starred (decision 12). Search offers no
+    /// refresh of its own.
     var refreshScope: RefreshScope {
         switch self {
-        case .allUnread, .starred: .library
+        case .allUnread, .starred, .search: .library
         case .category(let id): .category(id)
         case .source(let id): .source(id)
         }
@@ -72,11 +80,11 @@ enum ArticleListKind: Hashable {
 
     /// Whether the list has the Unread / All control: a category or a
     /// source. All Unread is unread by definition and Starred shows every
-    /// starred article.
+    /// starred article; Search shows every match.
     var hasFilter: Bool {
         switch self {
         case .category, .source: true
-        case .allUnread, .starred: false
+        case .allUnread, .starred, .search: false
         }
     }
 
@@ -85,9 +93,17 @@ enum ArticleListKind: Hashable {
         self == .allUnread ? .unread : .all
     }
 
-    /// Whether "Mark All as Read" is offered: everywhere but Starred.
+    /// Whether "Mark All as Read" is offered: everywhere but Starred and
+    /// Search.
     var offersMarkAllRead: Bool {
-        self != .starred
+        self != .starred && self != .search
+    }
+
+    /// Whether the list can be refreshed from itself (pull, menu, `R`):
+    /// not Search, which is read again when its text changes (RD25
+    /// decision 10).
+    var offersRefresh: Bool {
+        self != .search
     }
 }
 
@@ -134,6 +150,9 @@ enum SidebarItem: Hashable {
     case starred
     case category(UUID)
     case source(UUID)
+    /// The Search screen (RD25). No sidebar row carries this tag, so while
+    /// Search is shown no row is highlighted.
+    case search
     case settings
 
 }
@@ -148,6 +167,7 @@ enum SidebarItem: Hashable {
 /// | Library, [All Unread] | All Unread pushed | sidebar: All Unread |
 /// | Library, [category] | the category pushed | sidebar: the category |
 /// | Library, [source] | the source pushed | sidebar: the source |
+/// | Library, [search] | Search pushed | sidebar: no row, Search in the list pane |
 /// | Library, [list, article] | the article pushed on the list | the list, and the article in the reading pane |
 /// | Library, [list, article, page] | the browser pushed on the article | the list, and the browser in the reading pane |
 /// | Library, [web-page source] | the browser pushed | sidebar: the source, the browser as one pane |
@@ -221,6 +241,13 @@ final class NavigationModel {
     /// it shows are drawn, so that a model form is set up when it is pushed
     /// and closed when it is popped by any means. Set by the app model.
     @ObservationIgnored var onSettingsPathChanged: (@MainActor ([SettingsRoute]) -> Void)?
+    /// Called when Search is opened anew (RD25 decision 9), before it is
+    /// entered, so that the reading model drops the Search list and the
+    /// new search starts empty. Set by the app model.
+    @ObservationIgnored var onSearchStarted: (@MainActor () -> Void)?
+    /// How many times the Search screen was asked to focus its field: the
+    /// screen watches it (RD25 decision 9).
+    private(set) var searchFocusRequests = 0
 
     /// The tab, as the tab bar reads and selects it. Selecting a tab whose
     /// stack has a list at its top enters that list.
@@ -257,6 +284,7 @@ final class NavigationModel {
         case .allUnread: .allUnread
         case .category(let id): .category(id)
         case .source(let id): isWebPageSource(id) ? nil : .source(id)
+        case .search: .search
         case .article, .page: nil
         }
     }
@@ -269,6 +297,7 @@ final class NavigationModel {
         case .starred: .starred
         case .category(let id): .category(id)
         case .source(let id): isWebPageSource(id) ? nil : .source(id)
+        case .search: .search
         case .today, .settings: nil
         }
     }
@@ -357,6 +386,7 @@ final class NavigationModel {
             switch libraryList {
             case .category(let id): return .category(id)
             case .source(let id): return .source(id)
+            case .search: return .search
             case .allUnread, .starred, nil: return .allUnread
             }
         }
@@ -386,10 +416,46 @@ final class NavigationModel {
         case .source(let id):
             libraryPath = [.source(id)]
             currentTab = .library
+        case .search:
+            libraryPath = [.search]
+            currentTab = .library
         }
         if let list = list(of: item) {
             onListEntered?(list)
         }
+    }
+
+    // MARK: - Search (RD25 decision 9)
+
+    /// Opens Search: the Search button of the Library root or the sidebar,
+    /// or `⌘F`. When Search is not on the Library stack it starts anew,
+    /// empty, in place of the Library stack (which ends a browser on it);
+    /// when it is there under an article or a page, those are closed and
+    /// its text and rows are kept. In the panes, as with any other sidebar
+    /// choice, the browser on top of the stack left (Starred's page) ends.
+    /// Either way its field is asked to take the focus.
+    func openSearch() {
+        if libraryPath.contains(.search) {
+            // Leaving another sidebar selection in the panes ends the
+            // browser on top of its stack, as `select(_:)` does (a Starred
+            // page); the tab structure keeps each tab's stack.
+            if layout?.structure == .panes {
+                closeBrowserOfCurrentStack()
+            }
+            isListHidden = false
+            libraryPath = [.search]
+            currentTab = .library
+        } else {
+            onSearchStarted?()
+            if layout?.structure == .panes {
+                select(.search)
+            } else {
+                currentTab = .library
+                libraryPath = [.search]
+                onListEntered?(.search)
+            }
+        }
+        searchFocusRequests += 1
     }
 
     /// Removes the browser route on top of the selected tab's stack, which
@@ -486,7 +552,7 @@ final class NavigationModel {
             switch route {
             case .category(let category): category == id
             case .source(let source): sources.contains(source)
-            case .allUnread, .article, .page: false
+            case .allUnread, .search, .article, .page: false
             }
         }
         if shown {
@@ -626,6 +692,7 @@ final class NavigationModel {
         case .allUnread, .starred: .allUnread
         case .category(let id): .category(id)
         case .source(let id): .source(id)
+        case .search: .search
         }
     }
 }

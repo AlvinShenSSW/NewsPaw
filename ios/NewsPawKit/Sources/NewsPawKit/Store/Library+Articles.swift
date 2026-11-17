@@ -20,24 +20,62 @@ extension Library {
     ///   - limit: the most rows returned.
     ///   - locale: the reading language whose stored translations the rows
     ///     carry (RD14 decision 11), or `nil` for none.
+    ///   - query: only the articles whose original title, or whose `done`
+    ///     translated title in `locale`, contains every term (RD25 decision
+    ///     7); with no `locale`, original titles only. Search passes
+    ///     `.library` and `.all`, for which the page is chosen from the
+    ///     folded titles and a covering index without reading an article
+    ///     row; another scope or filter is honoured, at the cost of reading
+    ///     the matching rows. The terms are bound values: no text is SQL or
+    ///     pattern syntax. It works on this library alone.
     public func articleRows(
         _ scope: ArticleScope, filter: ArticleFilter, after cursor: ArticlePosition? = nil, limit: Int = articlePageSize,
-        translationsIn locale: ReadingLocale? = nil
+        translationsIn locale: ReadingLocale? = nil, matching query: SearchQuery? = nil
     ) async throws -> [ArticleRow] {
+        let (sql, arguments) = Self.pageQuery(
+            scope, filter: filter, after: cursor, limit: limit, translationsIn: locale, matching: query
+        )
+        return try await read { db in
+            try Row.fetchAll(db, sql: sql, arguments: arguments).map(Self.articleRow)
+        }
+    }
+
+    /// The statement and arguments of one page of `articleRows`.
+    ///
+    /// Without a query: the list conditions, the cursor and the limit on
+    /// `article`, walked in the order index. With a query: the page's rows
+    /// are chosen by an inner select that reads `search_text` and the
+    /// covering index `article_search_order` — named, because without
+    /// `ANALYZE`, which the app never runs, SQLite answers `id IN (…)`
+    /// through the unique id index and reads every matching row; a missing
+    /// index fails the statement rather than slowing it — with the cursor
+    /// and the limit inside it; the outer query keeps the lists' columns,
+    /// joins and order. Arguments, in order: the join's locale, the
+    /// reading locale (or ''), one per term, the scope's, the cursor's
+    /// three, the limit.
+    static func pageQuery(
+        _ scope: ArticleScope, filter: ArticleFilter, after cursor: ArticlePosition?, limit: Int,
+        translationsIn locale: ReadingLocale?, matching query: SearchQuery?
+    ) -> (sql: String, arguments: StatementArguments) {
         var conditions: [String] = []
         // The join's argument comes first: it stands before the conditions.
         var arguments: [(any DatabaseValueConvertible)?] = locale.map { [$0.rawValue] } ?? []
+        if let query {
+            arguments.append(locale?.rawValue ?? "")
+            arguments += query.terms
+        }
         Self.appendListConditions(scope, filter: filter, to: &conditions, arguments: &arguments)
         if let cursor {
             conditions.append("(\(Self.shownAtSQL), article.first_seen_at, article.rowid) < (?, ?, ?)")
             arguments += [cursor.shownAt, cursor.firstSeenAt, cursor.rowID]
         }
         arguments.append(max(0, limit))
-        let sql = Self.articleRowsSQL(where: conditions, joiningTranslations: locale != nil)
-        let finalArguments = StatementArguments(arguments)
-        return try await read { db in
-            try Row.fetchAll(db, sql: sql, arguments: finalArguments).map(Self.articleRow)
+        let sql = if let query {
+            Self.searchRowsSQL(terms: query.terms.count, where: conditions, joiningTranslations: locale != nil)
+        } else {
+            Self.articleRowsSQL(where: conditions, joiningTranslations: locale != nil)
         }
+        return (sql, StatementArguments(arguments))
     }
 
     /// The article `id` as its row, for the reading screen, with its stored
@@ -147,6 +185,28 @@ extension Library {
             FROM article JOIN source ON source.id = article.source_id
             \(join)\(filter)ORDER BY \(articleOrderSQL)
             LIMIT ?
+            """
+    }
+
+    /// A search page query (RD25 decision 7): its arguments are the locale
+    /// when `joiningTranslations`, the reading locale or '', one per term,
+    /// then the conditions', then the limit. The inner select names its
+    /// table `article` too, so that the list conditions and the order
+    /// expression apply to it unchanged; inside it, `article` is the inner
+    /// one.
+    static func searchRowsSQL(terms: Int, where conditions: [String], joiningTranslations: Bool) -> String {
+        let join = joiningTranslations ? translationJoinSQL + "\n" : ""
+        let contains = Array(repeating: "instr(search_text.text, ?) > 0", count: max(1, terms)).joined(separator: " AND ")
+        let matches = ["article.id IN (SELECT article_id FROM search_text WHERE search_text.locale IN ('', ?) AND \(contains))"] + conditions
+        return """
+            SELECT \(articleRowColumns(joiningTranslations: joiningTranslations))
+            FROM article JOIN source ON source.id = article.source_id
+            \(join)WHERE article.rowid IN (
+                SELECT article.rowid FROM article INDEXED BY article_search_order
+                WHERE \(matches.joined(separator: " AND "))
+                ORDER BY \(articleOrderSQL)
+                LIMIT ?)
+            ORDER BY \(articleOrderSQL)
             """
     }
 

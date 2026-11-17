@@ -5,6 +5,7 @@ struct LibraryRootView: View {
     @Environment(CategoryModel.self) private var categories
     @Environment(SourceModel.self) private var sources
     @Environment(RefreshModel.self) private var refresh
+    @Environment(NavigationModel.self) private var navigation
     @State private var editMode = EditMode.inactive
 
     var body: some View {
@@ -34,6 +35,14 @@ struct LibraryRootView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 EditDoneButton(editMode: $editMode)
+            }
+            // Search (RD25 decision 9), before the Add menu.
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Search", systemImage: "magnifyingglass") {
+                    navigation.openSearch()
+                }
+                .disabled(editMode.isEditing)
+                .accessibilityIdentifier(AccessibilityID.searchButton)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("Add", systemImage: "plus") {

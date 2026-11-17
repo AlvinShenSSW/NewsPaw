@@ -119,6 +119,18 @@ enum AccessibilityID {
     static let couldNotLoad = "list.couldNotLoad"
     static let showAllButton = "list.showAll"
 
+    // Search (RD25)
+    /// The Search button in the Library root's navigation bar (tabs).
+    static let searchButton = "search.open"
+    /// The Search button in the sidebar's navigation bar (panes).
+    static let sidebarSearchButton = "search.openFromSidebar"
+    /// The Search screen's list.
+    static let searchList = "search.list"
+    /// The empty state with no query.
+    static let searchPrompt = "search.prompt"
+    /// The empty state of a query without a match.
+    static let searchNoResults = "search.noResults"
+
     /// A list row, named by its article's original title (RD14 decision
     /// 9: not by a translation it shows).
     static func articleRow(_ title: String) -> String {
@@ -403,6 +415,9 @@ enum UITestLaunchKey {
     static let slowNextSave = "NEWSPAW_UITEST_SLOW_NEXT_SAVE"
     /// "1" makes the next source save fail.
     static let failNextSourceSave = "NEWSPAW_UITEST_FAIL_NEXT_SOURCE_SAVE"
+    /// "1" makes the next search read fail (RD25: the failure state);
+    /// honoured only with `libraryDirectory`.
+    static let failNextSearch = "NEWSPAW_UITEST_FAIL_NEXT_SEARCH"
     /// A whole number of days added to the app's clock; honoured only with
     /// `libraryDirectory`.
     static let clockOffsetDays = "NEWSPAW_UITEST_CLOCK_OFFSET_DAYS"

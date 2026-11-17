@@ -287,6 +287,8 @@ final class AppModel {
             workspace.categories.failNextSave = options.failNextSave
             workspace.categories.slowNextSave = options.slowNextSave
             workspace.sources.failNextSave = options.failNextSourceSave
+            // Only under a UI-test library: never on the owner's library.
+            workspace.reading.failNextSearch = options.libraryDirectory != nil && options.failNextSearch
             #endif
             await workspace.load()
             // The first run (RD21 decisions 1 and 2). Under a UI-test
@@ -813,8 +815,8 @@ final class AppModel {
     /// it, whether the library object, the adult workspace and its browser
     /// model are gone from memory, how many browser sessions the app has
     /// made, how many article pages the fixture transport was asked for
-    /// (RD12), and how many requests the translator fixture has answered
-    /// (RD14).
+    /// (RD12), how many requests it was asked for in all (RD25), and how
+    /// many requests the translator fixture has answered (RD14).
     func adultDebugReport() async -> String {
         guard let gate else { return "" }
         let file = gate.adultLibraryFileExists ? 1 : 0
@@ -826,6 +828,7 @@ final class AppModel {
         return "file=\(file) pool=\(pool) library=\(library) workspace=\(state(lastAdultWorkspace)) "
             + "browser=\(state(lastAdultBrowser)) sessions=\(BrowserModel.sessionsMade) "
             + "pages=\((parts?.transport as? FixtureTransport)?.pageRequests ?? -1) "
+            + "requests=\((parts?.transport as? FixtureTransport)?.requests ?? -1) "
             + "translationRequests=\(FixtureModelHTTP.translationRequests)"
     }
     #endif

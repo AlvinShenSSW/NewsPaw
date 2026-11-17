@@ -120,18 +120,18 @@ final class SourceModel {
         case .allUnread: totalUnread
         case .category(let id): unreadCount(in: id)
         case .source(let id): summary(id)?.unreadCount ?? 0
-        case .starred: 0
+        case .starred, .search: 0
         }
     }
 
     /// Every article stored in a list's scope, read or not; `nil` for
-    /// Starred, whose count the summaries do not hold.
+    /// Starred and Search, whose counts the summaries do not hold.
     func articleCount(of list: ArticleListKind) -> Int? {
         switch list {
         case .allUnread: summaries.reduce(0) { $0 + $1.articleCount }
         case .category(let id): sources(in: id).reduce(0) { $0 + $1.articleCount }
         case .source(let id): summary(id)?.articleCount ?? 0
-        case .starred: nil
+        case .starred, .search: nil
         }
     }
 
@@ -168,8 +168,10 @@ final class SourceModel {
 
     /// Whether a list's Refresh would collect anything: its category's or
     /// its source's targets, or the library's for All Unread and Starred.
+    /// Search is not refreshed from itself (RD25 decision 10).
     func hasRefreshTarget(for list: ArticleListKind) -> Bool {
         switch list {
+        case .search: false
         case .allUnread, .starred: summaries.contains { $0.kind.isCollectedAsFeed && !$0.paused }
         case .category(let id): hasRefreshTarget(in: id)
         case .source(let id): summary(id).map { $0.kind.isCollectedAsFeed && !$0.paused } ?? false

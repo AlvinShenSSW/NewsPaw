@@ -119,6 +119,7 @@ final class Workspace: Identifiable {
         }
         sources.onSettingsSaved = { [weak reading] in reading?.sourceSettingsSaved() }
         navigation.onListEntered = { [weak reading] list in reading?.entered(list) }
+        navigation.onSearchStarted = { [weak reading] in reading?.dropSearch() }
         navigation.isWebPageSource = { [weak sources] id in sources?.summary(id)?.kind == .webpage }
         navigation.onStacksChanged = { [weak browser] in browser?.stacksChanged() }
         navigation.onSettingsPathChanged = { [weak modelSettings] path in modelSettings?.settingsPathChanged(path) }

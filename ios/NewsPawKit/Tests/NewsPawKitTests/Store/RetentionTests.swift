@@ -117,4 +117,34 @@ struct RetentionTests {
         #expect(try await rowCounts(fixture.library)["article_body"] == 2)
         #expect(try await rowCounts(fixture.library)["seen"] == 0)
     }
+
+    @Test("RD25: clean-up leaves no search row of a deleted article; the kept articles' rows stay")
+    func cleanUpKeepsTheSearchIndex() async throws {
+        let fixture = try await RefreshFixture.make()
+        defer { fixture.remove() }
+        let source = try await fixture.addFeed("one").id
+        let old = try await article(fixture, source, "old kestrel", firstSeenAgo: 100 * Self.day)
+        let starred = try await article(fixture, source, "starred kestrel", firstSeenAgo: 100 * Self.day, starred: true)
+        let young = try await article(fixture, source, "young kestrel", firstSeenAgo: Self.day)
+        var records: [TranslationRecord] = []
+        for (id, title) in [(old.id, "旧的红隼"), (starred.id, "加星的红隼"), (young.id, "新的红隼")] {
+            records.append(TranslationRecord(
+                articleID: id, locale: .simplifiedChinese, state: .done, title: title, excerpt: nil, failure: nil, model: "fixture-model"
+            ))
+        }
+        try await fixture.library.storeTranslations(records)
+        #expect(try await expectSearchTextMatchesDerivation(fixture.library) == 6)
+
+        #expect(try await fixture.library.cleanUp(keeping: .thirtyDays) == 1)
+
+        #expect(try await expectSearchTextMatchesDerivation(fixture.library) == 4)
+        let left = try await fixture.library.pool.read { db in
+            try String.fetchSet(db, sql: "SELECT DISTINCT article_id FROM search_text")
+        }
+        #expect(left == [starred.id.databaseKey, young.id.databaseKey])
+        let found = try await fixture.library.articleRows(
+            .library, filter: .all, translationsIn: .simplifiedChinese, matching: SearchQuery("红隼")!
+        ).map(\.title)
+        #expect(found == ["young kestrel", "starred kestrel"])
+    }
 }

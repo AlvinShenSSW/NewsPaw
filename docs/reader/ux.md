@@ -127,7 +127,7 @@ A three-column split view: sidebar → article list → reading screen.
   - Translation stays on while the owner follows links, until it is turned off or the browser is closed.
   - Some text failed → the status line gives the reason and "Retry"; when the model refused, also "Retry with the backup model". What was translated stays translated.
   - Nothing to translate (the page is already in the reading language) → a brief message, and the button returns to inactive.
-  - No model set up → "Set up a model to translate", linking to Settings.
+  - No model set up → "Set up a model to translate", linking to Settings. In the adult partition the line has no link until that partition has models of its own.
   - A source with "Always translate this source" on opens already translating.
 - Reader mode extracts the current page's main text. On success it opens S4 with the page as a temporary article that can be translated. It is not stored and has no star; "Save this page as a source" and Share are the ways to keep it. On failure it says "This page has no readable article".
 - In the adult partition the browser uses its own website data.

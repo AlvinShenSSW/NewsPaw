@@ -110,10 +110,30 @@ struct AddressStepView: View {
                 }
                 .listRowBackground(Theme.surface)
             }
+            // Below Suggested Sources (ux S6; RD08).
+            Section {
+                Button {
+                    isFieldFocused = false
+                    sources.beginOPMLImport(from: .addSource)
+                } label: {
+                    HStack {
+                        Label("Import OPML", systemImage: "square.and.arrow.down")
+                        if sources.opmlImport?.origin == .addSource, sources.opmlImport?.stage == .reading {
+                            Spacer(minLength: Theme.Spacing.small)
+                            ProgressView()
+                        }
+                    }
+                    .frame(minHeight: Theme.minimumTapTarget)
+                }
+                .disabled(model.isDetecting || sources.opmlImport?.stage == .reading)
+                .accessibilityIdentifier(AccessibilityID.addSourceImportOPMLButton)
+            }
+            .listRowBackground(Theme.surface)
         }
         .scrollContentBackground(.hidden)
         .background(Theme.groupedBackground)
         .foregroundStyle(Theme.text)
+        .opmlImport(from: .addSource)
         .navigationTitle("Add Source")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

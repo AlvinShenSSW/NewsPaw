@@ -32,6 +32,10 @@ struct DebugLaunchOptions {
     /// The rows a list page holds, so that a UI test reaches the next page
     /// after a few rows. Applied only together with `libraryDirectory`.
     let articlePageSize: Int?
+    /// The OPML document "Import OPML" reads instead of presenting the file
+    /// picker (RD08 decision 8). Applied only together with
+    /// `libraryDirectory`.
+    let opmlFixture: OPMLFixture?
     /// The translator fixture's models to set up in the normal library
     /// (RD14): the primary, and the backup after it. Applied only together
     /// with `libraryDirectory`, and only to a library with no model yet.
@@ -83,6 +87,7 @@ struct DebugLaunchOptions {
         } else {
             articlePageSize = nil
         }
+        opmlFixture = environment[UITestLaunchKey.opmlFixture].flatMap(OPMLFixture.init(rawValue:))
         translationModels = switch environment[UITestLaunchKey.translationModels] {
         case "primary": [.primary]
         case "primary,backup": [.primary, .backup]

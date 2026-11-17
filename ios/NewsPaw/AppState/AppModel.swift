@@ -138,6 +138,9 @@ final class AppModel {
     /// The article page size of the UI tests, which every workspace's
     /// reading model takes.
     @ObservationIgnored private var articlePageSize: Int?
+    /// The OPML fixture of the UI tests, which every workspace's source
+    /// model takes (RD08 decision 8).
+    @ObservationIgnored private var opmlFixture: OPMLFixture?
     @ObservationIgnored private var adultWasShown = false
     @ObservationIgnored private weak var lastAdultWorkspace: Workspace?
     @ObservationIgnored private weak var lastAdultBrowser: BrowserModel?
@@ -178,6 +181,9 @@ final class AppModel {
     func start() async {
         guard case .loading = status else { return }
         observeScene()
+        // OPML exports left by a session that ended with a share sheet open
+        // (RD08 decision 7).
+        OPMLExportFile.emptyAll()
         // The one transport the app makes requests through. Under a UI-test
         // library directory it is the fixture transport, never the real one.
         // The one clock of the library and of Today's status line.
@@ -295,7 +301,9 @@ final class AppModel {
             #if DEBUG
             if options.libraryDirectory != nil {
                 articlePageSize = options.articlePageSize
+                opmlFixture = options.opmlFixture
             }
+            workspace.sources.opmlFixture = opmlFixture
             if let size = articlePageSize {
                 workspace.reading.pageSize = size
             }
@@ -394,6 +402,7 @@ final class AppModel {
             if let size = articlePageSize {
                 workspace.reading.pageSize = size
             }
+            workspace.sources.opmlFixture = opmlFixture
             #endif
             await workspace.load()
             // From here to the end of the case nothing suspends before the
@@ -440,8 +449,11 @@ final class AppModel {
         gateState = .unlocked
         // The normal workspace is not shown from here on: nothing of it
         // stays pushed or presented, and its pages end. Its models go on
-        // refreshing (decision 13).
+        // refreshing (decision 13). An OPML import of it that is still
+        // being read ends, so that its result is not shown on return (RD08
+        // criterion 8).
         normal.navigation.clear()
+        normal.sources.endOPMLImport()
         applyTint()
         #if DEBUG
         adultWasShown = true
@@ -477,6 +489,9 @@ final class AppModel {
             adult = nil
         }
         workspace.stop()
+        // An adult export whose share sheet the swap took away is not
+        // dismissed through the sheet: every export file goes now (RD08).
+        OPMLExportFile.emptyAll()
         gateState = .locked
         applyTint()
         // A cover that is shown stays until the scene is active again and

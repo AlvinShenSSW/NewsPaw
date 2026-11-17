@@ -419,10 +419,17 @@ final class NavigationModel {
     /// or `⌘F`. When Search is not on the Library stack it starts anew,
     /// empty, in place of the Library stack (which ends a browser on it);
     /// when it is there under an article or a page, those are closed and
-    /// its text and rows are kept. Either way its field is asked to take
-    /// the focus.
+    /// its text and rows are kept. In the panes, as with any other sidebar
+    /// choice, the browser on top of the stack left (Starred's page) ends.
+    /// Either way its field is asked to take the focus.
     func openSearch() {
         if libraryPath.contains(.search) {
+            // Leaving another sidebar selection in the panes ends the
+            // browser on top of its stack, as `select(_:)` does (a Starred
+            // page); the tab structure keeps each tab's stack.
+            if layout?.structure == .panes {
+                closeBrowserOfCurrentStack()
+            }
             isListHidden = false
             libraryPath = [.search]
             currentTab = .library

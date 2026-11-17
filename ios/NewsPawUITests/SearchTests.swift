@@ -137,6 +137,45 @@ final class SearchTests: TranslationTestCase {
         XCTAssertTrue(articleRowsShown().isEmpty)
     }
 
+    /// Review round 1 (gate P2): in the panes, Search opened again while it
+    /// is on the Library stack ends the browser of the stack it leaves, as
+    /// any other sidebar choice does — here Starred's page — and keeps its
+    /// own text and rows.
+    func testReopeningSearchEndsTheStarredPage() throws {
+        try XCTSkipUnless(isPad, "the panes")
+        app.terminate()
+        launch()
+        rotate(.landscapeLeft)
+        requireFullSize()
+        createCategory("World")
+        addSource(Fixture.articles, to: "World")
+        openSearchWithButton()
+        waitForSearchFocus()
+        app.typeText("plain")
+        waitForRows(["Plain story"])
+        articleRow("Plain story").tap()
+        waitForTitle("Plain story")
+        waitFor(button(AccessibilityID.readingStarButton)).tap()
+        waitForLabel(button(AccessibilityID.readingStarButton), containing: "Unstar")
+
+        // Starred: the article, then its page in the browser.
+        openStarred()
+        waitFor(articleRow("Plain story")).tap()
+        waitForTitle("Plain story")
+        waitFor(button(AccessibilityID.openOriginalButton)).tap()
+        waitForPage("Original of plain-story")
+
+        // Search again from the sidebar: its text and rows are kept.
+        openSearchWithButton()
+        XCTAssertEqual(searchField.value as? String, "plain")
+        waitForRows(["Plain story"])
+
+        // Back to Starred: the page was ended with the selection that left it.
+        openStarred()
+        waitForAbsence(barText("Original of plain-story"))
+        waitForTitle("Plain story")
+    }
+
     /// The failure state: a failed read shows the lists' failed state, and
     /// Try Again reads the same query again.
     func testFailedSearchReadAndTryAgain() {
@@ -278,7 +317,7 @@ final class SearchPartitionTests: AdultTestCase {
 }
 
 /// RD25 criterion 9 (ux section 2's `⌘F`; assumption A3), on the iPad
-/// simulators, up to its last step (see the note at the end). In `TypedKeyTests`, which runs last: `typeKey` attaches a
+/// simulators, in the hardware-keyboard state `typeKey` puts them in. In `TypedKeyTests`, which runs last: `typeKey` attaches a
 /// hardware keyboard to the simulator until it restarts.
 extension TypedKeyTests {
     func testCommandFAndLettersInTheField() throws {
@@ -321,9 +360,18 @@ extension TypedKeyTests {
         sleep(1)
         XCTAssertEqual(transportRequests, requestsBefore, "a refresh started")
 
-        // Criterion 9's last step — a drag on the results ends the field's
-        // focus, then J opens the first result — is not asserted: with a
-        // hardware keyboard a drag leaves the focus in the field (measured
-        // on the iPad mini; RD25 hand-back), so the list keys stay absent.
+        // A drag on the results ends the field's focus; J then opens the
+        // first result in the reading pane.
+        let pane = element(AccessibilityID.listPane).frame
+        let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: pane.midX, dy: pane.midY))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 120)), withVelocity: 800, thenHoldForDuration: 0.2)
+        let unfocused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasKeyboardFocus == false"), object: searchField)
+        XCTAssertEqual(XCTWaiter.wait(for: [unfocused], timeout: timeout), .completed, "the drag left the focus in the field")
+        XCTAssertEqual((searchField.value as? String)?.lowercased(), "kestrel", "the drag changed the field")
+        waitForRows([SearchFixture.kestrel])
+        app.typeKey("j", modifierFlags: [])
+        waitForReadingTitle(SearchFixture.kestrel)
+        XCTAssertTrue(element(AccessibilityID.readingPane).exists)
+        XCTAssertEqual((searchField.value as? String)?.lowercased(), "kestrel", "J reached the field")
     }
 }

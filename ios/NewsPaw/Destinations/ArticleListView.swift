@@ -53,6 +53,16 @@ private struct ArticleListContent: View {
                 // row can be reached in a pane, which ignores the keyboard
                 // (RD25 assumption A6).
                 .scrollDismissesKeyboard(.immediately)
+                // A drag on the results ends the field's focus by the app's
+                // own doing (decision 10): with a hardware keyboard there is
+                // no keyboard to dismiss, and the list keys stay absent while
+                // the field has the focus. The field stays presented, with
+                // its text and the rows.
+                .onScrollPhaseChange { _, phase in
+                    if phase == .interacting, isSearchFocused {
+                        isSearchFocused = false
+                    }
+                }
                 .onAppear(perform: focusIfAsked)
                 .onChange(of: navigation.searchFocusRequests) {
                     focusIfAsked()

@@ -242,13 +242,13 @@ final class AdultIsolationTests: IsolationTestCase {
 
     // MARK: - Review round 2: no adult page while Clear runs
 
-    /// While Clear runs (held 8 s by the debug option) an adult page asked
+    /// While Clear runs (held 30 s by the debug option) an adult page asked
     /// for gets no session: its screen stays empty, and the page opens once
     /// the clear has ended.
     func testNoAdultPageOpensWhileClearRuns() {
         app.terminate()
         let application = XCUIApplication()
-        application.launchEnvironment[UITestLaunchKey.clearPause] = "8"
+        application.launchEnvironment[UITestLaunchKey.clearPause] = "30"
         launch(application, authentication: ["passed", "passed"])
         rotate(.portrait)
         requireFullWidth()

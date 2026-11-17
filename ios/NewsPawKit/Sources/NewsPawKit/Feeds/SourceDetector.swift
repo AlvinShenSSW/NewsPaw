@@ -114,6 +114,9 @@ public struct DetectionFailure: Sendable, Hashable {
     public let offersWebPage: Bool
     /// Whether the app put `https://` in front of what was typed.
     public let addedScheme: Bool
+    /// Whether the address was a Hugging Face account's page that neither
+    /// overview knows, and the page itself is gone (RD26 decision 5).
+    public var missingHuggingFaceAccount = false
 }
 
 /// What one detection found (spec N03, ux S6).
@@ -129,6 +132,9 @@ public enum Detection: Sendable, Hashable {
     /// The address is a GitHub repository with at least one feed that can
     /// be offered (RD07).
     case github(GitHubDetection)
+    /// The address is a Hugging Face account whose models were listed
+    /// (RD26).
+    case huggingFace(HuggingFaceDetection)
     /// The address could not be read.
     case failed(DetectionFailure)
 }
@@ -146,16 +152,24 @@ public enum Detection: Sendable, Hashable {
 /// fetched: its three built feed addresses go through the same candidate
 /// phase instead. When all three are gone, the address takes the path
 /// above.
+///
+/// A Hugging Face account's page (RD26) is looked up ignoring ASCII case
+/// before any request; then its two overviews are requested at once, and
+/// the list of the account's models, built from the Hub's spelling, goes
+/// through the candidate phase. When both overviews are gone, the address
+/// takes the path above. Nothing else of the Hub is requested.
 public struct SourceDetector: Sendable {
     /// Candidate fetches in flight at once.
     public static let maximumConcurrentCandidates = 4
 
+    private let transport: any Transport
     private let fetcher: FeedFetcher
     private let candidateLimit: Duration
 
     /// - Parameter candidateLimit: the overall limit of the candidate phase,
     ///   20 seconds; tests and the UI-test fixtures inject a shorter one.
     public init(transport: any Transport, candidateLimit: Duration = .seconds(20)) {
+        self.transport = transport
         fetcher = FeedFetcher(transport: transport)
         self.candidateLimit = candidateLimit
     }
@@ -178,6 +192,16 @@ public struct SourceDetector: Sendable {
             // All three gone: not a public repository. The ordinary path
             // runs on the typed address (RD07 decision 4).
             try Task.checkCancellation()
+        }
+        var missingAccount = false
+        if let account = HuggingFaceAccount(normalForm: requested) {
+            if let detection = try await detectAccount(account, address: requested, in: library) {
+                return detection
+            }
+            // Both overviews gone: not an account. The ordinary path runs on
+            // the typed address (RD26 decision 5).
+            try Task.checkCancellation()
+            missingAccount = true
         }
         if let existing = try await library.existingSource(atAddress: requested) {
             return .duplicate(existing)
@@ -208,7 +232,9 @@ public struct SourceDetector: Sendable {
                 address: stored, title: page.title, candidates: candidates, declaredCount: page.declaredCount
             ))
         case .failed(let reason):
-            return .failed(failure(reason, address: requested, addedScheme: parsed.addedScheme))
+            var failure = failure(reason, address: requested, addedScheme: parsed.addedScheme)
+            failure.missingHuggingFaceAccount = missingAccount && reason == .gone
+            return .failed(failure)
         case .notModified:
             // No validators are sent, so a 304 is an answer the app cannot use.
             return .failed(failure(.httpStatus(304), address: requested, addedScheme: parsed.addedScheme))
@@ -236,6 +262,82 @@ public struct SourceDetector: Sendable {
             return .failed(failure(reason, address: typed, addedScheme: false))
         }
         return .github(GitHubDetection(repository: repository, address: typed, candidates: candidates))
+    }
+
+    // MARK: - Hugging Face accounts
+
+    /// What one overview said about the typed name.
+    private enum Overview {
+        /// The account exists; its name in the Hub's spelling.
+        case found(String)
+        /// 404 or 410.
+        case gone
+        case failed(CollectionFailure)
+    }
+
+    /// Detects an account (RD26 decision 3): the duplicate lookup, offline;
+    /// the two overviews at once; then the list, through the candidate
+    /// phase. `nil` when both overviews are gone.
+    private func detectAccount(_ typed: HuggingFaceAccount, address: String, in library: Library) async throws -> Detection? {
+        if let existing = try await library.existingSource(atAddress: typed.pageAddress, ignoringCase: true) {
+            return .duplicate(existing)
+        }
+        async let organization = overview(typed.organizationOverviewAddress, member: "name", of: typed)
+        async let user = overview(typed.userOverviewAddress, member: "user", of: typed)
+        let answers = try await (organization, user)
+        try Task.checkCancellation()
+
+        let spelling: String
+        switch answers {
+        case (.found(let name), _), (_, .found(let name)):
+            spelling = name
+        case (.gone, .gone):
+            return nil
+        case (.failed(let reason), _), (_, .failed(let reason)):
+            // The built addresses are https: the hint about http does not
+            // apply.
+            return .failed(failure(reason, address: address, addedScheme: false))
+        }
+        guard let account = HuggingFaceAccount(name: spelling) else { return nil }
+        let list = DeclaredFeed(address: account.pageAddress, title: nil)
+        let checked = try await check([list], declaredOn: account.pageAddress, kind: .huggingface, ignoringCase: true, in: library)
+        switch checked[0].state {
+        case .usable(let candidate):
+            return .huggingFace(HuggingFaceDetection(account: account, candidate: candidate))
+        case .alreadyAdded(let existing):
+            return .duplicate(existing)
+        case .failed(let reason):
+            return .failed(failure(reason, address: address, addedScheme: false))
+        case .notChecked:
+            return .failed(failure(.timedOut, address: address, addedScheme: false))
+        }
+    }
+
+    /// Requests one overview, without validators, and reads only the
+    /// account's name from it.
+    private func overview(_ address: String, member: String, of account: HuggingFaceAccount) async throws -> Overview {
+        guard let url = URL(string: address), url.isCollectableAddress else { return .failed(.unsupportedAddress) }
+        let response: TransportResponse
+        do {
+            response = try await transport.fetch(TransportRequest(url: url))
+        } catch let failure as TransportFailure {
+            try Task.checkCancellation()
+            return .failed(FeedFetcher.reason(for: failure))
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            try Task.checkCancellation()
+            return .failed(.unreachable)
+        }
+        try Task.checkCancellation()
+        switch response.status {
+        case 200:
+            return account.spelling(inOverview: response.body, member: member).map(Overview.found) ?? .failed(.notAFeed)
+        case 404, 410:
+            return .gone
+        default:
+            return .failed(.httpStatus(response.status))
+        }
     }
 
     private func failure(_ reason: CollectionFailure, address: String, addedScheme: Bool) -> DetectionFailure {
@@ -324,7 +426,7 @@ public struct SourceDetector: Sendable {
     private static func fetchCandidate(
         _ address: String, declaredOn page: String, kind: SourceKind, with fetcher: FeedFetcher, in library: Library
     ) async throws -> DeclaredCandidate.State {
-        let result = try await fetcher.fetch(address)
+        let result = try await fetcher.fetch(address, kind: kind)
         try Task.checkCancellation()
         switch result {
         case .feed(let fetched):

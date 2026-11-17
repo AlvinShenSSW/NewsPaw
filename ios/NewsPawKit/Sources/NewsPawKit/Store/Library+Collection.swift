@@ -4,6 +4,8 @@ import GRDB
 /// What a collection needs to know about its source before fetching.
 struct CollectionTarget: Sendable, Hashable {
     var sourceID: UUID
+    /// What the fetch requests and how its answer is read (RD26 decision 6).
+    var kind: SourceKind
     var url: String
     var etag: String?
     var lastModified: String?
@@ -14,17 +16,17 @@ struct CollectionTarget: Sendable, Hashable {
 /// `last_modified`, `last_success_at`, `last_error` — and nothing the owner
 /// can edit.
 extension Library {
-    /// The source `id` when it is collected as a feed (`feed`, `github`), or
-    /// `nil` when there is none or it is another kind. Columns are read one
+    /// The source `id` when it is collected as a feed (`feed`, `github`,
+    /// `huggingface`), or `nil` when there is none or it is another kind. Columns are read one
     /// by one so that a kind this build does not know is "not a feed", not a
     /// decoding error.
     func collectionTarget(_ id: UUID) async throws -> CollectionTarget? {
         try await read { db in
             guard let row = try Row.fetchOne(
                 db, sql: "SELECT kind, url, etag, last_modified FROM source WHERE id = ?", arguments: [id.databaseKey]
-            ), Self.isCollectedAsFeed(row["kind"])
+            ), Self.isCollectedAsFeed(row["kind"]), let kind = SourceKind(rawValue: row["kind"])
             else { return nil }
-            return CollectionTarget(sourceID: id, url: row["url"], etag: row["etag"], lastModified: row["last_modified"])
+            return CollectionTarget(sourceID: id, kind: kind, url: row["url"], etag: row["etag"], lastModified: row["last_modified"])
         }
     }
 
@@ -42,7 +44,7 @@ extension Library {
         return try await write { db in
             guard let row = try Row.fetchOne(
                 db, sql: "SELECT category_id, kind, url FROM source WHERE id = ?", arguments: [sourceKey]
-            ), Self.isCollectedAsFeed(row["kind"]), let kind = SourceKind(rawValue: row["kind"]),
+            ), Self.isCollectedAsFeed(row["kind"]), let kind = SourceKind(rawValue: row["kind"]), kind == target.kind,
                 (row["url"] as String?) == target.url
             else { return .nothingDone }
             let categoryKey: String = row["category_id"]

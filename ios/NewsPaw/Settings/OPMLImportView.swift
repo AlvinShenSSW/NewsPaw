@@ -372,7 +372,7 @@ private struct OPMLNewCategoryView: View {
                     .focused($isNameFocused)
                     .frame(minHeight: Theme.minimumTapTarget)
                     .submitLabel(.done)
-                    .onSubmit { model.useNewCategoryName() }
+                    .onSubmit { useName() }
                     .accessibilityIdentifier(AccessibilityID.opmlNewCategoryField)
                 if Library.categoryNameProblem(model.newCategoryName) == .tooLong {
                     Label {
@@ -399,14 +399,26 @@ private struct OPMLNewCategoryView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Done") {
-                    isNameFocused = false
-                    model.useNewCategoryName()
+                    useName()
                 }
                 .disabled(Library.categoryNameProblem(model.newCategoryName) != nil)
                 .accessibilityIdentifier(AccessibilityID.opmlUseNameButton)
             }
         }
-        .onAppear { isNameFocused = true }
+    }
+
+    /// Done or Return: the keyboard is dismissed first and the screen is
+    /// popped on the next turn of the main actor, not in the same change.
+    /// The field is not focused on appearing either. On the iPad mini's
+    /// form sheet, with both in one change and the focus set on appearing,
+    /// Done hid the keyboard for a moment, the keyboard came back and the
+    /// screen stayed (recorded in a UI-test run, RD08).
+    private func useName() {
+        guard Library.categoryNameProblem(model.newCategoryName) == nil else { return }
+        isNameFocused = false
+        Task { @MainActor in
+            model.useNewCategoryName()
+        }
     }
 }
 

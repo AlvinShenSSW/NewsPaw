@@ -91,9 +91,9 @@ enum PageTranslationWording {
 }
 
 /// The slim status line of page translation under the browser's top bar
-/// (ux S5; RD16 decision 10): the sentence, then its actions at the
-/// trailing end; at the accessibility sizes the actions go under the
-/// sentence and everything wraps. One element for accessibility, holding
+/// (ux S5; RD16 decision 10): the sentence, then its action at the
+/// trailing end; with two actions, or at the accessibility sizes, the
+/// actions go under the sentence and everything wraps. One element for accessibility, holding
 /// its actions as buttons of at least 44 points.
 struct PageTranslationLineView: View {
     let line: PageTranslationLine
@@ -104,8 +104,9 @@ struct PageTranslationLineView: View {
 
     var body: some View {
         let steps = PageTranslationWording.steps(line, opensSettings: opensSettings)
-        let layout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Spacing.tight))
+        let stacked = dynamicTypeSize.isAccessibilitySize || steps.count > 1
+        let layout = stacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
             : AnyLayout(HStackLayout(alignment: .center, spacing: Theme.Spacing.medium))
         layout {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.small) {
@@ -125,7 +126,10 @@ struct PageTranslationLineView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if !steps.isEmpty {
-                HStack(spacing: Theme.Spacing.medium) {
+                let actions = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
+                    : AnyLayout(HStackLayout(spacing: Theme.Spacing.large))
+                actions {
                     ForEach(steps, id: \.self) { step in
                         Button {
                             take(step)
@@ -142,7 +146,7 @@ struct PageTranslationLineView: View {
                         .accessibilityIdentifier(PageTranslationWording.identifier(step))
                     }
                 }
-                .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: false)
+                .fixedSize(horizontal: !stacked, vertical: false)
             }
         }
         .padding(.horizontal, Theme.Spacing.standard)

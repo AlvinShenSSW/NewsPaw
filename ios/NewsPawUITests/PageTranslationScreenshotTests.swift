@@ -83,6 +83,7 @@ final class PageTranslationScreenshotTests: PageTranslationTestCase {
         backButton.tap()
         waitForPage(Pages.listTitle)
         openFixture("never-loads", title: "読み込みが終わらないページ")
+        tapTranslate()
         _ = waitFor(self.line)
         capture("translating")
     }

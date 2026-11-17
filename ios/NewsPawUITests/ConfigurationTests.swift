@@ -53,9 +53,19 @@ final class ConfigurationTests: AdultTestCase {
         }
     }
 
+    /// Waits for the alert with `text` and answers it with `answer`. An
+    /// alert's button can be listed twice (iOS 27): the first is tapped.
+    func answer(_ text: String, with answer: String, file: StaticString = #filePath, line: UInt = #line) {
+        let alert = app.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: timeout), "no alert; expected \(text)", file: file, line: line)
+        XCTAssertTrue(alert.staticTexts[text].exists, "the alert says \(alert.staticTexts.allElementsBoundByIndex.map(\.label))", file: file, line: line)
+        alert.buttons.matching(NSPredicate(format: "label == %@", answer)).firstMatch.tap()
+        waitForAbsence(alert.staticTexts[text], file: file, line: line)
+    }
+
     /// The question's alert, answered with `answer`.
     func answerQuestion(_ answer: String, file: StaticString = #filePath, line: UInt = #line) {
-        answerAlert(Wording.question, with: answer, file: file, line: line)
+        self.answer(Wording.question, with: answer, file: file, line: line)
     }
 
     func tapWhenEnabled(_ identifier: String, file: StaticString = #filePath, line: UInt = #line) {
@@ -72,7 +82,7 @@ final class ConfigurationTests: AdultTestCase {
         XCTAssertEqual(element(AccessibilityID.configurationOnlyNormal).exists, expectingOnlyNormal, file: file, line: line)
         screenshot("review")
         button(AccessibilityID.configurationReplaceButton).tap()
-        answerAlert(Wording.replaceNow, with: "Replace", file: file, line: line)
+        answer(Wording.replaceNow, with: "Replace", file: file, line: line)
     }
 
     /// Done on the summary.
@@ -301,7 +311,7 @@ final class ConfigurationTests: AdultTestCase {
         answerQuestion("Normal Partition Only")
         tapWhenEnabled(AccessibilityID.configurationReplaceEverythingButton)
         button(AccessibilityID.configurationReplaceButton).tap()
-        answerAlert(Wording.replaceNow, with: "Cancel")
+        answer(Wording.replaceNow, with: "Cancel")
         goBack()
         button(AccessibilityID.configurationCancelButton).tap()
         waitForAbsence(element(AccessibilityID.configurationCounts("normal")))

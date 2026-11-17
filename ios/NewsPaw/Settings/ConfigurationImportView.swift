@@ -64,11 +64,9 @@ private struct ConfigurationImportPresenter: ViewModifier {
                 } label: {
                     model.gateIsOff ? Text("Turn On and Unlock") : Text("Unlock")
                 }
-                .accessibilityIdentifier(AccessibilityID.configurationUnlockButton)
                 Button("Normal Partition Only") {
                     model.normalOnlyChosen()
                 }
-                .accessibilityIdentifier(AccessibilityID.configurationNormalOnlyButton)
                 Button("Cancel", role: .cancel) {
                     model.endImport()
                 }
@@ -505,7 +503,6 @@ private struct ConfigurationReviewView: View {
             Button("Replace", role: .destructive) {
                 model.replaceConfirmed()
             }
-            .accessibilityIdentifier(AccessibilityID.configurationConfirmReplaceButton)
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This cannot be undone.")

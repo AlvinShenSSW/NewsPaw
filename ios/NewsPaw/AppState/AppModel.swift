@@ -312,10 +312,12 @@ final class AppModel {
             let adultBrowserData: any AdultBrowserData = WebKitAdultBrowserData(identifier: BrowserDataStores.adultIdentifier)
             #endif
             self.adultBrowserData = adultBrowserData
+            let normalBox = WeakWorkspace()
             let workspace = Workspace(
                 library: library, models: models, parts: parts, browser: browser,
-                configuration: configurationContext(adult: nil, workspace: WeakWorkspace())
+                configuration: configurationContext(adult: nil, workspace: normalBox)
             )
+            normalBox.value = workspace
             workspace.categories.moveRunsInApp = { [weak self] in self?.moveIsHeldBack ?? false }
             #if DEBUG
             if options.libraryDirectory != nil {
@@ -812,9 +814,10 @@ final class AppModel {
                 self.isImportingConfiguration = true
                 return true
             },
-            completion: { [weak self, weak workspace] result in
+            // The box is held; it holds the workspace weakly.
+            completion: { [weak self] result in
                 guard let self else { return false }
-                return await self.configurationImported(result, by: workspace?.value)
+                return await self.configurationImported(result, by: workspace.value)
             },
             summaryLeft: { [weak self] result in
                 self?.configurationSummaryLeft(result)

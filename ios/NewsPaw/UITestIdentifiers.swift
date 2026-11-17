@@ -343,8 +343,6 @@ enum AccessibilityID {
     static let importConfigurationButton = "data.importConfiguration"
     static let includeAdultToggle = "data.includeAdult"
     static let addSourceImportConfigurationButton = "add.importConfiguration"
-    static let configurationUnlockButton = "configuration.unlock"
-    static let configurationNormalOnlyButton = "configuration.normalOnly"
     static let configurationHeader = "configuration.header"
     static let configurationAdultSkipped = "configuration.adultSkipped"
     static let configurationSettingsRow = "configuration.settings"
@@ -355,7 +353,6 @@ enum AccessibilityID {
     static let configurationFailure = "configuration.failure"
     static let configurationOnlyNormal = "configuration.onlyNormal"
     static let configurationReplaceButton = "configuration.replace"
-    static let configurationConfirmReplaceButton = "configuration.confirmReplace"
     static let configurationPartial = "configuration.partial"
     static let configurationDoneButton = "configuration.done"
 

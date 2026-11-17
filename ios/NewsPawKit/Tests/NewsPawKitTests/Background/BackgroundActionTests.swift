@@ -20,10 +20,7 @@ struct BackgroundActionTests {
 
     // MARK: - G1: the shared preparation
 
-    // A wait that ignores the cancellation never returns: the time limit
-    // ends it.
-    @Test("G1: a held preparation; the action's task is cancelled; the action returns while it is still held; a later start gets the finished preparation without running it again",
-          .timeLimit(.minutes(1)))
+    @Test("G1: a held preparation; the action's task is cancelled; the action returns while it is still held; a later start gets the finished preparation without running it again")
     func cancelledWaitLeavesThePreparation() async throws {
         let preparation = SharedPreparation()
         let held = Signal()
@@ -35,9 +32,24 @@ struct BackgroundActionTests {
             await held.wait()
             return nil
         }
-        let action = Task { @MainActor in await preparation.wait(stopsOnCancellation: true, starting: work) }
+        let returned = Flag()
+        let action = Task { @MainActor () -> SharedPreparation.Outcome in
+            defer { returned.set() }
+            return await preparation.wait(stopsOnCancellation: true, starting: work)
+        }
         await started.wait()
         action.cancel()
+        // Waited for with a bound: a wait that ignores the cancellation
+        // would never return while the preparation is held.
+        let deadline = ContinuousClock.now + .seconds(60)
+        while !returned.isSet, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        guard returned.isSet else {
+            Issue.record("the cancelled action did not return while the preparation was held")
+            held.fire()
+            return
+        }
         let outcome = await action.value
         guard case .abandoned = outcome else {
             Issue.record("the action waited for the preparation: \(outcome)")

@@ -734,6 +734,15 @@ final class AppModel {
     /// made, how many article pages the fixture transport was asked for
     /// (RD12), and how many requests the translator fixture has answered
     /// (RD14).
+    /// Whether a browser session of either workspace has page
+    /// translation on (RD16): the bottom bar's button does not pass its
+    /// accessibility value to the UI tests.
+    private var pageTranslationIsOn: Bool {
+        [normal?.browser, adult?.browser].compactMap(\.self)
+            .flatMap { [$0.session(.library), $0.session(.starred)].compactMap(\.self) }
+            .contains { $0.translation.isOn }
+    }
+
     func adultDebugReport() async -> String {
         guard let gate else { return "" }
         let file = gate.adultLibraryFileExists ? 1 : 0
@@ -747,6 +756,7 @@ final class AppModel {
             + "pages=\((parts?.transport as? FixtureTransport)?.pageRequests ?? -1) "
             + "translationRequests=\(FixtureModelHTTP.translationRequests) "
             + "neverSent=\(FixtureModelHTTP.neverSent) "
+            + "translateOn=\(pageTranslationIsOn ? 1 : 0) "
             + "bodyRequests=\((try? await normal?.reading.library.usageCount(purpose: .body)) ?? -1) "
             + "readerBlock=\(normal?.reading.lastReportedPosition.map(String.init) ?? "none")"
     }

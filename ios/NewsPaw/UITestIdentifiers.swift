@@ -398,14 +398,16 @@ enum DebugAccessibilityID {
     /// 4): its label is `file=<0|1> pool=<open|closed>
     /// library=<held|released> workspace=<none|held|released>
     /// browser=<none|held|released> sessions=<number> pages=<number>
-    /// translationRequests=<number> neverSent=<number> bodyRequests=<number>
+    /// translationRequests=<number> neverSent=<number> translateOn=<0|1>
+    /// bodyRequests=<number>
     /// readerBlock=<number|none>`. `pool` is whether connections are open
     /// on the file; the other three are whether the objects are gone from
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
     /// requests the translator fixture has answered in this process (RD14
     /// criterion 13); `neverSent` how many texts holding the sentinel
-    /// `fixture:never` it received (RD16 criterion 5); `bodyRequests` is
+    /// `fixture:never` it received (RD16 criterion 5); `translateOn` whether
+    /// a browser session has page translation on; `bodyRequests` is
     /// how many usage rows of body
     /// requests the normal library holds (RD15 decision 16);
     /// `readerBlock` the block the reading screen last reported at its top

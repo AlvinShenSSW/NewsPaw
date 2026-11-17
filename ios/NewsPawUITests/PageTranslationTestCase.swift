@@ -114,11 +114,15 @@ class PageTranslationTestCase: BrowserTestCase {
         button(identifier)
     }
 
-    /// Whether Translate shows as on.
+    /// Whether translation is on, as the debug report says: a bottom-bar
+    /// button's accessibility value does not reach the UI tests.
     func waitForTranslate(on: Bool, file: StaticString = #filePath, line: UInt = #line) {
-        let state = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", on ? "On" : "Off"), object: translateButton)
+        _ = waitFor(translateButton, file: file, line: line)
+        let state = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            self.count("translateOn") == (on ? 1 : 0)
+        }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [state], timeout: timeout), .completed,
-                       "Translate's value is \(String(describing: translateButton.value))", file: file, line: line)
+                       "translation should be \(on ? "on" : "off"): \(report)", file: file, line: line)
     }
 
     // MARK: - The report

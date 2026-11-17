@@ -37,7 +37,7 @@ final class PageTranslationPartitionTests: AdultTestCase {
         let line = waitFor(element(AccessibilityID.pageTranslationLine))
         XCTAssertEqual(line.label, "Set up a model to translate")
         XCTAssertFalse(button(AccessibilityID.pageTranslationOpenSettings).exists, "no link in the adult partition")
-        XCTAssertEqual(translate.value as? String, "Off")
+        XCTAssertTrue(report.contains("translateOn=0"), report)
         // Criterion 18's line without a link, when screenshots are asked for.
         let environment = ProcessInfo.processInfo.environment
         if let directory = environment["NEWSPAW_SCREENSHOT_DIR"] {
@@ -55,7 +55,7 @@ final class PageTranslationPartitionTests: AdultTestCase {
         // translate here.
         chooseInMore("Always Translate This Source")
         Thread.sleep(forTimeInterval: 2)
-        XCTAssertEqual(translate.value as? String, "Off")
+        XCTAssertTrue(report.contains("translateOn=0"), report)
         XCTAssertEqual(translationRequests, before, report)
     }
 }

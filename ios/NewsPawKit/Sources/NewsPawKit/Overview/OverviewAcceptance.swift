@@ -66,30 +66,22 @@ enum OverviewAcceptance {
     }
 
     /// A one-text reply: the part before the first `[n]` line is the
-    /// summary; the text is split at each such line, and each part is one
-    /// candidate highlight. With no such line the whole text is the
-    /// summary.
+    /// summary, and each `[n]` line is one candidate highlight; the other
+    /// lines after the first `[n]` line are left out (review round 1, R3:
+    /// a closing note is not part of a highlight). With no such line the
+    /// whole text is the summary.
     private static func split(_ text: String) -> (String, [(number: Int?, sentence: String)]) {
         var summaryLines: [Substring] = []
         var candidates: [(number: Int?, sentence: String)] = []
-        var current: (number: Int?, lines: [Substring])?
         for line in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
             // Where a one-text reply is split: a line that starts with `[n]`,
             // the form the prompt asks for, so that a numbered list inside a
             // summary is never read as highlights.
             if let match = line.wholeMatch(of: /\s*\[(\d{1,3})\](.*)/) {
-                if let current {
-                    candidates.append((current.number, current.lines.joined(separator: "\n")))
-                }
-                current = (Int(match.output.1), [match.output.2])
-            } else if current != nil {
-                current?.lines.append(line)
-            } else {
+                candidates.append((Int(match.output.1), String(match.output.2)))
+            } else if candidates.isEmpty {
                 summaryLines.append(line)
             }
-        }
-        if let current {
-            candidates.append((current.number, current.lines.joined(separator: "\n")))
         }
         return (summaryLines.joined(separator: "\n"), candidates)
     }

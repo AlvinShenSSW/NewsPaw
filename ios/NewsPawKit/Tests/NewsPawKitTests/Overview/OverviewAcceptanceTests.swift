@@ -86,7 +86,7 @@ struct OverviewAcceptanceTests {
         let kept = accepted(["The day's news.\nSecond line of it.\n[1] One matters.\n[3] Three matters,\ncontinued.\n[9] Out of range."], count: 3)
         #expect(kept?.summary == "The day's news. Second line of it.")
         #expect(numbers(kept) == [1, 3])
-        #expect(kept?.highlights.last?.text == "Three matters, continued.")
+        #expect(kept?.highlights.last?.text == "Three matters,", "a highlight is its own [n] line (review round 1, R3)")
     }
 
     @Test("criterion 5: a one-text reply whose part before the first [n] line is empty fails empty")

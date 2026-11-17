@@ -87,7 +87,7 @@ public actor OverviewWriter {
 
     private struct ManualJob {
         let category: UUID
-        let reply: CheckedContinuation<OverviewWriteOutcome, Never>
+        let reply: @Sendable (OverviewWriteOutcome) -> Void
     }
 
     private var manualQueue: [ManualJob] = []
@@ -107,6 +107,14 @@ public actor OverviewWriter {
     private var hold: Hold?
     private var holdGeneration = 0
     private var lastWorking: Set<UUID> = []
+    /// The app is in the background (review round 1, R1): no due check
+    /// runs and no job is taken; the job in flight was cancelled.
+    private var isInBackground = false
+    /// Counts the workers started, so that a worker cancelled by the
+    /// background does not clear the one started after it.
+    private var workerToken = 0
+    /// Workers cancelled by the background and not yet ended.
+    private var retiredWorkers: [Task<Void, Never>] = []
 
     /// - Parameters:
     ///   - models: the library's models; the library worked on is theirs.
@@ -139,7 +147,8 @@ public actor OverviewWriter {
     /// the slots and ends the hold if they differ from those held;
     /// otherwise it queues nothing and reports the due categories blocked.
     public func runDue() async {
-        guard !isStopped, let locale else { return }
+        // The one place a due check starts: never in the background (R1).
+        guard !isStopped, !isInBackground, let locale else { return }
         if let held = hold {
             if let current = try? await library.slotIdentities(), hold?.generation == held.generation, current != held.slots {
                 hold = nil
@@ -147,9 +156,15 @@ public actor OverviewWriter {
         }
         let now = now()
         let day = OverviewDay.key(for: now, calendar: calendar)
-        guard let due = try? await library.overviewDueCategories(day: day, dayStart: OverviewDay.start(of: now, calendar: calendar)),
-              !isStopped, locale == self.locale
-        else { return }
+        await suspend(.dueRead)
+        let due: [UUID]
+        do {
+            due = try await library.overviewDueCategories(day: day, dayStart: OverviewDay.start(of: now, calendar: calendar))
+        } catch {
+            await dueReadFailed(day: day, locale: locale)
+            return
+        }
+        guard !isStopped, !isInBackground, locale == self.locale else { return }
         let queued = queuedOrInFlight
         let fresh = due.filter { !queued.contains($0) }
         if let hold {
@@ -162,6 +177,22 @@ public actor OverviewWriter {
         automaticQueue += fresh
         reportWorking()
         startWorker()
+    }
+
+    /// Decision 6's storage row for a due read that failed (review round
+    /// 1, R7): nothing is sent, and the categories the run would have
+    /// tried — those set to Automatic, as far as they can be read — are
+    /// blocked for storage.
+    private func dueReadFailed(day: String, locale: ReadingLocale) async {
+        let generation = slotsGeneration
+        guard let categories = try? await library.categories(), !isStopped, !isInBackground, locale == self.locale else { return }
+        let automatic = categories.filter { $0.overview == .auto }.map(\.id)
+        guard !automatic.isEmpty, generation == slotsGeneration else { return }
+        let block = OverviewBlock(reason: .storage, day: day, locale: locale)
+        for id in automatic {
+            blocks[id] = block
+        }
+        report(.blocked(blocks))
     }
 
     /// A slot was saved or removed, or its key removed: the hold ends, the
@@ -179,12 +210,49 @@ public actor OverviewWriter {
     /// A manual job: served before queued automatic ones, neither counted
     /// nor limited.
     public func write(category: UUID) async -> OverviewWriteOutcome {
-        guard !isStopped, locale != nil else { return .cancelled }
-        return await withCheckedContinuation { continuation in
-            manualQueue.append(ManualJob(category: category, reply: continuation))
-            reportWorking()
-            startWorker()
+        await withCheckedContinuation { continuation in
+            enqueueWrite(category: category) { continuation.resume(returning: $0) }
         }
+    }
+
+    /// Queues a manual job and returns at once; `reply` is called with how
+    /// it ended. A writer that is stopped, or has no locale yet, answers
+    /// `cancelled` at once.
+    public func enqueueWrite(category: UUID, reply: @escaping @Sendable (OverviewWriteOutcome) -> Void) {
+        guard !isStopped, !isInBackground, locale != nil else {
+            reply(.cancelled)
+            return
+        }
+        manualQueue.append(ManualJob(category: category, reply: reply))
+        reportWorking()
+        startWorker()
+    }
+
+    /// The app entered the background (design: foreground only; review
+    /// round 1, R1): the job in flight is cancelled by the ordinary
+    /// cancellation — nothing is stored, its usage row says cancelled, a
+    /// manual job answers `cancelled` —, queued manual jobs answer
+    /// `cancelled`, and the automatic queue is dropped (due again at the
+    /// next run). The writer is not stopped.
+    public func enteredBackground() {
+        isInBackground = true
+        if let worker {
+            worker.cancel()
+            retiredWorkers.append(worker)
+        }
+        worker = nil
+        for job in manualQueue {
+            job.reply(.cancelled)
+        }
+        manualQueue = []
+        automaticQueue = []
+        reportWorking()
+    }
+
+    /// The app came to the front again: jobs may be taken and due checks
+    /// run again. Starts nothing.
+    public func cameToFront() {
+        isInBackground = false
     }
 
     /// The workspace is dropped: the job in flight is cancelled and stores
@@ -194,7 +262,7 @@ public actor OverviewWriter {
         worker?.cancel()
         worker = nil
         for job in manualQueue {
-            job.reply.resume(returning: .cancelled)
+            job.reply(.cancelled)
         }
         manualQueue = []
         automaticQueue = []
@@ -211,12 +279,15 @@ public actor OverviewWriter {
     }
 
     private func startWorker() {
-        guard worker == nil, !isStopped, locale != nil, !manualQueue.isEmpty || !automaticQueue.isEmpty else { return }
-        worker = Task { await self.work() }
+        // The one place a job is taken: never in the background (R1).
+        guard worker == nil, !isStopped, !isInBackground, locale != nil, !manualQueue.isEmpty || !automaticQueue.isEmpty else { return }
+        workerToken += 1
+        let token = workerToken
+        worker = Task { await self.work(token) }
     }
 
-    private func work() async {
-        while !Task.isCancelled, !isStopped {
+    private func work(_ token: Int) async {
+        while !Task.isCancelled, !isStopped, !isInBackground {
             if !manualQueue.isEmpty {
                 let job = manualQueue.removeFirst()
                 inFlight = job.category
@@ -224,7 +295,7 @@ public actor OverviewWriter {
                 let outcome = await run(job.category, automatic: false)
                 inFlight = nil
                 reportWorking()
-                job.reply.resume(returning: outcome)
+                job.reply(outcome)
             } else if !automaticQueue.isEmpty {
                 let category = automaticQueue.removeFirst()
                 inFlight = category
@@ -236,6 +307,8 @@ public actor OverviewWriter {
                 break
             }
         }
+        // A worker the background cancelled is not the current one.
+        guard token == workerToken else { return }
         worker = nil
         // Something queued while the last job ended.
         startWorker()
@@ -280,6 +353,12 @@ public actor OverviewWriter {
     private func run(_ category: UUID, automatic: Bool) async -> OverviewWriteOutcome {
         guard let locale else { return .cancelled }
         let configuration = configGeneration
+        // Automatic jobs hold after a set-up failure, a manual job's too
+        // (review round 1, R2).
+        if automatic, let hold {
+            let day = OverviewDay.key(for: now(), calendar: calendar)
+            return block(category, hold.reason, day: day, locale: locale, automatic: true, generation: slotsGeneration)
+        }
         unblock(category)
         // (a)
         await suspend(.jobRead)
@@ -443,7 +522,8 @@ public actor OverviewWriter {
 
     private func store(_ job: Job, _ record: OverviewRecord) async -> OverviewWriteOutcome {
         await suspend(.store)
-        guard !isStopped else { return .cancelled }
+        // Stopped, or cancelled by the background: nothing is stored.
+        guard !isStopped, !Task.isCancelled else { return .cancelled }
         // In a task of its own: a write refuses to start in a cancelled
         // task, and this result is worth keeping.
         let library = library
@@ -477,6 +557,17 @@ public actor OverviewWriter {
         if job.generation == slotsGeneration, !isStopped {
             holdGeneration += 1
             hold = Hold(reason: .setUp(failure), slots: job.slots, generation: holdGeneration)
+            // A manual job's failure holds the automatic jobs queued behind
+            // it as an automatic one's does (review round 1, R2).
+            if !automaticQueue.isEmpty {
+                let block = OverviewBlock(reason: .setUp(failure), day: job.day, locale: job.locale)
+                for remaining in automaticQueue {
+                    blocks[remaining] = block
+                }
+                automaticQueue = []
+                reportWorking()
+                report(.blocked(blocks))
+            }
         }
         return outcome
     }
@@ -539,6 +630,8 @@ public actor OverviewWriter {
     /// window they test (decision 11's held awaits). Nothing holds it in
     /// the app.
     enum SuspensionPoint: Sendable, Hashable {
+        /// `runDue` is about to read the due categories.
+        case dueRead
         /// A job is about to read (a).
         case jobRead
         /// A request is about to be sent to the slot of this role (d).
@@ -567,6 +660,9 @@ public actor OverviewWriter {
     func settled() async {
         while let worker {
             await worker.value
+        }
+        while !retiredWorkers.isEmpty {
+            await retiredWorkers.removeFirst().value
         }
         await reports?.value
     }

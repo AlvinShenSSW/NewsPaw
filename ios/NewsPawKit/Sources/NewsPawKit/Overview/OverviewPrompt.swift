@@ -115,11 +115,34 @@ enum OverviewPrompt {
             collapsed.append(scalar)
         }
         var result = String(collapsed).trimmingCharacters(in: .whitespacesAndNewlines)
-        while let match = result.prefixMatch(of: /\s*(?:\[\d+\]|\(\d+\))\s*/), !match.output.isEmpty {
-            result = String(result[match.range.upperBound...])
-        }
+        result = withoutLeadingNumbers(result)
         result = cut(result.trimmingCharacters(in: .whitespacesAndNewlines)).trimmingCharacters(in: .whitespacesAndNewlines)
         return result.isEmpty ? nil : result
+    }
+
+    /// `text` without every leading `[digits]` or `(digits)` and the white
+    /// space around them, in one pass (review round 1, R4: a regular
+    /// expression per prefix took about 36 µs each).
+    private static func withoutLeadingNumbers(_ text: String) -> String {
+        let scalars = text.unicodeScalars
+        var kept = scalars.startIndex
+        while true {
+            var index = kept
+            while index < scalars.endIndex, scalars[index].properties.isWhitespace {
+                index = scalars.index(after: index)
+            }
+            guard index < scalars.endIndex, scalars[index] == "[" || scalars[index] == "(" else { break }
+            let closer: Unicode.Scalar = scalars[index] == "[" ? "]" : ")"
+            index = scalars.index(after: index)
+            var digits = 0
+            while index < scalars.endIndex, scalars[index].properties.numericType == .decimal {
+                digits += 1
+                index = scalars.index(after: index)
+            }
+            guard digits > 0, index < scalars.endIndex, scalars[index] == closer else { break }
+            kept = scalars.index(after: index)
+        }
+        return String(scalars[kept...])
     }
 
     /// At most `textCut` characters and `scalarCut` scalars, never splitting

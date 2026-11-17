@@ -367,6 +367,7 @@ enum AccessibilityID {
     static let firstRunText = "firstRun.text"
     static let firstRunPrimaryModel = "firstRun.primaryModel"
     static let firstRunAddSource = "firstRun.addSource"
+    static let firstRunImportOPML = "firstRun.importOPML"
     static let firstRunCategoryPrefix = "firstRun.category."
 
     /// A suggested category's row in the first run, by its group's raw value.

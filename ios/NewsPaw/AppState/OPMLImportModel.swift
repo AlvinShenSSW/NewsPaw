@@ -9,6 +9,8 @@ enum OPMLImportOrigin: Hashable {
     case addSource
     /// Settings › Data.
     case settings
+    /// Step 3 of the first run (RD21 criterion 5).
+    case firstRun
 }
 
 /// A screen pushed inside the import preview.

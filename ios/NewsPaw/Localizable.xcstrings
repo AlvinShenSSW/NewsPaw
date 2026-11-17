@@ -1625,6 +1625,17 @@
         }
       }
     },
+    "Import OPML…" : {
+      "comment" : "First run, step 3: imports subscriptions from an OPML file (RD08's import).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入 OPML…"
+          }
+        }
+      }
+    },
     "Import subscriptions from another reader: its folders become categories. Export writes this library's feeds; web pages are not included." : {
       "comment" : "Settings › Data, footer of the OPML section.",
       "localizations" : {

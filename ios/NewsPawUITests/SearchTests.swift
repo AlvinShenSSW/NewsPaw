@@ -361,14 +361,17 @@ extension TypedKeyTests {
         XCTAssertEqual(transportRequests, requestsBefore, "a refresh started")
 
         // A drag on the results ends the field's focus; J then opens the
-        // first result in the reading pane.
-        let pane = element(AccessibilityID.listPane).frame
-        let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: pane.midX, dy: pane.midY))
+        // first result in the reading pane. The drag starts on the result:
+        // below a list this short a drag scrolls nothing and ends nothing
+        // (measured; review round 1).
+        let result = articleRow(SearchFixture.kestrel).frame
+        let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: result.midX, dy: result.midY))
         start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 120)), withVelocity: 800, thenHoldForDuration: 0.2)
         let unfocused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasKeyboardFocus == false"), object: searchField)
         XCTAssertEqual(XCTWaiter.wait(for: [unfocused], timeout: timeout), .completed, "the drag left the focus in the field")
         XCTAssertEqual((searchField.value as? String)?.lowercased(), "kestrel", "the drag changed the field")
         waitForRows([SearchFixture.kestrel])
+        XCTAssertTrue(element(AccessibilityID.noArticleSelected).exists, "the drag opened the article")
         app.typeKey("j", modifierFlags: [])
         waitForReadingTitle(SearchFixture.kestrel)
         XCTAssertTrue(element(AccessibilityID.readingPane).exists)

@@ -295,6 +295,11 @@ extension TypedKeyTests {
         let requestsBefore = transportRequests
         XCTAssertGreaterThan(requestsBefore, 0)
 
+        // With a hardware keyboard attached by an earlier test, the first
+        // key event after a launch is dropped (measured: a first ⌘F did
+        // nothing, a second opened Search). Escape, which does nothing on
+        // All Unread, takes that place.
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         // ⌘F from All Unread: Search in the list pane, its field focused.
         app.typeKey("f", modifierFlags: .command)
         waitFor(element(AccessibilityID.searchList))

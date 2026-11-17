@@ -344,9 +344,10 @@ final class AdultIsolationTests: IsolationTestCase {
 
     /// Delete asked for from the normal partition's Settings and held (the
     /// clear's debug option) before the gate removes the data: Settings ›
-    /// Adult Partition opened again meanwhile has Turn Off and Clear
-    /// Browsing Data dimmed, so no second Turn Off or Delete can be asked
-    /// for, until the first has ended and the partition is off.
+    /// Adult Partition stays open (no adult workspace was shown, so the
+    /// lock drops none) with Turn Off and Clear Browsing Data dimmed, so no
+    /// second Turn Off or Delete can be asked for, until the first has
+    /// ended and the partition is off.
     func testTurnOffIsRefusedWhileDeleteRuns() {
         app.terminate()
         let application = XCUIApplication()
@@ -358,9 +359,7 @@ final class AdultIsolationTests: IsolationTestCase {
         scrollTo(turnOffButton).tap()
         answerAlert(Wording.turnOffQuestion, with: "Delete Data")
         answerAlert(Wording.deleteQuestion, with: "Delete")
-        waitFor(adultRow)
-        // Held before the gate deletes: Settings › Adult Partition again.
-        openAdultSettings()
+        // Held before the gate deletes.
         XCTAssertFalse(scrollTo(turnOffButton).isEnabled, "Turn Off could be asked for while Delete ran")
         XCTAssertFalse(scrollTo(clearBrowsingButton).isEnabled, "Clear could be asked for while Delete ran")
 

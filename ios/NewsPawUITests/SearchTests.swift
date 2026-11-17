@@ -65,6 +65,16 @@ extension NewsPawUITestCase {
                        "the reading screen shows \(readingTitle.exists ? readingTitle.label : "nothing")", file: file, line: line)
     }
 
+    /// Hides the software keyboard, if it is shown, by a drag on the
+    /// results (`scrollDismissesKeyboard`): on iPhone it covers the tab bar.
+    func hideKeyboardByDragging() {
+        guard app.keyboards.firstMatch.exists else { return }
+        let list = element(AccessibilityID.searchList).frame
+        let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: list.midX, dy: list.minY + 200))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 150)), withVelocity: 800, thenHoldForDuration: 0.2)
+        waitForAbsence(app.keyboards.firstMatch)
+    }
+
     /// Waits until the rows listed are exactly those of `titles`, in order.
     func waitForRows(_ titles: [String], file: StaticString = #filePath, line: UInt = #line) {
         let expected = titles.map { AccessibilityID.articleRow($0) }
@@ -221,6 +231,7 @@ final class SearchPartitionTests: AdultTestCase {
         waitForSearchFocus()
         app.typeText("kestrel")
         waitForRows([SearchFixture.kestrel])
+        hideKeyboardByDragging()
 
         turnOnAdult()
         enterAdult()
@@ -241,6 +252,7 @@ final class SearchPartitionTests: AdultTestCase {
         XCTAssertEqual(transportRequests, before, "a search made a request: \(report)")
 
         // Locked: the normal partition at its root; its Search opens empty.
+        hideKeyboardByDragging()
         tapLock()
         waitForPartition(Wording.normal)
         openSearchWithButton()

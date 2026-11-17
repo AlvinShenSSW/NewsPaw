@@ -27,7 +27,7 @@ final class PageTranslationTests: PageTranslationTestCase {
         XCTAssertFalse(webText(Self.translated(Pages.item(150))).exists, "item 150 waits for the owner to scroll to it")
         XCTAssertTrue(webText(Pages.item(150)).exists)
         // The page's own observer, in a translate="no" element.
-        XCTAssertTrue(webText("childList=0 attributes=0").exists, "the page saw elements change")
+        XCTAssertEqual(mutationReport(), "childList=0 attributes=0", "the page saw elements change")
         // Every image keeps its label.
         XCTAssertTrue(webText("写真 1").exists || app.webViews.images["写真 1"].exists)
         let afterFirst = settledRequests()
@@ -119,6 +119,14 @@ final class PageTranslationTests: PageTranslationTestCase {
         let toggle = waitFor(app.switches[AccessibilityID.translatePageToggle])
         XCTAssertEqual(toggle.value as? String, "1")
         button(AccessibilityID.cancelButton).tap()
+    }
+
+    /// The list page's own report of the mutations it observed.
+    private func mutationReport() -> String {
+        let element = app.webViews.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@ OR value BEGINSWITH %@", "childList=", "childList=")).firstMatch
+        guard element.waitForExistence(timeout: timeout) else { return "absent" }
+        return element.label.isEmpty ? (element.value as? String ?? "") : element.label
     }
 
     /// On the panes the browser of a source stays in its pane; a second

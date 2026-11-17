@@ -14,28 +14,45 @@ public enum PageCallFailure: Error, Sendable, Hashable {
 
 /// What a `collect` found (decision 4). `written` says that the script
 /// has written translations into this document: a page shown again from
-/// the back-forward cache is translated already.
+/// the back-forward cache is translated already. `state` is the token of
+/// the script state that answered: run numbers mean something only within
+/// it, and every `apply` carries it back.
 public enum PageCollection: Sendable, Hashable {
     /// Nothing changed since the last walk.
-    case unchanged(loaded: Bool, written: Bool = false)
+    case unchanged(loaded: Bool, written: Bool = false, state: String = "")
     /// A field has focus: nothing was collected (decision 3).
-    case held(loaded: Bool, written: Bool = false)
-    /// The runs in the viewport, then the rest of the band, each in
-    /// document order.
-    case runs([PageRun], loaded: Bool, written: Bool = false)
+    case held(loaded: Bool, written: Bool = false, state: String = "")
+    /// The runs of the blocks in the viewport, then of the rest of the
+    /// band, each in document order.
+    case runs([PageRun], loaded: Bool, written: Bool = false, state: String = "")
 
     /// Whether the document had loaded (`readyState` is `complete`).
     public var loaded: Bool {
         switch self {
-        case .unchanged(let loaded, _), .held(let loaded, _), .runs(_, let loaded, _): loaded
+        case .unchanged(let loaded, _, _), .held(let loaded, _, _), .runs(_, let loaded, _, _): loaded
         }
     }
 
     /// Whether the script had written translations into the document.
     public var written: Bool {
         switch self {
-        case .unchanged(_, let written), .held(_, let written), .runs(_, _, let written): written
+        case .unchanged(_, let written, _), .held(_, let written, _), .runs(_, _, let written, _): written
         }
+    }
+
+    /// The answering script state's token.
+    public var state: String {
+        switch self {
+        case .unchanged(_, _, let state), .held(_, _, let state), .runs(_, _, _, let state): state
+        }
+    }
+
+    public var isHeld: Bool {
+        if case .held = self { true } else { false }
+    }
+
+    public var isUnchanged: Bool {
+        if case .unchanged = self { true } else { false }
     }
 }
 
@@ -48,11 +65,15 @@ public struct PageApplyRequest: Sendable, Hashable {
     public var settle: [Int]
     /// Runs to report on: which still hold their original.
     public var check: [Int]
+    /// The token of the script state the runs belong to: a state with
+    /// another token writes, settles and reports nothing.
+    public var state: String?
 
-    public init(writes: [PageWrite] = [], settle: [Int] = [], check: [Int] = []) {
+    public init(writes: [PageWrite] = [], settle: [Int] = [], check: [Int] = [], state: String? = nil) {
         self.writes = writes
         self.settle = settle
         self.check = check
+        self.state = state
     }
 
     public var isEmpty: Bool {
@@ -66,11 +87,14 @@ public struct PageApplied: Sendable, Hashable {
     public var skipped: [Int]
     /// Of the runs to check, those that still hold their original.
     public var holding: [Int]
+    /// The request named another script state: nothing was done.
+    public var foreign: Bool
 
-    public init(written: [Int], skipped: [Int], holding: [Int]) {
+    public init(written: [Int], skipped: [Int], holding: [Int], foreign: Bool = false) {
         self.written = written
         self.skipped = skipped
         self.holding = holding
+        self.foreign = foreign
     }
 }
 
@@ -156,6 +180,7 @@ public final class PageScriptBridge: PageScripting {
             "writes": request.writes.map { [$0.id, $0.text] as [Any] },
             "settle": request.settle,
             "check": request.check,
+            "state": request.state ?? "",
         ]
         return await call("apply", input, read: { Self.applied($0) })
     }
@@ -225,13 +250,15 @@ public final class PageScriptBridge: PageScripting {
     /// A `collect` answer: unchanged, held, or the runs within their
     /// bounds; anything else is `nil`.
     nonisolated static func collection(_ value: Any) -> PageCollection? {
-        guard let object = value as? [String: Any], let loaded = bool(object["loaded"]) else { return nil }
+        guard let object = value as? [String: Any], let loaded = bool(object["loaded"]),
+              let state = object["state"] as? String, !state.isEmpty, state.count <= 64
+        else { return nil }
         let written = bool(object["written"]) ?? false
         if bool(object["held"]) == true {
-            return .held(loaded: loaded, written: written)
+            return .held(loaded: loaded, written: written, state: state)
         }
         if bool(object["unchanged"]) == true {
-            return .unchanged(loaded: loaded, written: written)
+            return .unchanged(loaded: loaded, written: written, state: state)
         }
         guard let list = object["runs"] as? [Any], list.count <= maximumRuns else { return nil }
         var runs: [PageRun] = []
@@ -245,7 +272,7 @@ public final class PageScriptBridge: PageScripting {
             guard units <= maximumUnits else { return nil }
             runs.append(PageRun(id: id, block: block, text: text, whole: whole, inView: inView))
         }
-        return .runs(runs, loaded: loaded, written: written)
+        return .runs(runs, loaded: loaded, written: written, state: state)
     }
 
     nonisolated static func applied(_ value: Any) -> PageApplied? {
@@ -253,7 +280,7 @@ public final class PageScriptBridge: PageScripting {
               let skipped = object["skipped"] as? [Any]
         else { return nil }
         // A skipped entry the script could not read is reported as it was.
-        return PageApplied(written: written, skipped: skipped.compactMap(integer), holding: holding)
+        return PageApplied(written: written, skipped: skipped.compactMap(integer), holding: holding, foreign: bool(object["foreign"]) ?? false)
     }
 
     nonisolated static func ended(_ value: Any) -> PageEnded? {

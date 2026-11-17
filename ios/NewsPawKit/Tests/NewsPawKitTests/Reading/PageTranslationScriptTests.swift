@@ -162,22 +162,22 @@ struct PageTranslationScriptTests {
         try await page.page(#"const q = document.getElementById("q"); q.focus(); q.value = "fixture:never typed"; q.dispatchEvent(new Event("input"))"#)
         try await page.settle()
         #expect(try await page.pageString("return document.activeElement.id") == "q")
-        #expect(try await page.collect() == .held(loaded: true))
+        #expect(try await page.collect().isHeld)
         // Inside an open shadow root.
         try await page.page(#"""
             const s = document.getElementById("host").shadowRoot.getElementById("s");
             s.focus(); s.value = "fixture:never shadow"; s.dispatchEvent(new Event("input"));
             """#)
         #expect(try await page.pageString("return document.activeElement.id") == "host")
-        #expect(try await page.collect() == .held(loaded: true))
+        #expect(try await page.collect().isHeld)
         // Inside a closed shadow root: the host is reported.
         try await page.page("window.closedInput.focus()")
         #expect(try await page.pageString("return document.activeElement.id") == "closed")
-        #expect(try await page.collect() == .held(loaded: true))
+        #expect(try await page.collect().isHeld)
         // Inside a frame.
         try await page.page(#"document.getElementById("frame").contentDocument.getElementById("inner").focus()"#)
         #expect(try await page.pageString("return document.activeElement.id") == "frame")
-        #expect(try await page.collect() == .held(loaded: true))
+        #expect(try await page.collect().isHeld)
         // Focus leaves: what the page shows is displayed text.
         try await page.page(#"document.getElementById("done").focus()"#)
         #expect(try await page.pageString("return document.activeElement.id") == "done")
@@ -379,7 +379,7 @@ struct PageTranslationScriptTests {
         let firstOutside = first.firstIndex { !$0.inView } ?? first.count
         #expect(first[firstOutside...].allSatisfy { !$0.inView })
         #expect(first[..<firstOutside].allSatisfy { $0.inView })
-        #expect(try await page.collect() == .unchanged(loaded: true))
+        #expect(try await page.collect().isUnchanged)
         try await page.page(#"document.getElementById("far").scrollIntoView()"#)
         try await page.settle()
         let after = try await page.runs()
@@ -403,15 +403,60 @@ struct PageTranslationScriptTests {
         #expect(!first.contains { $0.text == "箱のさらに奥の文" })
         _ = try await page.translateAll(first)
         #expect(try await page.runs().isEmpty)
-        #expect(try await page.collect() == .unchanged(loaded: true, written: true))
+        #expect(try await page.collect().isUnchanged)
         try await page.page(#"document.getElementById("one").className = "tab"; document.getElementById("two").className = "tab on""#)
         try await page.settle()
         #expect(try await page.runs().map(\.text) == ["二つ目のタブ"])
-        #expect(try await page.collect() == .unchanged(loaded: true, written: true))
+        #expect(try await page.collect().isUnchanged)
         // The window does not scroll; the box does.
         try await page.page(#"document.getElementById("box").scrollTop = 2400"#)
         try await page.settle()
         #expect(try await page.runs().contains { $0.text == "箱のさらに奥の文" })
+    }
+
+    @Test("R4: an apply naming another script state writes, settles and reports nothing; the state's own token works")
+    func foreignState() async throws {
+        let page = ScriptPage()
+        await page.load("<!doctype html><html lang='ja'><body><p>一つ目の文</p><p>二つ目の文</p></body></html>")
+        let runs = try await page.runs()
+        let token = try #require(page.token)
+        #expect(!token.isEmpty)
+        let foreign = try await page.apply(PageApplyRequest(writes: runs.map { PageWrite(id: $0.id, text: "x") }, check: runs.map(\.id), state: "another"))
+        #expect(foreign.foreign && foreign.written.isEmpty && foreign.holding.isEmpty)
+        #expect(try await page.pageString("return document.querySelector('p').firstChild.data") == "一つ目の文")
+        // A state ended and made again has another token.
+        _ = try await page.end()
+        _ = try await page.collect()
+        #expect(page.token != token)
+        let stale = try await page.apply(PageApplyRequest(writes: runs.map { PageWrite(id: $0.id, text: "x") }, state: token))
+        #expect(stale.foreign && stale.written.isEmpty)
+        let own = try await page.apply(PageApplyRequest(writes: runs.map { PageWrite(id: $0.id, text: "訳") }))
+        #expect(own.written.count == 2 && !own.foreign)
+    }
+
+    @Test("G6: a block that starts above the viewport and goes on into it comes first, its runs in document order")
+    func blockOrder() async throws {
+        let page = ScriptPage()
+        let filler = (1...30).map { "<p style=\"margin:0;height:40px\">前の段落 \($0)</p>" }.joined()
+        await page.load("""
+            <!doctype html><html lang="ja"><head><meta name="viewport" content="width=device-width">
+            <style>body{margin:0} #p{margin:0;line-height:40px}</style></head><body>\(filler)
+            <p id="p">段落の始まり<a href="/x">リンク</a>\(String(repeating: "<br>", count: 12))段落の終わり</p>
+            <div style="height:3000px"></div></body></html>
+            """)
+        // The paragraph's first line just above the viewport, its end in it.
+        try await page.page(#"window.scrollTo(0, document.getElementById("p").offsetTop + 80)"#)
+        try await page.settle()
+        let runs = try await page.runs()
+        let paragraph = runs.filter { ["段落の始まり", "リンク", "段落の終わり"].contains($0.text) }
+        #expect(paragraph.map(\.text) == ["段落の始まり", "リンク", "段落の終わり"], "\(runs.map(\.text))")
+        #expect(paragraph.contains { $0.inView } && paragraph.contains { !$0.inView })
+        // The block is in view: it comes before the blocks that are only
+        // in the band.
+        let firstOther = runs.firstIndex { $0.text.hasPrefix("前の段落") } ?? runs.count
+        let lastOfBlock = runs.lastIndex { paragraph.map(\.id).contains($0.id) } ?? 0
+        #expect(lastOfBlock < firstOther)
+        #expect(PageBatcher.groups(runs).first?.texts == ["段落の始まり", "リンク", "段落の終わり"])
     }
 
     @Test("a run of more than 20,000 UTF-16 code units is never returned")
@@ -509,7 +554,7 @@ struct PageTranslationScriptTests {
         await page.load("<!doctype html><html lang='ja'><body><p>一つ目の文書</p></body></html>")
         let runs = try await page.runs()
         #expect(runs.count == 1)
-        #expect(try await page.collect() == .unchanged(loaded: true))
+        #expect(try await page.collect().isUnchanged)
         await page.load("<!doctype html><html lang='ja'><body><p>二つ目の文書</p></body></html>")
         #expect(try await page.apply(PageApplyRequest(writes: [PageWrite(id: runs[0].id, text: "x")])).skipped == [runs[0].id])
         #expect(try await page.end() == PageEnded(had: false, restored: 0))

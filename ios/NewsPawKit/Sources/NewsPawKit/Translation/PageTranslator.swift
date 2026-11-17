@@ -19,13 +19,27 @@ public enum PageFailureReason: Sendable, Hashable {
     case setUp(ModelFailure)
 }
 
-/// Which model a unit goes to.
+/// Which model the next request of a unit goes to, and what is left of its
+/// one retry and its one backup attempt (decision 12).
 enum PageRoute: Sendable, Hashable {
     /// The primary, with one retry of a content failure and one attempt on
     /// a usable backup after a service failure.
     case primary
+    /// The primary, its retry used: a content failure is final.
+    case primaryRetried
+    /// The primary failed with this service failure: once to a usable
+    /// backup; without one, or when the backup fails with a service or
+    /// set-up failure, the groups fail with this reason.
+    case backupAfter(ModelFailure)
     /// Retry with the Backup Model: each request once to the backup.
     case backupOnly
+}
+
+/// A unit and the route of its next request: what the session dispatches,
+/// and what a unit gives back when it cannot go on.
+struct PageWork: Sendable, Hashable {
+    var unit: PageUnit
+    var route: PageRoute
 }
 
 /// What the translator decided for a collection before anything is sent
@@ -48,8 +62,11 @@ struct PageUnitOutcome: Sendable {
     var writes: [PageWrite] = []
     /// Groups that failed, with the reason.
     var failed: [(group: PageGroup, reason: PageFailureReason)] = []
-    /// Groups not sent because the period's ceiling was reached.
-    var paused: [PageGroup] = []
+    /// Work not sent, with what was accepted of it: the period's ceiling
+    /// was reached (`atCeiling`), or the session may not go on (it is no
+    /// longer seen). Neither failed nor stored; the session sends it later.
+    var deferred: [PageWork] = []
+    var atCeiling = false
     /// A service or set-up failure that stops sending for the document
     /// until Retry.
     var stop: PageFailureReason?
@@ -170,167 +187,179 @@ public actor PageTranslator {
     /// group boundary, one group as itself) and one attempt on a usable
     /// backup after a service failure; or, for Retry with the Backup Model,
     /// each request once to the backup. Every attempt counts towards the
-    /// period's ceiling; at the ceiling what is left of the unit is paused,
-    /// not failed. Accepted translations are kept in the memory, and a
-    /// whole, uncut run in `page_text`, unless the work was cancelled.
-    func send(_ unit: PageUnit, host: String?, locale: ReadingLocale, route: PageRoute) async -> PageUnitOutcome {
+    /// period's ceiling.
+    ///
+    /// Before every attempt but the unit's first, `mayContinue` is asked
+    /// (the session is still on, on the same document, and seen); when it
+    /// says no, or at the ceiling, what is left of the unit is deferred,
+    /// with the requests of a large group already accepted, and nothing of
+    /// it is failed or stored. Accepted translations are kept in the memory,
+    /// and a whole, uncut run in `page_text`, unless the work was
+    /// cancelled.
+    func send(
+        _ work: PageWork, host: String?, locale: ReadingLocale, mayContinue: @escaping @Sendable () async -> Bool
+    ) async -> PageUnitOutcome {
         var outcome = PageUnitOutcome()
-        if unit.requests.count == 1 {
-            await sendGroups(unit.groups, host: host, locale: locale, route: route, retry: true, into: &outcome)
-        } else if let group = unit.groups.first {
-            await sendLargeGroup(group, requests: unit.requests, host: host, locale: locale, route: route, into: &outcome)
+        if work.unit.requests.count == 1 {
+            await sendGroups(work.unit.groups, route: work.route, first: true, host: host, locale: locale, mayContinue: mayContinue, into: &outcome)
+        } else {
+            await sendLargeGroup(work, host: host, locale: locale, mayContinue: mayContinue, into: &outcome)
         }
         return outcome
     }
 
-    /// Sends `groups` in one request; after a content failure on the
-    /// primary, `retry` sends them again once (halves at a group boundary).
-    private func sendGroups(
-        _ groups: [PageGroup], host: String?, locale: ReadingLocale, route: PageRoute, retry: Bool, into outcome: inout PageUnitOutcome
-    ) async {
-        guard !outcome.cancelled, outcome.stop == nil else { return }
-        let entries = groups.flatMap(PageBatcher.entries(of:))
-        let role: ModelRole = route == .backupOnly ? .backup : .primary
-        switch await attempt(entries, role: role, locale: locale, into: &outcome) {
-        case .accepted(let translations, let model):
-            await accept(groups, entries: entries, translations: translations, model: model, host: host, locale: locale, into: &outcome)
-        case .paused:
-            outcome.paused += groups
-        case .cancelled:
-            outcome.cancelled = true
-        case .content(let failure):
-            guard route == .primary, retry else {
-                outcome.failed += groups.map { ($0, .content(failure)) }
-                return
-            }
-            let parts = groups.count > 1 ? [Array(groups[..<(groups.count / 2)]), Array(groups[(groups.count / 2)...])] : [groups]
-            for part in parts {
-                if outcome.cancelled {
-                    return
-                }
-                if let stop = outcome.stop {
-                    // A service or set-up failure of the other half stops
-                    // the document: this half is failed with it.
-                    outcome.failed += part.map { ($0, stop) }
-                    continue
-                }
-                await sendGroups(part, host: host, locale: locale, route: .primary, retry: false, into: &outcome)
-            }
-        case .service(let failure):
-            guard route == .primary else {
-                outcome.failed += groups.map { ($0, .service(failure)) }
-                outcome.stop = .service(failure)
-                return
-            }
-            await sendToBackup(groups, entries: entries, after: failure, host: host, locale: locale, into: &outcome)
-        case .setUp(let failure):
-            outcome.failed += groups.map { ($0, .setUp(failure)) }
-            outcome.stop = .setUp(failure)
+    /// One unit, every attempt allowed (the translator's own tests).
+    func send(_ unit: PageUnit, host: String?, locale: ReadingLocale, route: PageRoute) async -> PageUnitOutcome {
+        await send(PageWork(unit: unit, route: route), host: host, locale: locale, mayContinue: { true })
+    }
+
+    /// The model of `route`'s next attempt, or `nil` (with the groups
+    /// failed) when it is the backup after a service failure and no backup
+    /// is usable.
+    private func role(for route: PageRoute) async -> ModelRole? {
+        switch route {
+        case .primary, .primaryRetried: .primary
+        case .backupOnly: .backup
+        case .backupAfter: await hasUsableBackup() ? .backup : nil
         }
     }
 
-    /// After a service failure of the primary: once to a usable backup (a
-    /// backup slot whose key is not missing), no retry there. Without one,
-    /// or when the backup fails with a service or set-up failure, the
-    /// groups fail with the primary's reason and the document stops.
-    private func sendToBackup(
-        _ groups: [PageGroup], entries: [PageEntry], after failure: ModelFailure, host: String?, locale: ReadingLocale,
-        into outcome: inout PageUnitOutcome
+    /// Sends `groups` in one request on `route`.
+    private func sendGroups(
+        _ groups: [PageGroup], route: PageRoute, first: Bool, host: String?, locale: ReadingLocale,
+        mayContinue: @escaping @Sendable () async -> Bool, into outcome: inout PageUnitOutcome
     ) async {
-        guard await hasUsableBackup() else {
-            outcome.failed += groups.map { ($0, .service(failure)) }
-            outcome.stop = .service(failure)
+        guard !outcome.cancelled else { return }
+        if let stop = outcome.stop {
+            // A service or set-up failure of another part stops the
+            // document: these groups fail with it.
+            outcome.failed += groups.map { ($0, stop) }
+            return
+        }
+        let entries = groups.flatMap(PageBatcher.entries(of:))
+        let work = PageWork(unit: PageUnit(groups: groups, requests: [entries]), route: route)
+        if !first, !(await mayContinue()) {
+            outcome.deferred.append(work)
             return
         }
         guard !Task.isCancelled else {
             outcome.cancelled = true
             return
         }
-        switch await attempt(entries, role: .backup, locale: locale, into: &outcome) {
+        guard let role = await role(for: route) else {
+            if case .backupAfter(let failure) = route {
+                outcome.failed += groups.map { ($0, .service(failure)) }
+                outcome.stop = .service(failure)
+            }
+            return
+        }
+        switch await attempt(entries, role: role, locale: locale, into: &outcome) {
         case .accepted(let translations, let model):
             await accept(groups, entries: entries, translations: translations, model: model, host: host, locale: locale, into: &outcome)
         case .paused:
-            outcome.paused += groups
+            outcome.deferred.append(work)
+            outcome.atCeiling = true
         case .cancelled:
             outcome.cancelled = true
-        case .content(let reason):
-            outcome.failed += groups.map { ($0, .content(reason)) }
-        case .service, .setUp:
-            outcome.failed += groups.map { ($0, .service(failure)) }
-            outcome.stop = .service(failure)
+        case .content(let failure):
+            guard route == .primary else {
+                outcome.failed += groups.map { ($0, .content(failure)) }
+                return
+            }
+            let parts = groups.count > 1 ? [Array(groups[..<(groups.count / 2)]), Array(groups[(groups.count / 2)...])] : [groups]
+            for part in parts {
+                await sendGroups(part, route: .primaryRetried, first: false, host: host, locale: locale, mayContinue: mayContinue, into: &outcome)
+            }
+        case .service(let failure):
+            switch route {
+            case .primary, .primaryRetried:
+                await sendGroups(groups, route: .backupAfter(failure), first: false, host: host, locale: locale, mayContinue: mayContinue, into: &outcome)
+            case .backupAfter(let primary):
+                outcome.failed += groups.map { ($0, .service(primary)) }
+                outcome.stop = .service(primary)
+            case .backupOnly:
+                outcome.failed += groups.map { ($0, .service(failure)) }
+                outcome.stop = .service(failure)
+            }
+        case .setUp(let failure):
+            let reason: PageFailureReason = if case .backupAfter(let primary) = route { .service(primary) } else { .setUp(failure) }
+            outcome.failed += groups.map { ($0, reason) }
+            outcome.stop = reason
         }
     }
 
-    /// One group too large for a request, sent as consecutive requests; a
-    /// request that fails with a content failure is sent again once as
-    /// itself. The group is written only when every request was accepted.
+    /// One group too large for a request, sent as consecutive requests from
+    /// where it stopped; each request gets its own retry and backup attempt.
+    /// The group is written only when every request was accepted.
     private func sendLargeGroup(
-        _ group: PageGroup, requests: [[PageEntry]], host: String?, locale: ReadingLocale, route: PageRoute,
+        _ work: PageWork, host: String?, locale: ReadingLocale, mayContinue: @escaping @Sendable () async -> Bool,
         into outcome: inout PageUnitOutcome
     ) async {
-        var translations: [String] = []
-        var models: [String] = []
-        let role: ModelRole = route == .backupOnly ? .backup : .primary
-        for entries in requests {
-            var tries = route == .primary ? 2 : 1
-            var accepted: [String]?
-            while accepted == nil, tries > 0 {
-                tries -= 1
-                switch await attempt(entries, role: role, locale: locale, into: &outcome) {
-                case .accepted(let result, let model):
-                    accepted = result
-                    models.append(model)
-                case .paused:
-                    outcome.paused.append(group)
-                    return
-                case .cancelled:
-                    outcome.cancelled = true
-                    return
-                case .content(let failure):
-                    if tries == 0 {
-                        outcome.failed.append((group, .content(failure)))
-                        return
-                    }
-                case .service(let failure):
-                    guard route == .primary else {
-                        outcome.failed.append((group, .service(failure)))
-                        outcome.stop = .service(failure)
-                        return
-                    }
-                    guard await hasUsableBackup(), !Task.isCancelled else {
-                        outcome.failed.append((group, .service(failure)))
-                        outcome.stop = .service(failure)
-                        return
-                    }
-                    switch await attempt(entries, role: .backup, locale: locale, into: &outcome) {
-                    case .accepted(let result, let model):
-                        accepted = result
-                        models.append(model)
-                    case .paused:
-                        outcome.paused.append(group)
-                        return
-                    case .cancelled:
-                        outcome.cancelled = true
-                        return
-                    case .content(let reason):
-                        outcome.failed.append((group, .content(reason)))
-                        return
-                    case .service, .setUp:
-                        outcome.failed.append((group, .service(failure)))
-                        outcome.stop = .service(failure)
-                        return
-                    }
-                case .setUp(let failure):
-                    outcome.failed.append((group, .setUp(failure)))
-                    outcome.stop = .setUp(failure)
+        guard let group = work.unit.groups.first else { return }
+        var unit = work.unit
+        var route = work.route
+        let base: PageRoute = route == .backupOnly ? .backupOnly : .primary
+        var first = true
+        while unit.next < unit.requests.count {
+            if !first, !(await mayContinue()) {
+                outcome.deferred.append(PageWork(unit: unit, route: route))
+                return
+            }
+            first = false
+            guard !Task.isCancelled else {
+                outcome.cancelled = true
+                return
+            }
+            guard let role = await role(for: route) else {
+                if case .backupAfter(let failure) = route {
+                    outcome.failed.append((group, .service(failure)))
+                    outcome.stop = .service(failure)
+                }
+                return
+            }
+            switch await attempt(unit.requests[unit.next], role: role, locale: locale, into: &outcome) {
+            case .accepted(let translations, let model):
+                unit.accepted += translations
+                unit.models.append(model)
+                unit.next += 1
+                route = base
+            case .paused:
+                outcome.deferred.append(PageWork(unit: unit, route: route))
+                outcome.atCeiling = true
+                return
+            case .cancelled:
+                outcome.cancelled = true
+                return
+            case .content(let failure):
+                guard route == .primary else {
+                    outcome.failed.append((group, .content(failure)))
                     return
                 }
+                route = .primaryRetried
+            case .service(let failure):
+                switch route {
+                case .primary, .primaryRetried:
+                    route = .backupAfter(failure)
+                case .backupAfter(let primary):
+                    outcome.failed.append((group, .service(primary)))
+                    outcome.stop = .service(primary)
+                    return
+                case .backupOnly:
+                    outcome.failed.append((group, .service(failure)))
+                    outcome.stop = .service(failure)
+                    return
+                }
+            case .setUp(let failure):
+                let reason: PageFailureReason = if case .backupAfter(let primary) = route { .service(primary) } else { .setUp(failure) }
+                outcome.failed.append((group, reason))
+                outcome.stop = reason
+                return
             }
-            guard let accepted else { return }
-            translations += accepted
         }
-        let entries = requests.flatMap { $0 }
-        await accept([group], entries: entries, translations: translations, model: models.last ?? "", host: host, locale: locale, into: &outcome)
+        await accept(
+            [group], entries: unit.requests.flatMap { $0 }, translations: unit.accepted, model: unit.models.last ?? "", host: host,
+            locale: locale, into: &outcome
+        )
     }
 
     private func hasUsableBackup() async -> Bool {

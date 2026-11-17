@@ -52,6 +52,18 @@ struct PageUnit: Sendable, Hashable {
     let groups: [PageGroup]
     /// The entries of each request, in order.
     let requests: [[PageEntry]]
+    /// For a group sent as consecutive requests and resumed after a pause
+    /// (the ceiling, or the page no longer seen): the requests already
+    /// accepted, their translations in entry order, and their models'
+    /// names. Kept in memory only, with the unit.
+    var next = 0
+    var accepted: [String] = []
+    var models: [String] = []
+
+    init(groups: [PageGroup], requests: [[PageEntry]]) {
+        self.groups = groups
+        self.requests = requests
+    }
 
     var runIDs: [Int] {
         groups.flatMap { $0.runs.map(\.id) }

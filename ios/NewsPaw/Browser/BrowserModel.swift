@@ -294,11 +294,17 @@ final class BrowserModel {
             && session.temporaryArticle == nil
     }
 
-    /// Whether `session`'s page is seen (RD16 decision 11): its stack's tab
-    /// is selected, the app is active, and no temporary article covers it.
-    /// Page translation calls into a page only then, except to end.
+    /// Whether `session`'s page is seen (RD16 decision 11): the workspace is
+    /// not dropped (a lock drops the adult one), the app is active (not in
+    /// the background, the app switcher or behind Control Centre: the
+    /// application's state, since only the adult browser's media are
+    /// suspended when the scene deactivates), the adult cover's media
+    /// suspension is not on, its stack's tab is selected, and no temporary
+    /// article covers it. Page translation calls into a page and sends a
+    /// request only then, except to end.
     func isSeen(_ session: BrowserSession) -> Bool {
-        !isStopped && !mediaIsSuspended && isOnScreen(session) && session.temporaryArticle == nil
+        !isStopped && !mediaIsSuspended && UIApplication.shared.applicationState == .active && isOnScreen(session)
+            && session.temporaryArticle == nil
     }
 
     /// Whether `session` is the session of the selected tab's stack.

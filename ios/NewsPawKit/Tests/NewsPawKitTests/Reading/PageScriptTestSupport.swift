@@ -87,10 +87,16 @@ final class ScriptPage: NSObject, WKNavigationDelegate {
         try await pageString("return document.documentElement.outerHTML")
     }
 
+    /// The token of the script state the last `collect` answered from;
+    /// `apply` carries it unless a request names one.
+    private(set) var token: String?
+
     /// One `collect`, which must succeed.
     func collect(sourceLocation: SourceLocation = #_sourceLocation) async throws -> PageCollection {
         switch await bridge.collect() {
-        case .success(let collection): return collection
+        case .success(let collection):
+            token = collection.state
+            return collection
         case .failure(let failure):
             Issue.record("collect failed: \(failure)", sourceLocation: sourceLocation)
             throw failure
@@ -99,13 +105,17 @@ final class ScriptPage: NSObject, WKNavigationDelegate {
 
     /// The runs of one `collect`; empty for an unchanged or held answer.
     func runs(sourceLocation: SourceLocation = #_sourceLocation) async throws -> [PageRun] {
-        if case .runs(let runs, _, _) = try await collect(sourceLocation: sourceLocation) {
+        if case .runs(let runs, _, _, _) = try await collect(sourceLocation: sourceLocation) {
             return runs
         }
         return []
     }
 
     func apply(_ request: PageApplyRequest, sourceLocation: SourceLocation = #_sourceLocation) async throws -> PageApplied {
+        var request = request
+        if request.state == nil {
+            request.state = token
+        }
         switch await bridge.apply(request) {
         case .success(let applied): return applied
         case .failure(let failure):

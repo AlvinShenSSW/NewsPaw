@@ -93,10 +93,16 @@ const DEPTH_BOUND = 32;
 
 const normalised = (text) => text.replace(SPACE, " ").trim();
 
+function makeToken() {
+  const bits = new Uint32Array(2);
+  crypto.getRandomValues(bits);
+  return bits[0].toString(36) + "-" + bits[1].toString(36);
+}
+
 function makeState() {
   const state = {
-    ids: new WeakMap(), records: new Map(), nextId: 1, recorded: 0, written: 0, blocks: new WeakMap(), nextBlock: 1,
-    dirty: true, view: null, observer: null, onScroll: null
+    token: makeToken(), ids: new WeakMap(), records: new Map(), nextId: 1, recorded: 0, written: 0, blocks: new WeakMap(),
+    nextBlock: 1, dirty: true, view: null, observer: null, onScroll: null
   };
   state.observer = new MutationObserver(() => { state.dirty = true; });
   state.observer.observe(doc, { subtree: true, childList: true, characterData: true, attributes: true });
@@ -247,9 +253,10 @@ function sameView(left, right) {
 function collect(state) {
   const loaded = readyStateOf.call(doc) === "complete";
   const written = state.written > 0;
-  if (focusHeld()) return { held: true, loaded: loaded, written: written };
+  const token = state.token;
+  if (focusHeld()) return { held: true, loaded: loaded, written: written, state: token };
   const view = [windowValue("scrollX"), windowValue("scrollY"), windowValue("innerWidth"), windowValue("innerHeight")];
-  if (!state.dirty && sameView(view, state.view)) return { unchanged: true, loaded: loaded, written: written };
+  if (!state.dirty && sameView(view, state.view)) return { unchanged: true, loaded: loaded, written: written, state: token };
   state.dirty = false;
   state.view = view;
   const width = view[2];
@@ -257,7 +264,7 @@ function collect(state) {
   const bandTop = -height / 2;
   const bandBottom = height * 2;
   const root = rootOf.call(doc);
-  if (!root) return { runs: [], loaded: loaded, written: written };
+  if (!root) return { runs: [], loaded: loaded, written: written, state: token };
   const range = makeRange.call(doc);
   const caches = { excluded: new Map(), clip: new Map(), display: new Map(), whole: new Map() };
   let start = pointOf.call(doc, width / 2, height / 2);
@@ -340,7 +347,11 @@ function collect(state) {
     earlier.reverse();
   }
   const ordered = earlier.concat(found);
-  const sorted = ordered.filter((run) => run.inView).concat(ordered.filter((run) => !run.inView));
+  // Blocks with a run in view first, then the rest of the band; within a
+  // block its runs keep document order, so a sentence is never sent middle
+  // first.
+  const viewBlocks = new Set(ordered.filter((run) => run.inView).map((run) => run.block));
+  const sorted = ordered.filter((run) => viewBlocks.has(run.block)).concat(ordered.filter((run) => !viewBlocks.has(run.block)));
   const runs = [];
   let units = 0;
   for (const run of sorted) {
@@ -349,7 +360,7 @@ function collect(state) {
     runs.push({ id: run.id, block: run.block, text: run.text, whole: run.whole, inView: run.inView });
   }
   if (full) state.dirty = true;
-  return { runs: runs, loaded: loaded, written: written };
+  return { runs: runs, loaded: loaded, written: written, state: token };
 }
 
 function holdsOriginal(record) {
@@ -361,6 +372,12 @@ function apply(state, input) {
   const skipped = [];
   const holding = [];
   const writes = Array.isArray(input.writes) ? input.writes : [];
+  // Run numbers belong to one state: a request for another writes,
+  // settles and reports nothing.
+  if (!state || input.state !== state.token) {
+    for (const entry of writes) skipped.push(Array.isArray(entry) ? entry[0] : undefined);
+    return { written: written, skipped: skipped, holding: holding, foreign: true };
+  }
   for (const entry of writes) {
     const id = Array.isArray(entry) ? entry[0] : undefined;
     const text = Array.isArray(entry) ? entry[1] : undefined;
@@ -375,7 +392,7 @@ function apply(state, input) {
     setData.call(record.node, value);
     record.written = value;
     record.state = "written";
-    state.written++;
+    state.written += 1;
     written.push(id);
   }
   const settle = Array.isArray(input.settle) ? input.settle : [];

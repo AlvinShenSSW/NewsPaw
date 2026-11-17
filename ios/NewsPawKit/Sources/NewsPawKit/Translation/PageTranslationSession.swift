@@ -72,7 +72,23 @@ public final class PageTranslationSession {
     @ObservationIgnored private let timing: Timing
     @ObservationIgnored private let clock = ContinuousClock()
 
-    /// One document of the page, from its commit to the next (decision 9).
+    /// A failed group and its reason, in the order failures came.
+    private struct Failure {
+        let group: PageGroup
+        let reason: PageFailureReason
+    }
+
+    /// One document of the page in one period of translation being on
+    /// (decision 9): from a commit, or from turning translation on, to the
+    /// next commit or to turning it off.
+    ///
+    /// Work for the document lives in three places. `pending` holds the
+    /// groups of the latest collection and is replaced by each collection.
+    /// `queue` holds work the session owns: Retry's and Retry with the
+    /// Backup Model's groups and the deferred rest of units (at the ceiling,
+    /// or when the page stopped being seen); no collection replaces it.
+    /// `failures` holds what failed; only Retry (once the page says which
+    /// runs still hold their originals) or Show Original empties it.
     private struct Document {
         let generation: Int
         /// The lower-cased host of an `http` or `https` document.
@@ -88,26 +104,20 @@ public final class PageTranslationSession {
         var hasKana = false
         /// Something was written, converted, sent or is waiting to be sent.
         var didSomething = false
-        /// Prepared groups waiting to be sent.
+        /// The script state's token this document's runs belong to (from
+        /// the first `collect`); every `apply` carries it.
+        var token: String?
+        /// Prepared groups of the latest collection, waiting to be sent.
         var pending: [PageGroup] = []
+        /// Work the session owns, sent before `pending`.
+        var queue: [PageWork] = []
+        var failures: [Failure] = []
         /// The runs in requests in flight.
         var inFlight: Set<Int> = []
-        /// Failed groups by block; the refused ones apart.
-        var failed: [Int: PageGroup] = [:]
-        /// The runs of the failed groups: not sent again until Retry.
-        var failedRuns: Set<Int> = []
-        /// The runs a request of this document translated: not sent again
-        /// (a collection made while their request was in flight can still
-        /// hold them).
-        var doneRuns: Set<Int> = []
-
-        /// Whether a run is in a request, failed or translated already.
-        func isTaken(_ id: Int) -> Bool {
-            inFlight.contains(id) || failedRuns.contains(id) || doneRuns.contains(id)
-        }
-        var refused: [Int: PageGroup] = [:]
-        /// The latest failure, shown in the line.
-        var failure: PageFailureReason?
+        /// Runs whose translation waits to be written into the page.
+        var awaitingWrite: Set<Int> = []
+        /// Runs the page confirmed written.
+        var written: Set<Int> = []
         /// A service or set-up failure: nothing more is sent until Retry.
         var stopped = false
         /// A call into the page expired or failed: the poll ends until
@@ -117,6 +127,21 @@ public final class PageTranslationSession {
         var paused = false
         /// A `collect` of this document is outstanding.
         var collecting = false
+
+        /// Whether a run is in a request, queued, failed, waiting for its
+        /// write or written: a collection does not send it again.
+        func isTaken(_ id: Int) -> Bool {
+            inFlight.contains(id) || awaitingWrite.contains(id) || written.contains(id)
+                || queue.contains { $0.unit.runIDs.contains(id) } || failures.contains { $0.group.runs.contains { $0.id == id } }
+        }
+
+        var latestFailure: PageFailureReason? {
+            failures.last?.reason
+        }
+
+        var hasRefused: Bool {
+            failures.contains { $0.reason == .content(.refused) }
+        }
     }
 
     @ObservationIgnored private var generation = 0
@@ -194,7 +219,10 @@ public final class PageTranslationSession {
             hasBackup = backup
             isOn = true
             if let document {
-                self.document = Document(generation: document.generation, host: document.host, locale: readingLocale(), startedHere: true)
+                // A new period on the same page: a new generation, so that
+                // no answer of the period before is taken for this one.
+                generation += 1
+                self.document = Document(generation: generation, host: document.host, locale: readingLocale(), startedHere: true)
             } else {
                 startsNextDocument = true
             }
@@ -212,7 +240,8 @@ public final class PageTranslationSession {
             isOn = false
             stopWork()
             if let document {
-                self.document = Document(generation: document.generation, host: document.host, locale: document.locale)
+                generation += 1
+                self.document = Document(generation: generation, host: document.host, locale: document.locale)
             }
             startsNextDocument = false
         }
@@ -229,16 +258,12 @@ public final class PageTranslationSession {
 
     /// Retry: a period begins; the failed runs that still hold their
     /// originals are sent again (with their retry and backup attempt); the
-    /// poll starts again if it had ended.
+    /// poll starts again if it had ended. The failures stay recorded until
+    /// the page has said which runs still hold their originals: if it does
+    /// not answer, they stay, and the line says the page did not respond.
     public func retry() {
         guard !closed, isOn, var document, let translator else { return }
-        // In document order (the runs' numbers follow it).
-        let failed = document.failed.values.sorted { ($0.runs.first?.id ?? 0) < ($1.runs.first?.id ?? 0) }
-        // The failed runs stay out of new collections until they are sent
-        // again (`start` lets them go).
-        document.failed = [:]
-        document.refused = [:]
-        document.failure = nil
+        let failures = document.failures
         document.stopped = false
         document.unresponsive = false
         document.paused = false
@@ -247,38 +272,48 @@ public final class PageTranslationSession {
         let generation = document.generation
         Task {
             await translator.beginPeriod()
-            let groups = await holding(failed, generation: generation)
-            guard isCurrent(generation), var document = self.document else { return }
-            let resent = Set(groups.flatMap { $0.runs.map(\.id) })
-            document.pending = groups + document.pending.filter { group in !group.runs.contains { resent.contains($0.id) } }
-            self.document = document
-            dispatch()
-            refreshLine()
+            guard isCurrent(generation) else { return }
+            await resend(failures, route: .primary, generation: generation)
             startPoll()
         }
     }
 
     /// Retry with the Backup Model: the refused runs that still hold their
-    /// originals go once to the backup.
+    /// originals go once to the backup, through the same dispatcher as the
+    /// rest (two in flight, only while seen).
     public func retryWithBackup() {
-        guard !closed, isOn, var document else { return }
-        let refused = document.refused.values.sorted { ($0.runs.first?.id ?? 0) < ($1.runs.first?.id ?? 0) }
-        for group in refused {
-            document.failed[group.block] = nil
-        }
-        document.refused = [:]
-        document.failure = document.failed.isEmpty ? nil : document.failure
-        self.document = document
-        refreshLine()
+        guard !closed, isOn, let document else { return }
+        let refused = document.failures.filter { $0.reason == .content(.refused) }
         let generation = document.generation
         Task {
-            let groups = await holding(refused, generation: generation)
-            guard isCurrent(generation) else { return }
-            for unit in PageBatcher.units(groups) {
-                start(unit, route: .backupOnly)
-            }
-            refreshLine()
+            await resend(refused, route: .backupOnly, generation: generation)
         }
+    }
+
+    /// Asks the page which of `failures`' runs still hold their originals,
+    /// then queues those runs on `route` and forgets `failures`. If the page
+    /// does not answer, nothing is forgotten and the line says so.
+    private func resend(_ failures: [Failure], route: PageRoute, generation: Int) async {
+        guard !failures.isEmpty else {
+            dispatch()
+            refreshLine()
+            return
+        }
+        let groups = failures.map(\.group)
+        let ids = Set(groups.flatMap { $0.runs.map(\.id) })
+        let answer = await holding(groups, generation: generation)
+        guard isCurrent(generation), var document = self.document else { return }
+        guard let holding = answer else {
+            document.unresponsive = true
+            self.document = document
+            refreshLine()
+            return
+        }
+        document.failures.removeAll { failure in failure.group.runs.contains { ids.contains($0.id) } }
+        document.queue += PageBatcher.units(holding).map { PageWork(unit: $0, route: route) }
+        self.document = document
+        dispatch()
+        refreshLine()
     }
 
     /// Continue, at the ceiling: a period begins and sending goes on.
@@ -404,6 +439,13 @@ public final class PageTranslationSession {
         // An answer of an older document, or one that came after Show
         // Original, is dropped.
         guard isCurrent(generation), var document = self.document else { return }
+        // An answer from another script state than this document's (a
+        // state ended and made again) addresses other nodes: dropped.
+        if case .success(let collection) = collected, let token = document.token, collection.state != token {
+            document.collecting = false
+            self.document = document
+            return
+        }
         let result: PageCollection
         switch collected {
         case .failure:
@@ -415,6 +457,7 @@ public final class PageTranslationSession {
         case .success(let collection):
             result = collection
         }
+        document.token = result.state
         if document.firstCollection == nil {
             document.firstCollection = clock.now
         }
@@ -429,14 +472,14 @@ public final class PageTranslationSession {
             // A field has focus: nothing is decided until it leaves.
             document.collecting = false
             self.document = document
-        case .unchanged(let loaded, _):
+        case .unchanged(let loaded, _, _):
             document.collecting = false
             self.document = document
             decide(loaded: loaded)
             // What waits (the page was not seen, or both slots were busy)
             // goes now.
             dispatch()
-        case .runs(let runs, let loaded, _):
+        case .runs(let runs, let loaded, _, _):
             if runs.contains(where: { TextLanguage.Units($0.text).kana > 0 }) {
                 document.hasKana = true
             }
@@ -447,7 +490,6 @@ public final class PageTranslationSession {
             let preparation = await translator.prepare(fresh, host: document.host, locale: document.locale, pageHasKana: document.hasKana)
             guard isCurrent(generation), var document = self.document else { return }
             document.collecting = false
-            queue(PageApplyRequest(writes: preparation.writes, settle: preparation.kept))
             // Runs that went into a request, failed or were translated
             // while they were prepared are not sent again.
             document.pending = preparation.groups.filter { group in !group.runs.contains { document.isTaken($0.id) } }
@@ -456,6 +498,7 @@ public final class PageTranslationSession {
                 document.nothing = false
             }
             self.document = document
+            queue(PageApplyRequest(writes: preparation.writes, settle: preparation.kept))
             decide(loaded: loaded)
             dispatch()
             await flush()
@@ -493,22 +536,31 @@ public final class PageTranslationSession {
 
     // MARK: - Sending (decisions 5, 11 and 12)
 
-    /// Starts units from the pending groups while fewer than two are in
-    /// flight, the document is not stopped or paused, and the page is seen.
+    /// The one dispatcher of every route (decision 5): it starts work while
+    /// fewer than two units are in flight, the document is neither stopped
+    /// nor paused nor unresponsive, and the page is seen — first the
+    /// session's queue (retries, backup retries, deferred work), then the
+    /// latest collection's groups.
     private func dispatch() {
         guard isOn, !closed, let document, !document.stopped, !document.unresponsive, !document.paused, isSeen() else { return }
-        while units.count < Self.maximumInFlight, let current = self.document, let next = PageBatcher.nextUnit(from: current.pending) {
-            var updated = current
-            updated.pending = next.rest
-            self.document = updated
-            start(next.unit, route: .primary)
+        while units.count < Self.maximumInFlight, var current = self.document {
+            let work: PageWork
+            if !current.queue.isEmpty {
+                work = current.queue.removeFirst()
+            } else if let next = PageBatcher.nextUnit(from: current.pending) {
+                current.pending = next.rest
+                work = PageWork(unit: next.unit, route: .primary)
+            } else {
+                break
+            }
+            self.document = current
+            start(work)
         }
     }
 
-    private func start(_ unit: PageUnit, route: PageRoute) {
+    private func start(_ work: PageWork) {
         guard let translator, var document else { return }
-        document.inFlight.formUnion(unit.runIDs)
-        document.failedRuns.subtract(unit.runIDs)
+        document.inFlight.formUnion(work.unit.runIDs)
         document.didSomething = true
         document.nothing = false
         self.document = document
@@ -517,35 +569,38 @@ public final class PageTranslationSession {
         let host = document.host
         let locale = document.locale
         units[id] = Task { [weak self] in
-            let outcome = await translator.send(unit, host: host, locale: locale, route: route)
-            self?.unitEnded(id, unit: unit, outcome: outcome, generation: generation)
+            // Every attempt after the unit's first asks whether the session
+            // may go on: still on, on this document, and seen (decision 11).
+            let outcome = await translator.send(work, host: host, locale: locale, mayContinue: { [weak self] in
+                await self?.mayContinue(generation) ?? false
+            })
+            self?.unitEnded(id, work: work, outcome: outcome, generation: generation)
         }
     }
 
-    private func unitEnded(_ id: UUID, unit: PageUnit, outcome: PageUnitOutcome, generation: Int) {
+    /// Whether a unit of `generation` may send its next request.
+    private func mayContinue(_ generation: Int) -> Bool {
+        isCurrent(generation) && isSeen()
+    }
+
+    private func unitEnded(_ id: UUID, work: PageWork, outcome: PageUnitOutcome, generation: Int) {
         // A unit cancelled by a commit or by Show Original is no longer
         // listed; its result is dropped.
         guard units.removeValue(forKey: id) != nil, isCurrent(generation), var document else { return }
-        document.inFlight.subtract(unit.runIDs)
-        document.doneRuns.formUnion(outcome.writes.map(\.id))
+        document.inFlight.subtract(work.unit.runIDs)
         var request = PageApplyRequest(writes: outcome.writes)
         for (group, reason) in outcome.failed {
-            document.failed[group.block] = group
-            document.failedRuns.formUnion(group.runs.map(\.id))
-            if reason == .content(.refused) {
-                document.refused[group.block] = group
-            }
-            document.failure = reason
+            document.failures.append(Failure(group: group, reason: reason))
             request.settle += group.runs.map(\.id)
         }
-        if !outcome.paused.isEmpty {
+        // What the unit could not send goes back to the front of the queue,
+        // with what it accepted.
+        document.queue.insert(contentsOf: outcome.deferred, at: 0)
+        if outcome.atCeiling {
             document.paused = true
-            let paused = Set(outcome.paused.map(\.block))
-            document.pending = outcome.paused + document.pending.filter { !paused.contains($0.block) }
         }
-        if let stop = outcome.stop {
+        if outcome.stop != nil {
             document.stopped = true
-            document.failure = stop
         }
         self.document = document
         queue(request)
@@ -554,11 +609,14 @@ public final class PageTranslationSession {
         Task { await flush() }
     }
 
-    /// The groups' runs that still hold their originals, asked of the page.
-    private func holding(_ groups: [PageGroup], generation: Int) async -> [PageGroup] {
-        guard !groups.isEmpty else { return [] }
+    /// The groups' runs that still hold their originals, asked of the page;
+    /// `nil` when the page did not answer.
+    private func holding(_ groups: [PageGroup], generation: Int) async -> [PageGroup]? {
         let ids = groups.flatMap { $0.runs.map(\.id) }
-        guard case .success(let applied) = await scripting.apply(PageApplyRequest(check: ids)), isCurrent(generation) else { return [] }
+        let token = document?.token
+        guard case .success(let applied) = await scripting.apply(PageApplyRequest(check: ids, state: token)), !applied.foreign,
+              isCurrent(generation)
+        else { return nil }
         let holding = Set(applied.holding)
         return groups.compactMap { group in
             let runs = group.runs.filter { holding.contains($0.id) }
@@ -568,28 +626,37 @@ public final class PageTranslationSession {
 
     // MARK: - Writing into the page (decision 6)
 
+    /// Queues writes and settled runs; written runs wait for the page's
+    /// confirmation.
     private func queue(_ request: PageApplyRequest) {
         queued.writes += request.writes
         queued.settle += request.settle
+        document?.awaitingWrite.formUnion(request.writes.map(\.id))
     }
 
-    /// Writes what waits, while the page is seen.
+    /// Writes what waits, while the page is seen. A run counts as written
+    /// only once the page says so; a write the page did not answer, or
+    /// skipped, lets its run be collected again (its translation then comes
+    /// from the memory, without a request).
     private func flush() async {
         guard isOn, !closed, !queued.isEmpty, let document, isSeen() else { return }
-        let request = queued
+        var request = queued
+        request.state = document.token
         queued = PageApplyRequest()
         let generation = document.generation
         let applied = await scripting.apply(request)
         guard isCurrent(generation), var document = self.document else { return }
+        document.awaitingWrite.subtract(request.writes.map(\.id))
         switch applied {
         case .success(let result):
+            document.written.formUnion(result.written)
             if !result.written.isEmpty {
                 translatedAny = true
             }
         case .failure:
             document.unresponsive = true
-            self.document = document
         }
+        self.document = document
         refreshLine()
     }
 
@@ -615,11 +682,12 @@ public final class PageTranslationSession {
             line = .paused
         } else if document.unresponsive {
             line = .didNotRespond
-        } else if let failure = document.failure {
-            line = .failed(failure, offersBackup: failure == .content(.refused) && hasBackup && !document.refused.isEmpty)
-        } else if document.nothing && units.isEmpty && document.pending.isEmpty {
+        } else if let failure = document.latestFailure {
+            line = .failed(failure, offersBackup: failure == .content(.refused) && hasBackup && document.hasRefused)
+        } else if document.nothing && units.isEmpty && document.pending.isEmpty && document.queue.isEmpty {
             line = .nothingToTranslate(brief: false)
-        } else if !units.isEmpty || !document.decided || !document.pending.isEmpty || !queued.isEmpty {
+        } else if !units.isEmpty || !document.decided || !document.pending.isEmpty || !document.queue.isEmpty || !queued.isEmpty
+            || !document.awaitingWrite.isEmpty {
             line = .translating
         } else {
             line = .translated(document.locale)

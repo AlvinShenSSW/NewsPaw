@@ -53,7 +53,8 @@ final class PageTranslationScreenshotTests: PageTranslationTestCase {
         waitFor(moreMenu).tap()
         sleep(1)
         capture("more-menu")
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+        // Away from the page's links: on the navigation bar's title.
+        app.navigationBars.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         waitForPage(Pages.listTitle)
 
         openFixture("refusing", title: "拒否されるページ")

@@ -8,7 +8,8 @@ import SwiftUI
 /// Clear Browsing Data and Turn Off the Adult Partition. Opened from the
 /// normal partition, which never unlocks it (RD18), the rows that live in
 /// the adult library are not shown, and a sentence says where they are.
-/// The daily automatic limit's row comes with RD17's Usage screen.
+/// Inside the adult partition the daily automatic limit's row shows the
+/// adult library's value and opens RD17's Usage screen, which edits it.
 struct AdultPartitionView: View {
     @Environment(AppModel.self) private var model
     @Environment(ReadingModel.self) private var reading
@@ -19,6 +20,9 @@ struct AdultPartitionView: View {
     /// screen is left.
     @State private var browsingDataCleared = false
     @State private var thumbnailsNotSaved = false
+    /// The adult library's daily automatic limit, read inside the adult
+    /// partition each time the screen appears.
+    @State private var dailyLimit: Int?
 
     var body: some View {
         List {
@@ -35,7 +39,12 @@ struct AdultPartitionView: View {
         .scrollContentBackground(.hidden)
         .stackBackground(Theme.groupedBackground)
         .navigationTitle("Adult Partition")
-        .task { await partitionModels?.reload() }
+        .task {
+            await partitionModels?.reload()
+            if partitionModels != nil {
+                dailyLimit = try? await reading.library.dailyAutomaticLimit()
+            }
+        }
         .onDisappear { browsingDataCleared = false }
         .alert(Text("Clear the adult partition's browsing data?"), isPresented: $isAskingToClear) {
             Button("Clear", role: .destructive) {
@@ -98,6 +107,20 @@ struct AdultPartitionView: View {
             } footer: {
                 Text("When off, article lists in the adult partition show no pictures and download none.")
                     .foregroundStyle(Theme.secondaryText)
+            }
+            .listRowBackground(Theme.surface)
+            // RD19 decision 12: the adult library's limit, edited on RD17's
+            // Usage screen of this (the adult) workspace.
+            Section {
+                NavigationLink(value: SettingsRoute.usage) {
+                    LabeledContent("Daily Automatic Limit") {
+                        if let dailyLimit {
+                            Text(dailyLimit, format: .number)
+                        }
+                    }
+                    .frame(minHeight: Theme.minimumTapTarget)
+                }
+                .accessibilityIdentifier(AccessibilityID.adultDailyLimitRow)
             }
             .listRowBackground(Theme.surface)
         }

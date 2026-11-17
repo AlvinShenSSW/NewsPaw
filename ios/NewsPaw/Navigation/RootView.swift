@@ -38,6 +38,7 @@ struct RootView: View {
                     .environment(workspace.browser)
                     .environment(workspace.modelSettings)
                     .environment(\.partitionModelSettings, workspace.partitionModelSettings)
+                    .environment(workspace.usage)
                     .environment(workspace.readingSettings)
                     .environment(workspace.translationSettings)
                     .environment(workspace.translation)

@@ -49,6 +49,10 @@ struct DebugLaunchOptions {
     /// How long Clear Browsing Data waits before it clears (review round
     /// 2). Applied only together with `libraryDirectory`.
     let clearPause: Duration?
+    /// Whether five usage rows of `seed-<partition>` are inserted into the
+    /// normal library at launch and into the adult library at each unlock
+    /// (RD17 decision 8). Applied only together with `libraryDirectory`.
+    let seedsUsage: Bool
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -104,6 +108,7 @@ struct DebugLaunchOptions {
         } else {
             clearPause = nil
         }
+        seedsUsage = environment[UITestLaunchKey.seedUsage] == "1"
     }
 
     /// Accepts only a name that stays inside the temporary directory.

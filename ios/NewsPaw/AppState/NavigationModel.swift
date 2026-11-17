@@ -106,6 +106,8 @@ enum SettingsRoute: Hashable {
     /// Settings › Adult Partition (ux S10; RD18 decision 10).
     case adultPartition
     case data
+    /// Settings › Usage (ux S8; RD17): the workspace's own library.
+    case usage
     case about
 
     /// Whether the route's screen is a form the owner types into, which

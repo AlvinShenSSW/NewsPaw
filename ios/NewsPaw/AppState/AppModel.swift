@@ -137,6 +137,8 @@ final class AppModel {
     /// The article page size of the UI tests, which every workspace's
     /// reading model takes.
     @ObservationIgnored private var articlePageSize: Int?
+    /// Whether the usage seeding runs on each library opened (RD17).
+    @ObservationIgnored private var seedsUsage = false
     @ObservationIgnored private var adultWasShown = false
     @ObservationIgnored private weak var lastAdultWorkspace: Workspace?
     @ObservationIgnored private weak var lastAdultBrowser: BrowserModel?
@@ -247,10 +249,10 @@ final class AppModel {
                 readingSettings: ReadingSettings(preferences: preferences),
                 normalModels: models,
                 translationSettings: TranslationSettings(preferences: preferences),
-                operations: operations,
                 // The normal library's models: its workspace's translation
                 // resumes, whichever workspace's Settings saved.
-                slotsChanged: { [weak self] in self?.normal?.translation.slotsChanged() }
+                slotsChanged: { [weak self] in self?.normal?.translation.slotsChanged() },
+                operations: operations
             )
             self.parts = parts
             // The embedded browser (RD19 decision 4): the system's default
@@ -294,6 +296,7 @@ final class AppModel {
             #if DEBUG
             if options.libraryDirectory != nil {
                 articlePageSize = options.articlePageSize
+                seedsUsage = options.seedsUsage
             }
             if let size = articlePageSize {
                 workspace.reading.pageSize = size
@@ -304,6 +307,9 @@ final class AppModel {
             // The translator fixture's models and the daily limit (RD14).
             if options.libraryDirectory != nil {
                 try await Self.setUpTranslationForUITests(options, models: models, library: library)
+            }
+            if seedsUsage {
+                try await library.insertUsageForUITests(calendar: .current)
             }
             workspace.categories.failNextSave = options.failNextSave
             workspace.categories.slowNextSave = options.slowNextSave
@@ -391,6 +397,11 @@ final class AppModel {
             workspace.categories.slowNextSave = slowNextSave
             if let size = articlePageSize {
                 workspace.reading.pageSize = size
+            }
+            if seedsUsage {
+                // The adult library's own rows, so that a lock has
+                // something to hide (RD17 criterion 7).
+                try? await library.insertUsageForUITests(calendar: .current)
             }
             #endif
             await workspace.load()

@@ -101,6 +101,9 @@ final class Workspace: Identifiable {
     /// The adult library's slots in Settings › Adult Partition (ux S10;
     /// RD19 decision 2): the adult workspace's only.
     let partitionModelSettings: ModelSettingsModel?
+    /// Settings › Usage (RD17 decision 1): built on this workspace's own
+    /// library, never on `WorkspaceParts.normalModels` or another library.
+    let usage: UsageModel
     /// The app's one reading settings object, shared by every workspace.
     let readingSettings: ReadingSettings
     /// The app's one translation settings object, shared by every workspace.
@@ -145,6 +148,10 @@ final class Workspace: Identifiable {
             allowsPictureInPicture: setup.allowsPictureInPicture
         )
         let modelSettings = ModelSettingsModel(models: parts.normalModels, navigation: navigation, formRoute: SettingsRoute.modelSlot)
+        // The library this workspace is built on: the adult one in the
+        // adult workspace. Not `parts.normalModels`' library, which is the
+        // normal one in both.
+        let usage = UsageModel(library: library, now: parts.now, calendar: .current)
         let partitionModelSettings = library.partition == .adult
             ? ModelSettingsModel(models: models, navigation: navigation, formRoute: SettingsRoute.adultModelSlot)
             : nil
@@ -182,6 +189,7 @@ final class Workspace: Identifiable {
         self.browser = browser
         self.modelSettings = modelSettings
         self.partitionModelSettings = partitionModelSettings
+        self.usage = usage
         self.translation = translation
         readingSettings = parts.readingSettings
         translationSettings = parts.translationSettings
@@ -227,7 +235,9 @@ final class Workspace: Identifiable {
     /// starts no new one, stores no extraction and asks for no body image,
     /// and its browser sessions are ended with their web views taken out
     /// of the view tree and their reader mode with them; its translation's
-    /// request in flight is cancelled and none starts. Image loads belong to the rows' own
+    /// request in flight is cancelled and none starts; its usage screen
+    /// keeps no result of a read or a write in flight and starts none.
+    /// Image loads belong to the rows' own
     /// tasks and end with the views. A save that is still
     /// queued is not cancelled: it runs into the closed library, fails,
     /// and says so nowhere, because a stopped model raises no alert. UIKit
@@ -240,6 +250,7 @@ final class Workspace: Identifiable {
         reading.stop()
         browser.stop()
         translation.stop()
+        usage.stop()
         // Closes the sheet and every pushed screen; the model form, if one
         // was pushed, cancels its running Test or list with its route.
         navigation.clear()

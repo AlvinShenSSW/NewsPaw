@@ -23,6 +23,111 @@
         }
       }
     },
+    "%lld input tokens" : {
+      "comment" : "Usage screen: input tokens the services reported, summed.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld input token"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld input tokens"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld 个输入 token"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld output tokens" : {
+      "comment" : "Usage screen: output tokens the services reported, summed.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld output token"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld output tokens"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld 个输出 token"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld requests" : {
+      "comment" : "Usage screen: how many model requests a model made for one purpose in the period.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld request"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld requests"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld 次请求"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld sources failed" : {
       "comment" : "Today's status line: how many sources failed in their last update; a button that shows them in the category list.",
       "localizations" : {
@@ -346,6 +451,17 @@
         }
       }
     },
+    "Article Text" : {
+      "comment" : "Usage screen: purpose of model requests that translate article text.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正文"
+          }
+        }
+      }
+    },
     "Australia" : {
       "comment" : "Group of suggested sources.",
       "localizations" : {
@@ -375,6 +491,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自动"
+          }
+        }
+      }
+    },
+    "Automatic requests today: %lld of %lld" : {
+      "comment" : "Usage screen: today's automatic model requests (first number) out of the daily automatic limit (second number).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今天的自动请求：%1$lld / %2$lld"
           }
         }
       }
@@ -797,6 +924,17 @@
         }
       }
     },
+    "Daily Automatic Limit" : {
+      "comment" : "Usage screen: header of the section and accessibility label of the picker for the partition's daily limit on automatic model requests.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日自动上限"
+          }
+        }
+      }
+    },
     "Data" : {
       "comment" : "The Settings row and screen for data: the image cache (more arrives later).",
       "localizations" : {
@@ -804,6 +942,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "数据"
+          }
+        }
+      }
+    },
+    "Days begin at midnight on this device. Tokens are counted as each service reported them." : {
+      "comment" : "Usage screen: footer of the totals. Periods start at local midnight; token counts are those the model services returned.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "天数从本设备上的午夜开始计算。token 数以各服务的报告为准。"
           }
         }
       }
@@ -1850,6 +1999,17 @@
         }
       }
     },
+    "Model Tests" : {
+      "comment" : "Usage screen: purpose of model requests sent by Test in a model's settings.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型测试"
+          }
+        }
+      }
+    },
     "Model not found" : {
       "comment" : "Test result line in the model form (ux S9).",
       "localizations" : {
@@ -2125,6 +2285,17 @@
         }
       }
     },
+    "No model requests in this period." : {
+      "comment" : "Usage screen: the period chosen has no recorded model request.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此时段内没有模型请求。"
+          }
+        }
+      }
+    },
     "No starred articles" : {
       "comment" : "Empty state of Starred.",
       "localizations" : {
@@ -2334,6 +2505,17 @@
         }
       }
     },
+    "Overviews" : {
+      "comment" : "Usage screen: purpose of model requests that write overviews.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "概览"
+          }
+        }
+      }
+    },
     "Paint palette" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -2407,6 +2589,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已暂停 · 上次更新 %@"
+          }
+        }
+      }
+    },
+    "Period" : {
+      "comment" : "Accessibility label of the Usage screen's period control: Today, 7 Days or 30 Days.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "时段"
           }
         }
       }
@@ -3616,6 +3809,17 @@
         }
       }
     },
+    "Titles and Summaries" : {
+      "comment" : "Usage screen: purpose of model requests that translate titles and summaries.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标题和摘要"
+          }
+        }
+      }
+    },
     "Titles and summaries are translated into this language." : {
       "comment" : "Footer under the reading language.",
       "localizations" : {
@@ -3638,6 +3842,17 @@
         }
       }
     },
+    "Today's automatic limit is reached" : {
+      "comment" : "Usage screen: shown under today's count when it has reached the daily automatic limit.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已达到今天的自动上限"
+          }
+        }
+      }
+    },
     "Today's automatic limit is reached. Translate manually, or raise the limit in Settings" : {
       "comment" : "Why an article is not translated: the daily automatic limit.",
       "localizations" : {
@@ -3645,6 +3860,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已达到今天的自动上限，可手动翻译，或在设置里调高"
+          }
+        }
+      }
+    },
+    "Tokens unknown" : {
+      "comment" : "Usage screen: none of a row's requests had its token counts returned by the service.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "token 数未知"
+          }
+        }
+      }
+    },
+    "Tokens unknown for %lld requests" : {
+      "comment" : "Usage screen: how many of a row's requests had no token counts returned by the service.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Tokens unknown for %lld request"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Tokens unknown for %lld requests"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld 次请求的 token 数未知"
+                }
+              }
+            }
           }
         }
       }
@@ -3880,6 +4141,28 @@
         }
       }
     },
+    "Usage" : {
+      "comment" : "Settings row and screen title: requests and tokens per model and purpose, and the daily automatic limit (ux S8).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用量"
+          }
+        }
+      }
+    },
+    "Usage could not be read." : {
+      "comment" : "Usage screen: shown in place of the totals and of the limit when they could not be read from storage.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取用量。"
+          }
+        }
+      }
+    },
     "Use at most %lld characters." : {
       "comment" : "Shown under the category name field when the name is too long. %lld is the limit (100).",
       "localizations" : {
@@ -3902,6 +4185,17 @@
         }
       }
     },
+    "Web Pages" : {
+      "comment" : "Usage screen: purpose of model requests that translate web pages.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网页"
+          }
+        }
+      }
+    },
     "Web page" : {
       "comment" : "Kind of a source, and the VoiceOver value of a web-page source's row.",
       "localizations" : {
@@ -3920,6 +4214,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭后，成人分区的文章列表不显示、也不下载缩略图。"
+          }
+        }
+      }
+    },
+    "When today's automatic requests reach this number, nothing more is sent automatically until tomorrow. Translations you start yourself are not limited." : {
+      "comment" : "Usage screen: footer of the daily automatic limit.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当今天的自动请求达到此数量后，直到明天都不会再自动发送。你自己发起的翻译不受限制。"
           }
         }
       }

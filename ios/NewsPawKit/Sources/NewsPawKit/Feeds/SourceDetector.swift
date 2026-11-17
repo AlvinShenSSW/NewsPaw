@@ -10,10 +10,12 @@ public struct PreviewItem: Sendable, Hashable {
 /// stores the articles parsed here and makes no request (RD05 decision 7).
 public struct FeedCandidate: Sendable, Hashable {
     /// The address to store: the requested normal form, or its https twin
-    /// when the fetch ended there (RD05 decision 3).
+    /// when the fetch ended there (RD05 decision 3); for a Hugging Face
+    /// account, its page's address in the account's own spelling (RD26).
     public let address: String
     /// The kind of source Save stores: `github` for one of a repository's
-    /// built feeds (RD07 decision 9), else `feed`.
+    /// built feeds (RD07 decision 9), `huggingface` for a Hugging Face
+    /// account's page (RD26), else `feed`.
     public let kind: SourceKind
     public let format: ParsedFeed.Format
     /// The feed's own title.
@@ -356,7 +358,8 @@ public struct SourceDetector: Sendable {
     /// - Parameters:
     ///   - kind: the kind a usable candidate is saved as.
     ///   - ignoringCase: whether the lookup ignores ASCII case (a
-    ///     repository's built feeds); a declared feed is looked up exactly.
+    ///     repository's built feeds, a Hugging Face account's page); a
+    ///     declared feed is looked up exactly.
     private func check(
         _ feeds: [DeclaredFeed], declaredOn page: String, kind: SourceKind = .feed, ignoringCase: Bool = false,
         in library: Library

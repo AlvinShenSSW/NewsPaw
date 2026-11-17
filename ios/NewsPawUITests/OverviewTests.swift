@@ -149,6 +149,27 @@ final class OverviewTests: OverviewTestCase {
         waitForText(summary("Limited"), "概览[zh-Hans]：")
     }
 
+    /// Review round 2: with nothing new today, the list's card still
+    /// offers Earlier Overviews, and it opens the earlier ones.
+    func testEarlierOverviewsWithNothingNew() {
+        launchOverviews()
+        createCategory("Quiet")
+        // Seeded once the category exists: the earlier overviews.
+        launchOverviews(seed: true)
+        openCategoryList("Quiet")
+        waitForText(part("nothingNew", "Quiet"), Overview.nothingNew)
+        XCTAssertFalse(summary("Quiet").exists, "no overview today")
+        waitFor(button(AccessibilityID.overview("earlier", "Quiet"))).tap()
+        waitFor(element(AccessibilityID.earlierOverviewsList))
+        for days in 1...3 {
+            waitFor(element(AccessibilityID.earlierOverview(dayKey(daysBefore: days))))
+        }
+        XCTAssertTrue(app.staticTexts["Earlier overview 1 day(s) ago."].exists)
+        button(AccessibilityID.earlierOverviewsDoneButton).tap()
+        waitForAbsence(element(AccessibilityID.earlierOverviewsList))
+        XCTAssertTrue(card("Quiet").exists)
+    }
+
     private func dayKey(daysBefore days: Int) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current

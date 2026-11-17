@@ -197,7 +197,8 @@ private struct OverviewTodayCard: View {
 
 /// The first row of an `auto` or `manual` category's list: "Today's
 /// Overview", collapsed to two lines with Expand, or expanded as on Today
-/// with Earlier Overviews (decision 12).
+/// with Earlier Overviews (decision 12); the other states as on Today,
+/// with Earlier Overviews (`offersEarlier`).
 struct OverviewListCard: View {
     let category: LibraryCategory
     @Environment(OverviewModel.self) private var overviews
@@ -234,7 +235,7 @@ struct OverviewListCard: View {
             } else {
                 OverviewStateContent(category: category, state: state, place: .list)
             }
-            if expanded, case .done = state {
+            if Self.offersEarlier(state, expanded: expanded) {
                 Button {
                     navigation.sheet = .earlierOverviews(category.id)
                 } label: {
@@ -256,6 +257,20 @@ struct OverviewListCard: View {
 }
 
 extension OverviewListCard {
+    /// Earlier Overviews is the way to the category's history (ux S3), so
+    /// every state of the card offers it: a `done` overview once expanded,
+    /// as the design draws it, and every other state at once — nothing
+    /// new, writing, failed, the limit, write, no model (review round 2).
+    /// The sheet says "No earlier overviews" when there are none. Today
+    /// does not offer it: its card header and rows open this list.
+    static func offersEarlier(_ state: OverviewCardState, expanded: Bool) -> Bool {
+        switch state {
+        case .done: expanded
+        case .off: false
+        case .working, .failed, .noModel, .write, .nothingNew: true
+        }
+    }
+
     private var title: some View {
         Text("Today's Overview")
             .font(.headline)

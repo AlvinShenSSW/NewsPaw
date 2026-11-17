@@ -83,6 +83,24 @@ final class BlockRowFrames {
     func block(atTop top: Double) -> Int? {
         frames.filter { $0.value.minY <= top + 1 && $0.value.maxY > top + 1 }.map(\.key).min()
     }
+
+    /// The reader's place at `top`: the block at the top, or none when the
+    /// top is above every laid-out row (the header); unknown (`nil`) while
+    /// no row is laid out or the top is below them all.
+    struct Place: Equatable {
+        let block: Int?
+    }
+
+    /// The place last told to the reading model.
+    var reported: Place?
+
+    func place(atTop top: Double) -> Place? {
+        if let block = block(atTop: top) {
+            return Place(block: block)
+        }
+        guard let first = frames.values.map(\.minY).min(), top + 1 < first else { return nil }
+        return Place(block: nil)
+    }
 }
 
 extension EnvironmentValues {

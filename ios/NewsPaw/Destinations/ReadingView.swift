@@ -449,9 +449,18 @@ struct ReaderPosition: ViewModifier {
                 geometry.contentOffset.y + geometry.contentInsets.top
             } action: { _, top in
                 rows.visibleTop = top
-            }
-            .onChange(of: position.viewID(type: Int.self)) { _, block in
-                reading.readerMoved(to: block, in: articleID)
+                // The reader's place is the block whose row holds the
+                // visible top edge, none while the header holds it — not
+                // the position's `viewID`, which names the first block
+                // below that edge (measured): at the article's top it named
+                // block 0, and a screen built again then scrolled the header
+                // away (RD11's `testPlaceIsKeptWhileTheArticleStaysOpen` on
+                // the iPad, fix round 1). Nothing is told before the rows
+                // are laid out, so that a screen built again keeps the
+                // place it was given.
+                guard let place = rows.place(atTop: top), place != rows.reported else { return }
+                rows.reported = place
+                reading.readerMoved(to: place.block, in: articleID)
             }
             .onChange(of: mode) {
                 keepTopBlock(proxy)

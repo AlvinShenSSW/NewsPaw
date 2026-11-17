@@ -174,6 +174,8 @@ final class ConfigurationTests: AdultTestCase {
         screenshot("preview-both")
         tapWhenEnabled(AccessibilityID.configurationMergeButton)
         assertText(AccessibilityID.configurationKeysNeeded("normal"), contains: ["1 model needs a key."])
+        // Below the fold of the iPad's form sheet.
+        scrollTo(element(AccessibilityID.configurationKeysNeeded("adult")))
         assertText(AccessibilityID.configurationKeysNeeded("adult"), contains: ["1 model needs a key."])
         screenshot("summary")
         button(AccessibilityID.configurationSetUpKeys("normal")).tap()

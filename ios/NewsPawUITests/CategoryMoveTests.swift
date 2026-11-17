@@ -287,6 +287,48 @@ final class CategoryMoveTests: IsolationTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 120), .completed, "the move button stayed disabled after the move")
     }
 
+    // MARK: - Review round 4: the sources while a move runs (J1)
+
+    /// A normal → adult move held between its copy and its deletion, then
+    /// a lock back to the normal partition: until the move has ended the
+    /// source's row has Pause and Delete dimmed, and its Source Settings
+    /// cannot change its pause or category or be saved; then the category
+    /// leaves the normal partition with the source as the move copied it.
+    func testSourcesAreLockedWhileAMoveRuns() {
+        launchForMoves(authentication: ["passed", "passed"], pause: 120)
+        createCategory("World")
+        addSource(Fixture.articles, to: "World")
+        turnOnAdult()
+        openCategorySheet("World")
+        tapMove()
+        _ = waitForAlert()
+        waitFor(button(AccessibilityID.confirmMoveButton)).tap()
+        waitForAbsence(app.alerts.firstMatch)
+        // Held between the copy and the deletion: back to normal.
+        tapLock()
+        waitForPartition(Wording.normal)
+        expand("World")
+        waitFor(sourceRow("Articles Feed")).press(forDuration: 1.2)
+        let pause = app.buttons.matching(NSPredicate(format: "label IN %@", ["Pause", "暂停"])).firstMatch
+        XCTAssertFalse(waitFor(pause).isEnabled, "Pause could be used during the move")
+        let delete = app.buttons.matching(NSPredicate(format: "label IN %@", ["Delete", "删除"])).firstMatch
+        XCTAssertFalse(delete.isEnabled, "Delete could be used during the move")
+        tapOutsideDialog()
+        waitForAbsence(pause)
+
+        openSourceSettings("Articles Feed", in: "World")
+        XCTAssertFalse(app.switches[AccessibilityID.pausedToggle].isEnabled, "the pause could be changed during the move")
+        XCTAssertFalse(element(AccessibilityID.sourceCategoryPicker).isEnabled, "the category could be changed during the move")
+        XCTAssertFalse(button(AccessibilityID.saveButton).isEnabled, "Source Settings could be saved during the move")
+
+        // The move ends: the category has left the normal partition.
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            !self.app.textFields[AccessibilityID.nameField].exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 150), .completed, "the source's sheet stayed after the move")
+        XCTAssertFalse(categoriesShown().contains("World"), "the move did not finish: \(categoriesShown())")
+    }
+
     // MARK: - Criterion 12: a lock during a normal → adult run
 
     /// A normal → adult move whose run a lock overtakes (the run waits

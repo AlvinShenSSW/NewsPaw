@@ -31,6 +31,10 @@ struct WorkspaceParts {
     /// Called after a slot of `normalModels` changed, from the Settings of
     /// any workspace: the normal library's translation resumes.
     let slotsChanged: @MainActor () -> Void
+    /// The app's partition operation state (RD19 review round 4): one
+    /// object for the app, so that each workspace's models see an
+    /// operation whichever workspace began it.
+    let operations: PartitionOperationState
 }
 
 /// How a workspace's embedded browser is set up.
@@ -114,11 +118,11 @@ final class Workspace: Identifiable {
         partition = library.partition
         self.models = models
         let navigation = navigation
-        let categories = CategoryModel(library: library, navigation: navigation)
+        let categories = CategoryModel(library: library, navigation: navigation, operations: parts.operations)
         let refresh = RefreshModel(library: library, transport: parts.transport, settings: parts.refreshSettings, now: parts.now)
         let sources = SourceModel(
             library: library, transport: parts.transport, candidateLimit: parts.candidateLimit,
-            navigation: navigation, categories: categories, refresh: refresh
+            navigation: navigation, categories: categories, refresh: refresh, operations: parts.operations
         )
         // The workspace's one extractor (RD12): its reading model and its
         // browser's reader mode share it, so that one extraction runs at a

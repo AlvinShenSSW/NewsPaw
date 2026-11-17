@@ -105,8 +105,16 @@ final class CategoryModel {
 
     /// Whether the workspace of this model was dropped.
     private(set) var isStopped = false
-    /// The move waiting for its confirmation (RD19 decision 11).
-    var pendingMove: CategoryMove.Plan?
+    /// The move waiting for its confirmation (RD19 decision 11). Cleared
+    /// by Cancel, by the alert's dismissal or by a lock, before its run has
+    /// begun: the move's operation ends.
+    var pendingMove: CategoryMove.Plan? {
+        didSet {
+            if pendingMove == nil, !isMoving {
+                endMove()
+            }
+        }
+    }
     /// What the last move has to say.
     var moveMessage: MoveMessage?
     /// Whether a move's plan is being read or the move runs.
@@ -114,11 +122,13 @@ final class CategoryModel {
     /// Given by the app model to the adult workspace's model only: moves
     /// run inside the adult partition, in both directions.
     @ObservationIgnored var mover: CategoryMover?
-    /// Whether a move runs anywhere in the app (review round 3): set by the
-    /// app model on both workspaces' models, so that a workspace made by a
-    /// new unlock, or the normal one shown after a lock, sees a move that
-    /// an earlier adult workspace started and that still runs.
-    @ObservationIgnored var moveRunsInApp: @MainActor () -> Bool = { false }
+    /// The app's partition operation state (review round 4), shared by
+    /// both workspaces: a move begins its operation here, and every change
+    /// of the library is refused while a move runs anywhere in the app.
+    let operations: PartitionOperationState
+    /// The move's operation, held from the reading of its plan to the end
+    /// of its run, or until its confirmation is cancelled or dropped.
+    @ObservationIgnored private var moveToken: PartitionOperations.Token?
 
     private let library: Library
     private let navigation: NavigationModel
@@ -146,9 +156,10 @@ final class CategoryModel {
     var slowNextSave: Duration?
     #endif
 
-    init(library: Library, navigation: NavigationModel) {
+    init(library: Library, navigation: NavigationModel, operations: PartitionOperationState) {
         self.library = library
         self.navigation = navigation
+        self.operations = operations
     }
 
     /// The workspace is dropped (RD18 decision 4): from here on nothing
@@ -170,10 +181,16 @@ final class CategoryModel {
     /// read or the move runs (review round 2). Meanwhile the open editor is
     /// locked and rows cannot be moved or deleted: an edit made then would
     /// be built on a list that is about to change (RD03 C2–C5), or saved in
-    /// a library the category is leaving. A move that runs elsewhere in the
-    /// app counts too (review round 3).
+    /// a library the category is leaving. A move that runs anywhere in the
+    /// app counts too (reviews rounds 3 and 4).
     var isBusy: Bool {
-        queuedOperations > 0 || isMoving || moveRunsInApp()
+        queuedOperations > 0 || isMoving || operations.refusesLibraryEdits
+    }
+
+    /// Waits for every change queued before now (review round 4: a move
+    /// begins after them).
+    func settle() async {
+        _ = await lastOperation?.value
     }
 
     var activeDialogHost: CategoryDialogHost {
@@ -365,17 +382,29 @@ final class CategoryModel {
     /// stopped this model is not presented.
     func beginMove(_ id: UUID, from partition: Partition) {
         guard let mover, !isMoving, !isStopped else { return }
+        // One partition operation at a time in the app (review round 4),
+        // whichever workspace began the other one: refused, nothing moves.
+        guard let token = operations.begin(.categoryMove) else {
+            moveMessage = .notMoved
+            return
+        }
+        moveToken = token
         isMoving = true
         let to: Partition = partition == .normal ? .adult : .normal
         Task {
             let plan = await mover.plan(id, partition)
             isMoving = false
-            guard !isStopped else { return }
+            guard !isStopped else {
+                endMove()
+                return
+            }
             guard let plan else {
+                endMove()
                 moveMessage = .notMoved
                 return
             }
             if plan.movesNothing {
+                endMove()
                 moveMessage = .nothingToMove(name: plan.category.name, to: to)
             } else {
                 pendingMove = plan
@@ -383,11 +412,23 @@ final class CategoryModel {
         }
     }
 
+    /// Ends the move's operation, if this model holds it.
+    private func endMove() {
+        if let moveToken {
+            operations.end(moveToken)
+            self.moveToken = nil
+        }
+    }
+
     /// "Move": runs the move. Success shows nothing.
     func confirmMove(_ plan: CategoryMove.Plan) {
-        pendingMove = nil
-        guard let mover, !isMoving, !isStopped else { return }
+        guard let mover, !isMoving, !isStopped, moveToken != nil else {
+            pendingMove = nil
+            return
+        }
+        // Set first: the confirmation's clearing keeps the operation.
         isMoving = true
+        pendingMove = nil
         let previous = lastOperation
         Task {
             // A category save queued before the move ends first; none can
@@ -395,6 +436,7 @@ final class CategoryModel {
             _ = await previous?.value
             let outcome = await mover.run(plan)
             isMoving = false
+            endMove()
             guard !isStopped else { return }
             switch outcome {
             case .moved:
@@ -422,6 +464,12 @@ final class CategoryModel {
     /// not replaced by an intermediate one. A `nil` operation only reloads,
     /// in its turn.
     private func perform(_ operation: (@Sendable (Library) async throws -> Void)?) async -> Bool {
+        // No change of the library is queued while a move runs anywhere in
+        // the app (review round 4): refused, nothing written, nothing shown.
+        // A reload still is.
+        if operation != nil, operations.refusesLibraryEdits {
+            return false
+        }
         let previous = lastOperation
         let library = library
         queuedOperations += 1

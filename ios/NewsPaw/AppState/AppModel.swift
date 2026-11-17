@@ -76,15 +76,14 @@ final class AppModel {
     /// Whether the system's authentication is being asked for: the
     /// partition switch and the Settings switch wait for its answer.
     private(set) var isAuthenticating = false
-    /// Whether the partition is being turned off: Clear Browsing Data
-    /// waits for it.
-    private(set) var isTurningOff = false
-    /// Whether the adult browser's data are being cleared.
-    private(set) var isClearingBrowsingData = false
-    /// Whether a category move runs (review round 2): the partition is not
-    /// turned off meanwhile, and no other move begins anywhere in the app
-    /// (review round 3).
-    private(set) var isMovingCategory = false
+    /// Which partition operation runs, if any, and what it refuses
+    /// meanwhile (review round 4): one state for the app, shared by both
+    /// workspaces through their parts. `PartitionOperations` holds the
+    /// table.
+    let operations = PartitionOperationState()
+    /// Whether a category move runs, from the reading of its plan to its
+    /// end.
+    var isMovingCategory: Bool { operations.running == .categoryMove }
     /// The sentence to show at the root; it outlives a swap of workspaces.
     var notice: AdultNotice?
     /// The question of turning off being asked at the root.
@@ -248,6 +247,7 @@ final class AppModel {
                 readingSettings: ReadingSettings(preferences: preferences),
                 normalModels: models,
                 translationSettings: TranslationSettings(preferences: preferences),
+                operations: operations,
                 // The normal library's models: its workspace's translation
                 // resumes, whichever workspace's Settings saved.
                 slotsChanged: { [weak self] in self?.normal?.translation.slotsChanged() }
@@ -291,7 +291,6 @@ final class AppModel {
             #endif
             self.adultBrowserData = adultBrowserData
             let workspace = Workspace(library: library, models: models, parts: parts, browser: browser)
-            workspace.categories.moveRunsInApp = { [weak self] in self?.isMovingCategory ?? false }
             #if DEBUG
             if options.libraryDirectory != nil {
                 articlePageSize = options.articlePageSize
@@ -355,11 +354,11 @@ final class AppModel {
     @discardableResult
     func chooseAdult(pending: PendingAdultOperation? = nil) async -> AdultUnlockOutcome {
         guard let gate, let parts, let makeAdultBrowser, let adultKeys, let makeAdultModelHTTP, let normal, adult == nil,
-              gateState == .locked, !isAuthenticating, !isTurningOff, !isClearingBrowsingData
+              gateState == .locked, !isAuthenticating, !operations.refusesUnlock
         else { return .refused }
-        // One move at a time (review round 3): an unlock that would carry
-        // a move across does not begin while another move runs.
-        if case .move? = pending, isMovingCategory {
+        // An unlock that would carry a move across does not begin while a
+        // partition operation runs: the move could not begin (round 4).
+        if case .move? = pending, operations.refusesUnlockCarryingMove {
             return .refused
         }
         // Chosen in the slide-over: it closes, so that what follows is
@@ -383,11 +382,10 @@ final class AppModel {
             let models = LibraryModels(library: library, keys: adultKeys, http: makeAdultModelHTTP())
             let workspace = Workspace(library: library, models: models, parts: parts, browser: makeAdultBrowser())
             workspace.categories.mover = mover(adult: library, workspace: workspace)
-            workspace.categories.moveRunsInApp = { [weak self] in self?.isMovingCategory ?? false }
             // No adult page opens while its data are cleared or removed.
             workspace.browser.mayMakeSessions = { [weak self] in
                 guard let self else { return false }
-                return !self.isClearingBrowsingData && !self.isTurningOff
+                return !self.operations.refusesAdultSessions
             }
             #if DEBUG
             workspace.categories.slowNextSave = slowNextSave
@@ -596,10 +594,10 @@ final class AppModel {
 
     // MARK: - Clear Browsing Data (RD19 decision 5)
 
-    /// Whether Clear Browsing Data can be asked for now: not while a gate
-    /// operation runs or a clear has not ended.
+    /// Whether Clear Browsing Data can be asked for now: not while the
+    /// system's authentication is asked for or a partition operation runs.
     var canClearBrowsingData: Bool {
-        showsPartitionSwitch && !isAuthenticating && !isTurningOff && !isClearingBrowsingData
+        showsPartitionSwitch && !isAuthenticating && operations.running == nil
     }
 
     /// How long Clear and Delete wait for the pages' documents to unload.
@@ -616,13 +614,12 @@ final class AppModel {
     /// - Returns: whether the clear ended with no page left running.
     @discardableResult
     func clearAdultBrowsingData() async -> Bool {
-        guard canClearBrowsingData, let adultBrowserData else { return false }
+        guard canClearBrowsingData, let adultBrowserData, let token = operations.begin(.clearBrowsingData) else { return false }
         // From here until the clear has ended no adult page opens, by a tap
         // or by an unlock (review round 2); a page asked for meanwhile opens
         // after it.
-        isClearingBrowsingData = true
         defer {
-            isClearingBrowsingData = false
+            operations.end(token)
             adult?.browser.stacksChanged()
         }
         adult?.navigation.closeBrowsers()
@@ -641,12 +638,24 @@ final class AppModel {
     /// What the adult workspace's category model moves with: the normal
     /// library, opened at start, and the adult one of this unlock. Moves
     /// run inside the adult partition, in both directions.
+    /// Waits for the category and source changes queued in either
+    /// workspace before a move's operation began (review round 4); none is
+    /// queued meanwhile (`PartitionOperations.refusesLibraryEdits`).
+    private func settleLibraryEdits() async {
+        for workspace in [normal, adult].compactMap({ $0 }) {
+            await workspace.categories.settle()
+            await workspace.sources.settle()
+        }
+    }
+
     private func mover(adult library: Library, workspace: Workspace) -> CategoryMover {
         CategoryMover(
             plan: { [weak self] id, from in
-                // No second move's plan while a move runs (review round 3):
-                // the model says nothing was moved.
-                guard let self, !self.isMovingCategory, let normalLibrary = self.normalLibrary else { return nil }
+                guard let self, let normalLibrary = self.normalLibrary else { return nil }
+                // The move's operation runs (the category model began it):
+                // no change of either library is queued from here on, and
+                // one queued before it ends before the plan is read.
+                await self.settleLibraryEdits()
                 let (old, new) = from == .normal ? (normalLibrary, library) : (library, normalLibrary)
                 return try? await CategoryMove.plan(category: id, from: old, to: new)
             },
@@ -668,14 +677,9 @@ final class AppModel {
     /// Both workspaces then read their categories and recorded refresh
     /// time, and a destination on screen refreshes the new category.
     private func runMove(_ plan: CategoryMove.Plan, adultLibrary: Library, workspace: Workspace) async -> CategoryMove.Outcome {
-        // One move at a time in the whole app (review round 3): a lock and
-        // a new unlock make a new adult workspace whose category model
-        // knows nothing of a move an earlier one started. A second run is
-        // refused and changes nothing; the flag belongs to the run that set
-        // it (no await between the check and the setting).
-        guard let normalLibrary, let normal, !isMovingCategory else { return .notMoved }
-        isMovingCategory = true
-        defer { isMovingCategory = false }
+        // The category model that runs it holds the move's operation, from
+        // the reading of the plan to the end of this run (review round 4).
+        guard let normalLibrary, let normal, isMovingCategory else { return .notMoved }
         let toAdult = plan.from == .normal
         let (old, new) = toAdult ? (normalLibrary, adultLibrary) : (adultLibrary, normalLibrary)
         #if DEBUG
@@ -723,14 +727,15 @@ final class AppModel {
         return outcome
     }
 
-    /// "Turn Off the Adult Partition": asks at the root.
-    /// Whether the partition can be turned off now: not while its
-    /// browser's data are cleared or a category move runs (review round 2):
-    /// Delete would remove a store the clear then makes again, or the
-    /// library a move is copying into.
+    /// Whether the partition can be turned off now: not while a partition
+    /// operation runs (reviews rounds 2 and 4): Delete would remove a store
+    /// a clear then makes again, or the library a move is copying into,
+    /// and a second Turn Off would overlap the first.
     var canTurnOff: Bool {
-        showsPartitionSwitch && !isClearingBrowsingData && !isMovingCategory
+        showsPartitionSwitch && operations.running == nil
     }
+
+    /// "Turn Off the Adult Partition": asks at the root.
 
     func askToTurnOff() {
         guard canTurnOff else { return }
@@ -742,9 +747,8 @@ final class AppModel {
     /// that fails says so and leaves the partition on.
     func turnOff(deletingData: Bool) async {
         turnOffQuestion = nil
-        guard let gate, canTurnOff else { return }
-        isTurningOff = true
-        defer { isTurningOff = false }
+        guard let gate, canTurnOff, let token = operations.begin(.turnOff) else { return }
+        defer { operations.end(token) }
         lock()
         // The lock ended the adult pages; Delete removes their store only
         // once their documents are gone, so that none writes again after
@@ -755,6 +759,12 @@ final class AppModel {
             gateState = await gate.state
             return
         }
+        #if DEBUG
+        // The UI tests hold Delete here, as they hold Clear (round 4).
+        if deletingData, let clearPause {
+            try? await Task.sleep(for: clearPause)
+        }
+        #endif
         switch await gate.turnOff(deletingData: deletingData) {
         case .turnedOff, .refused:
             break

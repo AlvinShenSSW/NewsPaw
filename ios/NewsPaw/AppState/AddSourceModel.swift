@@ -320,8 +320,10 @@ final class AddSourceModel {
         categoryID.flatMap { categories.summary($0)?.category }
     }
 
+    /// Whether Add is enabled: not while a category move runs anywhere in
+    /// the app (RD19 review round 4).
     var canSave: Bool {
-        guard !isSaving, nameProblem == nil, chosenCategory != nil else { return false }
+        guard !isSaving, !sources.editsAreRefused, nameProblem == nil, chosenCategory != nil else { return false }
         switch choice {
         case .feed: return chosenFeed != nil
         case .webPage: return webPageAddress != nil
@@ -358,7 +360,7 @@ final class AddSourceModel {
 
     /// Creates the category at once and selects it.
     func createCategory() async {
-        guard Library.categoryNameProblem(newCategoryName) == nil, !isCreatingCategory else { return }
+        guard Library.categoryNameProblem(newCategoryName) == nil, !isCreatingCategory, !sources.editsAreRefused else { return }
         isCreatingCategory = true
         defer { isCreatingCategory = false }
         if let category = await categories.createCategory(name: newCategoryName, icon: newCategoryIcon) {

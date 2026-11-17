@@ -332,6 +332,38 @@ final class AdultIsolationTests: IsolationTestCase {
         XCTAssertEqual(openStoragePage(of: "Plain story", in: "Velvet"), "none", "the adult browser's data outlived Delete")
     }
 
+    // MARK: - Review round 4: one Turn Off at a time (J2)
+
+    /// Delete asked for from the normal partition's Settings and held (the
+    /// clear's debug option) before the gate removes the data: Settings ›
+    /// Adult Partition opened again meanwhile has Turn Off and Clear
+    /// Browsing Data dimmed, so no second Turn Off or Delete can be asked
+    /// for, until the first has ended and the partition is off.
+    func testTurnOffIsRefusedWhileDeleteRuns() {
+        app.terminate()
+        let application = XCUIApplication()
+        application.launchEnvironment[UITestLaunchKey.clearPause] = "30"
+        launch(application, authentication: ["passed", "passed"])
+        rotate(.portrait)
+        requireFullWidth()
+        turnOnAdult()
+        scrollTo(turnOffButton).tap()
+        answerAlert(Wording.turnOffQuestion, with: "Delete Data")
+        answerAlert(Wording.deleteQuestion, with: "Delete")
+        waitFor(adultRow)
+        // Held before the gate deletes: Settings › Adult Partition again.
+        openAdultSettings()
+        XCTAssertFalse(scrollTo(turnOffButton).isEnabled, "Turn Off could be asked for while Delete ran")
+        XCTAssertFalse(scrollTo(clearBrowsingButton).isEnabled, "Clear could be asked for while Delete ran")
+
+        // The first Delete ends: the partition is off.
+        let off = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            !self.turnOffButton.exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [off], timeout: 60), .completed, "the partition stayed on after Delete")
+        waitFor(adultToggle)
+    }
+
     // MARK: - Criterion 8
 
     /// With the switch off adult rows show no thumbnail and none is

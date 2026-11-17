@@ -293,7 +293,7 @@ struct DataSettingsView: View {
     /// export's directory is removed.
     private func removeShownExport() {
         if let url = shownExport {
-            OPMLExportFile.remove(url)
+            ExportFolder.opml.remove(url)
             shownExport = nil
         }
     }
@@ -309,9 +309,9 @@ struct DataSettingsView: View {
             defer { isExporting = false }
             do {
                 let data = try await library.opmlExport()
-                let url = try await Task.detached { try OPMLExportFile.write(data, on: Date()) }.value
+                let url = try await Task.detached { try ExportFolder.opml.write(data, on: Date()) }.value
                 guard !sources.isStopped, isShown, exported == nil else {
-                    OPMLExportFile.remove(url)
+                    ExportFolder.opml.remove(url)
                     return
                 }
                 shownExport = url

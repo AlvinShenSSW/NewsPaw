@@ -238,6 +238,10 @@ final class Workspace: Identifiable {
                 navigation.sheet = nil
             }
         }
+        // Replace may have changed a source's options, as a save of its
+        // settings does: the remembered page failures are forgotten the
+        // same way, so that the next opening fetches again (review round 2).
+        reading.sourceSettingsSaved()
         await refresh.load()
         await reading.loadSettings()
         await modelSettings.reload()

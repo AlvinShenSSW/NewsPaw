@@ -14,6 +14,10 @@ enum ConfigurationFixture: String {
     case normal
     /// A model service address that is http: refused.
     case refused
+    /// The normal partition only: RD12's full-text feed in "World", its
+    /// body "Always Fetch the Page"; no setting and no model (RD20 review
+    /// round 2).
+    case fullText
 
     static let normalCategory = "Imported News"
     static let normalSource = "Imported Feed"
@@ -21,6 +25,21 @@ enum ConfigurationFixture: String {
     static let adultSource = "Imported Hidden"
 
     var text: String {
+        if self == .fullText {
+            return """
+                {
+                  "schema_version": 1,
+                  "exported_at": "2026-11-16T09:00:00Z",
+                  "app_version": "0.1.0 (1)",
+                  "includes_adult": false,
+                  "settings": {},
+                  "categories": [{"id": "6c0de3a4-1d1a-4c2e-9d0e-6a8f0f9a0021", "name": "World", "partition": "normal", "sort_order": 0, "icon": "newspaper", "overview": "auto"}],
+                  "sources": [{"id": "6c0de3a4-1d1a-4c2e-9d0e-6a8f0f9a0031", "category_id": "6c0de3a4-1d1a-4c2e-9d0e-6a8f0f9a0021", "kind": "feed", "name": "Full Text Feed", "url": "\(FixtureTransport.Address.fullText)", "paused": false, "auto_translate": "inherit", "body_mode": "page", "translate_page": false}],
+                  "partition_settings": [],
+                  "model_slots": []
+                }
+                """
+        }
         let normalCategory = """
             {"id": "6c0de3a4-1d1a-4c2e-9d0e-6a8f0f9a0001", "name": "\(Self.normalCategory)", "partition": "normal", "sort_order": 0, "icon": "newspaper", "overview": "auto"}
             """

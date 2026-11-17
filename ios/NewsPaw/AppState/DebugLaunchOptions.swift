@@ -44,6 +44,9 @@ struct DebugLaunchOptions {
     /// completion (RD20 criterion 13). Applied only together with
     /// `libraryDirectory`.
     let configurationWritePause: Duration?
+    /// Where the adult workspace's configuration export waits (RD20 review
+    /// round 2). Applied only together with `libraryDirectory`.
+    let configurationExportHold: ConfigurationExportHold?
     /// The translator fixture's models to set up in the normal library
     /// (RD14): the primary, and the backup after it. Applied only together
     /// with `libraryDirectory`, and only to a library with no model yet.
@@ -102,6 +105,7 @@ struct DebugLaunchOptions {
         } else {
             configurationWritePause = nil
         }
+        configurationExportHold = environment[UITestLaunchKey.configurationExportHold].flatMap(ConfigurationExportHold.init(rawValue:))
         translationModels = switch environment[UITestLaunchKey.translationModels] {
         case "primary": [.primary]
         case "primary,backup": [.primary, .backup]

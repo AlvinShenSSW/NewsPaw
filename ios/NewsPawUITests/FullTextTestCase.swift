@@ -17,8 +17,8 @@ class FullTextTestCase: ReadingTestCase {
 
     /// Launches at full size with the full-text feed in "World" and its
     /// source's list shown under All.
-    func launchWithFullTextFeed(_ orientation: UIDeviceOrientation = .portrait, arguments: [String] = []) {
-        launchReading(orientation, arguments: arguments)
+    func launchWithFullTextFeed(_ orientation: UIDeviceOrientation = .portrait, arguments: [String] = [], environment: [String: String] = [:]) {
+        launchReading(orientation, arguments: arguments, environment: environment)
         createCategory(FullText.category)
         addSource(FullText.feed, to: FullText.category)
         openSourceList(FullText.source, in: FullText.category)

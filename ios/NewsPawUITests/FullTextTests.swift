@@ -123,6 +123,37 @@ final class FullTextTests: FullTextTestCase {
         expectPages(requests, "the page that did not answer, opened again")
     }
 
+    /// RD20 review round 2: Replace from a configuration file changes the
+    /// source's body to "Always Fetch the Page"; a page failure remembered
+    /// before is forgotten, as after a save of the source's settings.
+    func testImportForgetsFailures() {
+        launchWithFullTextFeed(environment: [UITestLaunchKey.configurationFixture: "fullText"])
+        openAndSettle("List story", fullText: false)
+        expectPages(1, "the first opening")
+        leaveArticle()
+        openAndSettle("List story", fullText: false)
+        expectPages(1, "opened again: remembered")
+        leaveArticle()
+
+        openSettings(row: AccessibilityID.dataRow)
+        waitFor(button(AccessibilityID.importConfigurationButton)).tap()
+        let replaceEverything = scrollTo(button(AccessibilityID.configurationReplaceEverythingButton))
+        waitForEnabled(replaceEverything, true)
+        replaceEverything.tap()
+        waitFor(button(AccessibilityID.configurationReplaceButton)).tap()
+        let alert = app.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: timeout), "no \"Replace now?\"")
+        alert.buttons.matching(NSPredicate(format: "label == %@", "Replace")).firstMatch.tap()
+        waitFor(button(AccessibilityID.configurationDoneButton)).tap()
+        waitForAbsence(button(AccessibilityID.configurationDoneButton))
+
+        openSourceList(FullText.source, in: FullText.category)
+        chooseFilter("All")
+        scrollList(to: "List story")
+        openArticle("List story")
+        expectPages(2, "after Replace changed the source's body")
+    }
+
     // MARK: - Criteria 7 and 8
 
     /// Reader mode on the browser's article page shows the temporary

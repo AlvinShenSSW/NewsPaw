@@ -72,8 +72,9 @@ struct ConfigurationContext {
     /// ended, whether or not this workspace still exists. Returns whether
     /// the summary may be shown.
     let completion: @MainActor (ConfigurationImportResult) async -> Bool
-    /// The summary was left: the ordinary refresh of each workspace whose
-    /// library was written.
+    /// The summary was left, or the import ended without one: the ordinary
+    /// refresh of each workspace whose library was written and that still
+    /// exists. Started once per committed import (`ConfigurationModel.owedRefresh`).
     let summaryLeft: @MainActor (ConfigurationImportResult) -> Void
 }
 
@@ -145,6 +146,22 @@ final class ConfigurationModel {
     /// The last write changed nothing; the preview says so.
     private(set) var writeFailed = false
     private(set) var result: ConfigurationImportResult?
+    /// The refresh a committed import owes while its summary is shown.
+    ///
+    /// The rule (review round 2): a committed import's refresh — each
+    /// written workspace that still exists refreshes its library — starts
+    /// exactly once, however its summary ends or whether it ever appears.
+    /// Every way out, and the line that starts it:
+    /// - the summary will not be shown (a lock or a partition switch took
+    ///   the workspace away before the completion ended): `AppModel`'s
+    ///   completion, `configurationImported`, at once;
+    /// - the summary may be shown but this import is no longer the current
+    ///   one, or this model is gone: `startWrite`, at once;
+    /// - the summary is shown and then ends — Done, a swipe, a lock or any
+    ///   other drop of the workspace (`stop`), the other partition entered
+    ///   (`leftForOtherPartition`): `endImport`, which every one of them
+    ///   runs, discharging this.
+    private var owedRefresh: ConfigurationImportResult?
     /// The preview is ready and waits for RD18's notice to go.
     private(set) var waitsForNotice = false
     /// Add Source is closing; the picker is presented once it has.
@@ -165,6 +182,19 @@ final class ConfigurationModel {
     /// Set by the UI tests: how long the write waits between its end and
     /// its completion, so that a lock can come in between (criterion 13).
     var writePause: Duration?
+    /// Set by the UI tests, in the adult workspace only: where its export
+    /// waits (review round 2).
+    var exportHold: ConfigurationExportHold?
+    /// The bytes of the file the share sheet shows.
+    private var exportedData: Data?
+    /// The report's counts, for every workspace of the launch.
+    static var debugExportsWritten = 0
+    static var debugExportsEnded = 0
+    static var debugExportsShown = 0
+    /// At the last share sheet's end: whether its file was still the one
+    /// written (`intact`), was overwritten (`replaced`) or was gone
+    /// (`missing`), and how many export files had been written by then.
+    static var debugShareEnded = "none"
     #endif
 
     init(partition: Partition, context: ConfigurationContext, navigation: NavigationModel, sources: SourceModel) {
@@ -198,8 +228,10 @@ final class ConfigurationModel {
     // MARK: - Export (decision 9)
 
     /// "Export Configuration": the file is built off the main actor,
-    /// written as "NewsPaw Configuration <yyyy-MM-dd>.newspaw" into the
-    /// emptied export directory, and handed to the share sheet.
+    /// written as "NewsPaw Configuration <yyyy-MM-dd>.newspaw" into a
+    /// directory of its own, and handed to the share sheet. An export that
+    /// ends after the workspace was dropped or Data was left removes its
+    /// own directory and nothing else (review round 2, P1).
     func export() {
         guard !isExporting, !isStopped else { return }
         isExporting = true
@@ -210,26 +242,44 @@ final class ConfigurationModel {
         let appVersion = context.appVersion
         let now = context.now()
         Task {
-            defer { isExporting = false }
+            defer {
+                isExporting = false
+                #if DEBUG
+                Self.debugExportsEnded += 1
+                #endif
+            }
             do {
                 let data = try await ConfigurationTransfer.export(
                     normal: normal, adult: adult, preferences: preferences, appVersion: appVersion, now: now
                 )
+                #if DEBUG
+                await hold(at: .bytes)
+                #endif
                 // Not written once the workspace was dropped or Data left
-                // (review round 1, R3): a lock has emptied the directory.
+                // (review round 1, R3).
                 guard !isStopped, isDataShown else { return }
-                let url = try await Task.detached { try ConfigurationExportFile.write(data, on: now) }.value
+                #if DEBUG
+                await hold(at: .write)
+                #endif
+                let url = try await Task.detached { try ExportFolder.configuration.write(data, on: now) }.value
+                #if DEBUG
+                Self.debugExportsWritten += 1
+                #endif
                 guard !isStopped, isDataShown, exportedFile == nil else {
-                    ConfigurationExportFile.emptyAll()
+                    ExportFolder.configuration.remove(url)
                     return
                 }
                 exportedFile = url
+                #if DEBUG
+                exportedData = data
+                Self.debugExportsShown += 1
+                #endif
             } catch let failure as ConfigurationExportError {
                 if !isStopped {
                     exportFailure = failure
                 }
             } catch {
-                ConfigurationExportFile.emptyAll()
+                // The failed write left nothing of its own.
                 if !isStopped {
                     exportFailure = .failed
                 }
@@ -237,10 +287,22 @@ final class ConfigurationModel {
         }
     }
 
-    /// The share sheet ended, by an activity or by being closed.
+    /// The share sheet ended, by an activity or by being closed: its
+    /// export's directory is removed.
     func exportEnded() {
+        guard let url = exportedFile else { return }
+        #if DEBUG
+        let state: String
+        if let shared = try? Data(contentsOf: url) {
+            state = shared == exportedData ? "intact" : "replaced"
+        } else {
+            state = "missing"
+        }
+        Self.debugShareEnded = "\(state)@\(Self.debugExportsWritten)"
+        exportedData = nil
+        #endif
         exportedFile = nil
-        ConfigurationExportFile.emptyAll()
+        ExportFolder.configuration.remove(url)
     }
 
     // MARK: - Import (decision 8)
@@ -465,6 +527,7 @@ final class ConfigurationModel {
         #if DEBUG
         let pause = writePause
         #endif
+        let summaryLeft = context.summaryLeft
         Task { [weak self] in
             let result = await ConfigurationTransfer.run(job, mode: mode, preferences: preferences, completion: { _ in })
             #if DEBUG
@@ -472,8 +535,15 @@ final class ConfigurationModel {
                 try? await Task.sleep(for: pause)
             }
             #endif
+            // When no summary will be shown, the completion has started the
+            // refresh; when one may be, it is owed from here on.
             let showsSummary = await completion(result)
-            guard let self, self.isCurrent(token) else { return }
+            guard let self, self.isCurrent(token) else {
+                if showsSummary {
+                    summaryLeft(result)
+                }
+                return
+            }
             if result.changedNothing {
                 // Nothing of either partition was written: the preview
                 // stays, with the reason, and its buttons work again.
@@ -481,30 +551,35 @@ final class ConfigurationModel {
                 self.stage = .preview
                 return
             }
+            guard showsSummary else {
+                self.endImport()
+                return
+            }
             self.result = result
+            self.owedRefresh = result
             self.path = []
             self.stage = .summary
-            if !showsSummary {
-                self.endImport()
-            }
         }
     }
 
     /// The import sheet closed, by Cancel, Done or a swipe. Leaving the
-    /// summary starts the refresh.
+    /// summary starts the refresh (in `endImport`).
     func sheetClosed() {
         guard isImporting, presentsSheet, navigation.sheet != .configurationImport else { return }
         if case .importing = stage {
             return
         }
-        if stage == .summary, let result {
-            context.summaryLeft(result)
-        }
         endImport()
     }
 
-    /// The question or an alert was answered with Cancel or OK.
+    /// The import ends, whichever way: the question or an alert answered,
+    /// the sheet closed, the workspace left or dropped. A summary that was
+    /// shown starts the refresh its import owes (`owedRefresh`).
     func endImport() {
+        if let owed = owedRefresh {
+            owedRefresh = nil
+            context.summaryLeft(owed)
+        }
         token += 1
         task?.cancel()
         task = nil
@@ -552,11 +627,31 @@ final class ConfigurationModel {
     func stop() {
         isStopped = true
         endImport()
-        exportedFile = nil
+        // The lock also empties the whole folder; any other drop removes
+        // this workspace's own export.
+        if let url = exportedFile {
+            exportedFile = nil
+            ExportFolder.configuration.remove(url)
+        }
         exportFailure = nil
     }
 
     #if DEBUG
+    /// Waits where `exportHold` says, at most a minute: after the bytes
+    /// were built until this workspace is dropped, or before the file is
+    /// written until another export has reached its share sheet.
+    private func hold(at stage: ConfigurationExportHold) async {
+        guard exportHold == stage else { return }
+        let shown = Self.debugExportsShown
+        for _ in 0..<600 {
+            switch stage {
+            case .bytes where isStopped: return
+            case .write where Self.debugExportsShown > shown: return
+            default: try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+
     /// What the UI tests' report says of the document this model holds:
     /// `none`, `normal` (no adult part) or `both`.
     var heldDocumentReport: String {
@@ -566,28 +661,14 @@ final class ConfigurationModel {
     #endif
 }
 
-/// The exported configuration files: one at a time, in `Configuration` in
-/// the temporary directory, emptied before each export, when its share
-/// sheet ends, at launch and at every lock of the adult partition (RD20
-/// decision 9). The file's name never names a partition.
-enum ConfigurationExportFile {
-    static var root: URL {
-        FileManager.default.temporaryDirectory.appending(path: "Configuration", directoryHint: .isDirectory)
-    }
-
-    static func emptyAll() {
-        try? FileManager.default.removeItem(at: root)
-    }
-
-    /// Empties the directory, then writes `data` as "NewsPaw Configuration
-    /// <yyyy-MM-dd>.newspaw" and returns its address.
-    static func write(_ data: Data, on date: Date) throws -> URL {
-        emptyAll()
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        // The owner's calendar day, not the one in GMT.
-        let day = date.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day().dateSeparator(.dash))
-        let url = root.appending(path: "NewsPaw Configuration \(day).newspaw")
-        try data.write(to: url, options: .atomic)
-        return url
-    }
+#if DEBUG
+/// Where the adult workspace's export waits under a UI test (review round
+/// 2): `bytes`, after the file's bytes were built, until the workspace is
+/// dropped — a lock in the middle of building; `write`, after the checks
+/// before the write, until another export has reached its share sheet — a
+/// lock in the middle of the write.
+enum ConfigurationExportHold: String {
+    case bytes
+    case write
 }
+#endif

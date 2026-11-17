@@ -22,13 +22,16 @@ final class ConfigurationTests: AdultTestCase {
     }
 
     /// Launches with "Import Configuration" reading `fixture`.
-    func launchReading(_ fixture: String?, authentication: [String] = [], writePause: Int? = nil) {
+    func launchReading(_ fixture: String?, authentication: [String] = [], writePause: Int? = nil, exportHold: String? = nil) {
         let application = XCUIApplication()
         if let fixture {
             application.launchEnvironment[UITestLaunchKey.configurationFixture] = fixture
         }
         if let writePause {
             application.launchEnvironment[UITestLaunchKey.configurationWritePause] = String(writePause)
+        }
+        if let exportHold {
+            application.launchEnvironment[UITestLaunchKey.configurationExportHold] = exportHold
         }
         launch(application, authentication: authentication)
         rotate(.portrait)
@@ -406,6 +409,70 @@ final class ConfigurationTests: AdultTestCase {
     }
 
     static let normalSource = "Imported Feed"
+
+    // MARK: - Review round 2, P2: a lock while the summary is shown
+
+    /// A Replace inside the adult partition reaches its summary; then a
+    /// lock. The summary is gone, and the refresh it owed has run: the
+    /// imported normal feed is collected, with the interval not due.
+    func testLockFromSummary() {
+        launchReading("both", authentication: ["passed", "passed", "passed"])
+        turnOnAdult()
+        enterAdult()
+        openDataSettings()
+        button(AccessibilityID.importConfigurationButton).tap()
+        waitFor(element(AccessibilityID.configurationCounts("adult")))
+        replaceEverything(expectingOnlyNormal: false)
+        waitFor(button(AccessibilityID.configurationDoneButton))
+        leaveAndReturn()
+        waitForReport(AdultTestCase.closed)
+        XCTAssertFalse(button(AccessibilityID.configurationDoneButton).exists)
+        waitForCategory(Self.normalCategory)
+        expand(Self.normalCategory)
+        waitForValue(sourceRow(Self.normalSource), "3 unread")
+        XCTAssertFalse(button(AccessibilityID.configurationDoneButton).exists)
+    }
+
+    // MARK: - Review round 2, P1 and round 1, R3: exports across a lock
+
+    /// Starts an export of both partitions inside the adult partition,
+    /// which holds where the launch said, and locks.
+    private func exportAdultAndLock() {
+        turnOnAdult()
+        enterAdult()
+        openDataSettings()
+        flip(waitFor(app.switches[AccessibilityID.includeAdultToggle]))
+        waitFor(app.staticTexts[Wording.notEncrypted])
+        button(AccessibilityID.exportConfigurationButton).tap()
+        leaveAndReturn()
+        waitForReport(AdultTestCase.closed)
+    }
+
+    /// The adult export is locked out between its checks and its write;
+    /// the normal partition exports and shows its file; the late adult
+    /// write then lands. Its file goes into its own directory and is
+    /// removed alone: the shown normal file is still the one written when
+    /// its share sheet ends.
+    func testLateExportKeepsAnother() {
+        launchReading(nil, authentication: ["passed", "passed", "passed"], exportHold: "write")
+        exportAdultAndLock()
+        openDataSettings()
+        button(AccessibilityID.exportConfigurationButton).tap()
+        assertShareSheetShownAndClose()
+        waitForReport("exportsEnded=2", seconds: 30)
+        // Both files were written before the share sheet ended, and the
+        // shown one was intact then.
+        waitForReport("exportsWritten=2", "shareEnded=intact@2")
+    }
+
+    /// A lock while the adult export builds its bytes: nothing is written
+    /// once the workspace is dropped (round 1, R3).
+    func testExportDroppedBeforeItsWrite() {
+        launchReading(nil, authentication: ["passed", "passed", "passed"], exportHold: "bytes")
+        exportAdultAndLock()
+        waitForReport("exportsEnded=1", seconds: 30)
+        waitForReport("exportsWritten=0")
+    }
 
     // MARK: - Review round 1, G3
 

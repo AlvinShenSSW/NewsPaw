@@ -452,6 +452,10 @@ enum UITestLaunchKey {
     /// and its completion (RD20 criterion 13); honoured only with
     /// `libraryDirectory`.
     static let configurationWritePause = "NEWSPAW_UITEST_CONFIGURATION_WRITE_PAUSE"
+    /// `bytes` or `write`: where the adult workspace's configuration
+    /// export waits (RD20 review round 2); honoured only with
+    /// `libraryDirectory`.
+    static let configurationExportHold = "NEWSPAW_UITEST_CONFIGURATION_EXPORT_HOLD"
     /// "primary" or "primary,backup": the translator fixture's models are
     /// set up in the normal library at launch (RD14). Honoured only with
     /// `libraryDirectory`, and only while the library has no model.

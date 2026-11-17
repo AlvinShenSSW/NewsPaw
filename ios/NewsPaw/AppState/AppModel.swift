@@ -154,6 +154,7 @@ final class AppModel {
     /// the pause between an import's write and its completion.
     @ObservationIgnored private var configurationFixture: ConfigurationFixture?
     @ObservationIgnored private var configurationWritePause: Duration?
+    @ObservationIgnored private var configurationExportHold: ConfigurationExportHold?
     @ObservationIgnored private var adultWasShown = false
     @ObservationIgnored private weak var lastAdultWorkspace: Workspace?
     @ObservationIgnored private weak var lastAdultBrowser: BrowserModel?
@@ -196,8 +197,8 @@ final class AppModel {
         observeScene()
         // OPML and configuration exports left by a session that ended with
         // a share sheet open (RD08 decision 7; RD20 decision 9).
-        OPMLExportFile.emptyAll()
-        ConfigurationExportFile.emptyAll()
+        ExportFolder.opml.emptyAll()
+        ExportFolder.configuration.emptyAll()
         // The one transport the app makes requests through. Under a UI-test
         // library directory it is the fixture transport, never the real one.
         // The one clock of the library and of Today's status line.
@@ -325,6 +326,7 @@ final class AppModel {
                 opmlFixture = options.opmlFixture
                 configurationFixture = options.configurationFixture
                 configurationWritePause = options.configurationWritePause
+                configurationExportHold = options.configurationExportHold
             }
             workspace.sources.opmlFixture = opmlFixture
             workspace.configuration.fixture = configurationFixture
@@ -437,6 +439,7 @@ final class AppModel {
             workspace.sources.opmlFixture = opmlFixture
             workspace.configuration.fixture = configurationFixture
             workspace.configuration.writePause = configurationWritePause
+            workspace.configuration.exportHold = configurationExportHold
             #endif
             await workspace.load()
             // From here to the end of the case nothing suspends before the
@@ -527,8 +530,8 @@ final class AppModel {
         // An adult export whose share sheet the swap took away is not
         // dismissed through the sheet: every export file goes now (RD08,
         // RD20).
-        OPMLExportFile.emptyAll()
-        ConfigurationExportFile.emptyAll()
+        ExportFolder.opml.emptyAll()
+        ExportFolder.configuration.emptyAll()
         gateState = .locked
         applyTint()
         // A cover that is shown stays until the scene is active again and
@@ -869,7 +872,8 @@ final class AppModel {
         // No summary will be left (a lock or a switch took its workspace
         // away): the refresh that leaving it starts begins now, for each
         // workspace whose library was written and that still exists
-        // (review round 1, G2).
+        // (review round 1, G2). One way out of the rule stated at
+        // `ConfigurationModel.owedRefresh`: the refresh starts once.
         if !showsSummary, !result.changedNothing {
             configurationSummaryLeft(result)
         }
@@ -1149,7 +1153,9 @@ final class AppModel {
             + "pages=\((parts?.transport as? FixtureTransport)?.pageRequests ?? -1) "
             + "translationRequests=\(FixtureModelHTTP.translationRequests) "
             + "adultStore=\(await adultStoreIsListed() ? "listed" : "absent") "
-            + "configuration=\(normal?.configuration.heldDocumentReport ?? "none")"
+            + "configuration=\(normal?.configuration.heldDocumentReport ?? "none") "
+            + "exportsWritten=\(ConfigurationModel.debugExportsWritten) exportsEnded=\(ConfigurationModel.debugExportsEnded) "
+            + "shareEnded=\(ConfigurationModel.debugShareEnded)"
     }
 
     private func adultStoreIsListed() async -> Bool {

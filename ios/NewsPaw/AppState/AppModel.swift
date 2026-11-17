@@ -312,7 +312,7 @@ final class AppModel {
             let adultBrowserData: any AdultBrowserData = WebKitAdultBrowserData(identifier: BrowserDataStores.adultIdentifier)
             #endif
             self.adultBrowserData = adultBrowserData
-            let normalBox = WeakWorkspace()
+            let normalBox = WeakWorkspace(partition: .normal)
             let workspace = Workspace(
                 library: library, models: models, parts: parts, browser: browser,
                 configuration: configurationContext(adult: nil, workspace: normalBox)
@@ -416,7 +416,7 @@ final class AppModel {
             let models = LibraryModels(library: library, keys: adultKeys, http: makeAdultModelHTTP())
             // The adult target is the pair the adult models were made from
             // (RD20 decision 7): only this workspace's context has it.
-            let shown = WeakWorkspace()
+            let shown = WeakWorkspace(partition: .adult)
             let workspace = Workspace(
                 library: library, models: models, parts: parts, browser: makeAdultBrowser(),
                 configuration: configurationContext(adult: ConfigurationTarget(library: library, keys: adultKeys), workspace: shown)
@@ -817,7 +817,7 @@ final class AppModel {
             // The box is held; it holds the workspace weakly.
             completion: { [weak self] result in
                 guard let self else { return false }
-                return await self.configurationImported(result, by: workspace.value)
+                return await self.configurationImported(result, by: workspace)
             },
             summaryLeft: { [weak self] result in
                 self?.configurationSummaryLeft(result)
@@ -845,21 +845,25 @@ final class AppModel {
     ///
     /// - Returns: whether the summary may be shown: the workspace that
     ///   began the import is the one shown.
-    private func configurationImported(_ result: ConfigurationImportResult, by workspace: Workspace?) async -> Bool {
+    private func configurationImported(_ result: ConfigurationImportResult, by began: WeakWorkspace) async -> Bool {
         defer { isImportingConfiguration = false }
         guard let normal, let parts else { return false }
         await normal.reloadAfterImport()
         parts.refreshSettings.reload()
         parts.translationSettings.reload()
         parts.slotsChanged()
+        // The partition the import began in is the box's, not the
+        // workspace's: a lock releases the adult workspace before this runs
+        // (review round 1).
         let showsSummary: Bool
-        if let workspace, workspace.partition == .adult {
-            if adult === workspace {
+        switch began.partition {
+        case .adult:
+            if let workspace = began.value, adult === workspace {
                 await workspace.reloadAfterImport()
                 workspace.translation.slotsChanged()
             }
-            showsSummary = adult === workspace
-        } else {
+            showsSummary = began.value.map { adult === $0 } ?? false
+        case .normal:
             showsSummary = adult == nil
         }
         // No summary will be left (a lock or a switch took its workspace
@@ -1159,5 +1163,11 @@ final class AppModel {
 /// before and after the workspace exists (RD20).
 @MainActor
 final class WeakWorkspace {
+    /// The partition of the workspace named, known also once it is gone.
+    let partition: Partition
     weak var value: Workspace?
+
+    init(partition: Partition) {
+        self.partition = partition
+    }
 }

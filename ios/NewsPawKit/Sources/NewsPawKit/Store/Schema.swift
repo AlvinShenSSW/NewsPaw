@@ -6,8 +6,9 @@ import GRDB
 /// merged, and each keeps its name for good. Adding a value to one of the
 /// closed sets stored as text (`kind`, `overview`, `auto_translate`,
 /// `body_mode`, `origin`, from `v5` `role`, `preset`, `test_outcome`,
-/// `purpose`, `outcome`, and from `v6` `translation.state` and
-/// `translation.error`) also ships with a migration, even an empty one, so
+/// `purpose`, `outcome`, from `v6` `translation.state` and
+/// `translation.error`, and from the overview migration `overview.state`
+/// and `overview.error`) also ships with a migration, even an empty one, so
 /// that an older build refuses the database as newer.
 enum Schema {
     /// The migrator the app opens libraries with.
@@ -19,6 +20,7 @@ enum Schema {
         registerV4(in: &migrator)
         registerV5(in: &migrator)
         registerV6(in: &migrator)
+        registerOverview(in: &migrator)
         return migrator
     }
 
@@ -179,6 +181,43 @@ enum Schema {
                     PRIMARY KEY (article_id, locale)
                 );
                 ALTER TABLE usage ADD COLUMN automatic INTEGER NOT NULL DEFAULT 0;
+                """)
+        }
+    }
+
+    /// The name of the overview migration (RD23), the next after `v6` on
+    /// the branch it was written on. Every test and every comment that
+    /// names it goes through this constant, so that renumbering it at a
+    /// merge is a change of this line alone.
+    static let overviewMigration = "v7"
+
+    /// The overview migration: one daily overview per category, local day
+    /// and reading locale (spec N07, section 4; RD23 decision 7). `day` is
+    /// the device's local day as `yyyy-MM-dd`; `text` is the summary and
+    /// `covered_until` the newest first-seen time of the articles it was
+    /// written from, both null unless `state` is `done`; `highlights` is a
+    /// JSON array of `{"article_id": …, "text": …}` written by the app;
+    /// `error` is the stored reason of a `failed` row (RD14's
+    /// `TranslationFailure` raw values); `model` the model's name, null
+    /// when none answered. Rows go with their category.
+    static func registerOverview(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration(overviewMigration) { db in
+            try db.execute(sql: """
+                CREATE TABLE overview (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    category_id TEXT NOT NULL REFERENCES category(id) ON DELETE CASCADE,
+                    day TEXT NOT NULL,
+                    locale TEXT NOT NULL,
+                    text TEXT,
+                    highlights TEXT NOT NULL DEFAULT '[]',
+                    article_count INTEGER NOT NULL DEFAULT 0,
+                    covered_until TEXT,
+                    model TEXT,
+                    state TEXT NOT NULL,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE (category_id, day, locale)
+                );
                 """)
         }
     }

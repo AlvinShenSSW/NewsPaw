@@ -1,5 +1,6 @@
 import Foundation
 @testable import NewsPawKit
+import Synchronization
 import Testing
 
 /// RD13 decision 13 (criterion 14): the real-service check. Disabled unless
@@ -23,6 +24,12 @@ import Testing
 /// requests it took, their outcomes, and how many articles were translated
 /// or, for the failed ones, which check failed. It prints counts and
 /// reasons only, never a text.
+///
+/// RD23 adds a sixth step per service (decision 16, assumptions A1 and
+/// A2): 40 fixed articles of one category through `OverviewWriter` into
+/// Simplified Chinese, reporting the time, the token counts, the summary's
+/// length, the highlights kept and dropped, whether the reply was one text,
+/// or the check that failed. Counts and reasons only, never a text.
 @Suite("Real model services (enabled by NEWSPAW_LIVE_MODEL_KEYS)")
 struct LiveModelServiceTests {
     static let variable = "NEWSPAW_LIVE_MODEL_KEYS"
@@ -41,7 +48,7 @@ struct LiveModelServiceTests {
     static let translateTexts = ["The weather is fine today.", "The library opens at nine in the morning."]
 
     @Test(
-        "each service in the owner's key file: list, translate, wrong key, missing model, 20 articles through the translator",
+        "each service in the owner's key file: list, translate, wrong key, missing model, 20 articles through the translator, an overview of 40",
         .enabled(if: ProcessInfo.processInfo.environment[variable] != nil, "set NEWSPAW_LIVE_MODEL_KEYS to the owner's key file")
     )
     func realServices() async throws {
@@ -123,7 +130,80 @@ struct LiveModelServiceTests {
 
             // 5. Twenty articles through the translator (RD14).
             try await Self.translateArticles(name, preset: preset, address: address, model: model, key: realKey, http: http)
+
+            // 6. Forty articles through the overview writer (RD23).
+            try await Self.writeOverview(name, preset: preset, address: address, model: model, key: realKey, http: http)
         }
+    }
+
+    /// The 40 articles of step 6: distinct titles and full excerpts, which
+    /// the request cuts to 300 characters.
+    static let overviewTitles = (1...40).map { "City council report \($0): the harbour, the ferries and the new quay" }
+
+    /// A model HTTP that passes every request to the real session and keeps
+    /// the last chat answer's body in memory, so that the step can count
+    /// the reply's texts. Nothing of it is printed.
+    final class Recording: ModelHTTP {
+        private let http: URLSessionModelHTTP
+        private let last = Mutex<Data?>(nil)
+
+        init(_ http: URLSessionModelHTTP) {
+            self.http = http
+        }
+
+        var lastBody: Data? {
+            last.withLock { $0 }
+        }
+
+        func send(_ request: ModelHTTPRequest) async throws -> ModelHTTPResponse {
+            let response = try await http.send(request)
+            last.withLock { $0 = response.body }
+            return response
+        }
+    }
+
+    private static func writeOverview(
+        _ name: String, preset: ModelPreset, address: String, model: String, key: SecretKey, http: URLSessionModelHTTP
+    ) async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = try await LibraryStore(directory: directory, cacheRoot: directory.appending(path: "Images")).openNormal()
+        let recording = Recording(http)
+        let models = LibraryModels(library: library, keys: InMemoryKeyStore(), http: recording)
+        try await models.save(ModelSlotDraft(role: .primary, preset: preset, address: address, model: model, newKey: key), testedOutcome: nil)
+        let category = try await library.createCategory(name: "Live", icon: .newspaper)
+        let source = Sample.source(in: category.id, url: "https://live-overview.example.invalid/feed", name: "Live", at: Date())
+        try await library.insert(source)
+        for (index, title) in overviewTitles.enumerated() {
+            var article = Sample.article(in: source.id, externalID: "live-overview-\(index)", title: title, at: Date().addingTimeInterval(Double(-index)))
+            article.excerpt = String(articleExcerpt)
+            try await library.insert(article)
+        }
+        let writer = OverviewWriter(models: models)
+        await writer.configure(locale: .simplifiedChinese)
+        let started = ContinuousClock.now
+        let outcome = await writer.write(category: category.id)
+        let elapsed = ContinuousClock.now - started
+        let usage = try await library.usageRecords()
+        let tokens = usage.map { "\($0.inputTokens.map(String.init) ?? "-")/\($0.outputTokens.map(String.init) ?? "-")" }.joined(separator: ", ")
+        let texts = recording.lastBody.flatMap(ChatWire.decodeCompletion).flatMap(\.content).flatMap(ChatWire.texts(in:))
+        let shape: String = switch texts?.count {
+        case nil: "reply not readable"
+        case 1?: "one text"
+        case let count?: "\(count) texts"
+        }
+        let day = OverviewDay.key(for: Date(), calendar: .autoupdatingCurrent)
+        let stored = try await library.overviews(on: day, locale: .simplifiedChinese)[category.id]
+        var line = "\(usage.count) requests (\(usage.map(\.outcome.rawValue).joined(separator: ", "))), "
+            + "\(Int(elapsed.components.seconds)) s, tokens \(tokens), \(shape), outcome \(outcome)"
+        if let stored, stored.state == .done {
+            let offered = texts.map { $0.count == 1 ? $0[0].split(whereSeparator: \.isNewline).filter { $0.contains("[") }.count : $0.count - 1 } ?? 0
+            line += ", summary \(stored.text?.count ?? 0) characters, highlights kept \(stored.highlights.count), dropped \(max(0, offered - stored.highlights.count))"
+        } else if let stored {
+            line += ", failed: \(stored.failure?.rawValue ?? "?")"
+        }
+        Self.report(name, "overview", line)
+        #expect(outcome == .stored, "\(name) overview: \(outcome)")
     }
 
     /// The 20 articles of step 5: short English titles and full excerpts.

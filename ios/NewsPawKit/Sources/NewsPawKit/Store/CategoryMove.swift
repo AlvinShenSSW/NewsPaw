@@ -6,7 +6,8 @@ import GRDB
 /// destination library without their validators, last success or last
 /// error, so that they are collected there afresh, and then deleted in the
 /// old library, where their articles, bodies, seen identifiers and
-/// translations follow by the foreign keys' cascades. Read and starred
+/// translations follow by the foreign keys' cascades, and the category's
+/// overviews are deleted with it or, when it stays, by the deletion step. Read and starred
 /// states are lost.
 ///
 /// The only code that holds both libraries (with RD20's export and import).
@@ -216,8 +217,10 @@ public enum CategoryMove {
     }
 
     /// Step 2. Deletes the moved sources in the old library, and the
-    /// category when no source is left in it. Returns how many sources are
-    /// left in it and whether it was removed.
+    /// category when no source is left in it; a category that stays loses
+    /// its overviews there (RD23 Storage), which a removed one loses by the
+    /// cascade. Returns how many sources are left in it and whether it was
+    /// removed.
     private static func delete(_ moved: [UUID], category: UUID, from: Library, hooks: Hooks) async throws -> (Int, Bool) {
         try await from.write { db in
             hooks.inside?(.deletion)
@@ -231,7 +234,10 @@ public enum CategoryMove {
             }
             let key = category.databaseKey
             let left = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM source WHERE category_id = ?", arguments: [key]) ?? 0
-            guard left == 0 else { return (left, false) }
+            guard left == 0 else {
+                try db.execute(sql: "DELETE FROM overview WHERE category_id = ?", arguments: [key])
+                return (left, false)
+            }
             try db.execute(sql: "DELETE FROM category WHERE id = ?", arguments: [key])
             return (0, true)
         }

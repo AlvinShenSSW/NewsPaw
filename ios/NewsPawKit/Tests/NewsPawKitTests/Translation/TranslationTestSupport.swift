@@ -24,6 +24,8 @@ final class TranslationService: ModelHTTP {
         let host: String
         let texts: [String]
         let system: String
+        /// The request's body as sent.
+        var body: Data? = nil
     }
 
     typealias Rule = @Sendable (_ host: String, _ texts: [String], _ number: Int) -> Answer
@@ -100,7 +102,7 @@ final class TranslationService: ModelHTTP {
             }
         }
         let number = state.withLock { state in
-            state.requests.append(Request(host: host, texts: texts, system: system))
+            state.requests.append(Request(host: host, texts: texts, system: system, body: request.body))
             state.inFlight += 1
             state.mostInFlight = max(state.mostInFlight, state.inFlight)
             return state.requests.count
@@ -148,8 +150,12 @@ final class TranslationService: ModelHTTP {
 /// (`TitleTranslator.SuspensionPoint`), the first time it gets there, until
 /// the test releases it: the race tests hold an interleaving instead of
 /// sleeping for it.
-final class SuspensionGate: Sendable {
-    typealias Point = TitleTranslator.SuspensionPoint
+typealias SuspensionGate = HoldGate<TitleTranslator.SuspensionPoint>
+
+/// Holds a worker at one of its suspension points, the first time it gets
+/// there, until the test releases it (the translator's and, RD23, the
+/// overview writer's).
+final class HoldGate<Point: Hashable & Sendable>: Sendable {
 
     private struct State {
         var held: Set<Point> = []
@@ -176,7 +182,7 @@ final class SuspensionGate: Sendable {
         waiting?.resume()
     }
 
-    /// The translator's hook.
+    /// The worker's hook.
     func arrive(_ point: Point) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             let now = state.withLock { state in

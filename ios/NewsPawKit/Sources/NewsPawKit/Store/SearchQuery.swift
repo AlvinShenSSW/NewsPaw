@@ -104,9 +104,13 @@ public struct SearchReads: Sendable {
     }
 
     /// The read of the page after `cursor` in the current generation;
-    /// `nil` when there is no query.
+    /// `nil` when there is no query, and until the current generation's
+    /// first page has been applied: before that, the rows shown, and so
+    /// `cursor`, belong to an earlier query or read, and a page after them
+    /// could skip matches of this one.
     public func page(after cursor: ArticlePosition) -> Read? {
-        query.map { Read(query: $0, generation: generation, cursor: cursor) }
+        guard applied.contains(nil) else { return nil }
+        return query.map { Read(query: $0, generation: generation, cursor: cursor) }
     }
 
     /// No query any more: every read asked for so far is superseded.

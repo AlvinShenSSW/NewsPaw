@@ -185,4 +185,28 @@ struct SearchReadsTests {
         let again = SearchReads.Read(query: query, generation: harness.reads.generation, cursor: nil)
         #expect(!harness.reads.mayRead(again))
     }
+
+    @Test("no next page is asked for while a newer first page is queued or in flight: the rows shown are the previous query's (review R2)")
+    func noNextPageBeforeTheFirstPageApplies() async throws {
+        let harness = Harness()
+        // Query A's first page is shown.
+        harness.queue(harness.reads.firstPage(of: SearchQuery("kestrel")!))
+        await harness.drain()
+        #expect(harness.reads.page(after: position) != nil)
+        // B's first page is asked for and held inside its read; the rows
+        // shown, and their last position, are still A's.
+        let first = harness.reads.firstPage(of: SearchQuery("osprey")!)
+        #expect(harness.reads.page(after: position) == nil)
+        let running = await harness.queueHeldInsideItsRead(first)
+        #expect(harness.reads.page(after: position) == nil)
+        harness.releaseRead()
+        await running.value
+        // B's first page is applied: its own rows give the next cursor.
+        #expect(harness.applied.last?.query == SearchQuery("osprey")!)
+        let next = try #require(harness.reads.page(after: position))
+        #expect(next.query == SearchQuery("osprey")! && next.generation == first.generation)
+        // A clearing, then a new query: again none until it applies.
+        harness.reads.clear()
+        #expect(harness.reads.page(after: position) == nil)
+    }
 }

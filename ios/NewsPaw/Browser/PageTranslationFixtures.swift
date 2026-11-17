@@ -158,7 +158,7 @@ enum PageTranslationFixtures {
     /// Criterion 13: the window does not scroll; a box does, with foreign
     /// text far below its first screen.
     private static var innerScroll: String {
-        let lines = (1...40).map { "<p>箱の中の行 \($0) です。</p>" }.joined()
+        let lines = (1...150).map { "<p>箱の中の行 \($0) です。</p>" }.joined()
         return page("内側のスクロール", style: "html, body { height: 100%; overflow: hidden; } #box { height: 60vh; overflow: auto; border: 1px solid #999; }", """
             <div id="box">\(lines)<p id="deep">箱の一番下にある文です。</p></div>
             """)

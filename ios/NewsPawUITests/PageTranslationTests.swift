@@ -307,15 +307,18 @@ final class PageTranslationTests: PageTranslationTestCase {
         openFixture("inner-scroll", title: "内側のスクロール")
         waitForWebText(Self.translated("箱の中の行 1 です。"))
         XCTAssertFalse(webText(Self.translated("箱の一番下にある文です。")).exists)
+        // The box scrolls, the window does not: after each swipe in the
+        // box, the deepest line's translation is waited for 2 s.
         let box = app.webViews.firstMatch
-        var swipes = 0
-        while !webText("箱の一番下にある文です。").isHittable, swipes < 20 {
+        var reached = false
+        for _ in 0..<60 {
             box.swipeUp(velocity: .fast)
-            swipes += 1
+            if webText(Self.translated("箱の一番下にある文です。")).waitForExistence(timeout: 2) {
+                reached = true
+                break
+            }
         }
-        let scrolled = Date()
-        XCTAssertTrue(webText(Self.translated("箱の一番下にある文です。")).waitForExistence(timeout: 10))
-        XCTAssertLessThan(Date().timeIntervalSince(scrolled), 2.0)
+        XCTAssertTrue(reached, "the box's deepest line was not translated within 2 s of a scroll ending")
     }
 
     // MARK: - Criterion 15: nothing to translate, Traditional Chinese

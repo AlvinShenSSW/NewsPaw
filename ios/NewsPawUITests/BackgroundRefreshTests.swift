@@ -36,6 +36,15 @@ final class BackgroundRefreshTests: AdultTestCase {
         waitFor(deliverButton).tap()
     }
 
+    /// Launches with the delivery control shown (its own launch key, review
+    /// R3), at full width in portrait.
+    private func launchDelivering(_ application: XCUIApplication = XCUIApplication(), arguments: [String] = [], authentication: [String] = []) {
+        application.launchEnvironment[UITestLaunchKey.backgroundDelivery] = "1"
+        launch(application, arguments: arguments, authentication: authentication)
+        rotate(.portrait)
+        requireFullWidth()
+    }
+
     /// Settings › Refresh, with the background section in view.
     private func openRefreshSettings() {
         openSettings()
@@ -53,9 +62,7 @@ final class BackgroundRefreshTests: AdultTestCase {
     func testARunCollectsTranslatesAndLeavesTheAdultPartitionAlone() {
         let application = XCUIApplication()
         application.launchEnvironment[UITestLaunchKey.translationModels] = "primary"
-        launch(application, authentication: ["passed", "passed", "passed"])
-        rotate(.portrait)
-        requireFullWidth()
+        launchDelivering(application, authentication: ["passed", "passed", "passed"])
 
         createCategory("World")
         addSource(Fixture.counting, to: "World")
@@ -120,7 +127,7 @@ final class BackgroundRefreshTests: AdultTestCase {
     /// delivered run is counted in the line; after a relaunch the switch
     /// and the line are as left.
     func testTheSwitch() {
-        launchAtFullWidth()
+        launchDelivering()
         openRefreshSettings()
         XCTAssertEqual(backgroundToggle.value as? String, "1")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == %@", Fixture.footer)).firstMatch.exists, "the footer")
@@ -131,9 +138,9 @@ final class BackgroundRefreshTests: AdultTestCase {
         XCTAssertEqual(backgroundToggle.value as? String, "0")
         waitForReport("scheduled=no")
         deliver()
-        // Nothing to wait for: a delivery without a pending request does
-        // nothing at all.
-        Thread.sleep(forTimeInterval: 2)
+        // The delivery was handled, and with no request pending it ran
+        // nothing and recorded nothing.
+        waitForReport("deliveries=1", seconds: Self.reportBound)
         waitForReport("scheduled=no", "runs=0", "background=none")
 
         flip(backgroundToggle)
@@ -190,9 +197,7 @@ final class BackgroundRefreshTests: AdultTestCase {
                 // A library of its own for each variant: "not run yet" first.
                 setUpLibraryName()
                 app.terminate()
-                launch(arguments: arguments)
-                rotate(.portrait)
-                requireFullWidth()
+                launchDelivering(arguments: arguments)
                 openRefreshSettings()
                 capture("1-not-run")
                 deliver()

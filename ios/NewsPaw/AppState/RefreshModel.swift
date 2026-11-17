@@ -129,7 +129,10 @@ final class RefreshModel {
 
     // MARK: - Background time (decision 6)
 
-    private func beginBackgroundTime() {
+    /// Also taken for a background run's collection handed to the front
+    /// (RD24 review G3), and ended by `endBackgroundTimeIfIdle()` when it
+    /// ends.
+    func beginBackgroundTime() {
         runs += 1
         guard backgroundTask == .invalid else { return }
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Refresh") { [weak self] in
@@ -145,7 +148,7 @@ final class RefreshModel {
         endBackgroundTime()
     }
 
-    private func endBackgroundTimeIfIdle() {
+    func endBackgroundTimeIfIdle() {
         runs -= 1
         if runs == 0 {
             endBackgroundTime()

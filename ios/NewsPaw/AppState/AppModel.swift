@@ -126,9 +126,12 @@ final class AppModel {
     /// The unlock that is running, so that the background can discard it.
     @ObservationIgnored private var unlockAttempt: UnlockAttempt?
     @ObservationIgnored private var sceneObservers: [any NSObjectProtocol] = []
-    /// The opening of the normal library under way, which the scene's
-    /// start and a background run share (RD24 approach 7).
-    @ObservationIgnored private var preparation: Task<(any Error)?, Never>?
+    /// The opening of the normal library, which the scene's start and a
+    /// background run share (RD24 approach 7).
+    @ObservationIgnored private let preparation = SharedPreparation()
+    /// A background run ran since the scene was last active: the next
+    /// activation ends the translator's pause (review R1).
+    @ObservationIgnored private var ranInBackground = false
     /// Whether the scene's start has been asked for: a start that failed in
     /// the background is tried again at the next activation.
     @ObservationIgnored private var startWasAsked = false
@@ -151,6 +154,12 @@ final class AppModel {
     /// Whether the UI tests' report element is shown: only under a UI-test
     /// library directory.
     private(set) var showsDebugReport = false
+    /// Whether the "Deliver background refresh" control is shown: only
+    /// under a UI-test library directory and its own launch key (RD24
+    /// review R3).
+    private(set) var showsDeliveryControl = false
+    /// How many taps of the control were handled, for the report.
+    @ObservationIgnored private var deliveriesHandled = 0
     /// The slow-save option, which the adult workspace's first category
     /// save takes too, so that a save can be overrun by a lock.
     @ObservationIgnored private var slowNextSave: Duration?
@@ -219,37 +228,64 @@ final class AppModel {
     /// reset or replaced. A failure in the background shows nothing and is
     /// forgotten, so that the foreground start tries again (criterion 8).
     ///
-    /// - Parameter inBackground: whether the caller is in the background,
-    ///   asked when the opening has failed.
+    /// The background action stops waiting when its task is cancelled (the
+    /// system's time ran out, review G1); the opening goes on for a scene
+    /// that may connect.
+    ///
+    /// - Parameters:
+    ///   - inBackground: whether the caller is in the background, asked
+    ///     when the opening has failed.
+    ///   - stopsOnCancellation: whether the wait ends with the caller's
+    ///     task.
     /// - Returns: whether the normal library is open.
-    private func prepare(inBackground: @autoclosure () -> Bool) async -> Bool {
+    private func prepare(inBackground: @autoclosure () -> Bool, stopsOnCancellation: Bool = false) async -> Bool {
         switch status {
         case .ready: return true
         case .failed: return false
         case .loading: break
         }
-        let task: Task<(any Error)?, Never>
-        if let preparation {
-            task = preparation
-        } else {
-            task = Task { await self.openNormalLibrary() }
-            preparation = task
+        let outcome = await preparation.wait(stopsOnCancellation: stopsOnCancellation) { [weak self] in
+            await self?.openNormalLibrary() ?? CancellationError()
         }
-        let error = await task.value
-        // Rechecked after the wait: the task opened the library, or another
+        // Rechecked after the wait: the opening succeeded, or another
         // caller has shown its failure.
         switch status {
         case .ready: return true
         case .failed: return false
         case .loading: break
         }
-        if preparation == task {
-            preparation = nil
-        }
-        if let error, !inBackground(), !(error is CancellationError) {
+        if case .finished(let error?) = outcome, !inBackground(), !(error is CancellationError) {
             status = .failed(LibraryFailure(error))
         }
         return false
+    }
+
+    /// The clock, the preferences store and the background scheduler: what
+    /// the schedule needs, which needs no library (review G2). Made once,
+    /// so that a start tried again keeps them.
+    private func makeScheduleParts() {
+        guard scheduler == nil else { return }
+        #if DEBUG
+        let options = DebugLaunchOptions(environment: ProcessInfo.processInfo.environment)
+        // Under a UI-test library directory: a preferences suite named
+        // after it, never the standard one.
+        let defaults = options.libraryDirectory.flatMap { UserDefaults(suiteName: $0.lastPathComponent) } ?? .standard
+        // The clock offset, like the fixture transport, applies only under a
+        // UI-test library directory.
+        let clock = DebugClock(offset: options.libraryDirectory != nil ? options.clockOffset : 0)
+        if options.libraryDirectory != nil {
+            debugClock = clock
+        }
+        now = { clock.now() }
+        // Under a UI-test library directory the recording scheduler, never
+        // the system's (RD24 decision 9).
+        scheduler = options.libraryDirectory != nil ? RecordingBackgroundScheduler() : SystemBackgroundScheduler()
+        #else
+        let defaults = UserDefaults.standard
+        now = { Date() }
+        scheduler = SystemBackgroundScheduler()
+        #endif
+        preferences = Preferences(defaults)
     }
 
     /// Opens the normal library, creating it on first launch, builds the
@@ -273,19 +309,6 @@ final class AppModel {
         // preferences suite named after it, never the standard one.
         let cacheRoot = options.libraryDirectory.map { $0.appending(path: "Images", directoryHint: .isDirectory) }
             ?? LibraryStore.defaultCacheRoot()
-        let defaults = options.libraryDirectory.flatMap { UserDefaults(suiteName: $0.lastPathComponent) } ?? .standard
-        // The clock offset, like the fixture transport, applies only under a
-        // UI-test library directory.
-        let offset = options.libraryDirectory != nil ? options.clockOffset : 0
-        let clock = DebugClock(offset: offset)
-        if options.libraryDirectory != nil {
-            debugClock = clock
-        }
-        let now: @Sendable () -> Date = { clock.now() }
-        // Under a UI-test library directory the recording scheduler, never
-        // the system's (RD24 decision 9).
-        let scheduler: any BackgroundScheduler = options.libraryDirectory != nil
-            ? RecordingBackgroundScheduler() : SystemBackgroundScheduler()
         // Under a UI-test library directory: keys under a keychain service
         // named after the directory, never the owner's, and the model
         // fixture, which reaches no real service.
@@ -304,6 +327,7 @@ final class AppModel {
             ?? KeychainKeyStore(partition: .adult)
         let adultIsEnabled = BuildFeatures.adultPartition && !(options.libraryDirectory != nil && options.adultFeatureOff)
         showsDebugReport = options.libraryDirectory != nil
+        showsDeliveryControl = options.libraryDirectory != nil && options.backgroundDelivery
         slowNextSave = options.slowNextSave
         if options.libraryDirectory != nil {
             failNextMoveDeletion = options.failNextMoveDeletion
@@ -315,18 +339,15 @@ final class AppModel {
         let transport: any Transport = URLSessionTransport()
         let candidateLimit = Duration.seconds(20)
         let cacheRoot = LibraryStore.defaultCacheRoot()
-        let defaults = UserDefaults.standard
-        let now: @Sendable () -> Date = { Date() }
         let keyStore = KeychainKeyStore(partition: .normal)
         let modelHTTP: any ModelHTTP = URLSessionModelHTTP()
         makeAdultModelHTTP = { URLSessionModelHTTP() }
         let authenticator: any DeviceAuthenticator = SystemDeviceAuthenticator()
         let adultKeys = KeychainKeyStore(partition: .adult)
         let adultIsEnabled = BuildFeatures.adultPartition
-        let scheduler: any BackgroundScheduler = SystemBackgroundScheduler()
         #endif
-        self.now = now
-        self.scheduler = scheduler
+        makeScheduleParts()
+        let now = self.now
         self.adultKeys = adultKeys
         do {
             // The app's one store: a start tried again keeps it.
@@ -334,8 +355,7 @@ final class AppModel {
             self.store = store
             let library = try await store.openNormal()
             normalLibrary = library
-            let preferences = Preferences(defaults)
-            self.preferences = preferences
+            guard let preferences else { return LibraryError.storage("No preferences store") }
             let models = LibraryModels(library: library, keys: keyStore, http: modelHTTP)
             let parts = WorkspaceParts(
                 transport: transport, candidateLimit: candidateLimit, now: now,
@@ -438,12 +458,22 @@ final class AppModel {
     /// made while the app is in front does nothing (the entry refreshes).
     /// The system completes the task when this returns; when its time runs
     /// out it cancels this task, and the run cancels the refresher first.
+    ///
+    /// Every delivery first reconciles the schedule from the stored
+    /// settings, so that a failed or abandoned preparation still leaves the
+    /// next request (review G2). A failure of the opening while the app is
+    /// in front is shown, as the scene's start shows it (review R2).
     func backgroundRefresh() async {
-        guard await prepare(inBackground: true) else { return }
-        // Rechecked after the wait: the time ran out, or the app came to
-        // the front, meanwhile.
-        guard !Task.isCancelled, !sceneIsActive else { return }
-        await refreshInBackground()
+        makeScheduleParts()
+        guard let preferences, let scheduler else { return }
+        await BackgroundAction.perform(
+            settings: preferences, now: now(), scheduler: scheduler,
+            prepare: {
+                await self.prepare(inBackground: UIApplication.shared.applicationState == .background, stopsOnCancellation: true)
+            },
+            isInFront: { self.sceneIsActive },
+            run: { await self.refreshInBackground() }
+        )
     }
 
     /// One background run: the schedule is reconciled; with background
@@ -460,6 +490,7 @@ final class AppModel {
             return
         }
         preferences.recordBackgroundRun(at: now())
+        ranInBackground = true
         let control = BackgroundPassControl(refresher: normal.refresh.engine)
         let work = BackgroundRefreshWork(workspace: normal, library: normalLibrary, settings: settings, control: control)
         let run = BackgroundRun(control: control) { await work.run() }
@@ -475,6 +506,19 @@ final class AppModel {
         #else
         _ = ending
         #endif
+    }
+
+    /// The collection of a run handed to the front holds the ordinary
+    /// refresh's background time, with its expiry, until it ends (review
+    /// G3): if the app leaves again meanwhile, the collection is not
+    /// suspended halfway without the refresher being cancelled.
+    private func holdBackgroundTimeForCollection() {
+        guard let control = backgroundControl, control.isCollecting, let refresh = normal?.refresh else { return }
+        refresh.beginBackgroundTime()
+        Task {
+            await control.untilCollectionEnds()
+            refresh.endBackgroundTimeIfIdle()
+        }
     }
 
     /// Applies the schedule's rule with the settings now (criterion 2).
@@ -979,11 +1023,15 @@ final class AppModel {
     private func sceneDidActivate() {
         sceneIsActive = true
         // A background run ends its task; its collection goes on as the
-        // ordinary refresh (RD24 criterion 7).
-        currentRun?.cameToFront()
+        // ordinary refresh (RD24 criterion 7), with the ordinary refresh's
+        // background time until it ends (review G3).
+        if let run = currentRun {
+            run.cameToFront()
+            holdBackgroundTimeForCollection()
+        }
         // A start that failed in the background is tried again (criterion
         // 8).
-        if startWasAsked, case .loading = status, preparation == nil {
+        if startWasAsked, case .loading = status, !preparation.isRunning {
             Task { await start() }
         }
         // The 5-second fallback is on: the app switcher and Control Centre
@@ -1012,7 +1060,13 @@ final class AppModel {
             // adult library's, while it is shown.
             normal?.translation.cameToFront()
             adult?.translation.cameToFront()
+        } else if ranInBackground {
+            // The first activation after a launch made for a background run
+            // (no scene was in the background): a pause the run left ends
+            // (review R1). No entry: the scene's start makes it.
+            normal?.translation.cameToFront()
         }
+        ranInBackground = false
         removeCover()
     }
 
@@ -1153,7 +1207,8 @@ final class AppModel {
             + "scheduled=\((scheduler as? RecordingBackgroundScheduler)?.pending != nil ? "yes" : "no") "
             + "background=\(Self.reportName(of: lastBackgroundEnding)) "
             + "runs=\(preferences?.backgroundRuns(before: now()).count ?? 0) "
-            + "adultOpens=\(await store?.adultOpensForUITests ?? -1)"
+            + "adultOpens=\(await store?.adultOpensForUITests ?? -1) "
+            + "deliveries=\(deliveriesHandled)"
     }
 
     private static func reportName(of ending: BackgroundRun.Ending?) -> String {
@@ -1172,6 +1227,7 @@ final class AppModel {
     /// start and one background run is made while the app is in front.
     /// Nothing else delivers a run on the simulator (assumption A2).
     func deliverBackgroundRefreshForUITests() async {
+        defer { deliveriesHandled += 1 }
         guard let scheduler = scheduler as? RecordingBackgroundScheduler, let earliest = scheduler.pending, let debugClock else { return }
         debugClock.move(to: earliest)
         await refreshInBackground()

@@ -370,6 +370,10 @@ enum UITestLaunchKey {
     /// A number of seconds Clear Browsing Data waits before it clears
     /// (review round 2); honoured only with `libraryDirectory`.
     static let clearPause = "NEWSPAW_UITEST_CLEAR_PAUSE"
+    /// "1" shows the "Deliver background refresh" control (RD24 decision
+    /// 9; review R3), so that no other test's tap can land on it; honoured
+    /// only with `libraryDirectory`.
+    static let backgroundDelivery = "NEWSPAW_UITEST_BACKGROUND_DELIVERY"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.
@@ -380,7 +384,7 @@ enum DebugAccessibilityID {
     /// browser=<none|held|released> sessions=<number> pages=<number>
     /// translationRequests=<number> adultStore=<listed|absent>
     /// scheduled=<yes|no> background=<none|notDue|collected|cancelled|failed|expired|released>
-    /// runs=<number> adultOpens=<number>`. `pool` is whether connections are open
+    /// runs=<number> adultOpens=<number> deliveries=<number>`. `pool` is whether connections are open
     /// on the file; the other three are whether the objects are gone from
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
@@ -390,7 +394,8 @@ enum DebugAccessibilityID {
     /// background request is pending, `background` how the last background
     /// run ended, `runs` how many background runs the record holds for the
     /// last 7 days, `adultOpens` how many times the adult library was asked
-    /// of the store (RD24).
+    /// of the store, `deliveries` how many taps of "Deliver background
+    /// refresh" were handled (RD24).
     static let adultReport = "debug.adultReport"
     /// "Deliver background refresh" (RD24 decision 9).
     static let deliverBackgroundRefresh = "debug.deliverBackgroundRefresh"

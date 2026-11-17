@@ -19,7 +19,7 @@ struct RootView: View {
                 }
             }
             .overlay(alignment: .trailing) {
-                if model.showsDebugReport {
+                if model.showsDeliveryControl {
                     DeliverBackgroundRefreshButton()
                 }
             }
@@ -90,8 +90,9 @@ private struct AdultDebugElement: View {
 
 /// The UI tests' "Deliver background refresh" (RD24 decision 9): an
 /// invisible 30-point control at the window's trailing edge, halfway down,
-/// where no test taps; present only under a UI-test library directory; a
-/// debug build only. (A control of a few points beside the report was
+/// where no test taps; present only under a UI-test library directory with
+/// its own launch key, which only `BackgroundRefreshTests` sets (review
+/// R3); a debug build only. (A control of a few points beside the report was
 /// measured: the harness's tap never reached it.)
 private struct DeliverBackgroundRefreshButton: View {
     @Environment(AppModel.self) private var model

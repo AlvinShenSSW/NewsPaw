@@ -49,6 +49,9 @@ struct DebugLaunchOptions {
     /// How long Clear Browsing Data waits before it clears (review round
     /// 2). Applied only together with `libraryDirectory`.
     let clearPause: Duration?
+    /// Whether the "Deliver background refresh" control is shown (RD24
+    /// review R3). Applied only together with `libraryDirectory`.
+    let backgroundDelivery: Bool
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -104,6 +107,7 @@ struct DebugLaunchOptions {
         } else {
             clearPause = nil
         }
+        backgroundDelivery = environment[UITestLaunchKey.backgroundDelivery] == "1"
     }
 
     /// Accepts only a name that stays inside the temporary directory.

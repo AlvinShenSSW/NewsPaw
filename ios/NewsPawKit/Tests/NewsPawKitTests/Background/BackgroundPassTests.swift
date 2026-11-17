@@ -183,6 +183,55 @@ struct BackgroundPassTests {
         await fixture.translator.settled()
     }
 
+    @Test("criterion 7: an entry made while a released run collects waits for that collection, then finds no refresh due: one collection, one record")
+    func entryWaitsForTheCollection() async throws {
+        let fixture = try await PassFixture.make()
+        defer { fixture.remove() }
+        let held = try await fixture.source("Held")
+        await fixture.startTranslator()
+        fixture.transport.hold(held.address)
+        // Every write of the recorded time, counted by the database.
+        try await fixture.library.pool.write { db in
+            try db.execute(sql: "CREATE TEMP TABLE recorded (n INTEGER)")
+            try db.execute(sql: """
+                CREATE TEMP TRIGGER count_recorded AFTER UPDATE ON setting WHEN NEW.key = 'last_refresh_at'
+                BEGIN INSERT INTO recorded VALUES (1); END
+                """)
+            try db.execute(sql: """
+                CREATE TEMP TRIGGER count_recorded_insert AFTER INSERT ON setting WHEN NEW.key = 'last_refresh_at'
+                BEGIN INSERT INTO recorded VALUES (1); END
+                """)
+        }
+
+        let control = BackgroundPassControl(refresher: fixture.refresher)
+        let run = Task { @MainActor in await fixture.pass(control).run() }
+        await fixture.eventually { fixture.refresher.collecting == [held.id] }
+        // The app comes to the front, and its entry is made at once, as
+        // `AppModel.enter(_:)` makes it: the wait, then the entry's own due
+        // check and refresh.
+        control.release()
+        let refresher = fixture.refresher
+        let library = fixture.library
+        let entry = Task { @MainActor () -> Bool in
+            await control.untilCollectionEnds()
+            guard try await library.refreshIsDue(every: .thirtyMinutes) else { return false }
+            try await refresher.refresh(.library)
+            return true
+        }
+        for _ in 0..<20 {
+            await Task.yield()
+        }
+        #expect(fixture.refresher.collecting == [held.id])
+        fixture.transport.release(held.address)
+
+        #expect(await run.value == .collected)
+        #expect(try await entry.value == false, "the entry refreshed again")
+        #expect(fixture.transport.received == [held.address])
+        // On the writer's connection, which holds the temporary table.
+        let records = try await fixture.library.pool.write { db in try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM recorded") ?? 0 }
+        #expect(records == 1)
+    }
+
     @Test("no clean-up: an unstarred article past the retention period is still there after a pass")
     func noCleanUp() async throws {
         let fixture = try await PassFixture.make()

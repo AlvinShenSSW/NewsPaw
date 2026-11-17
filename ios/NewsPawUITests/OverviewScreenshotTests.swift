@@ -79,9 +79,10 @@ final class OverviewScreenshotTests: OverviewTestCase {
 
         // The captures, at a limit of 0 so that nothing is written by
         // itself; "Limited" is added then, and its card says why.
-        launchOverviews(limit: 0, arguments: capture.arguments, landscape)
-        // Not `addSource`: in the iPad's landscape sidebar the add button
-        // lies below the expanded categories.
+        // The source is added in portrait, where the iPad's sidebar is the
+        // slide-over and scrolls to its add button; then the captures'
+        // orientation.
+        launchOverviews(limit: 0, arguments: capture.arguments, .portrait)
         if app.tabBars.firstMatch.exists {
             addSource(Fixture.longCounting, to: "Limited")
         } else {
@@ -92,6 +93,7 @@ final class OverviewScreenshotTests: OverviewTestCase {
             waitFor(element(AccessibilityID.confirmAddress))
             chooseCategoryAndSave("Limited")
         }
+        rotate(landscape)
         refreshRun(in: "Limited")
         waitFor(summary(Translation.category))
         shoot(capture, "today-top")

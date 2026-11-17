@@ -32,6 +32,10 @@ struct DebugLaunchOptions {
     /// The rows a list page holds, so that a UI test reaches the next page
     /// after a few rows. Applied only together with `libraryDirectory`.
     let articlePageSize: Int?
+    /// The OPML document "Import OPML" reads instead of presenting the file
+    /// picker (RD08 decision 8). Applied only together with
+    /// `libraryDirectory`.
+    let opmlFixture: OPMLFixture?
     /// The translator fixture's models to set up in the normal library
     /// (RD14): the primary, and the backup after it. Applied only together
     /// with `libraryDirectory`, and only to a library with no model yet.
@@ -43,6 +47,10 @@ struct DebugLaunchOptions {
     /// library directory it is shown, and its flag kept, only when asked
     /// for, so that the other suites start on the shell.
     let firstRun: Bool
+    /// Whether five usage rows of `seed-<partition>` are inserted into the
+    /// normal library at launch and into the adult library at each unlock
+    /// (RD17 decision 8). Applied only together with `libraryDirectory`.
+    let seedsUsage: Bool
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -77,6 +85,7 @@ struct DebugLaunchOptions {
         } else {
             articlePageSize = nil
         }
+        opmlFixture = environment[UITestLaunchKey.opmlFixture].flatMap(OPMLFixture.init(rawValue:))
         translationModels = switch environment[UITestLaunchKey.translationModels] {
         case "primary": [.primary]
         case "primary,backup": [.primary, .backup]
@@ -88,6 +97,7 @@ struct DebugLaunchOptions {
             dailyAutomaticLimit = nil
         }
         firstRun = environment[UITestLaunchKey.firstRun] == "1"
+        seedsUsage = environment[UITestLaunchKey.seedUsage] == "1"
     }
 
     /// Accepts only a name that stays inside the temporary directory.

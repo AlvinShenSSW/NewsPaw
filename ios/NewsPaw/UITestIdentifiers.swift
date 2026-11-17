@@ -244,6 +244,60 @@ enum AccessibilityID {
     static let cacheSize = "data.cacheSize"
     static let clearCacheButton = "data.clearCache"
 
+    // OPML (RD08)
+    static let importOPMLButton = "data.importOPML"
+    static let exportOPMLButton = "data.exportOPML"
+    static let addSourceImportOPMLButton = "add.importOPML"
+    static let opmlFeedsToAdd = "opml.feedsToAdd"
+    static let opmlOutsideFeeds = "opml.outsideFeeds"
+    static let opmlCategoryRow = "opml.category"
+    static let opmlSkippedRow = "opml.skipped"
+    static let opmlNothingToAdd = "opml.nothingToAdd"
+    static let opmlFailure = "opml.failure"
+    static let opmlImportButton = "opml.import"
+    static let opmlCancelButton = "opml.cancel"
+    static let opmlNewCategoryButton = "opml.newCategory"
+    static let opmlNewCategoryField = "opml.newCategoryName"
+    static let opmlUseNameButton = "opml.useName"
+    static let opmlFeedsAdded = "opml.feedsAdded"
+    static let opmlDoneButton = "opml.done"
+    static let opmlSkippedPrefix = "opml.skipped."
+
+    /// A folder of the preview or the summary, by name.
+    static func opmlFolder(_ name: String) -> String {
+        "opml.folder." + name
+    }
+
+    /// A category of the outside-feeds picker, by name.
+    static func opmlCategoryChoice(_ name: String) -> String {
+        "opml.categoryChoice." + name
+    }
+
+    /// A skipped entry, by its place in the list.
+    static func opmlSkipped(_ index: Int) -> String {
+        opmlSkippedPrefix + String(index)
+    }
+
+    // Settings → Usage (RD17)
+    static let usageRow = "settings.usage"
+    static let usagePeriodPicker = "usage.period"
+    static let usageEmpty = "usage.empty"
+    static let usageReadFailed = "usage.readFailed"
+    /// "Automatic requests today: n of m".
+    static let usageToday = "usage.today"
+    static let usageLimitReached = "usage.limitReached"
+    static let dailyLimitPicker = "usage.limit"
+
+    /// The header of a model's section.
+    static func usageModel(_ name: String) -> String {
+        "usage.model." + name
+    }
+
+    /// The row of one purpose of one model.
+    static func usageTotal(model: String, purpose: String) -> String {
+        "usage.total." + model + "." + purpose
+    }
+
     // Refresh
     static let todayStatus = "today.status"
     static let failedSourcesButton = "today.failedSources"
@@ -369,6 +423,10 @@ enum UITestLaunchKey {
     /// harness is slow around context menus then. Honoured only with
     /// `libraryDirectory`.
     static let keepAnimations = "NEWSPAW_UITEST_KEEP_ANIMATIONS"
+    /// `folders` or `refused`: "Import OPML" reads that fixture document
+    /// instead of presenting the file picker (RD08 decision 8); honoured
+    /// only with `libraryDirectory`.
+    static let opmlFixture = "NEWSPAW_UITEST_OPML_FIXTURE"
     /// "primary" or "primary,backup": the translator fixture's models are
     /// set up in the normal library at launch (RD14). Honoured only with
     /// `libraryDirectory`, and only while the library has no model.
@@ -380,6 +438,10 @@ enum UITestLaunchKey {
     /// honoured only with `libraryDirectory`. Without it a UI-test launch
     /// starts on the shell.
     static let firstRun = "NEWSPAW_UITEST_FIRST_RUN"
+    /// "1" inserts five usage rows of the model `seed-<partition>` into the
+    /// normal library at launch and into the adult library at each unlock
+    /// (RD17 decision 8); honoured only with `libraryDirectory`.
+    static let seedUsage = "NEWSPAW_UITEST_SEED_USAGE"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.

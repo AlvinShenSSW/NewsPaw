@@ -102,6 +102,8 @@ enum SettingsRoute: Hashable {
     /// Settings › Adult Partition (ux S10; RD18 decision 10).
     case adultPartition
     case data
+    /// Settings › Usage (ux S8; RD17): the workspace's own library.
+    case usage
     case about
     /// One bundled library's licence, by its notice's identifier, pushed on
     /// About (RD21 decision 9).

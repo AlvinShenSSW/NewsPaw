@@ -197,6 +197,10 @@ final class BackgroundRefreshTests: AdultTestCase {
                 goBack()
                 openRefreshSettings()
                 scrollTo(runsLine)
+                if variant == "largest-text" {
+                    // The whole line above the tab bar.
+                    app.swipeUp()
+                }
                 capture("2-ran-once")
             }
         }

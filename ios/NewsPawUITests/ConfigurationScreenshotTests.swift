@@ -58,7 +58,9 @@ final class ConfigurationScreenshotTests: AdultTestCase {
         capture("question")
         // "Unlock" in either language.
         app.alerts.firstMatch.buttons.matching(NSPredicate(format: "label IN %@", ["Unlock", "解锁"])).firstMatch.tap()
-        waitFor(element(AccessibilityID.configurationCounts("adult")))
+        // The normal section: at the largest text size the adult one is
+        // below the fold.
+        waitFor(element(AccessibilityID.configurationCounts("normal")))
         capture("preview")
         scrollDownAndCapture("preview-end")
         scrollTo(button(AccessibilityID.configurationGroup("new", "adult"))).tap()

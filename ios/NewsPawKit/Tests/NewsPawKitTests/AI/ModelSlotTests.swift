@@ -69,7 +69,7 @@ struct ModelSlotTests {
         let library = try await LibraryStore(directory: directory).openNormal()
 
         let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
-        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6", "v7"])
+        #expect(after.appliedMigrations == currentMigrations)
         for (table, rows) in before.rows where table != "grdb_migrations" {
             #expect(after.rows[table] == rows, "rows of \(table)")
         }
@@ -77,12 +77,12 @@ struct ModelSlotTests {
         #expect(after.rows["usage"] == [])
         #expect(after.integrity == ["ok"])
         let added = after.schema.filter { !before.schema.contains($0) }.map { "\($0[0] ?? "") \($0[1] ?? "")" }
-        // With v6's table (RD14) and v7's (RD15), which the current migrator
-        // adds after v5.
+        // With v6's table (RD14), v7's (RD15) and v8's (RD16), which the
+        // current migrator adds after v5.
         #expect(added.sorted() == [
-            "index sqlite_autoindex_body_translation_1", "index sqlite_autoindex_model_slot_1", "index sqlite_autoindex_translation_1",
-            "index sqlite_autoindex_usage_1", "index usage_at", "table body_translation", "table model_slot", "table translation",
-            "table usage",
+            "index page_text_last_used", "index sqlite_autoindex_body_translation_1", "index sqlite_autoindex_model_slot_1",
+            "index sqlite_autoindex_page_text_1", "index sqlite_autoindex_translation_1", "index sqlite_autoindex_usage_1",
+            "index usage_at", "table body_translation", "table model_slot", "table page_text", "table translation", "table usage",
         ])
         #expect(before.schema.allSatisfy { after.schema.contains($0) })
     }

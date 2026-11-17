@@ -21,6 +21,7 @@ enum Schema {
         registerV5(in: &migrator)
         registerV6(in: &migrator)
         registerV7(in: &migrator)
+        registerV8(in: &migrator)
         return migrator
     }
 
@@ -207,6 +208,30 @@ enum Schema {
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY (article_id, locale, source_hash)
                 );
+                """)
+        }
+    }
+
+    /// `v8`: the translations of web-page text (RD16 decision 7), one row
+    /// per text and reading language, for a run that is the whole text of
+    /// its block. `text_hash` is the lower-case hex SHA-256 of the page's
+    /// host, a NUL and the normalised original: neither the original nor
+    /// the host is stored. `model` is the model's name; `last_used_at`
+    /// drives the clean-up, which deletes rows unused for the retention
+    /// period.
+    static func registerV8(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v8") { db in
+            try db.execute(sql: """
+                CREATE TABLE page_text (
+                    text_hash TEXT NOT NULL,
+                    locale TEXT NOT NULL,
+                    translated TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_used_at TEXT NOT NULL,
+                    PRIMARY KEY (text_hash, locale)
+                );
+                CREATE INDEX page_text_last_used ON page_text(last_used_at);
                 """)
         }
     }

@@ -25,7 +25,7 @@ struct BodyTranslationStoreTests {
             }
             return (columns, keys, migrations)
         }
-        #expect(migrations == ["v1", "v2", "v3", "v4", "v5", "v6", "v7"])
+        #expect(migrations == currentMigrations)
         #expect(columns == [
             .init("article_id", "TEXT", notNull: true, pk: 1),
             .init("locale", "TEXT", notNull: true, pk: 2),
@@ -73,13 +73,15 @@ struct BodyTranslationStoreTests {
         let library = try await LibraryStore(directory: directory).openNormal()
 
         let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
-        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6", "v7"])
+        #expect(after.appliedMigrations == currentMigrations)
         for (table, rows) in before.rows where table != "grdb_migrations" {
             #expect(after.rows[table] == rows, "rows of \(table)")
         }
         #expect(after.rows["body_translation"] == [])
         #expect(after.integrity == ["ok"])
-        let added = after.schema.filter { !before.schema.contains($0) }.map { "\($0[0] ?? "") \($0[1] ?? "")" }
+        // v8's table (RD16), which the current migrator adds after v7, is
+        // left out here.
+        let added = after.schema.filter { !before.schema.contains($0) && $0[2] != "page_text" }.map { "\($0[0] ?? "") \($0[1] ?? "")" }
         #expect(added.sorted() == ["index sqlite_autoindex_body_translation_1", "table body_translation"])
     }
 

@@ -33,7 +33,7 @@ struct TranslationStoreTests {
             }
             return (translation, usage, keys, migrations)
         }
-        #expect(migrations == ["v1", "v2", "v3", "v4", "v5", "v6", "v7"])
+        #expect(migrations == currentMigrations)
         #expect(translation == [
             .init("article_id", "TEXT", notNull: true, pk: 1),
             .init("locale", "TEXT", notNull: true, pk: 2),
@@ -77,7 +77,7 @@ struct TranslationStoreTests {
         let library = try await LibraryStore(directory: directory).openNormal()
 
         let after = try await library.pool.read { try DatabaseSnapshot.read($0) }
-        #expect(after.appliedMigrations == ["v1", "v2", "v3", "v4", "v5", "v6", "v7"])
+        #expect(after.appliedMigrations == currentMigrations)
         for table in ["category", "source", "article", "article_body", "seen", "setting", "model_slot"] {
             #expect(after.rows[table] == before.rows[table], "rows of \(table)")
         }

@@ -121,6 +121,8 @@ final class AppModel {
     /// The OPML fixture of the UI tests, which every workspace's source
     /// model takes (RD08 decision 8).
     @ObservationIgnored private var opmlFixture: OPMLFixture?
+    /// Whether the usage seeding runs on each library opened (RD17).
+    @ObservationIgnored private var seedsUsage = false
     @ObservationIgnored private var adultWasShown = false
     @ObservationIgnored private weak var lastAdultWorkspace: Workspace?
     @ObservationIgnored private weak var lastAdultBrowser: BrowserModel?
@@ -254,6 +256,7 @@ final class AppModel {
             if options.libraryDirectory != nil {
                 articlePageSize = options.articlePageSize
                 opmlFixture = options.opmlFixture
+                seedsUsage = options.seedsUsage
             }
             workspace.sources.opmlFixture = opmlFixture
             if let size = articlePageSize {
@@ -265,6 +268,9 @@ final class AppModel {
             // The translator fixture's models and the daily limit (RD14).
             if options.libraryDirectory != nil {
                 try await Self.setUpTranslationForUITests(options, models: models, library: library)
+            }
+            if seedsUsage {
+                try await library.insertUsageForUITests(calendar: .current)
             }
             workspace.categories.failNextSave = options.failNextSave
             workspace.categories.slowNextSave = options.slowNextSave
@@ -322,6 +328,11 @@ final class AppModel {
                 workspace.reading.pageSize = size
             }
             workspace.sources.opmlFixture = opmlFixture
+            if seedsUsage {
+                // The adult library's own rows, so that a lock has
+                // something to hide (RD17 criterion 7).
+                try? await library.insertUsageForUITests(calendar: .current)
+            }
             #endif
             await workspace.load()
             // From here to the end of the case nothing suspends before the

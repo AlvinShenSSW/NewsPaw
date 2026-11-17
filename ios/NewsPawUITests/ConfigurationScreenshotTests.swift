@@ -46,7 +46,11 @@ final class ConfigurationScreenshotTests: AdultTestCase {
         }
 
         launchReading("both", authentication: ["passed", "passed"])
-        turnOnAdult()
+        // Turned on with scrolling: at the largest text size Turn Off is
+        // below the fold.
+        tapAdultRow()
+        scrollTo(adultToggle).coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        scrollTo(turnOffButton)
         openData()
         capture("data-normal")
         button(AccessibilityID.importConfigurationButton).tap()

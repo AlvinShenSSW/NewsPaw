@@ -82,7 +82,9 @@ enum PageTranslationFixtures {
             \(items)
             </ul>
             <script>
-            (function () {
+            // Observed from the document's load on: the parser's own last
+            // insertions are not counted.
+            addEventListener("load", function () {
               const counts = {childList: 0, attributes: 0};
               const report = document.getElementById("mutations");
               new MutationObserver((records) => {
@@ -93,7 +95,7 @@ enum PageTranslationFixtures {
                 }
                 if (changed) report.firstChild.data = "childList=" + counts.childList + " attributes=" + counts.attributes;
               }).observe(document, {subtree: true, childList: true, attributes: true, characterData: true});
-            })();
+            });
             </script>
             """)
     }

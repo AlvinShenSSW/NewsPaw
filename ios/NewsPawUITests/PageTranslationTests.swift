@@ -17,6 +17,7 @@ final class PageTranslationTests: PageTranslationTestCase {
         waitForTranslate(on: false)
         XCTAssertFalse(line.exists, "no line while translation is off")
         let before = translationRequests
+        XCTAssertEqual(mutationReport(), "childList=0 attributes=0", "the page's own report before translating")
 
         tapTranslate()
         waitForTranslate(on: true)

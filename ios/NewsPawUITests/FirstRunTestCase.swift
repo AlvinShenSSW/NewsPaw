@@ -9,11 +9,15 @@ class FirstRunTestCase: TranslationTestCase {
     /// Launches on this test's library with the first run allowed.
     func launchFirstRun(
         _ orientation: UIDeviceOrientation = .portrait, arguments: [String] = [], failNextSave: Bool = false,
-        authentication: [String] = []
+        authentication: [String] = [], opmlFixture: String? = nil
     ) {
         app.terminate()
         let application = XCUIApplication()
         application.launchEnvironment[UITestLaunchKey.firstRun] = "1"
+        if let opmlFixture {
+            // "Import OPML" reads this fixture document (RD08 decision 8).
+            application.launchEnvironment[UITestLaunchKey.opmlFixture] = opmlFixture
+        }
         launch(application, failNextSave: failNextSave, arguments: arguments, authentication: authentication)
         rotate(orientation)
         requireFullSize()
@@ -119,6 +123,22 @@ class FirstRunTestCase: TranslationTestCase {
     /// Step 3's row of `group` is ticked (it carries the selected trait).
     func isTicked(_ group: String) -> Bool {
         waitFor(categoryRow(group)).isSelected
+    }
+
+    /// Waits until `element`'s frame is the same in two reads half a second
+    /// apart (as RD08's tests do for its form sheet).
+    func waitUntilStill(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        var last = element.frame
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.5)
+            let now = element.frame
+            if now == last {
+                return
+            }
+            last = now
+        }
+        XCTFail("\(element) kept moving", file: file, line: line)
     }
 
     // MARK: - Add source from the first run or Today

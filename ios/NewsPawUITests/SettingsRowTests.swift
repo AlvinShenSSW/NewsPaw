@@ -2,8 +2,9 @@ import XCTest
 
 /// RD21 criteria 11 and 12: every Settings row of ux S8 present at this
 /// issue opens a screen with its title, and About's three licences open
-/// their full texts. Rows of later issues (Usage, RD17; Data's import and
-/// export rows, RD08 and RD20) are not there yet. A translation test case
+/// their full texts. Usage (RD17) is walked too; Data's OPML rows (RD08)
+/// are on the Data screen; the configuration file's rows (RD20) are not
+/// there yet. A translation test case
 /// for its `openSidebarIfNeeded`, which first leaves a Settings screen
 /// pushed on the leading pane.
 final class SettingsRowTests: TranslationTestCase {
@@ -15,6 +16,7 @@ final class SettingsRowTests: TranslationTestCase {
             (AccessibilityID.readingSettingsRow, "Reading"),
             (AccessibilityID.adultPartitionRow, "Adult Partition"),
             (AccessibilityID.dataRow, "Data"),
+            (AccessibilityID.usageRow, "Usage"),
             (AccessibilityID.aboutRow, "About"),
         ]
         for (row, title) in rows {

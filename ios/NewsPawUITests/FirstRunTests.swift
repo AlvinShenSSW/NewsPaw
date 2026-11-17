@@ -237,6 +237,56 @@ final class FirstRunTests: FirstRunTestCase {
         }
     }
 
+    /// Criterion 5 with RD08: "Import OPML…" in step 3 runs RD08's import —
+    /// its preview, the category for the feeds outside any folder, the
+    /// summary — and the first run stays; Done then ends on Today with the
+    /// imported sources (no "No sources yet"), and a relaunch shows the
+    /// shell.
+    func testImportOPMLFromTheFirstRun() {
+        launchFirstRun(opmlFixture: "folders")
+        waitForStep(1)
+        skipButton.tap()
+        waitForStep(2)
+        skipButton.tap()
+        waitForStep(3)
+        revealAboveTheBar(button(AccessibilityID.firstRunImportOPML)).tap()
+        waitFor(element(AccessibilityID.opmlFeedsToAdd))
+        XCTAssertFalse(button(AccessibilityID.opmlImportButton).isEnabled, "Import before a category was chosen")
+        waitFor(button(AccessibilityID.opmlCategoryRow)).tap()
+        waitFor(button(AccessibilityID.opmlNewCategoryButton)).tap()
+        let field = waitFor(app.textFields[AccessibilityID.opmlNewCategoryField])
+        field.tap()
+        field.typeText("Other")
+        let useName = waitFor(button(AccessibilityID.opmlUseNameButton))
+        // The form sheet moves as the keyboard goes (measured by RD08).
+        waitUntilStill(useName)
+        useName.tap()
+        waitForAbsence(field)
+        let importButton = waitFor(button(AccessibilityID.opmlImportButton))
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: importButton)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: timeout), .completed, "Import stayed disabled")
+        importButton.tap()
+        waitFor(element(AccessibilityID.opmlFeedsAdded))
+        waitFor(button(AccessibilityID.opmlDoneButton)).tap()
+        waitForAbsence(element(AccessibilityID.opmlFeedsAdded))
+        // The first run stays on step 3, with nothing of the shell.
+        waitForStep(3)
+        assertNoContainers()
+        assertNothingNamesTheAdultPartition("step 3 after an import")
+
+        doneButton.tap()
+        waitForShellOnToday()
+        if element(AccessibilityID.todayEmpty).waitForExistence(timeout: 2) {
+            XCTAssertNotEqual(element(AccessibilityID.todayEmpty).label, "No sources yet")
+        }
+        showCategoryList()
+        for category in ["News", "Tech", "Other"] {
+            waitFor(element(AccessibilityID.categoryRow(category)))
+        }
+        launchFirstRun(opmlFixture: "folders")
+        waitForShellOnToday()
+    }
+
     // MARK: - When it shows (criterion 8)
 
     /// Done with nothing ticked writes the flag: the next launch shows the

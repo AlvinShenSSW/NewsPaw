@@ -40,14 +40,40 @@ final class OPMLTests: AdultTestCase {
     }
 
     /// The preview's category row → "New Category…" → `name` → Done.
-    func chooseNewCategory(_ name: String) {
-        waitFor(button(AccessibilityID.opmlCategoryRow)).tap()
-        waitFor(button(AccessibilityID.opmlNewCategoryButton)).tap()
-        let field = waitFor(app.textFields[AccessibilityID.opmlNewCategoryField])
+    ///
+    /// Done is tapped once the sheet has stopped moving. On a simulator that
+    /// has had a hardware keyboard attached (`TypedKeyTests`), the software
+    /// keyboard hides while `typeText` types, and the iPad mini's form sheet
+    /// moves down after it; a tap made at once lands where Done was, not
+    /// where it is (measured on the project iPad mini: Done at y 80.5 with
+    /// the keyboard up, 250.5 without, 210 just after typing).
+    func chooseNewCategory(_ name: String, file: StaticString = #filePath, line: UInt = #line) {
+        waitFor(button(AccessibilityID.opmlCategoryRow), file: file, line: line).tap()
+        waitFor(button(AccessibilityID.opmlNewCategoryButton), file: file, line: line).tap()
+        let field = waitFor(app.textFields[AccessibilityID.opmlNewCategoryField], file: file, line: line)
         field.tap()
         field.typeText(name)
-        waitFor(button(AccessibilityID.opmlUseNameButton)).tap()
-        waitFor(button(AccessibilityID.opmlImportButton))
+        let done = waitFor(button(AccessibilityID.opmlUseNameButton), file: file, line: line)
+        waitUntilStill(done, file: file, line: line)
+        done.tap()
+        waitForAbsence(field, file: file, line: line)
+        waitFor(button(AccessibilityID.opmlImportButton), file: file, line: line)
+    }
+
+    /// Waits until `element`'s frame is the same in two reads half a second
+    /// apart.
+    func waitUntilStill(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        var last = element.frame
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.5)
+            let now = element.frame
+            if now == last {
+                return
+            }
+            last = now
+        }
+        XCTFail("\(element) kept moving", file: file, line: line)
     }
 
     func tapImportWhenEnabled(file: StaticString = #filePath, line: UInt = #line) {

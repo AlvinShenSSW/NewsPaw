@@ -312,7 +312,9 @@ final class ConfigurationTests: AdultTestCase {
         tapWhenEnabled(AccessibilityID.configurationReplaceEverythingButton)
         button(AccessibilityID.configurationReplaceButton).tap()
         answer(Wording.replaceNow, with: "Cancel")
-        goBack()
+        // The review's own Back: on the iPad a pane's Back is behind the
+        // sheet.
+        waitFor(app.navigationBars.matching(identifier: "Before Replacing").buttons.matching(identifier: "BackButton").firstMatch).tap()
         button(AccessibilityID.configurationCancelButton).tap()
         waitForAbsence(element(AccessibilityID.configurationCounts("normal")))
         showCategoryList()

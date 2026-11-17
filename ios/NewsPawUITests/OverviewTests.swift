@@ -16,7 +16,7 @@ final class OverviewTests: OverviewTestCase {
         addFeed(Translation.feed, to: Translation.category)
         // Seeded once the category exists: the earlier overviews.
         launchOverviews(seed: true)
-        refreshToday()
+        refreshRun(in: Translation.category)
         let world = Translation.category
         waitForText(summary(world), Overview.summary(40, Translation.markup))
         XCTAssertTrue(summary(world).label.contains("<b>bold</b> **stars** [a link](https://example.invalid)"), summary(world).label)
@@ -97,7 +97,7 @@ final class OverviewTests: OverviewTestCase {
         waitForText(todayRow(world), "Overviews off")
         XCTAssertFalse(card(world).exists)
         setOverviews(of: world, to: "Automatic")
-        refreshToday()
+        refreshRun(in: world)
         waitForText(summary(world), Overview.summary(40, Translation.markup))
 
         // English: the Chinese overview is kept and not shown.
@@ -126,7 +126,7 @@ final class OverviewTests: OverviewTestCase {
         // A refusal: retried once, stored, shown with Retry.
         launchOverviews()
         addFeed(Translation.wordFeed("refuse"), to: "Refused")
-        refreshToday()
+        refreshRun(in: "Refused")
         waitForText(part("issue", "Refused"), Overview.refused)
         XCTAssertTrue(button(AccessibilityID.overview("step", "Refused")).label.contains("Retry"))
 
@@ -142,7 +142,7 @@ final class OverviewTests: OverviewTestCase {
         // The daily limit: nothing automatic; Write Overview is not limited.
         launchOverviews(limit: 0)
         addFeed(Fixture.articles, to: "Limited")
-        refreshToday()
+        refreshRun(in: "Limited")
         let issue = revealOnToday(part("issue", "Limited"))
         waitForText(issue, Overview.dailyLimit)
         button(AccessibilityID.overview("write", "Limited")).tap()
@@ -178,9 +178,10 @@ final class OverviewAdultTests: IsolationTestCase {
         waitForAbsence(button(AccessibilityID.saveButton))
         createCategory("Velvet")
         addSource(Isolation.translationFeed, to: "Velvet")
+        // A refresh run: its end writes the due categories.
+        openCategoryList("Velvet")
+        pullList()
         showToday()
-        let anchor = waitFor(element(AccessibilityID.todayDate)).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        anchor.press(forDuration: 0.1, thenDragTo: anchor.withOffset(CGVector(dx: 0, dy: 400)), withVelocity: .slow, thenHoldForDuration: 1)
         let summary = element(AccessibilityID.overview("summary", "Velvet"))
         let written = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in summary.exists && summary.label.contains("概览[zh-Hans]：40") }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [written], timeout: 30), .completed, summary.exists ? summary.label : "no adult card")

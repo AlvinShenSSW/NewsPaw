@@ -110,14 +110,14 @@ class OverviewTestCase: TranslationTestCase {
                        "\(target.exists ? target.label : "absent") should contain \(text)", file: file, line: line)
     }
 
-    /// Shows Today and pulls it: a refresh run of the whole library, at
-    /// whose end the due categories are written (adding a source stores
-    /// its articles without a run).
-    func refreshToday() {
+    /// Pulls the list of `category`: a refresh run, at whose end the due
+    /// categories of the whole library are written (adding a source
+    /// stores its articles without a run). Then shows Today. (A pull on
+    /// Today itself did not start a run on the iPad in portrait.)
+    func refreshRun(in category: String) {
+        openCategoryList(category)
+        pullList()
         showToday()
-        let anchor = waitFor(element(AccessibilityID.todayDate))
-        let start = anchor.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 400)), withVelocity: .slow, thenHoldForDuration: 1)
     }
 
     // MARK: - Category Settings › Overviews

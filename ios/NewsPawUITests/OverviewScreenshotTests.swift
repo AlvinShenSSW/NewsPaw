@@ -73,7 +73,7 @@ final class OverviewScreenshotTests: OverviewTestCase {
         collapse("Paused")
         setOverviews(of: "Paused", to: "Off")
         launchOverviews(seed: true)
-        refreshToday()
+        refreshRun(in: Translation.category)
         waitForText(summary(Translation.category), Overview.summary(40, Translation.markup))
         waitForText(part("issue", "Refused"), Overview.refused)
 
@@ -81,7 +81,7 @@ final class OverviewScreenshotTests: OverviewTestCase {
         // itself; "Limited" is added then, and its card says why.
         launchOverviews(limit: 0, arguments: capture.arguments, landscape)
         addSource(Fixture.longCounting, to: "Limited")
-        refreshToday()
+        refreshRun(in: "Limited")
         waitFor(summary(Translation.category))
         shoot(capture, "today-top")
         // Each card in turn, scrolled to.

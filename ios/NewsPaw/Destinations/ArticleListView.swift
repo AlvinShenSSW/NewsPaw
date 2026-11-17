@@ -39,6 +39,11 @@ private struct ArticleListContent: View {
                     text: searchText, isPresented: $isSearchPresented,
                     placement: .navigationBarDrawer(displayMode: .always), prompt: Text("Titles, Original or Translated")
                 )
+                // The bar keeps its items while the field is active: the
+                // back button (tabs) and the sidebar button (panes below
+                // 1100 pt), which the system otherwise hides then, leaving
+                // no way out of Search on the iPad's two columns.
+                .searchPresentationToolbarBehavior(.avoidHidingContent)
                 .searchFocused($isSearchFocused)
                 .autocorrectionDisabled()
                 .onSubmit(of: .search) {

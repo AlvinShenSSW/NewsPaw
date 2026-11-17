@@ -492,8 +492,16 @@ struct PageTranslationScriptTests {
             #expect(texts.contains(shown), "\(shown)")
         }
         try await page.page(#"document.getElementById("inner").scrollTop = 300"#)
-        try await page.settle()
-        #expect(try await page.runs().map(\.text).contains("内側の箱の奥の文"))
+        // The box's scroll event is delivered with a later frame; collect
+        // until it has been (bounded), as the session's ticks do.
+        var seen: [String] = []
+        for _ in 0..<40 where !seen.contains("内側の箱の奥の文") {
+            try await page.settle()
+            let collection = try await page.collect()
+            if case .runs(let runs, _, _, _) = collection { seen = runs.map(\.text) } else { seen = ["\(collection)"] }
+        }
+        let scrollTop = try await page.page(#"return document.getElementById("inner").scrollTop"#)
+        #expect(seen.contains("内側の箱の奥の文"), "\(seen); scrollTop \(String(describing: scrollTop))")
     }
 
     @Test("a run of more than 20,000 UTF-16 code units is never returned")

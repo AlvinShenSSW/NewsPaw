@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Why a category's overview was not written and nothing was stored (RD23
 /// decision 6). A value in memory, shown while it lasts, for its day and
@@ -79,7 +80,14 @@ public actor OverviewWriter {
     private var isStopped = false
     /// Counts the `configure` calls: a job whose read began before a change
     /// of the locale is dropped (decision 11 (a)).
-    private var configGeneration = 0
+    private var configGeneration: Int {
+        configurations.value
+    }
+
+    /// The count of `configure` calls, behind a lock so that the check made
+    /// inside `LibraryModels.send`, off this actor, can read it (review
+    /// round 4). Written only by `configure`, on the actor.
+    private let configurations = LockedCount()
     /// Counts the slot changes this writer was told of: a failure of a
     /// request sent before the latest one belongs to the old slots and is
     /// superseded (decision 11 (d)–(g)).
@@ -145,7 +153,7 @@ public actor OverviewWriter {
     /// before is dropped.
     public func configure(locale: ReadingLocale) {
         self.locale = locale
-        configGeneration += 1
+        configurations.increment()
     }
 
     /// At the end of a foreground refresh run (decision 8): queues an
@@ -494,9 +502,18 @@ public actor OverviewWriter {
         let slotModel = job.slots[role]?.model
         let reply: ModelReply
         do {
+            // The same two conditions once more inside the send, after its
+            // slot and key reads and with nothing awaited before the
+            // transport (review round 4): the app's state, and for the first
+            // request the job's language. Off this actor, so it reads only
+            // `AppFront` and the locked count; `false` ends as above.
+            let front = front
+            let configurations = configurations
+            let configuration = job.configuration
             reply = try await models.send(
                 texts: job.texts, instructions: OverviewPrompt.instructions(into: job.locale), purpose: .overview, role: role,
-                automatic: job.automatic
+                automatic: job.automatic,
+                eligible: { front.isInFront && (!first || configurations.value == configuration) }
             )
         } catch is CancellationError {
             return .cancelled
@@ -719,5 +736,19 @@ public actor OverviewWriter {
     /// Automatic jobs queued and not yet taken.
     var queuedAutomaticJobs: Int {
         automaticQueue.count
+    }
+}
+
+/// A count read from any thread: the overview writer's `configure` calls
+/// (review round 4).
+private final class LockedCount: Sendable {
+    private let count = Mutex(0)
+
+    var value: Int {
+        count.withLock { $0 }
+    }
+
+    func increment() {
+        count.withLock { $0 += 1 }
     }
 }

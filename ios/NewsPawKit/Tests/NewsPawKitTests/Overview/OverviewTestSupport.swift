@@ -18,6 +18,8 @@ final class OverviewFixture: @unchecked Sendable {
     let calendar: Calendar
     let library: Library
     let keys: InMemoryKeyStore
+    /// The key store the models read: the keys above, with a hook on a read.
+    let keyReads: HookedKeyStore
     let service: TranslationService
     let models: LibraryModels
     let writer: OverviewWriter
@@ -34,8 +36,8 @@ final class OverviewFixture: @unchecked Sendable {
     }
 
     private init(
-        directory: URL, clock: TestClock, calendar: Calendar, library: Library, keys: InMemoryKeyStore, service: TranslationService,
-        models: LibraryModels, inFront: Bool
+        directory: URL, clock: TestClock, calendar: Calendar, library: Library, keys: InMemoryKeyStore, hooked: HookedKeyStore,
+        service: TranslationService, models: LibraryModels, inFront: Bool
     ) {
         front = AppFront(isInFront: inFront)
         self.directory = directory
@@ -43,6 +45,7 @@ final class OverviewFixture: @unchecked Sendable {
         self.calendar = calendar
         self.library = library
         self.keys = keys
+        keyReads = hooked
         self.service = service
         self.models = models
         writer = OverviewWriter(models: models, front: front, now: clock.now, calendar: calendar)
@@ -61,9 +64,10 @@ final class OverviewFixture: @unchecked Sendable {
         let library = try await LibraryStore(directory: directory, cacheRoot: directory.appending(path: "Images"), now: clock.now)
             .openNormal()
         let keys = InMemoryKeyStore()
+        let hooked = HookedKeyStore(keys)
         let fixture = OverviewFixture(
-            directory: directory, clock: clock, calendar: calendar, library: library, keys: keys, service: service,
-            models: LibraryModels(library: library, keys: keys, http: service), inFront: inFront
+            directory: directory, clock: clock, calendar: calendar, library: library, keys: keys, hooked: hooked, service: service,
+            models: LibraryModels(library: library, keys: hooked, http: service), inFront: inFront
         )
         if primary {
             try await fixture.saveSlot(.primary)
@@ -292,4 +296,38 @@ final class OverviewFixture: @unchecked Sendable {
         let service = service
         await eventually({ service.requests.count >= count }, sourceLocation: sourceLocation)
     }
+}
+
+/// The fixture's keys, read through a hook (review round 4): the next read
+/// first runs the hook once, inside `LibraryModels.send` after its slot read
+/// and before the transport, where the tests change the app's state.
+final class HookedKeyStore: KeyStore {
+    private let inner: InMemoryKeyStore
+    private let hook = Mutex<(@Sendable () -> Void)?>(nil)
+
+    init(_ inner: InMemoryKeyStore) {
+        self.inner = inner
+    }
+
+    var partition: Partition { inner.partition }
+
+    /// Runs `hook` at the next read, once.
+    func onNextRead(_ hook: @escaping @Sendable () -> Void) {
+        self.hook.withLock { $0 = hook }
+    }
+
+    func add(_ key: SecretKey) throws -> String { try inner.add(key) }
+
+    func read(_ reference: String) throws -> SecretKey? {
+        let next = hook.withLock { hook in
+            defer { hook = nil }
+            return hook
+        }
+        next?()
+        return try inner.read(reference)
+    }
+
+    func remove(_ reference: String) throws { try inner.remove(reference) }
+
+    func removeAll() throws { try inner.removeAll() }
 }

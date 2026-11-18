@@ -35,9 +35,12 @@ class ReadingTestCase: BrowserTestCase {
     }
 
     /// Launches on this test's library, as it stands.
-    func launchReading(_ orientation: UIDeviceOrientation = .portrait, arguments: [String] = [], pageSize: Int? = nil) {
+    func launchReading(
+        _ orientation: UIDeviceOrientation = .portrait, arguments: [String] = [], pageSize: Int? = nil, environment: [String: String] = [:]
+    ) {
         app.terminate()
         let application = XCUIApplication()
+        application.launchEnvironment.merge(environment) { _, new in new }
         if let pageSize {
             application.launchEnvironment[UITestLaunchKey.articlePageSize] = String(pageSize)
         }

@@ -43,4 +43,23 @@ final class RefreshSettings {
     func backgroundRuns(before now: Date) -> [Date] {
         preferences.backgroundRuns(before: now)
     }
+
+    /// Reads the preferences again after a configuration import wrote
+    /// them (RD20 decision 7): a changed value acts as a change made here,
+    /// so a changed interval or background refresh reconciles the
+    /// background schedule (RD24).
+    func reload() {
+        let interval = preferences.refreshInterval
+        let retention = preferences.retention
+        let backgroundRefresh = preferences.backgroundRefresh
+        if interval != self.interval {
+            self.interval = interval
+        }
+        if retention != self.retention {
+            self.retention = retention
+        }
+        if backgroundRefresh != self.backgroundRefresh {
+            self.backgroundRefresh = backgroundRefresh
+        }
+    }
 }

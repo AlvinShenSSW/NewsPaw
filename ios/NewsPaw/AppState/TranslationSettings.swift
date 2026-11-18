@@ -55,6 +55,24 @@ final class TranslationSettings {
         showsOriginalTitles = preferences.showOriginalTitles
     }
 
+    /// Reads the preferences again after a configuration import wrote
+    /// them (RD20 decision 7): a changed value acts as a change made in
+    /// Settings, and the translation models are told.
+    func reload() {
+        let locale = preferences.readingLocale
+        let automatic = preferences.autoTranslateTitles
+        let original = preferences.showOriginalTitles
+        if locale != readingLocale {
+            readingLocale = locale
+        }
+        if automatic != translatesTitlesAutomatically {
+            translatesTitlesAutomatically = automatic
+        }
+        if original != showsOriginalTitles {
+            showsOriginalTitles = original
+        }
+    }
+
     /// `model` is told of changes until it is gone.
     func addListener(_ model: TranslationModel) {
         listeners.removeAll { $0.model == nil }

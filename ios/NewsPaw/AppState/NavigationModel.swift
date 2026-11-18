@@ -146,6 +146,8 @@ enum AppSheet: Hashable, Identifiable {
     case categorySettings(UUID)
     case addSource
     case sourceSettings(UUID)
+    /// The configuration import's preview, review and summary (RD20).
+    case configurationImport
 
     var id: Self { self }
 }
@@ -691,6 +693,15 @@ final class NavigationModel {
         closeSlideOver()
         select(.settings)
         settingsPath = [modelSettingsRoute]
+    }
+
+    /// "Set Up Keys" of a configuration import's summary (RD20): a screen
+    /// of Settings, over whatever was shown.
+    func openSettings(_ route: SettingsRoute) {
+        sheet = nil
+        closeSlideOver()
+        select(.settings)
+        settingsPath = [route]
     }
 
     /// The workspace of this navigation is dropped: nothing stays

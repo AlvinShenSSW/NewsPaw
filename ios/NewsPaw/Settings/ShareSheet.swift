@@ -20,36 +20,54 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
-/// The exported OPML files: each export in a directory of its own under
-/// `OPML Export` in the temporary directory, removed when its share sheet
-/// ends; the whole folder is emptied at launch and at every lock of the
-/// adult partition. A file holds the addresses of the partition it came
-/// from; its name and title do not name the partition.
-enum OPMLExportFile {
-    static var root: URL {
-        FileManager.default.temporaryDirectory.appending(path: "OPML Export", directoryHint: .isDirectory)
+/// The exported files the share sheet is given (RD08 decision 7; RD20
+/// decision 9 and review round 2): each export in a directory of its own
+/// under the folder's name in the temporary directory, so that no other
+/// export — of this workspace or of the other one, a late one of a dropped
+/// workspace included — can overwrite or remove it. A directory is removed
+/// when its share sheet ends, or when its export is not shown; each folder
+/// is emptied at launch and at every lock of the adult partition. A file's
+/// name never names the partition it came from.
+struct ExportFolder {
+    /// "NewsPaw Feeds <yyyy-MM-dd>.opml" (RD08).
+    static let opml = ExportFolder(name: "OPML Export", fileName: "NewsPaw Feeds", fileExtension: "opml")
+    /// "NewsPaw Configuration <yyyy-MM-dd>.newspaw" (RD20).
+    static let configuration = ExportFolder(name: "Configuration", fileName: "NewsPaw Configuration", fileExtension: "newspaw")
+
+    let name: String
+    let fileName: String
+    let fileExtension: String
+
+    var root: URL {
+        FileManager.default.temporaryDirectory.appending(path: name, directoryHint: .isDirectory)
     }
 
-    /// Removes every export, whichever partition and screen it came from.
-    static func emptyAll() {
+    /// Removes every export of this folder, whichever partition and screen
+    /// it came from.
+    func emptyAll() {
         try? FileManager.default.removeItem(at: root)
     }
 
-    /// Writes `data` as "NewsPaw Feeds <yyyy-MM-dd>.opml" in a new
-    /// directory of its own, so that no other export can overwrite or
-    /// remove it, and returns its address.
-    static func write(_ data: Data, on date: Date) throws -> URL {
+    /// Writes `data` as "<file name> <yyyy-MM-dd>.<extension>" in a new
+    /// directory of its own and returns its address; a write that fails
+    /// leaves nothing.
+    func write(_ data: Data, on date: Date) throws -> URL {
         let directory = root.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // The owner's calendar day, not the one in GMT.
         let day = date.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day().dateSeparator(.dash))
-        let url = directory.appending(path: "NewsPaw Feeds \(day).opml")
-        try data.write(to: url, options: .atomic)
+        let url = directory.appending(path: "\(fileName) \(day).\(fileExtension)")
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
         return url
     }
 
     /// Removes the directory of the export at `url`, and nothing else.
-    static func remove(_ url: URL) {
+    func remove(_ url: URL) {
         let directory = url.deletingLastPathComponent()
         guard directory.deletingLastPathComponent().standardizedFileURL == root.standardizedFileURL else { return }
         try? FileManager.default.removeItem(at: directory)

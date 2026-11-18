@@ -38,6 +38,17 @@ struct DebugLaunchOptions {
     /// picker (RD08 decision 8). Applied only together with
     /// `libraryDirectory`.
     let opmlFixture: OPMLFixture?
+    /// The configuration file "Import Configuration" reads instead of
+    /// presenting the file picker (RD20 decision 10). Applied only
+    /// together with `libraryDirectory`.
+    let configurationFixture: ConfigurationFixture?
+    /// How long a configuration import waits between its write and its
+    /// completion (RD20 criterion 13). Applied only together with
+    /// `libraryDirectory`.
+    let configurationWritePause: Duration?
+    /// Where the adult workspace's configuration export waits (RD20 review
+    /// round 2). Applied only together with `libraryDirectory`.
+    let configurationExportHold: ConfigurationExportHold?
     /// The translator fixture's models to set up in the normal library
     /// (RD14): the primary, and the backup after it. Applied only together
     /// with `libraryDirectory`, and only to a library with no model yet.
@@ -102,6 +113,13 @@ struct DebugLaunchOptions {
             articlePageSize = nil
         }
         opmlFixture = environment[UITestLaunchKey.opmlFixture].flatMap(OPMLFixture.init(rawValue:))
+        configurationFixture = environment[UITestLaunchKey.configurationFixture].flatMap(ConfigurationFixture.init(rawValue:))
+        if let text = environment[UITestLaunchKey.configurationWritePause], let seconds = Int(text), seconds > 0 {
+            configurationWritePause = .seconds(seconds)
+        } else {
+            configurationWritePause = nil
+        }
+        configurationExportHold = environment[UITestLaunchKey.configurationExportHold].flatMap(ConfigurationExportHold.init(rawValue:))
         translationModels = switch environment[UITestLaunchKey.translationModels] {
         case "primary": [.primary]
         case "primary,backup": [.primary, .backup]

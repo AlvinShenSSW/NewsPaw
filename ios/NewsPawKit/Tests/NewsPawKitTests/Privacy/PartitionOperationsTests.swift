@@ -13,7 +13,8 @@ struct PartitionOperationsTests {
         let secondTurnOff = operations.begin(.turnOff)
         let clear = operations.begin(.clearBrowsingData)
         let move = operations.begin(.categoryMove)
-        #expect(secondTurnOff == nil && clear == nil && move == nil)
+        let configurationImport = operations.begin(.configurationImport)
+        #expect(secondTurnOff == nil && clear == nil && move == nil && configurationImport == nil)
         #expect(operations.running == .turnOff)
         let ended = operations.end(first)
         #expect(ended)
@@ -53,6 +54,18 @@ struct PartitionOperationsTests {
         #expect(moving.refusesUnlockCarryingMove)
         #expect(!moving.refusesAdultSessions)
         #expect(moving.refusesLibraryEdits)
+
+        // Batch 2: a configuration import's write, the fourth operation.
+        var importing = PartitionOperations()
+        let importBegun = importing.begin(.configurationImport)
+        _ = try #require(importBegun)
+        #expect(!importing.refusesUnlock)
+        #expect(importing.refusesUnlockCarryingMove)
+        #expect(!importing.refusesAdultSessions)
+        #expect(importing.refusesLibraryEdits)
+        for other in [PartitionOperation.categoryMove, .clearBrowsingData, .turnOff, .configurationImport] {
+            #expect(importing.begin(other) == nil, "\(other) began during an import's write")
+        }
 
         for operation in [PartitionOperation.clearBrowsingData, .turnOff] {
             var operations = PartitionOperations()

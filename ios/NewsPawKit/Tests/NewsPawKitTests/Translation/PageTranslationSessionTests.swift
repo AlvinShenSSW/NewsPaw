@@ -618,6 +618,57 @@ struct PageTranslationSessionTests {
         #expect(try await normal.library.pool.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM page_text") } == 3)
     }
 
+    @Test("batch 3 (RD16 × RD19): a session whose translator is made from the adult library's models says Set up a model, with its link, and sends nothing without an adult slot; with one it sends only through it, and usage and page_text rows land in the adult library only")
+    func adultModels() async throws {
+        // The normal library, with its primary slot set up.
+        let normal = try await TranslatorFixture.make()
+        defer { normal.remove() }
+        let store = LibraryStore(directory: normal.directory.appending(path: "second"), now: normal.clock.now)
+        let adult = try await store.createAdultLibrary()
+        let adultModels = LibraryModels(library: adult, keys: InMemoryKeyStore(partition: .adult), http: normal.service)
+        let page = StubPage()
+        page.collection = { .success(.runs(Self.runs(Self.japanese), loaded: true)) }
+        var timing = PageTranslationSession.Timing()
+        timing.poll = .milliseconds(10)
+        let session = PageTranslationSession(
+            scripting: page, translator: PageTranslator(models: adultModels), readingLocale: { .simplifiedChinese }, isSeen: { true },
+            timing: timing
+        )
+        defer { session.close() }
+        func count(_ sql: String, in library: Library) async throws -> Int {
+            try await library.pool.read { try Int.fetchOne($0, sql: sql) ?? -1 }
+        }
+        func until(_ condition: () -> Bool) async {
+            let deadline = ContinuousClock.now + .seconds(60)
+            while !condition(), ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        session.documentCommitted(Self.address)
+        session.turnOn()
+        await until { session.line == .noModel(opensSettings: true) }
+        #expect(session.line == .noModel(opensSettings: true))
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(!session.isOn && page.collects == 0)
+        #expect(normal.service.requests.isEmpty)
+
+        let adultHost = "adult.models.example.invalid"
+        try await adultModels.save(
+            ModelSlotDraft(role: .primary, preset: .custom, address: "https://\(adultHost)/v1", model: "adult-model",
+                           newKey: key("sk-adult-0123456789")),
+            testedOutcome: nil
+        )
+        session.turnOn()
+        await until { session.line == .translated(.simplifiedChinese) }
+        #expect(session.line == .translated(.simplifiedChinese))
+        #expect(!normal.service.requests.isEmpty)
+        #expect(normal.service.requests.allSatisfy { $0.host == adultHost }, "\(normal.service.requests.map(\.host))")
+        #expect(try await count("SELECT COUNT(*) FROM usage WHERE purpose = 'page'", in: adult) == normal.service.requests.count)
+        #expect(try await count("SELECT COUNT(*) FROM page_text", in: adult) == 3)
+        #expect(try await normal.usage().isEmpty)
+        #expect(try await count("SELECT COUNT(*) FROM page_text", in: normal.library) == 0)
+    }
+
     // MARK: - Hosts
 
     @Test("a document without an http or https host uses neither the memory nor page_text")

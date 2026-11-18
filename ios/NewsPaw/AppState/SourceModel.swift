@@ -334,7 +334,9 @@ final class SourceModel {
     /// "Import OPML" on `origin`: presents the file picker there. In a
     /// debug build under the UI tests a fixture is read instead.
     func beginOPMLImport(from origin: OPMLImportOrigin) {
-        guard !isStopped else { return }
+        // An OPML import writes categories and sources: none begins while
+        // a category move runs (RD19's table; batch 2).
+        guard !isStopped, !editsAreRefused else { return }
         opmlImport?.cancel()
         let model = OPMLImportModel(origin: origin, sources: self)
         opmlImport = model

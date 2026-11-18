@@ -125,7 +125,7 @@ struct AddressStepView: View {
                     }
                     .frame(minHeight: Theme.minimumTapTarget)
                 }
-                .disabled(model.isDetecting || sources.opmlImport?.stage == .reading)
+                .disabled(model.isDetecting || sources.opmlImport?.stage == .reading || sources.editsAreRefused)
                 .accessibilityIdentifier(AccessibilityID.addSourceImportOPMLButton)
             }
             .listRowBackground(Theme.surface)

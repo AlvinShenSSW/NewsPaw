@@ -88,7 +88,9 @@ final class OPMLImportModel {
     /// Whether Import can be tapped: the plan writes something, the
     /// required category is chosen, and nothing is being written.
     var canImport: Bool {
-        guard stage == .preview, let plan, plan.changesSomething else { return false }
+        // Not while a category move runs (RD19's table; batch 2): the write
+        // would be refused by `SourceModel.perform`.
+        guard stage == .preview, let plan, plan.changesSomething, sources?.editsAreRefused == false else { return false }
         return !plan.needsOutsideCategory || choice != nil
     }
 

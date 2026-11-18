@@ -203,7 +203,7 @@ struct DataSettingsView: View {
                     }
                     .frame(minHeight: Theme.minimumTapTarget)
                 }
-                .disabled(sources.opmlImport?.stage == .reading)
+                .disabled(sources.opmlImport?.stage == .reading || sources.editsAreRefused)
                 .accessibilityIdentifier(AccessibilityID.importOPMLButton)
                 Button {
                     export()

@@ -273,6 +273,45 @@ struct CategoryMoveTests {
         #expect(try await fixture.destination.refreshTargets(.category(fixture.category)) == [fixture.beta.id])
     }
 
+    @Test("RD25 with RD19: after a move, search_text in both libraries equals its derivation; with sources left behind and without", arguments: [
+        (true, true), (true, false), (false, true), (false, false),
+    ])
+    func searchIndexAfterAMove(toAdult: Bool, leavesSourcesBehind: Bool) async throws {
+        let fixture = try await Fixture.make(toAdult: toAdult, twin: leavesSourcesBehind)
+        defer { fixture.remove() }
+        let before = (
+            try await expectSearchTextMatchesDerivation(fixture.old, "old library before the move"),
+            try await expectSearchTextMatchesDerivation(fixture.destination, "destination before the move")
+        )
+        #expect(before.0 > 0, "the fixture's articles and translations are indexed")
+
+        let outcome = await CategoryMove.run(try await fixture.plan(), from: fixture.old, to: fixture.destination)
+
+        #expect(outcome == .moved(staying: leavesSourcesBehind ? 1 : 0, categoryRemoved: !leavesSourcesBehind))
+        let after = (
+            try await expectSearchTextMatchesDerivation(fixture.old, "old library after the move"),
+            try await expectSearchTextMatchesDerivation(fixture.destination, "destination after the move")
+        )
+        // Each moved source took two articles with a title and a done
+        // translation each (four rows) out of the old index; the move copies
+        // no article, so the destination's index is unchanged.
+        let movedSources = leavesSourcesBehind ? 2 : 3
+        #expect(after.0 == before.0 - movedSources * 4)
+        #expect(after.1 == before.1)
+        // A title of a moved source is no longer found in the old library,
+        // and a staying one still is.
+        let alphaRows = try await fixture.old.pool.read { db in
+            try storedSearchText(db).filter { $0.text.contains(SearchQuery.fold("Alpha story")) }.count
+        }
+        #expect(alphaRows == 0)
+        if leavesSourcesBehind {
+            let betaRows = try await fixture.old.pool.read { db in
+                try storedSearchText(db).filter { $0.text.contains(SearchQuery.fold("Beta story")) }.count
+            }
+            #expect(betaRows == 2)
+        }
+    }
+
     @Test("criterion 11: a category without sources moves")
     func emptyCategoryMoves() async throws {
         let fixture = try await Fixture.make(toAdult: true)

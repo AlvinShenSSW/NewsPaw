@@ -144,6 +144,12 @@ public actor OverviewWriter {
 
     // MARK: - The app's calls
 
+    /// The reading locale the writer works in, as the last `configure` set
+    /// it: for the UI tests' check that an import's change reached it.
+    public var configuredLocale: ReadingLocale? {
+        locale
+    }
+
     /// Sets the one callback.
     public func setObserver(_ observer: @escaping @Sendable (OverviewEvent) async -> Void) {
         self.observer = observer

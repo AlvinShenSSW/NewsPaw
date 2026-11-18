@@ -1,5 +1,6 @@
 import Foundation
 import NewsPawKit
+import Synchronization
 import UIKit
 
 /// A manual job that stored nothing, or a failed Rewrite, asked from the
@@ -161,6 +162,14 @@ final class OverviewModel {
         reading?.open(articleID: highlight.articleID, on: .category(category))
     }
 
+    /// The reading locale the writer works in, read after every call sent
+    /// before it (the debug report's mirror check, batch 4).
+    func writerLocale() async -> ReadingLocale? {
+        let box = LocaleBox()
+        await chain.send { box.value = await $0.configuredLocale }.value
+        return box.value
+    }
+
     // MARK: - Triggers
 
     /// An entry into the app or the partition ended, after its refresh if
@@ -318,5 +327,15 @@ final class OverviewModel {
             }
             self?.dayMayHaveChanged()
         }
+    }
+}
+
+/// What a chained call read, handed back to the caller.
+private final class LocaleBox: Sendable {
+    private let stored = Mutex<ReadingLocale?>(nil)
+
+    var value: ReadingLocale? {
+        get { stored.withLock { $0 } }
+        set { stored.withLock { $0 = newValue } }
     }
 }

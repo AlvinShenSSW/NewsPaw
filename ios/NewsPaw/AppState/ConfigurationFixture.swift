@@ -41,7 +41,7 @@ enum ConfigurationFixture: String {
                 """
         }
         let normalCategory = """
-            {"id": "6c0de3a4-1d1a-4c2e-9d0e-6a8f0f9a0001", "name": "\(Self.normalCategory)", "partition": "normal", "sort_order": 0, "icon": "newspaper", "overview": "auto"}
+            {"id": "6c0de3a4-1d1a-4c2e-9d0e-6a8f0f9a0001", "name": "\(Self.normalCategory)", "partition": "normal", "sort_order": 0, "icon": "newspaper", "overview": "manual"}
             """
         let adultCategory = """
             {"id": "6c0de3a4-1d1a-4c2e-9d0e-6a8f0f9a0002", "name": "\(Self.adultCategory)", "partition": "adult", "sort_order": 0, "icon": "heart", "overview": "off"}

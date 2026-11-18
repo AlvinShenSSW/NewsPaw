@@ -214,4 +214,27 @@ final class OverviewAdultTests: IsolationTestCase {
         XCTAssertFalse(element(AccessibilityID.overview("card", "Velvet")).exists)
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "概览[")).firstMatch.exists)
     }
+
+    /// Batch 4 (RD19): with slots in the normal library and none in the
+    /// adult one, the adult card says no model is set up, and its step
+    /// opens the adult slots in Settings › Adult Partition — never the
+    /// normal partition's Models & Translation.
+    func testAdultWithoutSlotsLinksToTheAdultSlots() {
+        let application = XCUIApplication()
+        application.launchEnvironment[UITestLaunchKey.translationModels] = "primary"
+        launch(application, authentication: ["passed", "passed", "passed"])
+        rotate(.portrait)
+        requireFullWidth()
+        turnOnAdult()
+        enterAdult()
+        createCategory("Velvet")
+        addSource(Isolation.translationFeed, to: "Velvet")
+        showToday()
+        let noModel = waitFor(element(AccessibilityID.overview("noModel", "Velvet")))
+        XCTAssertTrue(noModel.label.contains("Set up a model to get overviews"), noModel.label)
+        XCTAssertFalse(element(AccessibilityID.overview("summary", "Velvet")).exists)
+        waitFor(button(AccessibilityID.overview("step", "Velvet"))).tap()
+        waitFor(adultPrimaryRow)
+        XCTAssertFalse(element(AccessibilityID.primaryModelRow).exists, "the normal partition's model settings were opened")
+    }
 }

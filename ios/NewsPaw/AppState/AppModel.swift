@@ -1541,6 +1541,20 @@ final class AppModel {
                 }
             }
         }
+        // RD23's copies (batch 4): each workspace's overview writer works in
+        // the stored reading language, and each category's overview mode,
+        // as the cards and the category editor read it, is the stored one.
+        for workspace in [normal, adult].compactMap(\.self) {
+            if await workspace.overviews.writerLocale() != preferences.readingLocale {
+                stale.append("\(workspace.partition.rawValue).overviewLocale")
+            }
+            if let stored = try? await workspace.reading.library.categories() {
+                let shown = Dictionary(workspace.categories.summaries.map { ($0.category.id, $0.category.overview) }) { first, _ in first }
+                if stored.contains(where: { shown[$0.id] != $0.overview }) {
+                    stale.append("\(workspace.partition.rawValue).categoryOverview")
+                }
+            }
+        }
         return stale
     }
 

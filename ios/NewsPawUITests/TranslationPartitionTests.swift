@@ -115,23 +115,8 @@ final class TranslationPartitionTests: IsolationTestCase {
         let before = translationRequests
         XCTAssertEqual(adultBodyRequests, 0, report)
 
-        // No adult slot: the body shows its originals and the banner of a
-        // workspace without a model; nothing is sent through any slot.
-        openSourceList("Body Feed", in: "Velvet")
-        openArticle("Long story")
-        waitFor(element(AccessibilityID.readingBlock(0)))
-        let banner = waitFor(element(AccessibilityID.bodyBanner))
-        XCTAssertTrue(button(AccessibilityID.bodyBannerOpenSettings).exists, banner.label)
-        XCTAssertFalse(element(AccessibilityID.readingBlock(0)).label.contains("译["))
-        XCTAssertEqual(translationRequests, before, "a request was sent from the adult partition: \(report)")
-        XCTAssertEqual(bodyRequests, 1, report)
-        XCTAssertEqual(adultBodyRequests, 0, report)
-        // Its Open Settings opens the adult slots, not the normal ones.
-        button(AccessibilityID.bodyBannerOpenSettings).tap()
-        waitFor(adultPrimaryRow)
-        XCTAssertFalse(element(AccessibilityID.primaryModelRow).exists, "the normal slots were opened")
-
-        // Reader mode, whose job names no article: originals, nothing sent.
+        // No adult slot. Reader mode first, whose job names no article:
+        // originals, nothing sent.
         openSourceList("Full Text Feed", in: "Velvet")
         chooseFilter("All")
         openArticle("Fetched story")
@@ -146,19 +131,44 @@ final class TranslationPartitionTests: IsolationTestCase {
         XCTAssertEqual(translationRequests, before, "a request was sent from the adult partition: \(report)")
         XCTAssertEqual(bodyRequests, 1, report)
         XCTAssertEqual(adultBodyRequests, 0, report)
+        button(AccessibilityID.readerCloseButton).tap()
+        waitForAbsence(title)
+        leaveBrowser()
 
-        // An adult slot, set up in S10 with the normal slot's own values.
-        openAdultSettings()
-        waitFor(adultPrimaryRow).tap()
+        // An article's body: its originals and the banner of a workspace
+        // without a model; nothing is sent through any slot.
+        openSourceList("Body Feed", in: "Velvet")
+        openArticle("Long story")
+        waitFor(element(AccessibilityID.readingBlock(0)))
+        let banner = waitFor(element(AccessibilityID.bodyBanner))
+        XCTAssertTrue(button(AccessibilityID.bodyBannerOpenSettings).exists, banner.label)
+        XCTAssertFalse(element(AccessibilityID.readingBlock(0)).label.contains("译["))
+        XCTAssertEqual(translationRequests, before, "a request was sent from the adult partition: \(report)")
+        XCTAssertEqual(bodyRequests, 1, report)
+        XCTAssertEqual(adultBodyRequests, 0, report)
+        // Its Open Settings opens the adult slots, not the normal ones.
+        button(AccessibilityID.bodyBannerOpenSettings).tap()
+        waitFor(adultPrimaryRow)
+        XCTAssertFalse(element(AccessibilityID.primaryModelRow).exists, "the normal slots were opened")
+
+        // An adult slot, set up there with the normal slot's own values.
+        adultPrimaryRow.tap()
         waitFor(button(AccessibilityID.saveButton))
         fillForm(address: Isolation.translateAddress, model: Isolation.translator, key: Isolation.normalFixtureKey)
         runTest(expecting: "Passed")
         tapSave()
         waitForAbsence(button(AccessibilityID.saveButton))
+        // Back to the list, and the article opened again.
+        if usesTabs {
+            app.tabBars.buttons.element(boundBy: 1).tap()
+            waitFor(element(AccessibilityID.readingBlock(0)))
+            backToList()
+        } else {
+            openSourceList("Body Feed", in: "Velvet")
+        }
+        openArticle("Long story")
 
         // The adult body is translated through it: adult usage rows only.
-        openSourceList("Body Feed", in: "Velvet")
-        openArticle("Long story")
         XCTAssertTrue(translatedBlock.waitForExistence(timeout: 60), "the adult body was not translated with the adult slot: \(report)")
         let adultRows = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in self.adultBodyRequests >= 1 }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [adultRows], timeout: 20), .completed, report)

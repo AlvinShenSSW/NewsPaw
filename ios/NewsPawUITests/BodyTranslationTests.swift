@@ -169,6 +169,32 @@ final class BodyTranslationTests: BodyTranslationTestCase {
         XCTAssertFalse(banner.exists)
     }
 
+    /// Review round 5: Retry's write is held (eight seconds) and the
+    /// article's page is opened over it meanwhile. When the write is made
+    /// no screen shows the body: no request is sent while the page is
+    /// shown. Back on the article, chunks 2–8 are sent once (chunk 1 was
+    /// accepted before the failed write and is stored by Retry; chunk 4
+    /// stalls for 60 seconds).
+    func testRetryLeftWhileWritingStartsNothing() {
+        launchWithBodies(environment: [UITestLaunchKey.failFirstBodyWrite: "1", UITestLaunchKey.holdRetryWrite: "1"])
+        openBody(Body.long)
+        waitForBlock(0, startingWith: Translation.translated(Body.paragraph(1, of: Body.long)))
+        waitForBanner("Some text could not be translated · The change could not be saved.")
+        expectBodyRequests(1, "chunk 1 accepted, not stored; the work stopped")
+
+        waitFor(button(AccessibilityID.bodyBannerRetry)).tap()
+        waitFor(button(AccessibilityID.readingOriginalBarButton)).tap()
+        waitFor(element(AccessibilityID.browser))
+        // The write is made about eight seconds after Retry.
+        expectBodyRequests(1, "the screen is gone: nothing is sent", settle: 12)
+
+        closeBrowser()
+        waitForBlock(0, startingWith: Translation.translated(Body.paragraph(1, of: Body.long)))
+        expectBodyRequests(8, "back on the article: chunks 2–8 once", timeout: 150)
+        waitForAbsence(progressLine)
+        XCTAssertFalse(banner.exists)
+    }
+
     /// The body requests once they stop growing (two readings 1.5 s apart).
     private func settledBodyRequests() -> Int {
         var last = -1

@@ -50,6 +50,10 @@ struct DebugLaunchOptions {
     /// article is translated (RD15 review round 4). Applied only together
     /// with `libraryDirectory`.
     let changesSlotsAfterReader: Bool
+    /// Whether Retry's write after a failed one is held for eight seconds
+    /// (RD15 review round 5). Applied only together with
+    /// `libraryDirectory`.
+    let holdsRetryWrite: Bool
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -97,6 +101,7 @@ struct DebugLaunchOptions {
         holdsFirstBodyPlan = environment[UITestLaunchKey.holdFirstBodyPlan] == "1"
         failsFirstBodyWrite = environment[UITestLaunchKey.failFirstBodyWrite] == "1"
         changesSlotsAfterReader = environment[UITestLaunchKey.slotsChangeAfterReader] == "1"
+        holdsRetryWrite = environment[UITestLaunchKey.holdRetryWrite] == "1"
     }
 
     /// Accepts only a name that stays inside the temporary directory.

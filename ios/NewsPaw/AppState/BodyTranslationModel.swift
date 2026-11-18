@@ -148,6 +148,9 @@ final class BodyTranslationModel {
     @ObservationIgnored var slotsChangedForUITests: @MainActor () -> Void = {}
     /// The slot changes this process saw, for the UI tests' report.
     static var slotChanges = 0
+    /// Under a UI test only (review round 5): Retry's first write after a
+    /// failed one waits eight seconds before it is made.
+    @ObservationIgnored var holdsRetryWrite = false
 
     /// Under a UI test only: the next `count` writes of results fail
     /// (review round 4).
@@ -361,6 +364,11 @@ final class BodyTranslationModel {
         guard !isStopped, var opening = openings[key], let plan = opening.plan else { return }
         let job = BodyTranslationJob(article: key.article, locale: opening.locale, chunks: plan.chunks(sending: hashes), route: route)
         guard !job.chunks.isEmpty else { return }
+        // Every job starts here, and only for a body a screen shows: a
+        // start that an await outlived the screen of (Retry's write, a
+        // plan) waits for the screen, whose appearance starts it (review
+        // round 5).
+        guard isShown(key) else { return }
         // Every job starts here, and none while the app is in the
         // background, whatever led here (a plan or a read of the rows
         // finishing, a cancelled job's end, a settle, a language change):
@@ -461,6 +469,12 @@ final class BodyTranslationModel {
             // Only the rows that are missing: a stored row keeps its time.
             let stored = try? await translator.storedTexts(ofArticle: article, locale: locale)
             let missing = accepted.filter { stored?[$0.key]?.state != .done }
+            #if DEBUG
+            if holdsRetryWrite {
+                holdsRetryWrite = false
+                try? await Task.sleep(for: .seconds(8))
+            }
+            #endif
             let written = await translator.storeAccepted(missing, models: models, ofArticle: article, locale: locale)
             guard written, !isStopped, var current = openings[key], current.generation == generation,
                   current.job == nil, current.stop == .storage else { return }

@@ -251,6 +251,7 @@ final class AppModel {
                 if options.failsFirstBodyWrite {
                     workspace.translation?.body.failNextWrites(1)
                 }
+                workspace.translation?.body.holdsRetryWrite = options.holdsRetryWrite
                 if options.changesSlotsAfterReader {
                     // The same call as a save in Settings.
                     workspace.translation?.body.changesSlotsAfterReaderTranslated = true

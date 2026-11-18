@@ -389,6 +389,10 @@ enum UITestLaunchKey {
     /// in Settings reports it (RD15 review round 4); honoured only with
     /// `libraryDirectory`.
     static let slotsChangeAfterReader = "NEWSPAW_UITEST_SLOTS_CHANGE_AFTER_READER"
+    /// "1": Retry's write of texts that could not be written waits eight
+    /// seconds before it is made (RD15 review round 5); honoured only with
+    /// `libraryDirectory`.
+    static let holdRetryWrite = "NEWSPAW_UITEST_HOLD_RETRY_WRITE"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.

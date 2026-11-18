@@ -30,11 +30,13 @@ struct PageTranslationRestoreTests {
 
     /// The page's real bridge, except that the answers of the first
     /// `drops` collects are lost: the script ran, but its answer missed the
-    /// deadline.
+    /// deadline. It counts the collects: the session's poll makes one a
+    /// step.
     @MainActor
     final class DroppingScripting: PageScripting {
         let inner: any PageScripting
         var drops: Int
+        private(set) var collects = 0
 
         init(_ inner: any PageScripting, drops: Int) {
             self.inner = inner
@@ -42,6 +44,7 @@ struct PageTranslationRestoreTests {
         }
 
         func collect(period: String, locale: ReadingLocale) async -> Result<PageCollection, PageCallFailure> {
+            collects += 1
             let answer = await inner.collect(period: period, locale: locale)
             guard drops > 0 else { return answer }
             drops -= 1
@@ -67,7 +70,8 @@ struct PageTranslationRestoreTests {
         var locale = ReadingLocale.simplifiedChinese
         private(set) var session: PageTranslationSession!
 
-        private var scripting: (any PageScripting)?
+        /// The bridge, wrapped: the collects are counted.
+        private(set) var scripting: DroppingScripting!
 
         init(service: TranslationService, dropsCollects: Int = 0, poll: Duration = .milliseconds(50)) async throws {
             server = try LoopbackServer { request, _ in
@@ -79,7 +83,7 @@ struct PageTranslationRestoreTests {
             timing.poll = poll
             timing.afterScroll = .milliseconds(1)
             timing.decideAfter = .seconds(600)
-            let scripting: any PageScripting = dropsCollects > 0 ? DroppingScripting(page.bridge, drops: dropsCollects) : page.bridge
+            let scripting = DroppingScripting(page.bridge, drops: dropsCollects)
             self.scripting = scripting
             session = PageTranslationSession(
                 scripting: scripting, translator: PageTranslator(models: fixture.models), readingLocale: { [weak self] in
@@ -125,11 +129,13 @@ struct PageTranslationRestoreTests {
             fixture.remove()
         }
 
-        func eventually(_ condition: () async throws -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {
-            let deadline = ContinuousClock.now + .seconds(30)
+        func eventually(
+            within bound: Duration = .seconds(30), _ condition: () async throws -> Bool, sourceLocation: SourceLocation = #_sourceLocation
+        ) async throws {
+            let deadline = ContinuousClock.now + bound
             while try await !condition() {
                 guard ContinuousClock.now < deadline else {
-                    Issue.record("the condition did not hold within 30 s", sourceLocation: sourceLocation)
+                    Issue.record("the condition did not hold within \(bound)", sourceLocation: sourceLocation)
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(20))
@@ -213,7 +219,7 @@ struct PageTranslationRestoreTests {
         #expect(service.requests.count == 1)
     }
 
-    @Test("review round 5: with the app's own poll, a panel a radio tab reveals through CSS alone is translated within two seconds")
+    @Test("review round 5: with the app's own poll, a panel a radio tab reveals through CSS alone is sent at the poll's first step after the click, with nothing else to wake it, and translated")
     func cssRevealedPanel() async throws {
         let service = TranslationService()
         let rig = try await Rig(service: service, poll: PageTranslationSession.Timing().poll)
@@ -222,14 +228,22 @@ struct PageTranslationRestoreTests {
         rig.session.turnOn()
         try await rig.eventually { try await rig.text("p1") == "T:一つ目のパネルの文です" }
         try await rig.eventually { rig.session.line == .translated(.simplifiedChinese) }
-        // The write's own flag is spent by the polls that follow: the page
+        // The design's poll: one step a second.
+        #expect(PageTranslationSession.Timing().poll == .seconds(1))
+        // The write's own flag is spent by the steps that follow: the page
         // then answers unchanged until something sets the flag again.
-        try await Task.sleep(for: .seconds(3))
-        let clock = ContinuousClock()
-        let start = clock.now
+        let spent = rig.scripting.collects
+        try await rig.eventually { rig.scripting.collects >= spent + 3 }
+        // Only the click: no navigation, no scroll, no other call. The
+        // panel's text is collected and sent at the poll's first step after
+        // it (counted by the collects, not by the runner's clock: a step
+        // collects nothing more while its runs are prepared), then written;
+        // the wall bound is only a stop.
+        let atClick = rig.scripting.collects
         try await rig.page.page(#"document.querySelector("label[for=t2]").click()"#)
-        try await rig.eventually { try await rig.text("p2") == "T:二つ目のパネルの文です" }
-        let elapsed = clock.now - start
-        #expect(elapsed <= .seconds(2), "\(elapsed)")
+        try await rig.eventually(within: .seconds(60)) { service.requests.contains { $0.texts.contains("二つ目のパネルの文です") } }
+        let steps = rig.scripting.collects - atClick
+        #expect(steps >= 1 && steps <= 2, "sent at step \(steps) of the poll")
+        try await rig.eventually(within: .seconds(60)) { try await rig.text("p2") == "T:二つ目のパネルの文です" }
     }
 }

@@ -77,6 +77,21 @@ struct DebugLaunchOptions {
     /// Whether the "Deliver background refresh" control is shown (RD24
     /// review R3). Applied only together with `libraryDirectory`.
     let backgroundDelivery: Bool
+    /// Whether the first body plan is held until the app is in the
+    /// background (RD15 review round 3). Applied only together with
+    /// `libraryDirectory`.
+    let holdsFirstBodyPlan: Bool
+    /// Whether the first write of body results fails (RD15 review round
+    /// 4). Applied only together with `libraryDirectory`.
+    let failsFirstBodyWrite: Bool
+    /// Whether the slots are reported changed after the first temporary
+    /// article is translated (RD15 review round 4). Applied only together
+    /// with `libraryDirectory`.
+    let changesSlotsAfterReader: Bool
+    /// Whether Retry's write after a failed one is held for eight seconds
+    /// (RD15 review round 5). Applied only together with
+    /// `libraryDirectory`.
+    let holdsRetryWrite: Bool
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -144,6 +159,10 @@ struct DebugLaunchOptions {
         }
         seedsUsage = environment[UITestLaunchKey.seedUsage] == "1"
         backgroundDelivery = environment[UITestLaunchKey.backgroundDelivery] == "1"
+        holdsFirstBodyPlan = environment[UITestLaunchKey.holdFirstBodyPlan] == "1"
+        failsFirstBodyWrite = environment[UITestLaunchKey.failFirstBodyWrite] == "1"
+        changesSlotsAfterReader = environment[UITestLaunchKey.slotsChangeAfterReader] == "1"
+        holdsRetryWrite = environment[UITestLaunchKey.holdRetryWrite] == "1"
     }
 
     /// Accepts only a name that stays inside the temporary directory.

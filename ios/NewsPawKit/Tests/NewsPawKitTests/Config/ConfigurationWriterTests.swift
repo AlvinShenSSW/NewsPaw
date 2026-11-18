@@ -59,7 +59,8 @@ struct ConfigurationWriterTests {
                 "reading_locale" : "zh-Hans",
                 "refresh_minutes" : 30,
                 "retention_days" : 30,
-                "show_original_titles" : false
+                "show_original_titles" : false,
+                "translate_body_on_open" : true
               },
               "sources" : [
                 {

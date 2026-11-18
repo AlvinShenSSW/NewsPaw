@@ -169,6 +169,11 @@ final class Workspace: Identifiable {
         let translation = TranslationModel(models: models, settings: parts.translationSettings, reading: reading, now: parts.now)
         reading.translationLocale = { [weak translation] in translation?.settings.readingLocale }
         translation.autoTranslateOfSource = { [weak sources] id in sources?.summary(id)?.autoTranslate }
+        // The bodies the reading model settles and lets go (RD15).
+        reading.onBodySettled = { [weak translation] id, content in translation?.body.bodySettled(id, content: content) }
+        reading.onBodyDropped = { [weak translation] id in translation?.body.bodyDropped(id) }
+        let sharedReadingSettings = parts.readingSettings
+        translation.body.defaultMode = { sharedReadingSettings.defaultDisplayMode }
         // A change of the normal slots resumes the normal library's
         // translation, whichever workspace's Settings made it; a change of
         // the adult slots, the adult library's.
@@ -187,6 +192,7 @@ final class Workspace: Identifiable {
         navigation.onSearchStarted = { [weak reading] in reading?.dropSearch() }
         navigation.isWebPageSource = { [weak sources] id in sources?.summary(id)?.kind == .webpage }
         navigation.onStacksChanged = { [weak browser] in browser?.stacksChanged() }
+        browser.onTemporaryArticleEnded = { [weak translation] id in translation?.body.readerClosed(id) }
         navigation.onSettingsPathChanged = { [weak modelSettings, weak partitionModelSettings] path in
             modelSettings?.settingsPathChanged(path)
             partitionModelSettings?.settingsPathChanged(path)

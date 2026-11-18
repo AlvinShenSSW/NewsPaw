@@ -72,6 +72,8 @@ struct ConfigurationSettingsTests {
             // RD21's first-run flag and RD24's record of background runs:
             // device state (batch 2).
             "first_run_done", "background_refresh_runs",
+            // RD15's display mode: a device setting (batch 3).
+            "reading_display_mode",
         ])
     }
 
@@ -83,7 +85,7 @@ struct ConfigurationSettingsTests {
         let preferences = Preferences(defaults)
         #expect(ConfigurationSettings.inEffect(preferences) == ConfigurationSettings(
             refreshMinutes: 30, retentionDays: 30, readingLocale: "zh-Hans", autoTranslateTitles: true, showOriginalTitles: false,
-            backgroundRefresh: true
+            backgroundRefresh: true, translateBodyOnOpen: true
         ))
         defaults.set(45, forKey: "refresh_minutes")
         defaults.set("fr", forKey: "reading_locale")
@@ -100,7 +102,8 @@ struct ConfigurationSettingsTests {
         preferences.retention = .ninetyDays
         preferences.readingTextSize = .largest
         ConfigurationSettings(
-            refreshMinutes: 60, readingLocale: "ja", autoTranslateTitles: false, showOriginalTitles: true, backgroundRefresh: false
+            refreshMinutes: 60, readingLocale: "ja", autoTranslateTitles: false, showOriginalTitles: true, backgroundRefresh: false,
+            translateBodyOnOpen: false
         ).apply(to: preferences)
         #expect(preferences.refreshInterval == .sixtyMinutes)
         #expect(preferences.retention == .ninetyDays)
@@ -108,20 +111,25 @@ struct ConfigurationSettingsTests {
         #expect(!preferences.autoTranslateTitles)
         #expect(preferences.showOriginalTitles)
         #expect(!preferences.backgroundRefresh)
+        #expect(!preferences.translatesBodyOnOpen)
         #expect(preferences.readingTextSize == .largest)
     }
 
     @Test("differences list the members present with another value, typed")
     func differences() {
         let here = ConfigurationSettings(
-            refreshMinutes: 30, retentionDays: 30, readingLocale: "zh-Hans", autoTranslateTitles: true, showOriginalTitles: false, backgroundRefresh: true
+            refreshMinutes: 30, retentionDays: 30, readingLocale: "zh-Hans", autoTranslateTitles: true, showOriginalTitles: false, backgroundRefresh: true,
+            translateBodyOnOpen: true
         )
-        let file = ConfigurationSettings(refreshMinutes: 15, retentionDays: 30, readingLocale: "en", showOriginalTitles: true, backgroundRefresh: false)
+        let file = ConfigurationSettings(
+            refreshMinutes: 15, retentionDays: 30, readingLocale: "en", showOriginalTitles: true, backgroundRefresh: false, translateBodyOnOpen: false
+        )
         #expect(file.differences(from: here) == [
             ConfigurationSettingDifference(setting: .refreshMinutes, here: .refreshInterval(.thirtyMinutes), file: .refreshInterval(.fifteenMinutes)),
             ConfigurationSettingDifference(setting: .readingLocale, here: .readingLocale(.simplifiedChinese), file: .readingLocale(.english)),
             ConfigurationSettingDifference(setting: .showOriginalTitles, here: .flag(false), file: .flag(true)),
             ConfigurationSettingDifference(setting: .backgroundRefresh, here: .flag(true), file: .flag(false)),
+            ConfigurationSettingDifference(setting: .translateBodyOnOpen, here: .flag(true), file: .flag(false)),
         ])
         let partitionHere = ConfigurationPartitionSettings(partition: "normal", dailyAutoLimit: 200, listThumbnails: true)
         let partitionFile = ConfigurationPartitionSettings(partition: "normal", dailyAutoLimit: 20, listThumbnails: true)

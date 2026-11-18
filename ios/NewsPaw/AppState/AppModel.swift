@@ -453,6 +453,16 @@ final class AppModel {
                 configurationFixture = options.configurationFixture
                 configurationWritePause = options.configurationWritePause
                 configurationExportHold = options.configurationExportHold
+                workspace.translation.body.holdsFirstPlanUntilBackground = options.holdsFirstBodyPlan
+                if options.failsFirstBodyWrite {
+                    workspace.translation.body.failNextWrites(1)
+                }
+                workspace.translation.body.holdsRetryWrite = options.holdsRetryWrite
+                if options.changesSlotsAfterReader {
+                    // The same call as a save in Settings.
+                    workspace.translation.body.changesSlotsAfterReaderTranslated = true
+                    workspace.translation.body.slotsChangedForUITests = { [weak self] in self?.parts?.slotsChanged() }
+                }
             }
             workspace.sources.opmlFixture = opmlFixture
             workspace.configuration.fixture = configurationFixture
@@ -1267,6 +1277,12 @@ final class AppModel {
     private func sceneDidEnterBackground() {
         sceneIsActive = false
         wasInBackground = true
+        // The bodies' translation stops (RD15 N06: leaving stops the work);
+        // a mere deactivation (Control Centre, an alert, the app switcher
+        // glimpsed) does not, so that no chunk is cancelled and sent again
+        // for nothing. `cameToFront` resumes what is still shown.
+        normal?.translation.appEnteredBackground()
+        adult?.translation.appEnteredBackground()
         // An unlock that is still running is discarded (decision 5).
         if let unlockAttempt {
             unlockAttempt.enteredBackground = true
@@ -1318,7 +1334,8 @@ final class AppModel {
             // The app came to the front: a translation pause of the normal
             // library may end (RD14 decision 6), whichever partition is
             // shown, since the normal workspace goes on working; and the
-            // adult library's, while it is shown.
+            // adult library's, while it is shown. Each one's body work,
+            // stopped in the background, may start again (RD15).
             normal?.translation.cameToFront()
             adult?.translation.cameToFront()
         } else if ranInBackground {
@@ -1474,7 +1491,11 @@ final class AppModel {
             + "deliveries=\(deliveriesHandled) "
             + "configuration=\(normal?.configuration.heldDocumentReport ?? "none") "
             + "exportsWritten=\(ConfigurationModel.debugExportsWritten) exportsEnded=\(ConfigurationModel.debugExportsEnded) "
-            + "shareEnded=\(ConfigurationModel.debugShareEnded)"
+            + "shareEnded=\(ConfigurationModel.debugShareEnded) "
+            + "bodyRequests=\((try? await normal?.reading.library.usageCount(purpose: .body)) ?? -1) "
+            + "readerBlock=\(normal?.reading.lastReportedPosition.map(String.init) ?? "none") "
+            + "bodyStartsInBackground=\(BodyTranslationModel.startsInBackground) "
+            + "slotChanges=\(BodyTranslationModel.slotChanges)"
     }
 
     private static func reportName(of ending: BackgroundRun.Ending?) -> String {

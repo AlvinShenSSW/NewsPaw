@@ -161,11 +161,16 @@ class ReadingTestCase: BrowserTestCase {
         app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != ''", label)).firstMatch
     }
 
-    /// Closes the open More menu without choosing: a tap on the byline,
-    /// which does nothing of its own. A tap on a bar's button would both
-    /// close the menu and press the button (seen with Next Article).
+    /// Closes the open More menu without choosing: a tap in the reading
+    /// column's left margin at the byline's height, which does nothing of
+    /// its own. A tap on a bar's button would both close the menu and press
+    /// the button (seen with Next Article); a tap on the byline itself
+    /// reached the menu's disabled Copy Translation once the menu grew
+    /// (RD15), and the menu stayed.
     func dismissMoreMenu() {
-        element(AccessibilityID.readingByline).tap()
+        let byline = element(AccessibilityID.readingByline)
+        let y = byline.exists ? byline.frame.midY : readingArea.midY
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: readingArea.minX + 6, dy: y)).tap()
     }
 
     // MARK: - Settings

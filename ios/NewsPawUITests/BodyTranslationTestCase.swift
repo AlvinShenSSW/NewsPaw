@@ -1,0 +1,218 @@
+import XCTest
+
+/// Shared steps of the RD15 tests: the fixture transport's body feed, the
+/// translator fixture's models, the progress line, the banner, the bar's
+/// control and the report's count of body requests. The translator answers
+/// each text with "译[<language asked for>]：" before it.
+@MainActor
+class BodyTranslationTestCase: TranslationTestCase {
+    enum Body {
+        static let feed = "https://bodies.example.invalid/rss.xml"
+        static let source = "Body Feed"
+        static let category = "Bodies"
+        /// 16 paragraphs, eight chunks; chunk 4 stalls once.
+        static let long = "Long story"
+        /// The same, with paragraph 3 (chunk 2) refused.
+        static let refused = "Refused paragraph story"
+        /// Six paragraphs; paragraph 3 (chunk 2) answers 503 once.
+        static let flaky = "Flaky story"
+        /// Four paragraphs; the primary refuses paragraph 1, the backup
+        /// translates it.
+        static let primaryRefuses = "Primary refuses story"
+        static let markup = "Markup story"
+        static let markupParagraph = "Read **this in bold**, <a href=\"https://example.invalid/link\">an HTML link</a>, "
+            + "[a Markdown link](https://example.invalid/markdown) and javascript:alert(1) here."
+        /// 40 short paragraphs.
+        static let many = "Many paragraphs story"
+        static let chinese = "海港议会讨论新的渡轮时刻表"
+        static let short = "Short note"
+        /// Its content gives no block: the excerpt is put in as the body.
+        static let excerptOnly = "Excerpt only story"
+        static let excerptOnlyText = "The ferry timetable changes next week, the harbour office said."
+
+        /// The start of paragraph `number` (1-based) of `story`.
+        static func paragraph(_ number: Int, of story: String) -> String {
+            "\(story), paragraph \(number)."
+        }
+    }
+
+    enum BodySentence {
+        static let refused = "Some text could not be translated · The model declined to translate this"
+        static let unreachable = "Some text could not be translated · Could not reach the service"
+        static let noModel = "Set up a model to translate"
+    }
+
+    // MARK: - Launching
+
+    /// Launches with the translator's models and the body feed in its
+    /// category, its list shown under All.
+    func launchWithBodies(
+        models: String = "primary", arguments: [String] = [], environment: [String: String] = [:], _ orientation: UIDeviceOrientation = .portrait
+    ) {
+        launchTranslating(models: models, arguments: arguments, environment: environment, orientation)
+        addFeed(Body.feed, to: Body.category)
+        waitFor(articleRow(Body.long))
+    }
+
+    // MARK: - The report
+
+    var report: String {
+        element(DebugAccessibilityID.adultReport).label
+    }
+
+    /// The usage rows of body requests in the normal library.
+    var bodyRequests: Int {
+        guard let match = report.firstMatch(of: /bodyRequests=(-?\d+)/) else { return -2 }
+        return Int(match.1) ?? -2
+    }
+
+    /// The body jobs started while the application was in the background.
+    var bodyStartsInBackground: Int {
+        guard let match = report.firstMatch(of: /bodyStartsInBackground=(-?\d+)/) else { return -2 }
+        return Int(match.1) ?? -2
+    }
+
+    /// The slot changes the body translation saw.
+    var slotChanges: Int {
+        guard let match = report.firstMatch(of: /slotChanges=(-?\d+)/) else { return -2 }
+        return Int(match.1) ?? -2
+    }
+
+    /// The block the reading screen last reported at its top.
+    var reportedBlock: String {
+        report.firstMatch(of: /readerBlock=(\S+)/).map { String($0.1) } ?? "?"
+    }
+
+    /// The requests the translator fixture has answered in this launch.
+    var translatorRequests: Int {
+        guard let match = report.firstMatch(of: /translationRequests=(-?\d+)/) else { return -2 }
+        return Int(match.1) ?? -2
+    }
+
+    /// Waits until the report counts `count` body requests, then a moment
+    /// more, so that a further request is seen.
+    func expectBodyRequests(
+        _ count: Int, _ what: String, settle: TimeInterval = 1.5, timeout: TimeInterval = 60, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let reached = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            self.bodyRequests == count
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [reached], timeout: timeout), .completed,
+                       "\(what): \(bodyRequests) body requests, not \(count)", file: file, line: line)
+        Thread.sleep(forTimeInterval: settle)
+        XCTAssertEqual(bodyRequests, count, "\(what): a further body request", file: file, line: line)
+    }
+
+    // MARK: - The screen
+
+    var progressLine: XCUIElement { element(AccessibilityID.bodyProgress) }
+    var banner: XCUIElement { element(AccessibilityID.bodyBanner) }
+    var translateButton: XCUIElement { button(AccessibilityID.translateButton) }
+    var modeMenu: XCUIElement { button(AccessibilityID.displayModeMenu) }
+
+    /// Waits until the progress line reads `text`.
+    func waitForProgress(_ text: String, file: StaticString = #filePath, line: UInt = #line) {
+        let shown = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            self.progressLine.exists && self.progressLine.label == text
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [shown], timeout: 60), .completed,
+                       "the progress line reads \(progressLine.exists ? progressLine.label : "nothing"), not \(text)", file: file, line: line)
+    }
+
+    /// The banner's sentence: the label of its static text.
+    func waitForBanner(_ sentence: String, file: StaticString = #filePath, line: UInt = #line) {
+        let text = banner.staticTexts.matching(NSPredicate(format: "label == %@", sentence)).firstMatch
+        let shown = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in text.exists }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [shown], timeout: 60), .completed,
+                       "the banner says \(banner.exists ? banner.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " | ") : "nothing"), not \(sentence)",
+                       file: file, line: line)
+    }
+
+    /// The labels of the banner's buttons.
+    func bannerSteps() -> Set<String> {
+        Set(banner.buttons.allElementsBoundByIndex.map(\.label))
+    }
+
+    /// Waits until block `index` reads `text`.
+    func waitForBlock(_ index: Int, _ text: String, file: StaticString = #filePath, line: UInt = #line) {
+        let target = block(at: index)
+        let shown = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in target.exists && target.label == text }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [shown], timeout: 60), .completed,
+                       "block \(index) reads \(target.exists ? target.label : "nothing"), not \(text)", file: file, line: line)
+    }
+
+    /// Waits until block `index` starts with `prefix`.
+    func waitForBlock(_ index: Int, startingWith prefix: String, file: StaticString = #filePath, line: UInt = #line) {
+        let target = block(at: index)
+        let shown = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in target.exists && target.label.hasPrefix(prefix) }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [shown], timeout: 60), .completed,
+                       "block \(index) reads \(target.exists ? target.label : "nothing"), not \(prefix)…", file: file, line: line)
+    }
+
+    /// Opens a body article by its row and waits for its original title or
+    /// its translation.
+    func openBody(_ title: String, file: StaticString = #filePath, line: UInt = #line) {
+        scrollList(to: title, file: file, line: line).tap()
+        let shown = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            // The original, or a translation of it in any language.
+            self.readingTitle.exists && (self.readingTitle.label == title || self.readingTitle.label.hasSuffix("]：" + title))
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [shown], timeout: timeout), .completed,
+                       "the reading screen shows \(readingTitle.exists ? readingTitle.label : "nothing"), not \(title)", file: file, line: line)
+    }
+
+    /// Leaves the open article: back to the list on the tab structure; on
+    /// the panes, another article (the Chinese one, which sends nothing).
+    func leaveArticle(file: StaticString = #filePath, line: UInt = #line) {
+        if usesTabs {
+            backToList()
+        } else {
+            openBody(Body.chinese, file: file, line: line)
+        }
+    }
+
+    /// The names of a display mode, in English and Simplified Chinese.
+    static func modeNames(_ rawValue: String) -> [String] {
+        switch rawValue {
+        case "translation": ["Translation", "译文"]
+        case "original": ["Original", "原文"]
+        default: ["Side by Side", "对照"]
+        }
+    }
+
+    /// The open mode menu's item of a mode, by its name.
+    func modeItem(_ rawValue: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label IN %@ AND identifier != %@", Self.modeNames(rawValue), AccessibilityID.displayModeMenu))
+            .firstMatch
+    }
+
+    /// Chooses a display mode from the bar's menu (assumption A6).
+    func chooseMode(_ rawValue: String, file: StaticString = #filePath, line: UInt = #line) {
+        waitFor(modeMenu, file: file, line: line).tap()
+        let item = modeItem(rawValue)
+        waitFor(item, file: file, line: line).tap()
+        waitForAbsence(item, file: file, line: line)
+    }
+
+    /// The mode the open menu marks as chosen, by its English name; the
+    /// menu is opened and closed again.
+    func chosenMode(file: StaticString = #filePath, line: UInt = #line) -> String {
+        waitFor(modeMenu, file: file, line: line).tap()
+        let chosen = ["translation", "original", "side_by_side"].first { mode in
+            let item = modeItem(mode)
+            return item.waitForExistence(timeout: 3) && item.isSelected
+        }
+        // Closed without choosing: a tap on the byline.
+        element(AccessibilityID.readingByline).tap()
+        return chosen.map { Self.modeNames($0)[0] } ?? "none"
+    }
+
+    /// The display mode the menu says, by its value; else the chosen item
+    /// of the open menu.
+    var modeValue: String {
+        if let value = modeMenu.value as? String, !value.isEmpty {
+            return value
+        }
+        return chosenMode()
+    }
+}

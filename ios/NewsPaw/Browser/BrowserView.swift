@@ -33,6 +33,7 @@ struct BrowserView: View {
     let close: (() -> Void)?
     @Environment(SourceModel.self) private var sources
     @Environment(ReadingSettings.self) private var settings
+    @Environment(TranslationModel.self) private var translation: TranslationModel?
     @Environment(\.openURL) private var openURL
     @State private var isShowingReadingSettings = false
 
@@ -69,6 +70,8 @@ struct BrowserView: View {
             TemporaryArticleView(article: article) { url in
                 session.openFromTemporaryArticle(url)
             }
+            // Each opening is its own: translated again (RD15 decision 14).
+            .id(article.id)
         } else {
             page
         }
@@ -192,8 +195,8 @@ struct BrowserView: View {
         .accessibilityIdentifier(AccessibilityID.browserReaderButton)
     }
 
-    /// The temporary article's bar: Close, Share and "Aa"; no star and no
-    /// previous or next.
+    /// The temporary article's bar: Close, the display-mode control (RD15
+    /// decision 14), Share and "Aa"; no star and no previous or next.
     @ToolbarContentBuilder
     private func readerToolbar(_ article: TemporaryArticle) -> some ToolbarContent {
         ToolbarItemGroup(placement: .bottomBar) {
@@ -202,6 +205,14 @@ struct BrowserView: View {
             }
             .accessibilityIdentifier(AccessibilityID.readerCloseButton)
             Spacer()
+            if let body = translation?.body, body.control(for: .reader(article.id)) != .none {
+                let key = BodyKey.reader(article.id)
+                BodyControlView(
+                    control: body.control(for: key), mode: body.mode(of: key),
+                    translate: { body.translate(key) }, setMode: { body.setMode($0, of: key) }
+                )
+                Spacer()
+            }
             ShareLink(item: article.address) {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
@@ -253,26 +264,70 @@ struct BrowserView: View {
 /// title, the page's host and the blocks in RD11's `BlocksView`, in the
 /// reading column, on the app's own background over the page. A link
 /// tapped in it is loaded by the session.
+///
+/// In a workspace with translation it is translated as an article is
+/// (RD15 decision 14): its title is the plan's first text, shown as the
+/// header's translated title over the original; the progress line and the
+/// banner are an article's. Nothing of it is stored.
 private struct TemporaryArticleView: View {
     let article: TemporaryArticle
     let openLink: (URL) -> Void
     @Environment(ReadingSettings.self) private var settings
+    @Environment(TranslationModel.self) private var translation: TranslationModel?
+    @Environment(NavigationModel.self) private var navigation
     @ScaledMetric(relativeTo: .title2) private var scaledTitleSize = 22.0
 
+    private var key: BodyKey {
+        .reader(article.id)
+    }
+
     var body: some View {
+        let body_ = translation?.body
+        let translatedTitle = body_?.translatedText(of: BodySegments.titleBlock, in: key)
+        let mode = body_?.mode(of: key) ?? .original
+        let originalLanguage = body_?.originalLanguage(of: BodySegments.titleBlock, in: key)
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.standard) {
-                Text(verbatim: article.title)
+                // ux S4's header in every mode: the translated title large,
+                // the original small.
+                Text(verbatim: translatedTitle ?? article.title)
+                    .speechLanguage(translatedTitle != nil ? body_?.readingLocale.rawValue : originalLanguage)
                     .font(.system(size: min(scaledTitleSize * settings.textSize.factor, ReadingMetrics.maximumSize), weight: .bold))
                     .foregroundStyle(Theme.text)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier(AccessibilityID.readerTitle)
+                if translatedTitle != nil {
+                    Text(verbatim: article.title)
+                        .speechLanguage(originalLanguage)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier(AccessibilityID.readingOriginalTitle)
+                }
                 Text(verbatim: article.host)
                     .font(.subheadline)
                     .foregroundStyle(Theme.secondaryText)
                     .accessibilityIdentifier(AccessibilityID.readerHost)
-                BlocksView(blocks: article.content.blocks, settings: settings, images: article.content.images, openLink: openLink)
+                if let body_, let banner = body_.banner(of: key, hasBackup: translation?.hasBackup ?? false) {
+                    BodyBannerView(banner: banner) { step in
+                        switch step {
+                        case .retry: body_.translate(key)
+                        case .retryWithBackup: body_.retryWithBackup(key)
+                        case .openSettings: navigation.openModelSettings()
+                        }
+                    }
+                }
+                BlocksView(
+                    blocks: article.content.blocks, settings: settings, images: article.content.images,
+                    translation: body_.map { body in
+                        BlockTranslation(
+                            mode: mode, language: body.readingLocale.rawValue,
+                            text: { body.translatedText(of: $0, in: key) }, originalLanguage: { body.originalLanguage(of: $0, in: key) }
+                        )
+                    },
+                    openLink: openLink
+                )
                 if article.content.isCut {
                     Text("The rest of this article is on the original page.")
                         .font(.footnote)
@@ -288,7 +343,19 @@ private struct TemporaryArticleView: View {
             .padding(Theme.Spacing.standard)
             .frame(maxWidth: .infinity)
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let progress = translation?.body.progress(of: key) {
+                BodyProgressLine(progress: progress)
+            }
+        }
         .background(Theme.background)
+        .onAppear {
+            translation?.body.readerShown(article.id, title: article.title, content: article.content)
+            translation?.body.screenAppeared(key)
+        }
+        .onDisappear {
+            translation?.body.screenDisappeared(key)
+        }
     }
 }
 

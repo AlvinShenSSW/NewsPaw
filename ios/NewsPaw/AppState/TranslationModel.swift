@@ -55,6 +55,10 @@ final class TranslationModel {
     /// the workspace's source list holds it (set by the workspace).
     @ObservationIgnored var autoTranslateOfSource: (@MainActor (UUID) -> AutoTranslate?)?
 
+    /// The translation of article bodies (RD15 decision 15), made from the
+    /// same models: it exists exactly where this model does.
+    let body: BodyTranslationModel
+
     /// The library's one translator: a background run of the normal
     /// library resumes it and waits for it to settle (RD24).
     @ObservationIgnored let translator: TitleTranslator
@@ -83,11 +87,16 @@ final class TranslationModel {
         self.settings = settings
         self.reading = reading
         translator = TitleTranslator(models: models, now: now)
+        body = BodyTranslationModel(models: models, settings: settings, now: now)
         settings.addListener(self)
+        body.translateTitle = { [weak self] id in
+            self?.translateIfWaiting(id)
+        }
     }
 
     /// Starts the translator with the settings: a first resumption.
     func start() async {
+        await body.start()
         await refreshBackup()
         await translator.setObserver { [weak self] event in
             await self?.handle(event)
@@ -184,6 +193,14 @@ final class TranslationModel {
 
     func cameToFront() {
         resume(after: .cameToFront)
+        body.cameToFront()
+    }
+
+    /// The app went to the background: the bodies' work stops (RD15,
+    /// review round 2). Titles go on as RD14 has them.
+    func appEnteredBackground() {
+        guard !isStopped else { return }
+        body.appEnteredBackground()
     }
 
     /// A slot was saved or removed, or its key removed: the library's
@@ -194,11 +211,13 @@ final class TranslationModel {
         reading?.failedTranslationsCleared()
         Task { await refreshBackup() }
         resume(after: .slotsChanged)
+        body.slotsChanged()
     }
 
     func readingLocaleChanged() {
         guard !isStopped else { return }
         reading?.translationLocaleChanged()
+        body.readingLocaleChanged()
         let configuration = settings.configuration
         let shown = shown
         Task {
@@ -249,6 +268,15 @@ final class TranslationModel {
         }
     }
 
+    /// The title of an article whose body is being translated (RD15
+    /// decision 10): one manual request when it still waits by the time
+    /// the worker takes it. The header updates through the stored event.
+    func translateIfWaiting(_ id: UUID) {
+        guard !isStopped else { return }
+        let translator = translator
+        Task { _ = await translator.translateIfWaiting(id) }
+    }
+
     // MARK: - Events
 
     private func handle(_ event: TranslatorEvent) {
@@ -270,6 +298,7 @@ final class TranslationModel {
         gathering?.cancel()
         gathering = nil
         question = nil
+        body.stop()
         let translator = translator
         Task { await translator.stop() }
     }

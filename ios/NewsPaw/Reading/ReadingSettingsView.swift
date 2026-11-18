@@ -7,6 +7,9 @@ import SwiftUI
 /// is stored. Line spacing and typeface are inline pickers whose options
 /// are rows, so that every option wraps at the largest text size.
 struct ReadingSettingsView: View {
+    /// Whether the default display mode is offered: in Settings › Reading,
+    /// not behind "Aa" (RD15 decision 1).
+    var showsDisplayMode = false
     @Environment(ReadingSettings.self) private var settings
     @Environment(\.accent) private var accent
 
@@ -47,6 +50,23 @@ struct ReadingSettingsView: View {
                     .foregroundStyle(Theme.secondaryText)
             }
             .listRowBackground(Theme.surface)
+            if showsDisplayMode {
+                Section {
+                    Picker("Default Display Mode", selection: $settings.defaultDisplayMode) {
+                        ForEach(ReadingDisplayMode.allCases, id: \.self) { mode in
+                            Text(verbatim: DisplayModeWording.title(mode)).tag(mode)
+                                .accessibilityIdentifier(AccessibilityID.displayModeOption(mode.rawValue))
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                    .accessibilityIdentifier(AccessibilityID.defaultDisplayModePicker)
+                } header: {
+                    Text("Default Display Mode")
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                .listRowBackground(Theme.surface)
+            }
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
@@ -147,7 +167,7 @@ struct ReadingSettingsPopover: View {
 /// Settings › Reading.
 struct ReadingSettingsScreen: View {
     var body: some View {
-        ReadingSettingsView()
+        ReadingSettingsView(showsDisplayMode: true)
             .stackBackground(Theme.groupedBackground)
             .navigationTitle("Reading")
     }

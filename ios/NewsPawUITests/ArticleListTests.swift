@@ -211,10 +211,15 @@ final class ArticleListTests: ArticleTestCase {
         waitFor(menuButton("Mark as Unread")).tap()
         waitFor(button(AccessibilityID.readingMoreMenu)).tap()
         waitFor(menuButton("Mark as Read"))
-        // Closes the menu without choosing: a tap on the byline, which
-        // does nothing of its own. (A tap on a bar's button would both
-        // close the menu and press the button.)
-        element(AccessibilityID.readingByline).tap()
+        // Closes the menu without choosing: a tap in the reading column's
+        // left margin at the byline's height, which does nothing of its
+        // own. (A tap on a bar's button would both close the menu and press
+        // the button; the byline itself is under the menu since RD15 made
+        // it longer.)
+        let pane = element(AccessibilityID.readingPane)
+        let area = pane.exists ? pane.frame : window
+        let byline = element(AccessibilityID.readingByline)
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: area.minX + 6, dy: byline.frame.midY)).tap()
         waitForAbsence(menuButton("Mark as Read"))
         backToList()
         let row = articleRow("Image story")

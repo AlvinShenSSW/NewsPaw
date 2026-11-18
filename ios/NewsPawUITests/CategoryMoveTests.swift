@@ -333,8 +333,10 @@ final class CategoryMoveTests: IsolationTestCase {
 
     /// A normal → adult move held between its copy and its deletion, then
     /// a lock back to the normal partition: Settings › Data's Import OPML
-    /// is dimmed until the move has ended (an import writes categories and
-    /// sources, which RD19's table refuses during a move).
+    /// and Import Configuration are dimmed until the move has ended (an
+    /// import writes categories and sources, which RD19's table refuses
+    /// during a move; a configuration import is itself a partition
+    /// operation).
     func testImportsAreRefusedWhileAMoveRuns() {
         launchForMoves(authentication: ["passed", "passed"], pause: 120)
         createCategory("World")
@@ -351,10 +353,13 @@ final class CategoryMoveTests: IsolationTestCase {
         openSettings()
         waitFor(element(AccessibilityID.dataRow)).tap()
         let opml = waitFor(button(AccessibilityID.importOPMLButton))
+        let configuration = button(AccessibilityID.importConfigurationButton)
         XCTAssertFalse(opml.isEnabled, "Import OPML could be used during the move")
-        // The move ends: the import can begin again.
+        XCTAssertFalse(configuration.isEnabled, "Import Configuration could be used during the move")
+        // The move ends: the imports can begin again.
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: opml)
         XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 150), .completed, "Import OPML stayed dimmed after the move")
+        XCTAssertTrue(configuration.isEnabled, "Import Configuration stayed dimmed after the move")
     }
 
     // MARK: - Criterion 12: a lock during a normal → adult run

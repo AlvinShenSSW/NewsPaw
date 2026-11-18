@@ -5,12 +5,16 @@ import SwiftUI
 /// status line once the library has a feed-like source (RD06), then one
 /// compact row per category that has unread articles — icon, name, unread
 /// count — each showing that category's list, or "Nothing new today"; with
-/// no source at all, "No sources yet" and "Add a Source" (RD21 decision
-/// 10). Pull to refresh refreshes the whole library.
+/// no source at all, "No sources yet", "Add a Source" (RD21 decision 10)
+/// and "Import Configuration" (ux S1; RD20 with RD21: in the normal
+/// partition with the first run's origin, the normal partition only and no
+/// question; inside the adult partition as from Settings › Data). Pull to
+/// refresh refreshes the whole library.
 struct TodayView: View {
     @Environment(SourceModel.self) private var sources
     @Environment(CategoryModel.self) private var categories
     @Environment(RefreshModel.self) private var refresh
+    @Environment(ConfigurationModel.self) private var configuration
 
     var body: some View {
         let rows = sources.categoriesWithUnread(categories.summaries)
@@ -28,7 +32,11 @@ struct TodayView: View {
                         action: EmptyStateView.Action(
                             title: Text("Add a Source"), identifier: AccessibilityID.todayAddSourceButton,
                             perform: { sources.beginAddSource() }
-                        )
+                        ),
+                        secondaryAction: configuration.canBeginImport ? EmptyStateView.Action(
+                            title: Text("Import Configuration"), identifier: AccessibilityID.todayImportConfigurationButton,
+                            perform: { configuration.beginImport(from: configuration.partition == .normal ? .firstRun : .settings) }
+                        ) : nil
                     )
                 } else if rows.isEmpty {
                     EmptyStateView(title: Text("Nothing new today"), systemImage: "sun.max", identifier: AccessibilityID.todayEmpty)

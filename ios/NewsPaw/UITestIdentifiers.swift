@@ -453,6 +453,7 @@ enum AccessibilityID {
     static let firstRunPrimaryModel = "firstRun.primaryModel"
     static let firstRunAddSource = "firstRun.addSource"
     static let firstRunImportOPML = "firstRun.importOPML"
+    static let firstRunImportConfiguration = "firstRun.importConfiguration"
     static let firstRunCategoryPrefix = "firstRun.category."
 
     /// A suggested category's row in the first run, by its group's raw value.
@@ -462,6 +463,8 @@ enum AccessibilityID {
 
     // Today with no source (RD21 decision 10)
     static let todayAddSourceButton = "today.addSource"
+    /// "Import Configuration" under it (ux S1; RD20 with RD21).
+    static let todayImportConfigurationButton = "today.importConfiguration"
 
     // About's licences (RD21 decision 9)
     static let licenceText = "licence.text"

@@ -9,7 +9,7 @@ class FirstRunTestCase: TranslationTestCase {
     /// Launches on this test's library with the first run allowed.
     func launchFirstRun(
         _ orientation: UIDeviceOrientation = .portrait, arguments: [String] = [], failNextSave: Bool = false,
-        authentication: [String] = [], opmlFixture: String? = nil
+        authentication: [String] = [], opmlFixture: String? = nil, configurationFixture: String? = nil
     ) {
         app.terminate()
         let application = XCUIApplication()
@@ -17,6 +17,10 @@ class FirstRunTestCase: TranslationTestCase {
         if let opmlFixture {
             // "Import OPML" reads this fixture document (RD08 decision 8).
             application.launchEnvironment[UITestLaunchKey.opmlFixture] = opmlFixture
+        }
+        if let configurationFixture {
+            // "Import Configuration" reads this fixture (RD20 decision 10).
+            application.launchEnvironment[UITestLaunchKey.configurationFixture] = configurationFixture
         }
         launch(application, failNextSave: failNextSave, arguments: arguments, authentication: authentication)
         rotate(orientation)

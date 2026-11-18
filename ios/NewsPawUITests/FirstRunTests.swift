@@ -287,6 +287,77 @@ final class FirstRunTests: FirstRunTestCase {
         waitForShellOnToday()
     }
 
+    // MARK: - RD20 criterion 16 with RD21
+
+    /// Merge from a configuration import begun at `start`, whose file holds
+    /// both partitions: no question is asked, the preview covers the normal
+    /// partition only and says the adult one was not imported; the summary
+    /// says it again, and Done closes it.
+    private func importNormalPartitionOnly(from start: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        start.tap()
+        waitFor(element(AccessibilityID.configurationCounts("normal")), file: file, line: line)
+        XCTAssertFalse(app.alerts.firstMatch.exists, "a question about the adult partition was asked", file: file, line: line)
+        XCTAssertFalse(element(AccessibilityID.configurationCounts("adult")).exists, "the preview covers the adult partition", file: file, line: line)
+        let note = "The file's adult partition was not imported. You can import it from Settings › Data."
+        XCTAssertEqual(element(AccessibilityID.configurationAdultSkipped).label, note, file: file, line: line)
+        let merge = scrollTo(button(AccessibilityID.configurationMergeButton), file: file, line: line)
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: merge)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: timeout), .completed, "Merge stayed disabled", file: file, line: line)
+        merge.tap()
+        let done = waitFor(button(AccessibilityID.configurationDoneButton), file: file, line: line)
+        XCTAssertEqual(element(AccessibilityID.configurationAdultSkipped).label, note, "the summary's line", file: file, line: line)
+        XCTAssertFalse(element(AccessibilityID.configurationSummaryRow("added", "adult")).exists, "the summary lists the adult partition", file: file, line: line)
+        done.tap()
+        waitForAbsence(done, file: file, line: line)
+    }
+
+    /// "Import Configuration…" in step 3 with a file holding both
+    /// partitions: the normal partition only, no question, the one line;
+    /// the first run stays on step 3, names no adult partition and makes no
+    /// adult library; Done shows the imported category, and the partition
+    /// is still off.
+    func testImportConfigurationFromTheFirstRun() {
+        launchFirstRun(configurationFixture: "both")
+        waitForStep(1)
+        skipButton.tap()
+        waitForStep(2)
+        skipButton.tap()
+        waitForStep(3)
+        importNormalPartitionOnly(from: revealAboveTheBar(button(AccessibilityID.firstRunImportConfiguration)))
+        waitForStep(3)
+        assertNoContainers()
+        assertNothingNamesTheAdultPartition("step 3 after a configuration import")
+        waitForAdultFileAbsent()
+
+        doneButton.tap()
+        waitForShellOnToday()
+        XCTAssertFalse(element(AccessibilityID.partitionSwitch).exists, "the adult partition was turned on")
+        showCategoryList()
+        waitFor(element(AccessibilityID.categoryRow("Imported News")))
+        XCTAssertFalse(element(AccessibilityID.categoryRow("Imported Private")).exists)
+    }
+
+    /// Today's empty state with no source has "Import Configuration" too
+    /// (ux S1): in the normal partition the same import, the normal
+    /// partition only; afterwards Today is no longer empty of sources.
+    func testImportConfigurationFromTodaysEmptyState() {
+        launchFirstRun(configurationFixture: "both")
+        waitForStep(1)
+        skipButton.tap()
+        waitForStep(2)
+        skipButton.tap()
+        waitForStep(3)
+        skipButton.tap()
+        waitForShellOnToday()
+        XCTAssertEqual(waitFor(element(AccessibilityID.todayEmpty)).label, "No sources yet")
+        importNormalPartitionOnly(from: waitFor(button(AccessibilityID.todayImportConfigurationButton)))
+        waitForAdultFileAbsent()
+        waitForAbsence(button(AccessibilityID.todayImportConfigurationButton))
+        showCategoryList()
+        waitFor(element(AccessibilityID.categoryRow("Imported News")))
+        XCTAssertFalse(element(AccessibilityID.categoryRow("Imported Private")).exists)
+    }
+
     // MARK: - When it shows (criterion 8)
 
     /// Done with nothing ticked writes the flag: the next launch shows the

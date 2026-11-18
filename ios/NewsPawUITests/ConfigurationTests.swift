@@ -410,6 +410,30 @@ final class ConfigurationTests: AdultTestCase {
 
     static let normalSource = "Imported Feed"
 
+    // MARK: - Batch 2: the import's write is a partition operation
+
+    /// A Replace confirmed inside the adult partition, then a lock while the
+    /// write's completion waits: back in the normal partition, Settings ›
+    /// Data's Import OPML — a change of the library's categories and
+    /// sources — is dimmed until the import's operation has ended (RD19's
+    /// table with the import's row).
+    func testLibraryEditsWaitForAnImportsWrite() {
+        launchReading("both", authentication: ["passed", "passed", "passed"], writePause: 20)
+        turnOnAdult()
+        enterAdult()
+        openDataSettings()
+        button(AccessibilityID.importConfigurationButton).tap()
+        waitFor(element(AccessibilityID.configurationCounts("adult")))
+        replaceEverything(expectingOnlyNormal: false)
+        leaveAndReturn()
+        waitForReport(AdultTestCase.closed)
+        openDataSettings()
+        let opml = waitFor(button(AccessibilityID.importOPMLButton))
+        XCTAssertFalse(opml.isEnabled, "Import OPML could be used while the import's write ran")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: opml)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 90), .completed, "Import OPML stayed dimmed after the import")
+    }
+
     // MARK: - Review round 2, P2: a lock while the summary is shown
 
     /// A Replace inside the adult partition reaches its summary; then a

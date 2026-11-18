@@ -2109,12 +2109,23 @@
       }
     },
     "Import Configuration" : {
-      "comment" : "Settings › Data, Add Source and the import sheet's title: import a NewsPaw configuration file.",
+      "comment" : "Settings › Data, Add Source, Today's empty state and the import sheet's title: import a NewsPaw configuration file.",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "导入配置"
+          }
+        }
+      }
+    },
+    "Import Configuration…" : {
+      "comment" : "First run, step 3: imports a NewsPaw configuration file (RD20's import; the normal partition only).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入配置…"
           }
         }
       }

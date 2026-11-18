@@ -98,7 +98,7 @@ Requirements are numbered N01–N13. Later issues freeze their scope against the
 ### N04 Refresh and storage
 
 - Foreground: on entering the app, refresh when the last refresh is older than the chosen interval (15 / 30 / 60 minutes / manual only; default 30). Pull to refresh at any time. A single category or source can be refreshed on its own. The time of the last whole-library refresh is kept in the partition's own database (`setting`).
-- Background: the app registers for background refresh. The system decides when it runs and gives no guarantee. Background work collects and translates titles only, and sends no notification. (Milestone M2.)
+- Background: the app registers for background refresh. The system decides when it runs and gives no guarantee. Background work collects and translates titles only, and sends no notification. With Manual Only nothing is refreshed in the background. A background run does not clean up, and the adult partition is refreshed when it is next unlocked. (Milestone M2.)
 - Collection rules: a cap on simultaneous requests; a 20-second limit on each collection's whole exchange, redirects included (parsing comes after it and is not counted); a 10 MB response limit, counted on the decoded body; at most 5 redirects, http / https only; conditional requests (ETag / Last-Modified); one failing source does not affect the others.
 - What counts as new: the identifier the feed provides; without one, the link; without that, a hash of title and date. Within a category, two items with the same link keep only the first.
 - Time: the published time from the feed. When it is missing, unparseable or later than the moment of collection, the time the item was first seen is used and never changes afterwards.

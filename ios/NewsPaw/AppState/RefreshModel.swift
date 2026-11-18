@@ -3,7 +3,7 @@ import NewsPawKit
 import UIKit
 
 /// Refresh for the app (spec N04; RD06): the library's one engine, the
-/// entry that cleans up and refreshes when due, the two settings, the
+/// entry that cleans up and refreshes when due, the refresh settings, the
 /// recorded refresh time for Today's status line, and the background time
 /// asked for while a run is in flight. At app level beside the category and
 /// source models.
@@ -20,6 +20,16 @@ final class RefreshModel {
     var retention: Retention {
         get { settings.retention }
         set { settings.retention = newValue }
+    }
+    var backgroundRefresh: Bool {
+        get { settings.backgroundRefresh }
+        set { settings.backgroundRefresh = newValue }
+    }
+
+    /// The background runs of the last seven days by the library's clock,
+    /// oldest first (RD24 decision 6), read from the preferences store.
+    func recentBackgroundRuns() -> [Date] {
+        settings.backgroundRuns(before: now())
     }
     /// The end of the last counted whole-library refresh.
     private(set) var lastRefreshAt: Date?
@@ -119,7 +129,10 @@ final class RefreshModel {
 
     // MARK: - Background time (decision 6)
 
-    private func beginBackgroundTime() {
+    /// Also taken for a background run's collection handed to the front
+    /// (RD24 review G3), and ended by `endBackgroundTimeIfIdle()` when it
+    /// ends.
+    func beginBackgroundTime() {
         runs += 1
         guard backgroundTask == .invalid else { return }
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Refresh") { [weak self] in
@@ -135,7 +148,7 @@ final class RefreshModel {
         endBackgroundTime()
     }
 
-    private func endBackgroundTimeIfIdle() {
+    func endBackgroundTimeIfIdle() {
         runs -= 1
         if runs == 0 {
             endBackgroundTime()

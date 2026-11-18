@@ -25,6 +25,12 @@ public actor LibraryStore {
     /// closed — its close failed — is given out again by the next open, so
     /// the file never has two open pools.
     private weak var lastAdult: Library?
+    #if DEBUG
+    /// How many times the adult library was asked for, opened or created
+    /// (RD24 criterion 4): the UI tests' report shows that a background
+    /// run asks for it never. A debug build only.
+    public private(set) var adultOpensForUITests = 0
+    #endif
 
     /// - Parameters:
     ///   - directory: where the database files live; created when a library
@@ -179,6 +185,11 @@ public actor LibraryStore {
     /// Returns the library already held for `partition`, or opens it with
     /// `migrator`. Tests pass migrators with extra migrations.
     func open(_ partition: Partition, migrator: DatabaseMigrator, create: Bool) async throws -> Library {
+        #if DEBUG
+        if partition == .adult {
+            adultOpensForUITests += 1
+        }
+        #endif
         if let existing = libraries[partition] {
             return try await existing.value
         }

@@ -114,10 +114,13 @@ struct AdultModelSlotForm: View {
 /// Settings → Refresh (ux S8; RD06): the interval and how long articles are
 /// kept, each an inline picker whose options are rows, so that at the
 /// largest text size every option wraps instead of being cut (a menu
-/// picker's value is truncated there, measured). Background refresh arrives
-/// with RD24.
+/// picker's value is truncated there, measured); between them background
+/// refresh (RD24 decision 6), whose footer says how often it ran in the
+/// last 7 days, read when the screen appears.
 struct RefreshSettingsView: View {
     @Environment(RefreshModel.self) private var refresh
+    /// The background runs of the last 7 days, oldest first.
+    @State private var backgroundRuns: [Date] = []
 
     var body: some View {
         @Bindable var refresh = refresh
@@ -137,6 +140,18 @@ struct RefreshSettingsView: View {
             } footer: {
                 Text("When you open the app and this long has passed since the last refresh, the library is refreshed. Pull down on Today to refresh at any time.")
                     .foregroundStyle(Theme.secondaryText)
+            }
+            .listRowBackground(Theme.surface)
+            Section {
+                Toggle("Background Refresh", isOn: $refresh.backgroundRefresh)
+                    .accessibilityIdentifier(AccessibilityID.backgroundRefreshToggle)
+            } footer: {
+                VStack(alignment: .leading, spacing: Theme.Spacing.small) {
+                    Text("When NewsPaw is not open, the system may let it collect your sources and translate new titles. The system decides when and how often. Nothing is refreshed in the background with Manual Only, and no notification is sent.")
+                    backgroundRunsLine
+                        .accessibilityIdentifier(AccessibilityID.backgroundRuns)
+                }
+                .foregroundStyle(Theme.secondaryText)
             }
             .listRowBackground(Theme.surface)
             Section {
@@ -161,6 +176,19 @@ struct RefreshSettingsView: View {
         .scrollContentBackground(.hidden)
         .stackBackground(Theme.groupedBackground)
         .navigationTitle("Refresh")
+        .onAppear { backgroundRuns = refresh.recentBackgroundRuns() }
+    }
+
+    /// How many times a background run ran in the last 7 days and when the
+    /// last one ran, relative to the library's clock.
+    private var backgroundRunsLine: Text {
+        guard let last = backgroundRuns.last else {
+            return Text("Has not run in the background yet.")
+        }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        let when = formatter.localizedString(for: last, relativeTo: refresh.now())
+        return Text("Ran in the background \(backgroundRuns.count) time(s) in the last 7 days, most recently \(when).")
     }
 }
 

@@ -18,6 +18,11 @@ struct RootView: View {
                     AdultDebugElement()
                 }
             }
+            .overlay(alignment: .trailing) {
+                if model.showsDeliveryControl {
+                    DeliverBackgroundRefreshButton()
+                }
+            }
         #endif
     }
 
@@ -81,6 +86,30 @@ private struct AdultDebugElement: View {
                     try? await Task.sleep(for: .milliseconds(250))
                 }
             }
+    }
+}
+
+/// The UI tests' "Deliver background refresh" (RD24 decision 9): an
+/// invisible 30-point control at the window's trailing edge, halfway down,
+/// where no test taps; present only under a UI-test library directory with
+/// its own launch key, which only `BackgroundRefreshTests` sets (review
+/// R3); a debug build only. (A control of a few points beside the report was
+/// measured: the harness's tap never reached it.)
+private struct DeliverBackgroundRefreshButton: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button {
+            Task { await model.deliverBackgroundRefreshForUITests() }
+        } label: {
+            // Two percent grey, as measured; nothing a person sees.
+            Color.gray.opacity(0.02)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: "Deliver background refresh"))
+        .accessibilityIdentifier(DebugAccessibilityID.deliverBackgroundRefresh)
     }
 }
 #endif

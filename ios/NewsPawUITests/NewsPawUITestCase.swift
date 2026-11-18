@@ -14,8 +14,13 @@ class NewsPawUITestCase: XCTestCase {
 
     override func setUp() async throws {
         continueAfterFailure = false
-        libraryName = "uitest-\(UUID().uuidString)"
+        setUpLibraryName()
         XCUIDevice.shared.orientation = .portrait
+    }
+
+    /// A new library directory for the launches that follow.
+    func setUpLibraryName() {
+        libraryName = "uitest-\(UUID().uuidString)"
     }
 
     override func tearDown() async throws {

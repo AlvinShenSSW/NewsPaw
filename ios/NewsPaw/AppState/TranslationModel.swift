@@ -55,7 +55,9 @@ final class TranslationModel {
     /// the workspace's source list holds it (set by the workspace).
     @ObservationIgnored var autoTranslateOfSource: (@MainActor (UUID) -> AutoTranslate?)?
 
-    @ObservationIgnored private let translator: TitleTranslator
+    /// The library's one translator: a background run of the normal
+    /// library resumes it and waits for it to settle (RD24).
+    @ObservationIgnored let translator: TitleTranslator
     @ObservationIgnored private let models: LibraryModels
     @ObservationIgnored private weak var reading: ReadingModel?
     /// The rows on screen, as their appearing and disappearing report them.

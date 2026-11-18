@@ -51,11 +51,26 @@ final class TranslationPartitionTests: AdultTestCase {
         let row = waitFor(articleRow(Self.first))
         pullList()
         // Rows of the adult partition appear, are refreshed, and are scrolled:
-        // nothing asks for a translation.
+        // nothing asks for a translation. With no adult model the row shows
+        // its original title and what a workspace without a model shows
+        // (RD21's no-model mark, batch 2): its question opens the adult
+        // slots in Settings › Adult Partition, never the normal ones.
         Thread.sleep(forTimeInterval: 3)
         XCTAssertFalse(row.label.contains("译["), row.label)
-        XCTAssertFalse(button(AccessibilityID.translationWarning(Self.first)).exists)
         XCTAssertFalse(element(AccessibilityID.translationActivity(Self.first)).exists)
+        let mark = waitFor(button(AccessibilityID.translationWarning(Self.first)))
+        XCTAssertEqual(mark.label, "Not translated")
+        waitForLabel(row, containing: "Not translated, Set up a model to translate")
+        mark.tap()
+        let question = waitFor(app.alerts.firstMatch)
+        XCTAssertTrue(question.staticTexts["Set up a model to translate"].exists, question.debugDescription)
+        question.buttons.matching(NSPredicate(format: "label == %@", "Open Settings")).firstMatch.tap()
+        waitForAbsence(question)
+        waitFor(element(AccessibilityID.adultPrimaryModelRow))
+        XCTAssertFalse(element(AccessibilityID.primaryModelRow).exists, "the normal slots were opened from the adult partition")
+        XCTAssertEqual(translationRequests, before, "a request was sent from the adult partition: \(report)")
+        openCategoryList("Velvet")
+        waitFor(articleRow(Self.first))
         app.swipeUp()
         Thread.sleep(forTimeInterval: 2)
         XCTAssertEqual(translationRequests, before, "a request was sent from the adult partition: \(report)")

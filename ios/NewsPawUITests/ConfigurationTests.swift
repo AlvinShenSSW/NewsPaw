@@ -453,7 +453,11 @@ final class ConfigurationTests: AdultTestCase {
         openDataSettings()
         button(AccessibilityID.importConfigurationButton).tap()
         waitFor(element(AccessibilityID.configurationCounts("adult")))
-        replaceEverything(expectingOnlyNormal: false)
+        // The review lists the normal model's key too, so Replace can be
+        // below the fold on the iPhone.
+        tapWhenEnabled(AccessibilityID.configurationReplaceEverythingButton)
+        scrollTo(button(AccessibilityID.configurationReplaceButton)).tap()
+        answer(Wording.replaceNow, with: "Replace")
         leaveAndReturn()
         waitForReport(AdultTestCase.closed)
         openSettings()

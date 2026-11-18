@@ -6,6 +6,8 @@
 	<array>
 		<string>io.newspaw.reader.refresh</string>
 	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

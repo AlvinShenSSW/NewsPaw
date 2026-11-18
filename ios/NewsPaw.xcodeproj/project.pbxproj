@@ -13,6 +13,7 @@
 /* Begin PBXFileReference section */
 		4E5057000000000000000001 /* NewsPaw.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NewsPaw.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E5057000000000000000002 /* NewsPawUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NewsPawUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4E5057000000000000000014 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -65,6 +66,7 @@
 			children = (
 				4E5057000000000000000011 /* NewsPaw */,
 				4E5057000000000000000013 /* NewsPawUITests */,
+				4E5057000000000000000015 /* Config */,
 				4E5057000000000000000012 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -76,6 +78,14 @@
 				4E5057000000000000000002 /* NewsPawUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		4E5057000000000000000015 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				4E5057000000000000000014 /* Signing.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -223,6 +233,7 @@
 /* Begin XCBuildConfiguration section */
 		4E5057000000000000000411 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4E5057000000000000000014 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
@@ -240,6 +251,7 @@
 		};
 		4E5057000000000000000412 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4E5057000000000000000014 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";

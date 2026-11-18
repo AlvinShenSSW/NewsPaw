@@ -1,0 +1,18 @@
+// Signing for archives (RD22). The base configuration of the project's Debug
+// and Release configurations.
+//
+// The team is not in the repository, which is public. On the Mac that makes
+// archives, create `Signing.local.xcconfig` next to this file (git-ignored)
+// with one line:
+//
+//     DEVELOPMENT_TEAM = <your Team ID>
+//
+// taken from developer.apple.com › Account › Membership details of the paid
+// Apple Developer account. Never pick a team in Xcode's Signing & Capabilities
+// pane: Xcode would write it into project.pbxproj, and
+// `ios/Tools/check_release.py` fails on that.
+//
+// Without the local file (CI, any other Mac) nothing changes: builds that do
+// not sign work as before.
+
+#include? "Signing.local.xcconfig"

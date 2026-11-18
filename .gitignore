@@ -18,3 +18,17 @@ data/
 .swiftpm/
 xcuserdata/
 DerivedData/
+
+# Signing and distribution (RD22): the team, certificates, profiles and
+# archives stay on the owner's Mac; the repository is public.
+ios/Config/Signing.local.xcconfig
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.xcarchive
+*.ipa
+
+# The AFK run's records stay local.
+.afk/

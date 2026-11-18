@@ -1596,7 +1596,8 @@ final class AppModel {
     /// record holds for the last 7 days, and how many times the adult
     /// library was asked of the store; and for RD16 how many texts with
     /// the sentinel the fixture received, whether page translation is on
-    /// and how many times the normal pages were told they are seen again.
+    /// and how many times the normal pages were told they are seen again;
+    /// and for RD15 how the last Copy Translation was written.
     func adultDebugReport() async -> String {
         guard let gate else { return "" }
         let file = gate.adultLibraryFileExists ? 1 : 0
@@ -1630,7 +1631,8 @@ final class AppModel {
             + "adultPageRequests=\((try? await adult?.reading.library.usageCount(purpose: .page)) ?? -1) "
             + "readerBlock=\(normal?.reading.lastReportedPosition.map(String.init) ?? "none") "
             + "bodyStartsInBackground=\(BodyTranslationModel.startsInBackground) "
-            + "slotChanges=\(BodyTranslationModel.slotChanges)"
+            + "slotChanges=\(BodyTranslationModel.slotChanges) "
+            + "copy=\(TranslationCopy.lastWrite)"
     }
 
     private static func reportName(of ending: BackgroundRun.Ending?) -> String {

@@ -78,12 +78,15 @@ struct ModelSlotTests {
         #expect(after.integrity == ["ok"])
         let added = after.schema.filter { !before.schema.contains($0) }.map { "\($0[0] ?? "") \($0[1] ?? "")" }
         // With v6's table (RD14), the search migration's objects (RD25), the
-        // body-translation migration's table (RD15) and the page-text
-        // migration's (RD16), which the current migrator adds after v5.
+        // body-translation migration's table (RD15), the page-text
+        // migration's (RD16) and the overview table (RD23), which the
+        // current migrator adds after v5.
         #expect(added.sorted() == ([
             "index page_text_last_used", "index sqlite_autoindex_body_translation_1", "index sqlite_autoindex_model_slot_1",
+            "index sqlite_autoindex_overview_1", "index sqlite_autoindex_overview_2",
             "index sqlite_autoindex_page_text_1", "index sqlite_autoindex_translation_1", "index sqlite_autoindex_usage_1",
-            "index usage_at", "table body_translation", "table model_slot", "table page_text", "table translation", "table usage",
+            "index usage_at", "table body_translation", "table model_slot", "table overview", "table page_text", "table translation",
+            "table usage",
         ] + SchemaTests.searchMigrationObjects).sorted())
         #expect(before.schema.allSatisfy { after.schema.contains($0) })
     }

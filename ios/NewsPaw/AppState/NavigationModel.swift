@@ -148,6 +148,8 @@ enum AppSheet: Hashable, Identifiable {
     case sourceSettings(UUID)
     /// The configuration import's preview, review and summary (RD20).
     case configurationImport
+    /// A category's Earlier Overviews (RD23 decision 12).
+    case earlierOverviews(UUID)
 
     var id: Self { self }
 }
@@ -601,6 +603,8 @@ final class NavigationModel {
         case .categorySettings(category)?:
             sheet = nil
         case .sourceSettings(let id)? where sources.contains(id):
+            sheet = nil
+        case .earlierOverviews(category)?:
             sheet = nil
         default:
             break

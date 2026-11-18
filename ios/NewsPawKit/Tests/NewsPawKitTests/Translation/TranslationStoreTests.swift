@@ -25,7 +25,7 @@ struct TranslationStoreTests {
             // After a statement that reads the schema: the foreign-key pragma
             // alone does not reload a reader's schema, which predates the
             // migration on this connection (measured).
-            let migrations = try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY identifier")
+            let migrations = try String.fetchAll(db, sql: migrationsInOrderSQL)
             let translation = try columns("translation")
             let usage = try columns("usage")
             let keys = try Row.fetchAll(db, sql: "PRAGMA foreign_key_list(translation)").map { row in

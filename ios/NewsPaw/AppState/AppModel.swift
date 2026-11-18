@@ -130,6 +130,12 @@ final class AppModel {
     @ObservationIgnored private var appearedShell: Workspace.ID?
     @ObservationIgnored private var coverRemoval: Task<Void, Never>?
     @ObservationIgnored private var sceneIsActive = false
+    /// Whether the app is in front, for every workspace's overview writer
+    /// (RD23 review round 3): set here, synchronously, at each change of the
+    /// scene, and first from the scene's real state when the scene is
+    /// first observed — "not in front" until then. A writer made later
+    /// reads it; no event has to reach it.
+    @ObservationIgnored private let front = AppFront(isInFront: false)
     /// The scene's absence, as the lock rule counts it.
     @ObservationIgnored private var absence = Absence()
     /// Whether the scene has been in the background since it was last
@@ -400,8 +406,12 @@ final class AppModel {
                 pageCeiling: pageCeiling,
                 // The normal library's models: its workspace's translation
                 // resumes, whichever workspace's Settings saved.
-                slotsChanged: { [weak self] in self?.normal?.translation.slotsChanged() },
-                operations: operations
+                slotsChanged: { [weak self] in
+                    self?.normal?.translation.slotsChanged()
+                    self?.normal?.overviews.slotsChanged()
+                },
+                operations: operations,
+                front: front
             )
             self.parts = parts
             parts.refreshSettings.onScheduleChanged = { [weak self] in self?.reconcileSchedule() }
@@ -476,9 +486,15 @@ final class AppModel {
             if let count = options.syntheticSources {
                 try await library.insertSyntheticSourcesForUITests(count: count)
             }
-            // The translator fixture's models and the daily limit (RD14).
+            // The translator fixture's models and the daily limit (RD14);
+            // the earlier overviews (RD23).
             if options.libraryDirectory != nil {
                 try await Self.setUpTranslationForUITests(options, models: models, library: library)
+                if options.seedOverviews {
+                    try await library.insertEarlierOverviewsForUITests(
+                        locale: parts.translationSettings.readingLocale, now: now(), calendar: .autoupdatingCurrent
+                    )
+                }
             }
             if seedsUsage {
                 try await library.insertUsageForUITests(calendar: .current)
@@ -1161,7 +1177,12 @@ final class AppModel {
         case .adult:
             if let workspace = began.value, adult === workspace {
                 await workspace.reloadAfterImport()
+                // Every consumer of the adult slots is told, as the adult
+                // model editor's save tells them (batch 4): the translation
+                // (and its bodies) and the overviews, whose blocks belonged
+                // to the old slots.
                 workspace.translation.slotsChanged()
+                workspace.overviews.slotsChanged()
             }
             showsSummary = began.value.map { adult === $0 } ?? false
         case .normal:
@@ -1256,6 +1277,11 @@ final class AppModel {
     private func observeScene() {
         guard sceneObservers.isEmpty else { return }
         sceneIsActive = UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        // In front: a scene in the foreground, active or not yet; a launch
+        // in the background reads "not in front" (RD23 review round 3).
+        front.set(isInFront: UIApplication.shared.connectedScenes.contains {
+            $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive
+        })
         let center = NotificationCenter.default
         func observe(_ name: Notification.Name, _ handler: @escaping @MainActor (AppModel) -> Void) {
             sceneObservers.append(center.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
@@ -1282,6 +1308,10 @@ final class AppModel {
 
     private func sceneDidEnterBackground() {
         sceneIsActive = false
+        // First, before anything else: no overview request is sent from
+        // here on, whichever writer exists or is made later (RD23 review
+        // round 3).
+        front.set(isInFront: false)
         wasInBackground = true
         // The bodies' translation stops (RD15 N06: leaving stops the work);
         // a mere deactivation (Control Centre, an alert, the app switcher
@@ -1295,6 +1325,10 @@ final class AppModel {
             let gate = gate
             Task { await gate?.lock() }
         }
+        // Overviews are written in front only (RD23 review round 1, R1):
+        // the requests in flight are cancelled.
+        normal?.overviews.enteredBackground()
+        adult?.overviews.enteredBackground()
         let locks = absence.didEnterBackground(at: now(), timing: lockTiming)
         applyCoverRule()
         if locks {
@@ -1305,6 +1339,7 @@ final class AppModel {
 
     private func sceneDidActivate() {
         sceneIsActive = true
+        front.set(isInFront: true)
         // A background run ends its task; its collection goes on as the
         // ordinary refresh (RD24 criterion 7), with the ordinary refresh's
         // background time until it ends (review G3).
@@ -1348,6 +1383,11 @@ final class AppModel {
             // stopped in the background, may start again (RD15).
             normal?.translation.cameToFront()
             adult?.translation.cameToFront()
+            // The overviews' cards are read and the day's change waited for
+            // afresh (RD23 decision 12). The due check at every entry is
+            // added when RD24 meets this (RD23 Handoff).
+            normal?.overviews.cameToFront()
+            adult?.overviews.cameToFront()
         } else if ranInBackground {
             // The first activation after a launch made for a background run
             // (no scene was in the background): a pause the run left ends
@@ -1506,6 +1546,20 @@ final class AppModel {
                 }
             }
         }
+        // RD23's copies (batch 4): each workspace's overview writer works in
+        // the stored reading language, and each category's overview mode,
+        // as the cards and the category editor read it, is the stored one.
+        for workspace in [normal, adult].compactMap(\.self) {
+            if await workspace.overviews.writerLocale() != preferences.readingLocale {
+                stale.append("\(workspace.partition.rawValue).overviewLocale")
+            }
+            if let stored = try? await workspace.reading.library.categories() {
+                let shown = Dictionary(workspace.categories.summaries.map { ($0.category.id, $0.category.overview) }) { first, _ in first }
+                if stored.contains(where: { shown[$0.id] != $0.overview }) {
+                    stale.append("\(workspace.partition.rawValue).categoryOverview")
+                }
+            }
+        }
         return stale
     }
 
@@ -1557,6 +1611,7 @@ final class AppModel {
             + "pages=\((parts?.transport as? FixtureTransport)?.pageRequests ?? -1) "
             + "requests=\((parts?.transport as? FixtureTransport)?.requests ?? -1) "
             + "translationRequests=\(FixtureModelHTTP.translationRequests) "
+            + "overviewRequests=\(FixtureModelHTTP.overviewRequests) overviewDueChecks=\(await normal?.overviews.dueCheckCount() ?? -1) "
             + "adultStore=\(await adultStoreIsListed() ? "listed" : "absent") "
             + "scheduled=\((scheduler as? RecordingBackgroundScheduler)?.pending != nil ? "yes" : "no") "
             + "background=\(Self.reportName(of: lastBackgroundEnding)) "

@@ -436,14 +436,12 @@ final class AddSourceTests: NewsPawUITestCase {
                     file: file, line: line)
             }
         }
+        // Today has the category's overview card or row (RD23), with its
+        // unread count, whether or not it has articles.
         func checkToday() {
-            if let articles {
-                let row = waitFor(element(AccessibilityID.todayCategoryRow("News")), file: file, line: line)
-                XCTAssertEqual(row.value as? String, "\(articles.count) unread", file: file, line: line)
-                XCTAssertFalse(element(AccessibilityID.todayEmpty).exists, file: file, line: line)
-            } else {
-                waitFor(element(AccessibilityID.todayEmpty), file: file, line: line)
-            }
+            let row = waitFor(element(AccessibilityID.todayCategoryRow("News")), file: file, line: line)
+            XCTAssertEqual(row.value as? String, "\(articles?.count ?? 0) unread", file: file, line: line)
+            XCTAssertFalse(element(AccessibilityID.todayEmpty).exists, file: file, line: line)
         }
         if app.tabBars.firstMatch.exists {
             app.tabBars.buttons["Today"].tap()

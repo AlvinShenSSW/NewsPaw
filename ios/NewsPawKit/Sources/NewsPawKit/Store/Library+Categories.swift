@@ -125,6 +125,24 @@ extension Library {
         }
     }
 
+    /// Sets whether a category gets a daily overview (spec N07; RD23
+    /// decision 13). Writes only its `overview` and `updated_at`; Off
+    /// deletes nothing.
+    ///
+    /// - Throws: `unknownCategory`.
+    public func setCategoryOverview(_ id: UUID, to mode: OverviewMode) async throws {
+        let now = now()
+        try await write { db in
+            try db.execute(
+                sql: "UPDATE category SET overview = ?, updated_at = ? WHERE id = ?",
+                arguments: [mode.rawValue, now, id.databaseKey]
+            )
+            if db.changesCount == 0 {
+                throw LibraryError.unknownCategory
+            }
+        }
+    }
+
     /// Puts the categories in the given order, numbering them from 0.
     ///
     /// - Parameter ids: every category of the library, each exactly once.

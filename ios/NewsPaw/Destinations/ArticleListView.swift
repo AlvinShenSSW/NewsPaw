@@ -97,7 +97,9 @@ private struct ArticleListContent: View {
         // Over the list, which still scrolls and refreshes under it
         // (measured: a pull on the empty state refreshes).
         .overlay {
-            if showsEmptyState {
+            // With the overview card the empty state is a row below it
+            // (RD23 decision 12): an overlay would cover the card.
+            if showsEmptyState, overviewCategory == nil {
                 if kind == .search {
                     // With the keyboard up, a large text size leaves the
                     // state less height than it needs: it scrolls then,
@@ -113,6 +115,14 @@ private struct ArticleListContent: View {
                 } else {
                     emptyState
                 }
+            }
+        }
+        // The card's height is kept while the card is in the list, scrolled
+        // off or not, and zeroed only when the card is removed (RD23 review
+        // round 1, G3).
+        .onChange(of: overviewCategory == nil, initial: true) { _, removed in
+            if removed {
+                model.cardMeasured(height: 0)
             }
         }
         .listStyle(.plain)
@@ -149,6 +159,28 @@ private struct ArticleListContent: View {
     @ViewBuilder
     private var rows: some View {
         let list = List {
+            if let card = overviewCategory {
+                // The overview card (RD23 decision 12): the first row, with
+                // no swipe and no separator; its height counts towards "the
+                // first row is on screen".
+                OverviewListCard(category: card)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Theme.background)
+                    .listRowInsets(EdgeInsets(
+                        top: Theme.Spacing.small, leading: Theme.Spacing.standard, bottom: Theme.Spacing.small,
+                        trailing: Theme.Spacing.standard
+                    ))
+                    .onGeometryChange(for: Double.self) { $0.size.height } action: { height in
+                        model.cardMeasured(height: height + 2 * Theme.Spacing.small)
+                    }
+                if showsEmptyState {
+                    // Below the card, as a row: an overlay would cover it.
+                    emptyState
+                        .frame(minHeight: 280)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Theme.background)
+                }
+            }
             ForEach(model.rows) { row in
                 ArticleRowButton(row: row, kind: kind, model: model)
             }
@@ -212,6 +244,17 @@ private struct ArticleListContent: View {
                 .listRowBackground(Theme.background)
                 .onAppear { reading.loadNextPage(model) }
         }
+    }
+
+    // MARK: - The overview card (RD23)
+
+    /// The category whose overview card heads the list: a category's list
+    /// whose overviews are on.
+    private var overviewCategory: LibraryCategory? {
+        guard case .category(let id) = kind, let category = categories.summary(id)?.category, category.overview != .off else {
+            return nil
+        }
+        return category
     }
 
     // MARK: - Empty states (decision 16)

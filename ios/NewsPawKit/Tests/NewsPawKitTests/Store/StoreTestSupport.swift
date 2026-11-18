@@ -6,7 +6,16 @@ import Testing
 
 /// The migrations a library of this build has, in order: the one list the
 /// tests compare with, so that a new migration is named here once.
-let currentMigrations = ["v1", "v2", "v3", "v4", "v5", "v6", Schema.searchMigration, Schema.bodyTranslationMigration, Schema.pageTextMigration]
+/// The applied migrations, the `vN` ones by their number (`v10` after
+/// `v9`, batch 4), the others before them by name.
+let migrationsInOrderSQL = """
+    SELECT identifier FROM grdb_migrations
+    ORDER BY identifier GLOB 'v[0-9]*', CAST(SUBSTR(identifier, 2) AS INTEGER), identifier
+    """
+
+let currentMigrations = ["v1", "v2", "v3", "v4", "v5", "v6", Schema.searchMigration, Schema.bodyTranslationMigration, Schema.pageTextMigration,
+    Schema.overviewMigration,
+]
 
 /// A clock the tests move by hand. Times are whole seconds so that they
 /// survive the database's millisecond text form unchanged.
@@ -66,7 +75,7 @@ struct DatabaseSnapshot: Equatable {
                 .sorted { $0.map { $0 ?? "" }.lexicographicallyPrecedes($1.map { $0 ?? "" }) }
         }
         return DatabaseSnapshot(
-            appliedMigrations: try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY identifier"),
+            appliedMigrations: try String.fetchAll(db, sql: migrationsInOrderSQL),
             schema: schema,
             rows: rows,
             integrity: try String.fetchAll(db, sql: "PRAGMA integrity_check")

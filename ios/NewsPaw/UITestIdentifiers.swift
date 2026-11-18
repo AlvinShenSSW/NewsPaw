@@ -291,6 +291,30 @@ enum AccessibilityID {
         todayCategoryRowPrefix + name
     }
 
+    // Overviews (RD23). Each part of a category's card is named after the
+    // category; the list's card uses the same parts.
+    static let overviewModePicker = "editor.overviews"
+    static let earlierOverviewsList = "earlier.list"
+    static let noEarlierOverviews = "earlier.empty"
+    static let earlierOverviewsDoneButton = "earlier.done"
+
+    /// A part of the overview card of the category `name`: `card`,
+    /// `summary`, `more`, `footnote`, `note`, `rewrite`, `working`,
+    /// `issue`, `step`, `newCount`, `write`, `noModel`, `nothingNew`,
+    /// `off`, `expand`, `earlier`, or `highlight.<n>` (from 1).
+    static func overview(_ part: String, _ name: String) -> String {
+        "overview.\(part).\(name)"
+    }
+
+    static func overviewHighlight(_ number: Int, _ name: String) -> String {
+        overview("highlight.\(number)", name)
+    }
+
+    /// An entry of Earlier Overviews, by its day (`yyyy-MM-dd`).
+    static func earlierOverview(_ day: String) -> String {
+        "earlier.day." + day
+    }
+
     // Settings → Data (RD09)
     static let dataRow = "settings.data"
     static let cacheSize = "data.cacheSize"
@@ -619,6 +643,9 @@ enum UITestLaunchKey {
     /// in one period before it pauses (RD16 decision 11), lowered for the
     /// paused line's test. Honoured only with `libraryDirectory`.
     static let pageTranslationCeiling = "NEWSPAW_UITEST_PAGE_TRANSLATION_CEILING"
+    /// "1" seeds three earlier `done` overviews for the first category
+    /// (RD23 decision 16); honoured only with `libraryDirectory`.
+    static let seedOverviews = "NEWSPAW_UITEST_SEED_OVERVIEWS"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.
@@ -627,7 +654,8 @@ enum DebugAccessibilityID {
     /// 4): its label is `file=<0|1> pool=<open|closed>
     /// library=<held|released> workspace=<none|held|released>
     /// browser=<none|held|released> sessions=<number> pages=<number>
-    /// translationRequests=<number> neverSent=<number> translateOn=<0|1>
+    /// translationRequests=<number> overviewRequests=<number> overviewDueChecks=<number>
+    /// neverSent=<number> translateOn=<0|1>
     /// seenAgain=<number> staleMirrors=<none|names> adultStore=<listed|absent>
     /// scheduled=<yes|no> background=<none|notDue|collected|cancelled|failed|expired|released>
     /// runs=<number> adultOpens=<number> deliveries=<number> configuration=<none|normal|both>
@@ -639,7 +667,9 @@ enum DebugAccessibilityID {
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
     /// requests the translator fixture has answered in this process (RD14
-    /// criterion 13); `neverSent` how many texts holding the sentinel
+    /// criterion 13), `overviewRequests` how many of them were overview
+    /// requests and `overviewDueChecks` how many due checks the normal
+    /// workspace's overview writer was asked for (batch 4); `neverSent` how many texts holding the sentinel
     /// `fixture:never` it received (RD16 criterion 5); `translateOn` whether
     /// a browser session has page translation on, and `seenAgain` how many
     /// times the normal workspace's sessions were told they are seen again

@@ -7,8 +7,10 @@ import GRDB
 /// closed sets stored as text (`kind`, `overview`, `auto_translate`,
 /// `body_mode`, `origin`, from `v5` `role`, `preset`, `test_outcome`,
 /// `purpose`, `outcome`, from `v6` `translation.state` and
-/// `translation.error`, and from `v8` `body_translation.state` and
-/// `body_translation.error`) also ships with a migration, even an empty one, so
+/// `translation.error`, from `v8` `body_translation.state` and
+/// `body_translation.error`, and from the overview migration
+/// `overview.state` and `overview.error`) also ships with a migration, even
+/// an empty one, so
 /// that an older build refuses the database as newer.
 ///
 /// From the search migration on, `article` and `translation` carry
@@ -27,6 +29,7 @@ enum Schema {
         registerSearch(in: &migrator)
         registerBodyTranslation(in: &migrator)
         registerPageText(in: &migrator)
+        registerOverview(in: &migrator)
         return migrator
     }
 
@@ -42,6 +45,11 @@ enum Schema {
     /// The name of the page-text migration (RD16), after the
     /// body-translation migration. The one place that names it.
     static let pageTextMigration = "v9"
+
+    /// The name of the overview migration (RD23), after the page-text
+    /// migration. The one place that names it: every test and comment goes
+    /// through this constant.
+    static let overviewMigration = "v10"
 
     /// `v1`: categories, sources, articles, article bodies and seen
     /// identifiers (spec section 4). The closed sets have no `CHECK`
@@ -313,6 +321,37 @@ enum Schema {
                     PRIMARY KEY (text_hash, locale)
                 );
                 CREATE INDEX page_text_last_used ON page_text(last_used_at);
+                """)
+        }
+    }
+
+    /// The overview migration: one daily overview per category, local day
+    /// and reading locale (spec N07, section 4; RD23 decision 7). `day` is
+    /// the device's local day as `yyyy-MM-dd`; `text` is the summary and
+    /// `covered_until` the newest first-seen time of the articles it was
+    /// written from, both null unless `state` is `done`; `highlights` is a
+    /// JSON array of `{"article_id": …, "text": …}` written by the app;
+    /// `error` is the stored reason of a `failed` row (RD14's
+    /// `TranslationFailure` raw values); `model` the model's name, null
+    /// when none answered. Rows go with their category.
+    static func registerOverview(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration(overviewMigration) { db in
+            try db.execute(sql: """
+                CREATE TABLE overview (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    category_id TEXT NOT NULL REFERENCES category(id) ON DELETE CASCADE,
+                    day TEXT NOT NULL,
+                    locale TEXT NOT NULL,
+                    text TEXT,
+                    highlights TEXT NOT NULL DEFAULT '[]',
+                    article_count INTEGER NOT NULL DEFAULT 0,
+                    covered_until TEXT,
+                    model TEXT,
+                    state TEXT NOT NULL,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE (category_id, day, locale)
+                );
                 """)
         }
     }

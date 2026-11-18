@@ -134,7 +134,7 @@ extension Library {
             try slot.save(db)
         }
         if !plan.slotWrites.isEmpty || !plan.slotDeletions.isEmpty {
-            try deleteFailedTranslations(db)
+            try deleteStoredFailures(db)
         }
         try plan.settingsToApply?.apply(in: db)
     }

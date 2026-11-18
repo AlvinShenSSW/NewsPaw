@@ -95,6 +95,10 @@ struct DebugLaunchOptions {
     /// The page translation ceiling per period (RD16 decision 11).
     /// Applied only together with `libraryDirectory`.
     let pageTranslationCeiling: Int?
+    /// Whether three earlier `done` overviews are seeded for the first
+    /// category at launch (RD23 decision 16). Applied only together with
+    /// `libraryDirectory`.
+    let seedOverviews: Bool
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -171,6 +175,7 @@ struct DebugLaunchOptions {
         } else {
             pageTranslationCeiling = nil
         }
+        seedOverviews = environment[UITestLaunchKey.seedOverviews] == "1"
     }
 
     /// Accepts only a name that stays inside the temporary directory.

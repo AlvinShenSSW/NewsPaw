@@ -35,6 +35,8 @@ final class RefreshModel {
     private(set) var lastRefreshAt: Date?
     /// The clock the library uses, so that "Updated …" agrees with it.
     let now: @Sendable () -> Date
+    /// Where the device's local day starts, for the overviews' clean-up.
+    @ObservationIgnored private let calendar = Calendar.autoupdatingCurrent
 
     /// Reads the lists again; set by the app model.
     @ObservationIgnored var onListsChanged: (@MainActor () async -> Void)?
@@ -43,6 +45,9 @@ final class RefreshModel {
     /// Told when a run has ended and the lists have been read again, so
     /// that an article list at its top reads itself again (RD09 decision 3).
     @ObservationIgnored var onRunEnded: (@MainActor () -> Void)?
+    /// Called at the end of every entry (`entered()`), after its run if one
+    /// was due, never by a background run.
+    @ObservationIgnored var onEntered: (@MainActor () -> Void)?
 
     @ObservationIgnored private let library: Library
     @ObservationIgnored private let settings: RefreshSettings
@@ -73,20 +78,39 @@ final class RefreshModel {
 
     /// Entering the app (decision 3): clean up, then refresh the whole
     /// library when a refresh is due. Silent: a failure is tried again at
-    /// the next entry.
+    /// the next entry. The overviews older than the 7-day window go first,
+    /// whatever the retention (RD23 decision 15).
     ///
     /// An entry that a lock overtakes ends at its next step: a dropped
     /// workspace starts no run.
+    ///
+    /// Every entry ends with exactly one overview due check (RD23 with
+    /// RD24's handoff; batch 4 gate run 2): the run's own, through
+    /// `onRunEnded`, when the entry's refresh ran to its end; otherwise
+    /// `onEntered` — the refresh was not due, its read failed, or the
+    /// workspace's run did not reach its end — so that the articles a
+    /// background run collected get their overview without a pull, and a
+    /// job the run's check ended is not sent again by a second check.
     func entered() async {
-        guard !isStopped else { return }
+        let reported = await cleanUpAndRefreshIfDue()
+        guard !isStopped, !reported else { return }
+        onEntered?()
+    }
+
+    /// The entry's clean-up and its refresh when due; returns whether a run
+    /// reached `onRunEnded`.
+    private func cleanUpAndRefreshIfDue() async -> Bool {
+        guard !isStopped else { return false }
+        _ = try? await library.cleanUpOverviews(before: OverviewDay.oldestKept(now(), calendar: calendar))
+        guard !isStopped else { return false }
         let deleted = (try? await library.cleanUp(keeping: retention)) ?? 0
-        guard !isStopped else { return }
+        guard !isStopped else { return false }
         if deleted > 0 {
             await reloadLists()
-            guard !isStopped else { return }
+            guard !isStopped else { return false }
         }
-        guard (try? await library.refreshIsDue(every: interval)) == true else { return }
-        await run(.library, ownerStarted: false)
+        guard (try? await library.refreshIsDue(every: interval)) == true else { return false }
+        return await run(.library, ownerStarted: false)
     }
 
     /// A refresh the owner asked for: a pull, a menu's Refresh, or Update Now.
@@ -94,11 +118,13 @@ final class RefreshModel {
     /// (SwiftUI cancels a pull's task) neither cancels the reads that follow
     /// the run nor makes them fail; the caller still waits for the end.
     func refresh(_ scope: RefreshScope) async {
-        await Task { await run(scope, ownerStarted: true) }.value
+        _ = await Task { await run(scope, ownerStarted: true) }.value
     }
 
-    private func run(_ scope: RefreshScope, ownerStarted: Bool) async {
-        guard !isStopped else { return }
+    /// One run; returns whether it reached `onRunEnded`.
+    @discardableResult
+    private func run(_ scope: RefreshScope, ownerStarted: Bool) async -> Bool {
+        guard !isStopped else { return false }
         beginBackgroundTime()
         defer { endBackgroundTimeIfIdle() }
         var storageFailed = false
@@ -116,6 +142,7 @@ final class RefreshModel {
         await load()
         await reloadLists()
         onRunEnded?()
+        return true
     }
 
     /// The workspace is dropped (RD18 decision 4): the run in flight is

@@ -241,7 +241,7 @@ struct SearchTests {
 
         // Deleted as RD14 deletes failed rows.
         try await fixture.translate(second, .simplifiedChinese, .failed, title: nil)
-        try await fixture.library.write { db in try Library.deleteFailedTranslations(db) }
+        try await fixture.library.write { db in try Library.deleteStoredFailures(db) }
         try await expectSearchTextMatchesDerivation(fixture.library, "failed rows deleted")
         // A done row deleted in SQL.
         try await fixture.library.pool.write { db in

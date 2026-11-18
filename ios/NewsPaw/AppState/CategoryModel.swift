@@ -74,7 +74,7 @@ final class CategoryModel {
             switch navigation.sheet {
             case .newCategory: .newCategory
             case .categorySettings(let id): .settings(id)
-            case .addSource, .sourceSettings, .configurationImport, nil: nil
+            case .addSource, .sourceSettings, .configurationImport, .earlierOverviews, nil: nil
             }
         }
         set {
@@ -90,6 +90,8 @@ final class CategoryModel {
     }
     var draftName = ""
     var draftIcon = CategoryIcon.folder
+    /// Category Settings' "Overviews" (ux S13; RD23 decision 13).
+    var draftOverview = OverviewMode.auto
     /// The category whose deletion is being confirmed.
     var pendingDeletion: CategorySummary?
     /// Whether "The change could not be saved." is shown. A stopped model
@@ -234,6 +236,7 @@ final class CategoryModel {
     func beginNewCategory() {
         draftName = ""
         draftIcon = .folder
+        draftOverview = .auto
         editorSession += 1
         sheet = .newCategory
     }
@@ -242,6 +245,7 @@ final class CategoryModel {
         guard let summary = summary(id) else { return }
         draftName = summary.category.name
         draftIcon = summary.category.icon
+        draftOverview = summary.category.overview
         editorSession += 1
         sheet = .settings(id)
     }
@@ -258,6 +262,7 @@ final class CategoryModel {
         let session = editorSession
         let name = draftName
         let icon = draftIcon
+        let overview = draftOverview
         let saved: Bool
         switch current {
         case .newCategory:
@@ -269,12 +274,16 @@ final class CategoryModel {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let rename = stored?.name != trimmed
             let changeIcon = stored?.iconName != icon.rawValue
+            let changeOverview = stored?.overview != overview
             saved = await perform { library in
                 if rename {
                     try await library.renameCategory(id, to: name)
                 }
                 if changeIcon {
                     try await library.setCategoryIcon(id, to: icon)
+                }
+                if changeOverview {
+                    try await library.setCategoryOverview(id, to: overview)
                 }
             }
         }
@@ -374,6 +383,7 @@ final class CategoryModel {
     func sheetHasChanges(_ id: UUID) -> Bool {
         guard let stored = summary(id)?.category else { return false }
         return draftName.trimmingCharacters(in: .whitespacesAndNewlines) != stored.name || draftIcon.rawValue != stored.iconName
+            || draftOverview != stored.overview
     }
 
     /// Reads what moving the category `id` out of the library of `from`

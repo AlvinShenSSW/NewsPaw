@@ -16,7 +16,7 @@ struct BodyTranslationStoreTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let library = try await LibraryStore(directory: directory).openNormal()
         let (columns, keys, migrations) = try await library.pool.read { db in
-            let migrations = try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY identifier")
+            let migrations = try String.fetchAll(db, sql: migrationsInOrderSQL)
             let columns = try Row.fetchAll(db, sql: "PRAGMA table_info(body_translation)").map { row in
                 SchemaTests.ColumnInfo(row["name"], row["type"], notNull: row["notnull"], default: row["dflt_value"], pk: row["pk"])
             }
@@ -80,8 +80,10 @@ struct BodyTranslationStoreTests {
         #expect(after.rows["body_translation"] == [])
         #expect(after.integrity == ["ok"])
         // The search migration (RD25) runs before it; the page-text
-        // migration's table (RD16), which runs after, is left out here.
-        let added = after.schema.filter { !before.schema.contains($0) && $0[2] != "page_text" }.map { "\($0[0] ?? "") \($0[1] ?? "")" }
+        // migration's table (RD16) and the overview table (RD23), which run
+        // after, are left out here.
+        let added = after.schema.filter { !before.schema.contains($0) && !["page_text", "overview"].contains($0[2]) }
+            .map { "\($0[0] ?? "") \($0[1] ?? "")" }
         #expect(Set(added) == SchemaTests.bodyTranslationMigrationObjects.union(SchemaTests.searchMigrationObjects))
     }
 

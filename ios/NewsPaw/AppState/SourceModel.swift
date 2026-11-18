@@ -482,6 +482,16 @@ final class SourceModel {
         }
     }
 
+    /// "Always Translate This Source" in the browser's menu (RD16 decision
+    /// 14): stored through the save queue, like Pause.
+    func setTranslatePage(_ id: UUID, _ on: Bool) {
+        Task {
+            _ = await perform { library in
+                try await library.updateSource(id, SourceChanges(translatePage: on))
+            }
+        }
+    }
+
     func requestDeletion(_ id: UUID) {
         pendingDeletion = summary(id)
     }

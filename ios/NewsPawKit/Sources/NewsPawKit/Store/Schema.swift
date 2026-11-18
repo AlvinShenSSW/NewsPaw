@@ -26,6 +26,7 @@ enum Schema {
         registerV6(in: &migrator)
         registerSearch(in: &migrator)
         registerBodyTranslation(in: &migrator)
+        registerPageText(in: &migrator)
         return migrator
     }
 
@@ -37,6 +38,10 @@ enum Schema {
     /// The name of the body-translation migration (RD15), after the search
     /// migration. The one place that names it.
     static let bodyTranslationMigration = "v8"
+
+    /// The name of the page-text migration (RD16), after the
+    /// body-translation migration. The one place that names it.
+    static let pageTextMigration = "v9"
 
     /// `v1`: categories, sources, articles, article bodies and seen
     /// identifiers (spec section 4). The closed sets have no `CHECK`
@@ -283,6 +288,31 @@ enum Schema {
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY (article_id, locale, source_hash)
                 );
+                """)
+        }
+    }
+
+    /// The page-text migration (`pageTextMigration`, `v9`): the
+    /// translations of web-page text (RD16 decision 7), one row
+    /// per text and reading language, for a run that is the whole text of
+    /// its block. `text_hash` is the lower-case hex SHA-256 of the page's
+    /// host, a NUL and the normalised original: neither the original nor
+    /// the host is stored. `model` is the model's name; `last_used_at`
+    /// drives the clean-up, which deletes rows unused for the retention
+    /// period.
+    static func registerPageText(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration(pageTextMigration) { db in
+            try db.execute(sql: """
+                CREATE TABLE page_text (
+                    text_hash TEXT NOT NULL,
+                    locale TEXT NOT NULL,
+                    translated TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_used_at TEXT NOT NULL,
+                    PRIMARY KEY (text_hash, locale)
+                );
+                CREATE INDEX page_text_last_used ON page_text(last_used_at);
                 """)
         }
     }

@@ -266,6 +266,15 @@ enum AccessibilityID {
 
     // Reader mode (RD12)
     static let browserReaderButton = "browser.reader"
+    // Page translation (RD16)
+    static let browserTranslateButton = "browser.translate"
+    static let pageTranslationLine = "browser.translationLine"
+    static let pageTranslationShowOriginal = "browser.translationLine.showOriginal"
+    static let pageTranslationRetry = "browser.translationLine.retry"
+    static let pageTranslationRetryBackup = "browser.translationLine.retryBackup"
+    static let pageTranslationContinue = "browser.translationLine.continue"
+    static let pageTranslationOpenSettings = "browser.translationLine.openSettings"
+    static let alwaysTranslateToggle = "browser.alwaysTranslate"
     /// The temporary article shown in place of the page.
     static let readerArticle = "reader.article"
     static let readerTitle = "reader.title"
@@ -606,6 +615,10 @@ enum UITestLaunchKey {
     /// seconds before it is made (RD15 review round 5); honoured only with
     /// `libraryDirectory`.
     static let holdRetryWrite = "NEWSPAW_UITEST_HOLD_RETRY_WRITE"
+    /// A whole number of at least 1: the requests page translation sends
+    /// in one period before it pauses (RD16 decision 11), lowered for the
+    /// paused line's test. Honoured only with `libraryDirectory`.
+    static let pageTranslationCeiling = "NEWSPAW_UITEST_PAGE_TRANSLATION_CEILING"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.
@@ -614,17 +627,23 @@ enum DebugAccessibilityID {
     /// 4): its label is `file=<0|1> pool=<open|closed>
     /// library=<held|released> workspace=<none|held|released>
     /// browser=<none|held|released> sessions=<number> pages=<number>
-    /// translationRequests=<number> adultStore=<listed|absent>
+    /// translationRequests=<number> neverSent=<number> translateOn=<0|1>
+    /// seenAgain=<number> adultStore=<listed|absent>
     /// scheduled=<yes|no> background=<none|notDue|collected|cancelled|failed|expired|released>
     /// runs=<number> adultOpens=<number> deliveries=<number> configuration=<none|normal|both>
     /// exportsWritten=<number> exportsEnded=<number> shareEnded=<none|intact|replaced|missing>@<number>
-    /// bodyRequests=<number> adultBodyRequests=<number> readerBlock=<number|none>
+    /// bodyRequests=<number> adultBodyRequests=<number> pageRequests=<number>
+    /// adultPageRequests=<number> readerBlock=<number|none>
     /// bodyStartsInBackground=<number> slotChanges=<number>`. `pool` is whether connections are open
     /// on the file; the other three are whether the objects are gone from
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
     /// requests the translator fixture has answered in this process (RD14
-    /// criterion 13); `adultStore` is whether WebKit lists the adult
+    /// criterion 13); `neverSent` how many texts holding the sentinel
+    /// `fixture:never` it received (RD16 criterion 5); `translateOn` whether
+    /// a browser session has page translation on, and `seenAgain` how many
+    /// times the normal workspace's sessions were told they are seen again
+    /// (RD16); `adultStore` is whether WebKit lists the adult
     /// browser's own website data store (RD19); `scheduled` is whether a
     /// background request is pending, `background` how the last background
     /// run ended, `runs` how many background runs the record holds for the
@@ -638,7 +657,8 @@ enum DebugAccessibilityID {
     /// review round 2); `bodyRequests` is how many usage rows of body
     /// requests the normal library holds (RD15 decision 16), and
     /// `adultBodyRequests` the adult library's (-1 while it is not open;
-    /// batch 3);
+    /// batch 3); `pageRequests` and `adultPageRequests` the same for page
+    /// requests (RD16, batch 3);
     /// `readerBlock` the block the reading screen last reported at its top
     /// (RD15 criterion 7); `bodyStartsInBackground` how many body jobs
     /// started while the application was in the background (RD15 review

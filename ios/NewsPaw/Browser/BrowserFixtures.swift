@@ -222,6 +222,15 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
             send(task, html: Self.storage)
         case (_, "/writer"):
             send(task, html: Self.writer)
+        case (PageTranslationFixtures.host, PageTranslationFixtures.neverImage):
+            // Never answered: the page's load never ends (RD16 criterion 15).
+            break
+        case (PageTranslationFixtures.host, let path):
+            if let html = PageTranslationFixtures.html(path) {
+                send(task, html: html)
+            } else {
+                fail(task)
+            }
         default:
             fail(task)
         }

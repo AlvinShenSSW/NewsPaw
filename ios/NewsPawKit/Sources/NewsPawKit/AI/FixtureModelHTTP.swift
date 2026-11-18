@@ -47,6 +47,9 @@ public final class FixtureModelHTTP: ModelHTTP {
         public static let failOnce = "fixture:fail-once"
         /// `translate` refuses; the backup translates.
         public static let refusePrimary = "fixture:refuse-primary"
+        /// A sentinel that must never be sent (RD16 criterion 5): every
+        /// received text holding it is counted.
+        public static let never = "fixture:never"
     }
 
     /// How long the translator takes for a request with `Word.slow`.
@@ -77,6 +80,14 @@ public final class FixtureModelHTTP: ModelHTTP {
 
     public static var translationRequests: Int {
         translationRequestCount.withLock { $0 }
+    }
+
+    /// The texts holding `Word.never` that the translator hosts received,
+    /// for the UI tests' report (RD16 criterion 5).
+    private static let neverSentCount = Mutex(0)
+
+    public static var neverSent: Int {
+        neverSentCount.withLock { $0 }
     }
 
     /// The three models `passed` lists, in the order it lists them.
@@ -114,6 +125,10 @@ public final class FixtureModelHTTP: ModelHTTP {
             }
             Self.translationRequestCount.withLock { $0 += 1 }
             let (system, texts) = Self.messages(of: request.body)
+            let never = texts.filter { $0.contains(Word.never) }.count
+            if never > 0 {
+                Self.neverSentCount.withLock { $0 += never }
+            }
             if texts.contains(where: { $0.contains(Word.slow) }) {
                 try await Task.sleep(for: Self.slowAnswer)
             }

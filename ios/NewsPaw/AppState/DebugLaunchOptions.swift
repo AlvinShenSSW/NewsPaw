@@ -92,6 +92,9 @@ struct DebugLaunchOptions {
     /// (RD15 review round 5). Applied only together with
     /// `libraryDirectory`.
     let holdsRetryWrite: Bool
+    /// The page translation ceiling per period (RD16 decision 11).
+    /// Applied only together with `libraryDirectory`.
+    let pageTranslationCeiling: Int?
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -163,6 +166,11 @@ struct DebugLaunchOptions {
         failsFirstBodyWrite = environment[UITestLaunchKey.failFirstBodyWrite] == "1"
         changesSlotsAfterReader = environment[UITestLaunchKey.slotsChangeAfterReader] == "1"
         holdsRetryWrite = environment[UITestLaunchKey.holdRetryWrite] == "1"
+        if let text = environment[UITestLaunchKey.pageTranslationCeiling], let ceiling = Int(text), ceiling >= 1 {
+            pageTranslationCeiling = ceiling
+        } else {
+            pageTranslationCeiling = nil
+        }
     }
 
     /// Accepts only a name that stays inside the temporary directory.

@@ -29,6 +29,9 @@ public final class FixtureTransport: Transport {
         public static let oneFeed = "https://onefeed.example.invalid/"
         /// A page with a title and no feed.
         public static let noFeed = "https://nofeed.example.invalid/"
+        /// The page translation list page (RD16): a page with a title and
+        /// no feed, saved as a web-page source by the UI tests.
+        public static let pageTranslationList = "https://pages.example.invalid/ja-list"
         /// An address answering 403.
         public static let forbidden = "https://forbidden.example.invalid/"
         /// An address that does not answer.
@@ -110,8 +113,8 @@ public final class FixtureTransport: Transport {
         /// chunk 2), "Flaky story" (six paragraphs, `fixture:fail-once` in
         /// paragraph 3), "Primary refuses story" (four paragraphs,
         /// `fixture:refuse-primary` in the first), "Markup story" (a
-        /// paragraph holding Markdown, an HTML link and a `javascript:`
-        /// address as text), "Many paragraphs story" (40 short paragraphs),
+        /// paragraph holding Markdown, an HTML link and a script address
+        /// as text), "Many paragraphs story" (40 short paragraphs),
         /// a Chinese article, "Short note" (an excerpt, no link) and
         /// "Excerpt only story" (content that gives no block: its excerpt is
         /// the body). No item links to an address that answers.
@@ -232,6 +235,8 @@ public final class FixtureTransport: Transport {
             return answer(Self.rss(title: "One Feed", items: ["One feed story"]), type: rss)
         case Address.noFeed:
             return answer(Self.page(title: "Plain Page", links: []), type: html)
+        case Address.pageTranslationList:
+            return answer(Self.page(title: "Japanese List", links: []), type: html)
         case Address.forbidden:
             return answer("", type: html, status: 403)
         case Address.timesOut:

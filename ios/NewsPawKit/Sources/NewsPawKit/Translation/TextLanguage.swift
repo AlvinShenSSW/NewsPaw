@@ -211,6 +211,42 @@ enum TextLanguage {
         return .keep
     }
 
+    /// What happens to the runs of one block of a web page (RD16
+    /// decision 5).
+    enum BlockDecision: Equatable {
+        /// The group goes to the model.
+        case send
+        /// It is left as it is.
+        case keep
+        /// Written in Traditional Chinese under `zh-Hans`: each run's
+        /// converted text, `nil` for one the transform left unchanged; at
+        /// least one is not `nil`.
+        case converted([String?])
+    }
+
+    /// Judges the runs of one block of a web page together, by the same
+    /// rules as an article's texts (decision 3): one text of another script
+    /// sends them all; an unsure recognizer sends. `pageHasKana` is true
+    /// once a run of the document has kana: under `zh-Hans` a group with Han
+    /// characters is then sent, never converted or kept (a kanji-only item
+    /// of a Japanese page). Each text is cut to `maximumScalars` for judging
+    /// only and converted whole. A group without a letter is kept.
+    static func judge(block texts: [String], reading: ReadingLocale, pageHasKana: Bool) -> BlockDecision {
+        let judged = texts.map { cut($0, characters: Int.max) }.filter { Units($0).hasLetter }
+        guard !judged.isEmpty else { return .keep }
+        if reading == .simplifiedChinese, pageHasKana, judged.contains(where: { Units($0).han > 0 }) {
+            return .send
+        }
+        if sends(judged, reading: reading) {
+            return .send
+        }
+        if reading == .simplifiedChinese {
+            let converted = texts.map(simplified)
+            return converted.allSatisfy({ $0 == nil }) ? .keep : .converted(converted)
+        }
+        return .keep
+    }
+
     /// Whether texts that each have a letter go to the model under
     /// `reading` (decision 3's rules): one text of another script sends
     /// them all; an unsure recognizer sends.

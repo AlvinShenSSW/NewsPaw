@@ -365,6 +365,7 @@ final class AppModel {
             moveStepPause = options.moveStepPause
             clearPause = options.clearPause
         }
+        let pageCeiling = options.libraryDirectory.flatMap { _ in options.pageTranslationCeiling } ?? PageTranslator.standardCeiling
         #else
         let directory = LibraryStore.defaultDirectory()
         let transport: any Transport = URLSessionTransport()
@@ -376,6 +377,7 @@ final class AppModel {
         let authenticator: any DeviceAuthenticator = SystemDeviceAuthenticator()
         let adultKeys = KeychainKeyStore(partition: .adult)
         let adultIsEnabled = BuildFeatures.adultPartition
+        let pageCeiling = PageTranslator.standardCeiling
         #endif
         makeScheduleParts()
         let now = self.now
@@ -395,6 +397,7 @@ final class AppModel {
                 readingSettings: ReadingSettings(preferences: preferences),
                 normalModels: models,
                 translationSettings: TranslationSettings(preferences: preferences),
+                pageCeiling: pageCeiling,
                 // The normal library's models: its workspace's translation
                 // resumes, whichever workspace's Settings saved.
                 slotsChanged: { [weak self] in self?.normal?.translation.slotsChanged() },
@@ -1321,6 +1324,10 @@ final class AppModel {
         // The adult workspace is still shown: its pages may play again. One
         // that the lock dropped stays suspended for good.
         adult?.browser.allowMedia()
+        // Both workspaces' pages may be seen again: page translation counts
+        // nothing that failed across the absence against the page (RD16).
+        normal?.browser.sceneDidActivate()
+        adult?.browser.sceneDidActivate()
         if wasInBackground || launchEntryOwed {
             wasInBackground = false
             launchEntryOwed = false
@@ -1459,6 +1466,22 @@ final class AppModel {
 
     // MARK: - The UI tests' report (decision 4)
 
+    /// Whether a browser session of either workspace has page
+    /// translation on (RD16): the bottom bar's button does not pass its
+    /// accessibility value to the UI tests.
+    private var pageTranslationIsOn: Bool {
+        [normal?.browser, adult?.browser].compactMap(\.self)
+            .flatMap { [$0.session(.library), $0.session(.starred)].compactMap(\.self) }
+            .contains { $0.translation.isOn }
+    }
+
+    /// How many times the normal workspace's page translations were told
+    /// they are seen again.
+    private var pageTranslationSeenAgain: Int {
+        guard let browser = normal?.browser else { return -1 }
+        return [browser.session(.library), browser.session(.starred)].compactMap(\.self).map(\.translation.timesSeenAgain).reduce(0, +)
+    }
+
     /// Whether the adult library's file exists, whether a pool is open on
     /// it, whether the library object, the adult workspace and its browser
     /// model are gone from memory, how many browser sessions the app has
@@ -1469,7 +1492,9 @@ final class AppModel {
     /// assumption A2); and for RD24 whether a background request is
     /// pending, how the last background run ended, how many runs the
     /// record holds for the last 7 days, and how many times the adult
-    /// library was asked of the store.
+    /// library was asked of the store; and for RD16 how many texts with
+    /// the sentinel the fixture received, whether page translation is on
+    /// and how many times the normal pages were told they are seen again.
     func adultDebugReport() async -> String {
         guard let gate else { return "" }
         let file = gate.adultLibraryFileExists ? 1 : 0
@@ -1492,8 +1517,13 @@ final class AppModel {
             + "configuration=\(normal?.configuration.heldDocumentReport ?? "none") "
             + "exportsWritten=\(ConfigurationModel.debugExportsWritten) exportsEnded=\(ConfigurationModel.debugExportsEnded) "
             + "shareEnded=\(ConfigurationModel.debugShareEnded) "
+            + "neverSent=\(FixtureModelHTTP.neverSent) "
+            + "translateOn=\(pageTranslationIsOn ? 1 : 0) "
+            + "seenAgain=\(pageTranslationSeenAgain) "
             + "bodyRequests=\((try? await normal?.reading.library.usageCount(purpose: .body)) ?? -1) "
             + "adultBodyRequests=\((try? await adult?.reading.library.usageCount(purpose: .body)) ?? -1) "
+            + "pageRequests=\((try? await normal?.reading.library.usageCount(purpose: .page)) ?? -1) "
+            + "adultPageRequests=\((try? await adult?.reading.library.usageCount(purpose: .page)) ?? -1) "
             + "readerBlock=\(normal?.reading.lastReportedPosition.map(String.init) ?? "none") "
             + "bodyStartsInBackground=\(BodyTranslationModel.startsInBackground) "
             + "slotChanges=\(BodyTranslationModel.slotChanges)"

@@ -725,6 +725,17 @@
         }
       }
     },
+    "Always Translate This Source" : {
+      "comment" : "Browser More menu switch for a web-page source: open its pages translated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "总是翻译这个来源"
+          }
+        }
+      }
+    },
     "An address is listed twice in one partition (%@)." : {
       "comment" : "Configuration import refusal; %@ is a position such as “source 12”.",
       "localizations" : {
@@ -3412,6 +3423,17 @@
         }
       }
     },
+    "Nothing to translate on this page" : {
+      "comment" : "Browser translation line: the page is already in the reading language.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个页面没有需要翻译的文字"
+          }
+        }
+      }
+    },
     "OK" : {
       "comment" : "Button: dismisses an alert.",
       "localizations" : {
@@ -4085,17 +4107,6 @@
         }
       }
     },
-    "Saved now; used once page translation is available." : {
-      "comment" : "Source settings footnote under a web page's options.",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "现在先保存，网页翻译可用后生效。"
-          }
-        }
-      }
-    },
     "Search" : {
       "comment" : "Search: the button that opens the Search screen, its title, and the Command-F shortcut's name.",
       "localizations" : {
@@ -4261,6 +4272,17 @@
         }
       }
     },
+    "Show Original" : {
+      "comment" : "Browser translation line action: puts the page's own text back.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示原文"
+          }
+        }
+      }
+    },
     "Show Original Titles in Lists" : {
       "comment" : "Settings switch: a list row shows the original title under its translation.",
       "localizations" : {
@@ -4378,6 +4400,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "部分文字没有翻译成功"
+          }
+        }
+      }
+    },
+    "Some text could not be translated · %@" : {
+      "comment" : "Browser translation line: part of the page failed; the reason follows the dot.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分文字没有翻译成功 · %@"
           }
         }
       }
@@ -5066,6 +5099,17 @@
         }
       }
     },
+    "The page did not respond" : {
+      "comment" : "Browser translation line: the page did not answer the app's script.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "页面没有响应"
+          }
+        }
+      }
+    },
     "The page stopped working." : {
       "comment" : "Reason shown in the embedded browser's failure state when the page's web content process ended.",
       "localizations" : {
@@ -5644,6 +5688,17 @@
         }
       }
     },
+    "Translated to %@" : {
+      "comment" : "Browser translation line: the page is translated into the reading language, named here.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已翻译成%@"
+          }
+        }
+      }
+    },
     "Translating %lld of %lld" : {
       "comment" : "Reading screen progress line: chunks of the body translated so far, of all chunks.",
       "localizations" : {
@@ -5684,6 +5739,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "翻译模型"
+          }
+        }
+      }
+    },
+    "Translation paused on this long page" : {
+      "comment" : "Browser translation line: the request ceiling was reached; Continue allows more.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "长页面的翻译已暂停"
           }
         }
       }

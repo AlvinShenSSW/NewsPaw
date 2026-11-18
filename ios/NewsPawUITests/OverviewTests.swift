@@ -180,8 +180,8 @@ final class OverviewTests: OverviewTestCase {
         showToday()
         waitFor(button(AccessibilityID.overview("write", "World"))).tap()
         waitForText(summary("World"), Overview.summary(40, Translation.markup))
+        // Settings, then its Usage row (the helper taps the row).
         openSettings(row: AccessibilityID.usageRow)
-        scrollTo(element(AccessibilityID.usageRow)).tap()
         let row = waitFor(element(AccessibilityID.usageTotal(model: "fixture-translator", purpose: "overview")))
         XCTAssertTrue(row.label.hasPrefix("Overviews, 1 request"), row.label)
     }

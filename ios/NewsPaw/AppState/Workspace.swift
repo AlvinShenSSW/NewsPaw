@@ -170,13 +170,15 @@ final class Workspace: Identifiable {
             pages: pages, addressMap: setup.addressMap, schemeHandlers: setup.schemeHandlers,
             allowsPictureInPicture: setup.allowsPictureInPicture
         )
-        let modelSettings = ModelSettingsModel(models: parts.normalModels, navigation: navigation, formRoute: SettingsRoute.modelSlot)
+        let modelSettings = ModelSettingsModel(
+            models: parts.normalModels, navigation: navigation, operations: parts.operations, formRoute: SettingsRoute.modelSlot
+        )
         // The library this workspace is built on: the adult one in the
         // adult workspace. Not `parts.normalModels`' library, which is the
         // normal one in both.
         let usage = UsageModel(library: library, now: parts.now, calendar: .current)
         let partitionModelSettings = library.partition == .adult
-            ? ModelSettingsModel(models: models, navigation: navigation, formRoute: SettingsRoute.adultModelSlot)
+            ? ModelSettingsModel(models: models, navigation: navigation, operations: parts.operations, formRoute: SettingsRoute.adultModelSlot)
             : nil
         let translation = TranslationModel(models: models, settings: parts.translationSettings, reading: reading, now: parts.now)
         reading.translationLocale = { [weak translation] in translation?.settings.readingLocale }

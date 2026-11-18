@@ -46,6 +46,7 @@ struct PartitionOperationsTests {
     func table() throws {
         let none = PartitionOperations()
         #expect(!none.refusesUnlock && !none.refusesUnlockCarryingMove && !none.refusesAdultSessions && !none.refusesLibraryEdits)
+        #expect(!none.refusesModelEdits)
 
         var moving = PartitionOperations()
         let moveBegun = moving.begin(.categoryMove)
@@ -54,6 +55,7 @@ struct PartitionOperationsTests {
         #expect(moving.refusesUnlockCarryingMove)
         #expect(!moving.refusesAdultSessions)
         #expect(moving.refusesLibraryEdits)
+        #expect(!moving.refusesModelEdits)
 
         // Batch 2: a configuration import's write, the fourth operation.
         var importing = PartitionOperations()
@@ -63,6 +65,7 @@ struct PartitionOperationsTests {
         #expect(importing.refusesUnlockCarryingMove)
         #expect(!importing.refusesAdultSessions)
         #expect(importing.refusesLibraryEdits)
+        #expect(importing.refusesModelEdits)
         for other in [PartitionOperation.categoryMove, .clearBrowsingData, .turnOff, .configurationImport] {
             #expect(importing.begin(other) == nil, "\(other) began during an import's write")
         }
@@ -75,6 +78,7 @@ struct PartitionOperationsTests {
             #expect(operations.refusesUnlockCarryingMove)
             #expect(operations.refusesAdultSessions)
             #expect(!operations.refusesLibraryEdits)
+            #expect(!operations.refusesModelEdits)
         }
     }
 }

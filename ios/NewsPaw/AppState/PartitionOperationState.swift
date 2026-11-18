@@ -32,4 +32,15 @@ final class PartitionOperationState {
     var refusesUnlockCarryingMove: Bool { operations.refusesUnlockCarryingMove }
     var refusesAdultSessions: Bool { operations.refusesAdultSessions }
     var refusesLibraryEdits: Bool { operations.refusesLibraryEdits }
+    var refusesModelEdits: Bool { operations.refusesModelEdits }
+
+    /// The model-slot and key writes under way in any workspace (gate
+    /// review of batch 2): an import's write waits for them.
+    let modelWrites = ModelWrites()
+
+    /// Starts a write of model slots or keys unless an operation refuses
+    /// it; returns whether it started.
+    func startModelWrite(_ work: @escaping @MainActor () async -> Void) -> Bool {
+        modelWrites.start(refused: refusesModelEdits, work)
+    }
 }

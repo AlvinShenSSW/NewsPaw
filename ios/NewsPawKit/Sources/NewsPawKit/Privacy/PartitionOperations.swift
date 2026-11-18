@@ -30,12 +30,16 @@ public enum PartitionOperation: Sendable, Equatable {
 ///
 /// What each operation refuses while it runs:
 ///
-/// | While … runs | another partition operation | an unlock | an unlock carrying a move | an adult browser session | an edit of either library's categories or sources |
-/// | --- | --- | --- | --- | --- | --- |
-/// | a category move | refused | allowed | refused | allowed | refused |
-/// | Clear Browsing Data | refused | refused | refused | refused | allowed |
-/// | Turn Off / Delete | refused | refused | refused | refused | allowed |
-/// | a configuration import's write | refused | allowed | refused | allowed | refused |
+/// | While … runs | another partition operation | an unlock | an unlock carrying a move | an adult browser session | an edit of either library's categories or sources | a write of either library's model slots or keys |
+/// | --- | --- | --- | --- | --- | --- | --- |
+/// | a category move | refused | allowed | refused | allowed | refused | allowed |
+/// | Clear Browsing Data | refused | refused | refused | refused | allowed | allowed |
+/// | Turn Off / Delete | refused | refused | refused | refused | allowed | allowed |
+/// | a configuration import's write | refused | allowed | refused | allowed | refused | refused |
+///
+/// A write of model slots or keys that runs when an import's write begins
+/// ends first (`ModelWrites.settle`), as a queued category or source change
+/// does.
 ///
 /// A lock is always allowed (RD19 criterion 12): a move and an import's
 /// write go on through it, and Turn Off locks first itself.
@@ -115,6 +119,21 @@ public struct PartitionOperations: Sendable, Equatable {
         switch running {
         case .categoryMove, .configurationImport: true
         case nil, .clearBrowsingData, .turnOff: false
+        }
+    }
+
+    /// Whether the model slots and keys of both libraries are kept from
+    /// every write the owner starts — a slot saved or removed, a key added,
+    /// replaced or removed, the primary's and the backup's (gate review of
+    /// batch 2): during an import's write, because the import writes and
+    /// removes slots and releases keychain items; a save that read a slot
+    /// before the import's commit would write a reference back after it,
+    /// naming an item the import removed. A move copies no slot; Clear and
+    /// Turn Off touch no slot of a workspace that is shown.
+    public var refusesModelEdits: Bool {
+        switch running {
+        case .configurationImport: true
+        case nil, .categoryMove, .clearBrowsingData, .turnOff: false
         }
     }
 }

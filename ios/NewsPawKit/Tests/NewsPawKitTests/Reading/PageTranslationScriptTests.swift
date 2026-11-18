@@ -588,6 +588,69 @@ struct PageTranslationScriptTests {
         #expect(texts.contains("二つの箱の重なりから見える長い一行の文章です、とても長い"), "\(texts)")
     }
 
+    /// A long run of text, wider (or, set vertically, taller) than 3,000
+    /// points.
+    nonisolated static func longLine(_ words: String) -> String {
+        String(repeating: words, count: 12)
+    }
+
+    @Test("batch 3 gate run 5: text in a clipping box outside the band is not collected, although its unclipped rectangle reaches into the view: left, right, above and below")
+    func clippedOutsideTheBand() async throws {
+        // The viewport is 390 by 700 points; the band is the viewport's
+        // width across and from half a viewport above it to two viewports
+        // below its top (-350 to 1,400).
+        let left = Self.longLine("左の箱の外に隠れた長い一行の文章です")
+        let right = Self.longLine("右の箱の外に隠れた長い一行の文章です")
+        let above = Self.longLine("上の箱の外に隠れた縦書きの文章です")
+        let below = Self.longLine("下の箱の外に隠れた縦書きの文章です")
+        let page = ScriptPage()
+        await page.load("""
+            <!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+            <style>body{margin:0} .box{position:absolute;overflow:hidden} p{white-space:nowrap;margin:0}
+            .tall{writing-mode:vertical-rl}</style></head><body>
+            <p>見える段落の文です</p>
+            <div class="box" style="left:-1000px;top:40px;width:200px;height:40px"><p>\(left)</p></div>
+            <div class="box" style="left:1000px;top:100px;width:200px;height:40px"><p style="margin-left:-1000px">\(right)</p></div>
+            <div class="box" style="left:20px;top:-2000px;width:40px;height:200px"><p class="tall">\(above)</p></div>
+            <div class="box" style="left:80px;top:3000px;width:40px;height:200px"><p class="tall" style="margin-top:-2800px">\(below)</p></div>
+            </body></html>
+            """)
+        // The shapes are as described: each unclipped rectangle crosses the
+        // view.
+        let crossing = try await page.pageString("""
+            return Array.from(document.querySelectorAll(".box p")).map((p) => {
+              const r = document.createRange(); r.selectNodeContents(p.firstChild);
+              const b = r.getBoundingClientRect();
+              return (b.right > 0 && b.left < innerWidth && b.bottom > 0 && b.top < innerHeight) ? "1" : "0";
+            }).join("")
+            """)
+        #expect(crossing == "1111", "\(crossing)")
+        let texts = Set(try await page.runs().map(\.text))
+        #expect(texts.contains("見える段落の文です"), "\(texts)")
+        for hidden in [left, right, above, below] {
+            #expect(!texts.contains(hidden), "\(hidden.prefix(12)) was collected")
+        }
+    }
+
+    @Test("batch 3 gate run 5: text whose clipped part lies in the band is still collected: a horizontally scrolling strip partly in view, a clipped card, a long heading clipped on screen")
+    func clippedInsideTheBand() async throws {
+        let strip = Self.longLine("横に流れる帯の中の長い一行の文章です")
+        let heading = Self.longLine("画面の箱に切られた長い見出しです")
+        let page = ScriptPage()
+        await page.load("""
+            <!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+            <style>body{margin:0} p,h2{margin:0}</style></head><body>
+            <div style="overflow-x:auto;width:390px"><p style="white-space:nowrap">\(strip)</p></div>
+            <div style="overflow:hidden;width:300px;height:60px;margin-top:20px"><p>切られたカードの最初の行は見えていて、残りの行は箱の下に隠れている長い段落の文章です。さらに続く文があり、何行にもわたって書かれています。</p></div>
+            <div style="overflow:hidden;width:200px;margin-top:20px"><h2 style="white-space:nowrap">\(heading)</h2></div>
+            </body></html>
+            """)
+        let texts = Set(try await page.runs().map(\.text))
+        #expect(texts.contains(strip), "\(texts)")
+        #expect(texts.contains { $0.hasPrefix("切られたカードの最初の行") }, "\(texts)")
+        #expect(texts.contains(heading), "\(texts)")
+    }
+
     nonisolated static let tabsPage = """
         <!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
         <style>.panel{display:none} #t1:checked ~ #p1, #t2:checked ~ #p2{display:block}</style></head><body>

@@ -280,12 +280,21 @@ function clipInfoOf(element, cache) {
 // is not given back by the next. A fixed-position ancestor's
 // descendants escape the overflow of the ancestors above it only up to the
 // nearest one that is the containing block of fixed descendants: from that
-// one upwards the clipping applies again.
-function isDisplayed(node, rects, caches) {
+// one upwards the clipping applies again. With a `band` (the collection's
+// translation band) the rectangles are first cut to it, so that only a part
+// that is both in the band and left by the clips counts.
+function isDisplayed(node, rects, caches, band) {
   if (rects.length === 0) return false;
   const parent = parentOf.call(node);
   if (!parent || !visibleOf.call(parent, { opacityProperty: true, visibilityProperty: true })) return false;
   let shown = rects.map((rect) => ({ left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }));
+  if (band) {
+    shown = shown.map((rect) => ({
+      left: Math.max(rect.left, band.left), right: Math.min(rect.right, band.right),
+      top: Math.max(rect.top, band.top), bottom: Math.min(rect.bottom, band.bottom)
+    })).filter((rect) => rect.right - rect.left >= 2 && rect.bottom - rect.top >= 2);
+    if (shown.length === 0) return false;
+  }
   let escaped = false;
   let element = parent;
   while (element) {
@@ -431,6 +440,9 @@ function collect(state, input) {
   const height = view[3];
   const bandTop = -height / 2;
   const bandBottom = height * 2;
+  // The translation band: the viewport's width across, from half a viewport
+  // above it to two viewports below its top.
+  const band = { left: 0, top: bandTop, right: width, bottom: bandBottom };
   const root = rootOf.call(doc);
   if (!root) return { runs: [], loaded: loaded, written: written, state: token };
   const range = makeRange.call(doc);
@@ -478,7 +490,7 @@ function collect(state, input) {
     const text = normalised(data);
     if (text.length === 0 || text.length > RUN_UNITS_BOUND) return;
     if (underExcluded(node, caches.excluded)) return;
-    if (!isDisplayed(node, rects, caches)) return;
+    if (!isDisplayed(node, rects, caches, band)) return;
     if (!record) {
       if (state.recorded >= RECORDS_BOUND) return;
       id = state.nextId++;

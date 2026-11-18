@@ -193,6 +193,17 @@ final class TranslationPartitionTests: IsolationTestCase {
         let adultRows = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in self.adultBodyRequests >= 1 }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [adultRows], timeout: 20), .completed, report)
         XCTAssertEqual(bodyRequests, 1, "a body request of the adult partition was recorded in the normal library: \(report)")
+
+        // Copy Translation there keeps the text on this device (N09): the
+        // pasteboard is written local-only, out of Universal Clipboard.
+        XCTAssertTrue(report.contains("copy=none"), report)
+        waitFor(button(AccessibilityID.readingMoreMenu)).tap()
+        let copy = waitFor(button(AccessibilityID.copyTranslationButton))
+        waitForEnabled(copy, true)
+        copy.tap()
+        waitForAbsence(button(AccessibilityID.copyTranslationButton))
+        let localOnly = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in self.report.contains("copy=localOnly") }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [localOnly], timeout: 20), .completed, "Copy Translation in the adult partition was not local-only: \(report)")
     }
 
     private var translatedBlock: XCUIElement {

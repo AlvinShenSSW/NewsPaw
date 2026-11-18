@@ -1,5 +1,6 @@
 import NewsPawKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The reading pane beside a list: the article open on that list, its
 /// page in the browser with Close (RD10), or "No article selected".
@@ -347,7 +348,7 @@ private struct ArticleScreen: View {
                 if let body_ {
                     Button("Copy Translation", systemImage: "doc.on.doc") {
                         if let text = body_.copyText(of: key, title: row.translatedTitle ?? row.displayTitle) {
-                            UIPasteboard.general.string = text
+                            TranslationCopy.write(text, partition: reading.library.partition)
                         }
                     }
                     .disabled(!body_.hasTranslation(key))
@@ -398,6 +399,35 @@ private struct ArticleScreen: View {
             }
             .disabled(!reading.hasNext(on: list))
             .accessibilityIdentifier(AccessibilityID.readingNextButton)
+        }
+    }
+}
+
+/// Copy Translation's pasteboard write (RD15, N09). In the adult partition
+/// the text is written local-only, so Universal Clipboard does not carry
+/// the article to the owner's other devices. In the normal partition it is
+/// the ordinary pasteboard. Plain text in both.
+@MainActor
+enum TranslationCopy {
+    #if DEBUG
+    /// How the last Copy Translation was written, for the UI tests' report:
+    /// "localOnly", "ordinary", or "none" before any.
+    static var lastWrite = "none"
+    #endif
+
+    static func write(_ text: String, partition: Partition) {
+        switch partition {
+        case .adult:
+            let options: [UIPasteboard.OptionsKey: Any] = [.localOnly: true]
+            UIPasteboard.general.setItems([[UTType.utf8PlainText.identifier: text]], options: options)
+            #if DEBUG
+            lastWrite = options[.localOnly] as? Bool == true ? "localOnly" : "ordinary"
+            #endif
+        case .normal:
+            UIPasteboard.general.string = text
+            #if DEBUG
+            lastWrite = "ordinary"
+            #endif
         }
     }
 }

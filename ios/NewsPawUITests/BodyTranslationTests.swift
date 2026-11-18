@@ -352,12 +352,17 @@ final class BodyTranslationTests: BodyTranslationTestCase {
 
         // Copy Translation is enabled once something is translated (its
         // text, verbatim, is the package's `copyIsVerbatim`; the runner does
-        // not read the pasteboard, which every booted simulator shares).
+        // not read the pasteboard, which every booted simulator shares). In
+        // the normal partition it is the ordinary pasteboard, as the report
+        // says.
+        XCTAssertFalse(report.contains("copy=localOnly"), report)
         waitFor(button(AccessibilityID.readingMoreMenu)).tap()
         let copy = waitFor(button(AccessibilityID.copyTranslationButton))
         XCTAssertTrue(copy.isEnabled)
         copy.tap()
         waitForAbsence(button(AccessibilityID.copyTranslationButton))
+        let ordinary = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in self.report.contains("copy=ordinary") }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ordinary], timeout: 20), .completed, report)
     }
 
     /// Criterion 16 (UI): Copy Translation is disabled with nothing

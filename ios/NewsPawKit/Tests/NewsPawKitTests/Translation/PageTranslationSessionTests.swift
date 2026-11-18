@@ -593,8 +593,13 @@ struct PageTranslationSessionTests {
         runs = runs.filter { $0.id != 3 && $0.id != 1 && $0.id != 2 } // the failed runs are settled in the page
         harness.session.retry()
         await harness.eventually { harness.session.line == .translated(.simplifiedChinese) }
-        #expect(Array(service.requests[1].texts.prefix(2)) == ["新しい製品が発表された", "今日の天気は晴れです"])
-        #expect(!service.requests.dropFirst().contains { $0.texts.contains("株価が上がりました") }, "only the failed runs still holding their originals")
+        // What goes after Retry: the two failed runs still holding their
+        // originals and the new run, each once. Each is a block of its own,
+        // and the order across blocks depends on which unit runs first: no
+        // order is asserted (it failed once in a parallel run).
+        let resent = service.requests.dropFirst().flatMap(\.texts)
+        #expect(resent.sorted() == ["今日の天気は晴れです", "新しい製品が発表された", "新しく現れた本文です"].sorted(), "\(resent)")
+        #expect(!resent.contains("株価が上がりました"), "only the failed runs still holding their originals")
         #expect(Set(harness.page.written.map(\.id)) == [1, 2, 50])
     }
 

@@ -33,7 +33,7 @@ struct OverviewReviewRoundOneTests {
         let writer = fixture.writer
         Task { box.set(await writer.write(category: category)) }
         await fixture.requested(1)
-        await fixture.writer.enteredBackground()
+        await fixture.enterBackground()
         await fixture.eventually { box.current != nil }
         // Let a request that was not cancelled go, so that the test ends.
         fixture.service.release(request: 1)
@@ -43,7 +43,7 @@ struct OverviewReviewRoundOneTests {
         try await fixture.eventually { try await fixture.usage().count == 1 }
         #expect(try await fixture.usage().map(\.outcome) == [.cancelled])
 
-        await fixture.writer.cameToFront()
+        fixture.front.set(isInFront: true)
         #expect(await fixture.write(category) == .stored)
     }
 
@@ -52,14 +52,14 @@ struct OverviewReviewRoundOneTests {
         let fixture = try await Fixture.make()
         defer { fixture.remove() }
         let (category, _, _) = try await fixture.filledCategory()
-        await fixture.writer.enteredBackground()
+        await fixture.enterBackground()
         await fixture.runDue()
         #expect(await fixture.writer.queuedAutomaticJobs == 0, "the due check queued nothing")
         #expect(await fixture.write(category) == .cancelled)
         #expect(fixture.service.requests.isEmpty)
         #expect(try await fixture.rows().isEmpty)
 
-        await fixture.writer.cameToFront()
+        fixture.front.set(isInFront: true)
         await fixture.runDue()
         #expect(try await fixture.rows(of: category).map(\.state) == ["done"])
     }
@@ -73,14 +73,14 @@ struct OverviewReviewRoundOneTests {
         fixture.service.hold(request: 1)
         await fixture.writer.runDue()
         await fixture.requested(1)
-        await fixture.writer.enteredBackground()
+        await fixture.enterBackground()
         // Let a request that was not cancelled go, so that the test ends.
         fixture.service.release(request: 1)
         await fixture.writer.settled()
         #expect(fixture.service.requests.count == 1, "the second category was not sent")
         #expect(try await fixture.rows().isEmpty, "nothing stored")
 
-        await fixture.writer.cameToFront()
+        fixture.front.set(isInFront: true)
         await fixture.runDue()
         #expect(try await fixture.rows(of: first).map(\.state) == ["done"])
         #expect(try await fixture.rows(of: second).map(\.state) == ["done"])

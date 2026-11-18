@@ -25,8 +25,8 @@ struct OverviewReviewRoundTwoTests {
         let firstOutcome = Box<OverviewWriteOutcome>()
         Task { firstOutcome.set(await writer.write(category: first)) }
         await fixture.reach(.store)
-        await writer.enteredBackground()
-        await writer.cameToFront()
+        await fixture.enterBackground()
+        fixture.front.set(isInFront: true)
 
         // The second job, asked for while the cancelled worker is held.
         fixture.service.hold(request: 2)
@@ -65,14 +65,14 @@ struct OverviewReviewRoundTwoTests {
         fixture.gate.hold(.jobRead)
         await fixture.writer.runDue()
         await fixture.reach(.jobRead)
-        await fixture.writer.enteredBackground()
+        await fixture.enterBackground()
         fixture.gate.release(.jobRead)
         await fixture.writer.settled()
         #expect(fixture.blocked.isEmpty, "the cancelled job blocked nothing")
         #expect(fixture.service.requests.isEmpty)
 
         // In front again, it is due, and its own run meets the limit.
-        await fixture.writer.cameToFront()
+        fixture.front.set(isInFront: true)
         await fixture.runDue()
         #expect(fixture.blocked[category]?.reason == .dailyLimit)
         #expect(fixture.service.requests.isEmpty)

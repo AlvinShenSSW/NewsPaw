@@ -107,19 +107,31 @@ public actor OverviewWriter {
     private var hold: Hold?
     private var holdGeneration = 0
     private var lastWorking: Set<UUID> = []
-    /// The app is in the background (review round 1, R1): no due check
-    /// runs and no job is taken; the job in flight was cancelled.
-    private var isInBackground = false
+    /// Whether the app is in front, as the app sets it (review round 3).
+    private let front: AppFront
 
     /// - Parameters:
     ///   - models: the library's models; the library worked on is theirs.
+    ///   - front: whether the app is in front, read wherever work starts
+    ///     and before every request: an overview request is sent only
+    ///     while the app is in front.
     ///   - now: the clock of the day and of the day's count.
     ///   - calendar: where the device's local day starts and its time zone.
-    public init(models: LibraryModels, now: @escaping @Sendable () -> Date = { Date() }, calendar: Calendar = .autoupdatingCurrent) {
+    public init(
+        models: LibraryModels, front: AppFront, now: @escaping @Sendable () -> Date = { Date() },
+        calendar: Calendar = .autoupdatingCurrent
+    ) {
         self.models = models
         library = models.library
+        self.front = front
         self.now = now
         self.calendar = calendar
+    }
+
+    /// The app's state, read now (review round 3): no due check starts, no
+    /// job is taken and no request is sent unless it is in front.
+    private var isInFront: Bool {
+        front.isInFront
     }
 
     // MARK: - The app's calls
@@ -143,7 +155,7 @@ public actor OverviewWriter {
     /// otherwise it queues nothing and reports the due categories blocked.
     public func runDue() async {
         // The one place a due check starts: never in the background (R1).
-        guard !isStopped, !isInBackground, let locale else { return }
+        guard !isStopped, isInFront, let locale else { return }
         if let held = hold {
             if let current = try? await library.slotIdentities(), hold?.generation == held.generation, current != held.slots {
                 hold = nil
@@ -159,7 +171,7 @@ public actor OverviewWriter {
             await dueReadFailed(day: day, locale: locale)
             return
         }
-        guard !isStopped, !isInBackground, locale == self.locale else { return }
+        guard !isStopped, isInFront, locale == self.locale else { return }
         let queued = queuedOrInFlight
         let fresh = due.filter { !queued.contains($0) }
         if let hold {
@@ -180,7 +192,7 @@ public actor OverviewWriter {
     /// blocked for storage.
     private func dueReadFailed(day: String, locale: ReadingLocale) async {
         let generation = slotsGeneration
-        guard let categories = try? await library.categories(), !isStopped, !isInBackground, locale == self.locale else { return }
+        guard let categories = try? await library.categories(), !isStopped, isInFront, locale == self.locale else { return }
         let automatic = categories.filter { $0.overview == .auto }.map(\.id)
         guard !automatic.isEmpty, generation == slotsGeneration else { return }
         let block = OverviewBlock(reason: .storage, day: day, locale: locale)
@@ -214,7 +226,7 @@ public actor OverviewWriter {
     /// it ended. A writer that is stopped, or has no locale yet, answers
     /// `cancelled` at once.
     public func enqueueWrite(category: UUID, reply: @escaping @Sendable (OverviewWriteOutcome) -> Void) {
-        guard !isStopped, !isInBackground, locale != nil else {
+        guard !isStopped, isInFront, locale != nil else {
             reply(.cancelled)
             return
         }
@@ -224,7 +236,10 @@ public actor OverviewWriter {
     }
 
     /// The app entered the background (design: foreground only; review
-    /// round 1, R1): the job in flight is cancelled by the ordinary
+    /// round 1, R1). The app sends this outside `OverviewChain`'s order, so
+    /// that no pending call delays it (review round 3); whether anything
+    /// may start or be sent is read from `AppFront`, not from this call.
+    /// The job in flight is cancelled by the ordinary
     /// cancellation — nothing is stored, its usage row says cancelled, a
     /// manual job answers `cancelled` —, queued manual jobs answer
     /// `cancelled`, and the automatic queue is dropped (due again at the
@@ -236,7 +251,6 @@ public actor OverviewWriter {
     /// another worker's, and no second request is sent meanwhile. On its
     /// way out the cancelled job changes nothing but its own `inFlight`.
     public func enteredBackground() {
-        isInBackground = true
         worker?.cancel()
         for job in manualQueue {
             job.reply(.cancelled)
@@ -244,12 +258,6 @@ public actor OverviewWriter {
         manualQueue = []
         automaticQueue = []
         reportWorking()
-    }
-
-    /// The app came to the front again: jobs may be taken and due checks
-    /// run again. Starts nothing.
-    public func cameToFront() {
-        isInBackground = false
     }
 
     /// The workspace is dropped: the job in flight is cancelled and stores
@@ -278,14 +286,14 @@ public actor OverviewWriter {
     private func startWorker() {
         // The one place a job is taken: never in the background (R1), and
         // never beside a worker that is still running, cancelled or not.
-        guard worker == nil, !isStopped, !isInBackground, locale != nil, !manualQueue.isEmpty || !automaticQueue.isEmpty else { return }
+        guard worker == nil, !isStopped, isInFront, locale != nil, !manualQueue.isEmpty || !automaticQueue.isEmpty else { return }
         workersAlive += 1
         worker = Task { await self.work() }
     }
 
     private func work() async {
         defer { workersAlive -= 1 }
-        while !Task.isCancelled, !isStopped, !isInBackground {
+        while !Task.isCancelled, !isStopped, isInFront {
             if !manualQueue.isEmpty {
                 let job = manualQueue.removeFirst()
                 inFlight = job.category
@@ -475,6 +483,11 @@ public actor OverviewWriter {
         }
         await suspend(.send(role))
         guard !Task.isCancelled, !isStopped else { return .cancelled }
+        // The one place a request is sent: only while the app is in front,
+        // read now (review round 3) — the first request, the retry and the
+        // backup request alike. Nothing is stored or blocked: an automatic
+        // job is due again, a manual one answers `cancelled`.
+        guard isInFront else { return .cancelled }
         if first, job.configuration != configGeneration {
             return .cancelled
         }

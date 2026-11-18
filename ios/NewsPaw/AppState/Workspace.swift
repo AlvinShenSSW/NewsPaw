@@ -31,6 +31,9 @@ struct WorkspaceParts {
     /// Called after a slot of `normalModels` changed, from the Settings of
     /// any workspace: the normal library's translation resumes.
     let slotsChanged: @MainActor () -> Void
+    /// Whether the app is in front: the overview writers read it (RD23
+    /// review round 3).
+    let front: AppFront
 }
 
 /// How a workspace's embedded browser is set up.
@@ -151,7 +154,8 @@ final class Workspace: Identifiable {
         let translation = TranslationModel(models: models, settings: parts.translationSettings, reading: reading, now: parts.now)
         reading.translationLocale = { [weak translation] in translation?.settings.readingLocale }
         let overviews = OverviewModel(
-            library: library, models: models, settings: parts.translationSettings, reading: reading, navigation: navigation, now: parts.now
+            library: library, models: models, settings: parts.translationSettings, reading: reading, navigation: navigation,
+            front: parts.front, now: parts.now
         )
         // A change of the normal slots resumes the normal library's
         // translation, whichever workspace's Settings made it; a change of

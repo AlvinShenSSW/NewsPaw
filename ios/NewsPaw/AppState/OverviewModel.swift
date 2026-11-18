@@ -17,7 +17,9 @@ struct OverviewQuestion: Identifiable, Equatable {
 /// writer of its library, made from the workspace's own models (RD19), the
 /// rows the cards read, the work and blocks the writer reports, and the
 /// triggers. Calls reach the writer through one serial chain, so that a
-/// change of language and a due check cannot reach it out of order.
+/// change of language and a due check cannot reach it out of order; the
+/// background's cancellation does not wait in it, and whether the app is in
+/// front the writer reads from `AppFront` (review round 3).
 @MainActor @Observable
 final class OverviewModel {
     /// Today's row of each category in the reading language.
@@ -64,7 +66,7 @@ final class OverviewModel {
     ///   a programming error (RD23 decision 14).
     init(
         library: Library, models: LibraryModels, settings: TranslationSettings, reading: ReadingModel, navigation: NavigationModel,
-        now: @escaping @Sendable () -> Date, calendar: Calendar = .autoupdatingCurrent
+        front: AppFront, now: @escaping @Sendable () -> Date, calendar: Calendar = .autoupdatingCurrent
     ) {
         precondition(models.belong(to: library), "the models of another library")
         self.library = library
@@ -76,7 +78,9 @@ final class OverviewModel {
         self.calendar = calendar
         partition = library.partition
         day = OverviewDay.key(for: now(), calendar: calendar)
-        chain = OverviewChain(writer: OverviewWriter(models: models, now: now, calendar: calendar))
+        // The writer reads the app's state itself, where it starts work and
+        // before every request (review round 3).
+        chain = OverviewChain(writer: OverviewWriter(models: models, front: front, now: now, calendar: calendar))
         settings.addListener(self)
     }
 
@@ -176,20 +180,22 @@ final class OverviewModel {
         Task { await read() }
     }
 
-    /// The app came to the front: the writer may take jobs again (it starts
-    /// none), the cards are read and the day's change is waited for afresh.
+    /// The app came to the front: the cards are read and the day's change
+    /// is waited for afresh. The writer reads that the app is in front from
+    /// `AppFront`, which the app has set.
     func cameToFront() {
         guard !isStopped else { return }
-        enqueue { await $0.cameToFront() }
         dayMayHaveChanged()
     }
 
     /// The app entered the background (design: foreground only; review
-    /// round 1, R1): the writer cancels its job in flight, drops its queue
-    /// and refuses due checks and jobs until the app comes to the front.
+    /// round 1, R1): `AppFront` already says so, so nothing is started or
+    /// sent from here on; the writer's job in flight is cancelled and its
+    /// queue dropped — outside the chain, so that a due check waiting at
+    /// its read cannot delay it (review round 3).
     func enteredBackground() {
         guard !isStopped else { return }
-        enqueue { await $0.enteredBackground() }
+        chain.enteredBackground()
     }
 
     /// A slot of this library was saved or removed, or its key removed: its

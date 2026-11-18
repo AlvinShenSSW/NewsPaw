@@ -179,7 +179,7 @@ struct LiveModelServiceTests {
             article.excerpt = String(articleExcerpt)
             try await library.insert(article)
         }
-        let writer = OverviewWriter(models: models)
+        let writer = OverviewWriter(models: models, front: AppFront(isInFront: true))
         await writer.configure(locale: .simplifiedChinese)
         let started = ContinuousClock.now
         let outcome = await writer.write(category: category.id)

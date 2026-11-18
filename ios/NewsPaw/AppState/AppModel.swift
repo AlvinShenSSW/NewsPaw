@@ -118,6 +118,12 @@ final class AppModel {
     @ObservationIgnored private var appearedShell: Workspace.ID?
     @ObservationIgnored private var coverRemoval: Task<Void, Never>?
     @ObservationIgnored private var sceneIsActive = false
+    /// Whether the app is in front, for every workspace's overview writer
+    /// (RD23 review round 3): set here, synchronously, at each change of the
+    /// scene, and first from the scene's real state when the scene is
+    /// first observed — "not in front" until then. A writer made later
+    /// reads it; no event has to reach it.
+    @ObservationIgnored private let front = AppFront(isInFront: false)
     /// The scene's absence, as the lock rule counts it.
     @ObservationIgnored private var absence = Absence()
     /// Whether the scene has been in the background since it was last
@@ -252,7 +258,8 @@ final class AppModel {
                 slotsChanged: { [weak self] in
                     self?.normal?.translation.slotsChanged()
                     self?.normal?.overviews.slotsChanged()
-                }
+                },
+                front: front
             )
             self.parts = parts
             // The embedded browser (RD19 decision 4): the system's default
@@ -778,6 +785,11 @@ final class AppModel {
     private func observeScene() {
         guard sceneObservers.isEmpty else { return }
         sceneIsActive = UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        // In front: a scene in the foreground, active or not yet; a launch
+        // in the background reads "not in front" (RD23 review round 3).
+        front.set(isInFront: UIApplication.shared.connectedScenes.contains {
+            $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive
+        })
         let center = NotificationCenter.default
         func observe(_ name: Notification.Name, _ handler: @escaping @MainActor (AppModel) -> Void) {
             sceneObservers.append(center.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
@@ -804,6 +816,10 @@ final class AppModel {
 
     private func sceneDidEnterBackground() {
         sceneIsActive = false
+        // First, before anything else: no overview request is sent from
+        // here on, whichever writer exists or is made later (RD23 review
+        // round 3).
+        front.set(isInFront: false)
         wasInBackground = true
         // An unlock that is still running is discarded (decision 5).
         if let unlockAttempt {
@@ -811,7 +827,8 @@ final class AppModel {
             let gate = gate
             Task { await gate?.lock() }
         }
-        // Overviews are written in front only (RD23 review round 1, R1).
+        // Overviews are written in front only (RD23 review round 1, R1):
+        // the requests in flight are cancelled.
         normal?.overviews.enteredBackground()
         adult?.overviews.enteredBackground()
         let locks = absence.didEnterBackground(at: now(), timing: lockTiming)
@@ -823,6 +840,7 @@ final class AppModel {
 
     private func sceneDidActivate() {
         sceneIsActive = true
+        front.set(isInFront: true)
         // The 5-second fallback is on: the app switcher and Control Centre
         // deliver no did-enter-background (measured, assumption A7).
         let locks = absence.didActivate(at: now(), timing: lockTiming, fallback: true)

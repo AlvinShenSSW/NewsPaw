@@ -174,6 +174,12 @@ final class HoldGate<Point: Hashable & Sendable>: Sendable {
         state.withLock { $0.reached.contains(point) }
     }
 
+    /// Whether a worker is held at `point` now (a later arrival than the
+    /// first one `reached` reports).
+    func isHolding(_ point: Point) -> Bool {
+        state.withLock { $0.waiting[point] != nil }
+    }
+
     func release(_ point: Point) {
         let waiting = state.withLock { state in
             state.released.insert(point)

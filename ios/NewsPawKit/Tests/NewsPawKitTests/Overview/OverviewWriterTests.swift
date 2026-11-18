@@ -606,7 +606,7 @@ struct OverviewWriterTests {
         try await Partitions.save(partitions.normalModels, host: "normal.example.invalid")
         _ = try await partitions.normalModels.send(texts: ["Hello"], instructions: "Repeat.", purpose: .test, role: .primary)
         let category = try await Partitions.dueCategory(partitions.adult)
-        let writer = OverviewWriter(models: partitions.adultModels)
+        let writer = OverviewWriter(models: partitions.adultModels, front: AppFront(isInFront: true))
         await writer.configure(locale: .simplifiedChinese)
 
         await writer.runDue()
@@ -632,7 +632,7 @@ struct OverviewWriterTests {
         try await Partitions.save(partitions.normalModels, host: "normal.example.invalid")
         try await Partitions.save(partitions.adultModels, host: "adult.example.invalid")
         let category = try await Partitions.dueCategory(partitions.adult)
-        let writer = OverviewWriter(models: partitions.adultModels)
+        let writer = OverviewWriter(models: partitions.adultModels, front: AppFront(isInFront: true))
         await writer.configure(locale: .simplifiedChinese)
         #expect(await writer.write(category: category) == .stored)
         #expect(partitions.service.requests.map(\.host) == ["adult.example.invalid"])
@@ -761,7 +761,7 @@ struct OverviewWriterTests {
             testedOutcome: nil
         )
         let now = Date()
-        let writer = OverviewWriter(models: models, now: { now }, calendar: OverviewFixture.utc)
+        let writer = OverviewWriter(models: models, front: AppFront(isInFront: true), now: { now }, calendar: OverviewFixture.utc)
         await writer.configure(locale: .simplifiedChinese)
         if !automatic {
             try await move.old.setCategoryOverview(move.category, to: .manual)

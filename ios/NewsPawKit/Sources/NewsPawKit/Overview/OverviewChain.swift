@@ -40,4 +40,15 @@ public final class OverviewChain: Sendable {
             }
         }
     }
+
+    /// The app entered the background: the writer's job in flight is
+    /// cancelled at once, **not** after the calls sent before it — a due
+    /// check held at its read cannot delay it (review round 3). Whether
+    /// anything is sent meanwhile is decided by `AppFront`, which the app
+    /// has already set.
+    @discardableResult
+    public func enteredBackground() -> Task<Void, Never> {
+        let writer = writer
+        return Task { await writer.enteredBackground() }
+    }
 }

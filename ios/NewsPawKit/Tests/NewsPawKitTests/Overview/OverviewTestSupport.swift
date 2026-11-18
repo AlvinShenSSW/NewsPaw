@@ -22,6 +22,8 @@ final class OverviewFixture: @unchecked Sendable {
     let models: LibraryModels
     let writer: OverviewWriter
     let gate = OverviewGate()
+    /// The app's state the writer reads: in front unless a test sets it.
+    let front: AppFront
     private let events = Mutex<[OverviewEvent]>([])
     private let counter = Mutex(0)
 
@@ -33,8 +35,9 @@ final class OverviewFixture: @unchecked Sendable {
 
     private init(
         directory: URL, clock: TestClock, calendar: Calendar, library: Library, keys: InMemoryKeyStore, service: TranslationService,
-        models: LibraryModels
+        models: LibraryModels, inFront: Bool
     ) {
+        front = AppFront(isInFront: inFront)
         self.directory = directory
         self.clock = clock
         self.calendar = calendar
@@ -42,7 +45,7 @@ final class OverviewFixture: @unchecked Sendable {
         self.keys = keys
         self.service = service
         self.models = models
-        writer = OverviewWriter(models: models, now: clock.now, calendar: calendar)
+        writer = OverviewWriter(models: models, front: front, now: clock.now, calendar: calendar)
     }
 
     /// - Parameters:
@@ -51,7 +54,7 @@ final class OverviewFixture: @unchecked Sendable {
     ///   - adult: whether the library is an adult one (its own store).
     static func make(
         service: TranslationService = TranslationService(OverviewFixture.goodRule), primary: Bool = true, backup: Bool = false,
-        calendar: Calendar = OverviewFixture.utc, locale: ReadingLocale? = .simplifiedChinese
+        calendar: Calendar = OverviewFixture.utc, locale: ReadingLocale? = .simplifiedChinese, inFront: Bool = true
     ) async throws -> OverviewFixture {
         let directory = try makeTemporaryDirectory()
         let clock = TestClock()
@@ -60,7 +63,7 @@ final class OverviewFixture: @unchecked Sendable {
         let keys = InMemoryKeyStore()
         let fixture = OverviewFixture(
             directory: directory, clock: clock, calendar: calendar, library: library, keys: keys, service: service,
-            models: LibraryModels(library: library, keys: keys, http: service)
+            models: LibraryModels(library: library, keys: keys, http: service), inFront: inFront
         )
         if primary {
             try await fixture.saveSlot(.primary)
@@ -182,6 +185,13 @@ final class OverviewFixture: @unchecked Sendable {
     func runDue() async {
         await writer.runDue()
         await writer.settled()
+    }
+
+    /// The app enters the background as the app makes it: the state is
+    /// set first, then the writer's job in flight is cancelled.
+    func enterBackground() async {
+        front.set(isInFront: false)
+        await writer.enteredBackground()
     }
 
     func write(_ category: UUID) async -> OverviewWriteOutcome {

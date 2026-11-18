@@ -129,7 +129,7 @@ EXEMPT: dict[str, str] = {
     ),
 }
 
-DEBUG_BLOCK = re.compile(r"^\s*#if\b.*\bDEBUG\b", re.MULTILINE)
+DEBUG_BLOCK = re.compile(r"^\s*#(?:if|elseif)\b.*\bDEBUG\b", re.MULTILINE)
 
 # The required-reason declarations the app's privacy manifest must hold.
 PRIVACY_DECLARATIONS = {
@@ -139,7 +139,7 @@ PRIVACY_DECLARATIONS = {
 
 SIGNING_FILE_PATTERNS = ["*.p12", "*.p8", "*.cer", "*.mobileprovision", "*.provisionprofile"]
 PROJECT_SIGNING = re.compile(r"\b(DEVELOPMENT_TEAM|DevelopmentTeam|PROVISIONING_PROFILE\w*|CODE_SIGN_IDENTITY)\b")
-TEAM_LINE = re.compile(r"^\s*DEVELOPMENT_TEAM\s*=\s*([A-Z0-9]{10})\s*$", re.MULTILINE)
+TEAM_LINE = re.compile(r"^\s*DEVELOPMENT_TEAM\s*=\s*([A-Z0-9]{10})\s*$")
 
 
 class BadInput(Exception):
@@ -206,6 +206,11 @@ def source_of(needle: str) -> str:
 def check_release_archive(archive: Path, build: int | None) -> list[str]:
     app = app_in(archive)
     problems: list[str] = []
+    info = read_plist(app / "Info.plist")
+    # The executable holds every needle: without it a clean search means nothing.
+    executable = app / str(info.get("CFBundleExecutable", ""))
+    if not info.get("CFBundleExecutable") or not executable.is_file() or executable.stat().st_size == 0:
+        problems.append(f"the app's executable ({info.get('CFBundleExecutable')!r}) is missing or empty")
     for needle, files in needle_hits(app).items():
         if files:
             problems.append(
@@ -214,7 +219,6 @@ def check_release_archive(archive: Path, build: int | None) -> list[str]:
     for path in sorted(app.rglob("*")):
         if path.name.endswith(".debug.dylib") or path.name == "__preview.dylib":
             problems.append(f"debug-only file in the Release app: {path.relative_to(app)}")
-    info = read_plist(app / "Info.plist")
     if info.get("ITSAppUsesNonExemptEncryption") is not False:
         problems.append(
             f"Info.plist: ITSAppUsesNonExemptEncryption must be false, is {info.get('ITSAppUsesNonExemptEncryption')!r}"
@@ -298,16 +302,34 @@ def check_hygiene() -> list[str]:
         if match:
             problems.append(f"project.pbxproj:{number} sets {match.group(1)}; the team belongs in Signing.local.xcconfig")
     if LOCAL_SIGNING.is_file():
-        match = TEAM_LINE.search(LOCAL_SIGNING.read_text(encoding="utf-8"))
-        if match:
+        team = local_team()
+        if team is None:
+            problems.append(
+                "ios/Config/Signing.local.xcconfig must hold exactly one line besides blank and // comment lines: "
+                "DEVELOPMENT_TEAM = <ten capital letters or digits>"
+            )
+        else:
             # The team itself is never printed.
-            result = git("grep", "-F", "-l", "-e", match.group(1))
+            result = git("grep", "-F", "-l", "-e", team)
             if result.returncode == 0:
                 for path in result.stdout.split():
                     problems.append(f"the local team identifier appears in a tracked file: {path}")
             elif result.returncode != 1:
                 raise BadInput(f"git grep failed: {result.stderr.strip()}")
     return problems
+
+
+def local_team() -> str | None:
+    """The team of the local signing file, when its only line that is neither blank nor a `//` comment is the team
+    line; otherwise None (a trailing comment or a second line would make the effective team uncertain)."""
+    lines = [
+        line for line in LOCAL_SIGNING.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("//")
+    ]
+    if len(lines) != 1:
+        return None
+    match = TEAM_LINE.match(lines[0])
+    return match.group(1) if match else None
 
 
 # MARK: - Main

@@ -3,7 +3,7 @@
 //
 // The team is not in the repository, which is public. On the Mac that makes
 // archives, create `Signing.local.xcconfig` next to this file (git-ignored)
-// with one line:
+// with one line, and nothing else besides blank and // comment lines:
 //
 //     DEVELOPMENT_TEAM = <your Team ID>
 //

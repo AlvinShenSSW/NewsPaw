@@ -166,7 +166,9 @@ final class TranslationPartitionTests: IsolationTestCase {
         } else {
             openSourceList("Body Feed", in: "Velvet")
         }
-        openArticle("Long story")
+        // Its title may be translated now: the row is tapped and the body
+        // waited for.
+        waitFor(articleRow("Long story")).tap()
 
         // The adult body is translated through it: adult usage rows only.
         XCTAssertTrue(translatedBlock.waitForExistence(timeout: 60), "the adult body was not translated with the adult slot: \(report)")

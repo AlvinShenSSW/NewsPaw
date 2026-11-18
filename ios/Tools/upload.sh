@@ -58,6 +58,7 @@ COMMAND=(xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist "
 if [ "$DRY_RUN" = true ]; then
   echo "Dry run: every check passed for NewsPaw $VERSION ($BUILD) from $COMMIT. Would run:"
   printf '  %q' "${COMMAND[@]}"; echo
+  echo "  with the export options' destination set to: $(plutil -extract destination raw -o - "$WORK/ExportOptions.plist")"
   exit 0
 fi
 "${COMMAND[@]}"

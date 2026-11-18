@@ -1177,7 +1177,12 @@ final class AppModel {
         case .adult:
             if let workspace = began.value, adult === workspace {
                 await workspace.reloadAfterImport()
+                // Every consumer of the adult slots is told, as the adult
+                // model editor's save tells them (batch 4): the translation
+                // (and its bodies) and the overviews, whose blocks belonged
+                // to the old slots.
                 workspace.translation.slotsChanged()
+                workspace.overviews.slotsChanged()
             }
             showsSummary = began.value.map { adult === $0 } ?? false
         case .normal:

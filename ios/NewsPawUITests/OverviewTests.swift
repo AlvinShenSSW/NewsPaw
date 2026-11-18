@@ -231,6 +231,81 @@ final class OverviewAdultTests: IsolationTestCase {
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "概览[")).firstMatch.exists)
     }
 
+    /// Batch 4 (gate run 1): an adult Manual category's set-up failure
+    /// (the adult key rejected) is shown with Open Settings; a Replace
+    /// made inside the adult partition writes the file's adult slot; the
+    /// card no longer shows the old slot's failure and offers Write
+    /// Overview, without a relaunch. The reading language is the file's
+    /// beforehand, so that the import does not hide the old block by a
+    /// change of language; the category and its source are the file's, so
+    /// that Replace keeps them.
+    func testAnImportedAdultSlotClearsTheOldSetUpFailure() {
+        let application = XCUIApplication()
+        application.launchEnvironment[UITestLaunchKey.configurationFixture] = "both"
+        launch(application, authentication: ["passed", "passed", "passed"])
+        rotate(.portrait)
+        requireFullWidth()
+        openSettings()
+        waitFor(element(AccessibilityID.modelsRow)).tap()
+        scrollTo(app.buttons.matching(NSPredicate(format: "label == %@", "Japanese")).firstMatch).tap()
+        turnOnAdult()
+        enterAdult()
+        openAdultSettings()
+        waitFor(adultPrimaryRow).tap()
+        waitFor(button(AccessibilityID.saveButton))
+        fillForm(address: "https://rejected.models.example.invalid/v1", model: "fixture-adult-model", key: "sk-adult-rejected-key-4567")
+        tapSave()
+        waitForAbsence(button(AccessibilityID.saveButton))
+        let name = "Imported Private"
+        createCategory(name)
+        addSource("https://articles.example.invalid/rss.xml", to: name)
+        setOverviewsToManual(name)
+        showToday()
+        waitFor(button(AccessibilityID.overview("write", name))).tap()
+        // The shell's question for a manual job that stored nothing.
+        let alert = app.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: timeout))
+        alert.buttons["Cancel"].tap()
+        let issue = waitFor(element(AccessibilityID.overview("issue", name)))
+        XCTAssertTrue(issue.label.contains("The service rejected the key"), issue.label)
+
+        // Replace inside the adult partition, with the file of both.
+        openSettings()
+        waitFor(element(AccessibilityID.dataRow)).tap()
+        waitFor(button(AccessibilityID.importConfigurationButton)).tap()
+        let replaceAll = scrollTo(button(AccessibilityID.configurationReplaceEverythingButton))
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: replaceAll)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: timeout), .completed)
+        replaceAll.tap()
+        waitFor(app.navigationBars["Before Replacing"])
+        scrollTo(button(AccessibilityID.configurationReplaceButton)).tap()
+        let confirm = app.alerts.firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: timeout))
+        confirm.buttons.matching(NSPredicate(format: "label == %@", "Replace")).firstMatch.tap()
+        waitFor(button(AccessibilityID.configurationDoneButton)).tap()
+        waitForAbsence(button(AccessibilityID.configurationDoneButton))
+
+        showToday()
+        waitFor(button(AccessibilityID.overview("write", name)))
+        XCTAssertFalse(element(AccessibilityID.overview("issue", name)).exists, "the old slot's failure is still shown")
+    }
+
+    /// Category Settings › Overviews of `category` set to Manual, saved.
+    private func setOverviewsToManual(_ category: String) {
+        openCategoryList(category)
+        openListSettings(source: false)
+        waitFor(app.textFields[AccessibilityID.nameField])
+        let picker = scrollTo(button(AccessibilityID.overviewModePicker))
+        picker.tap()
+        waitFor(app.buttons.matching(NSPredicate(format: "label == %@", "Manual")).firstMatch).tap()
+        let chosen = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            picker.exists && ((picker.value as? String)?.contains("Manual") == true || picker.label.contains("Manual"))
+        }, object: nil)
+        _ = XCTWaiter.wait(for: [chosen], timeout: timeout)
+        tapSave()
+        waitForAbsence(app.textFields[AccessibilityID.nameField])
+    }
+
     /// Batch 4 (RD19): with slots in the normal library and none in the
     /// adult one, the adult card says no model is set up, and its step
     /// opens the adult slots in Settings › Adult Partition — never the

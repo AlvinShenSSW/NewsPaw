@@ -529,6 +529,58 @@ struct BodyTranslatorTests {
         #expect(try await fixture.stored(adultArticle.id).isEmpty)
     }
 
+    @Test("batch 3 (RD15 × RD19): a body translator made from the adult library's own models sends only through the adult slot and records only in the adult library; without an adult slot it sends nothing, also for reader mode")
+    func adultModels() async throws {
+        // The normal library, with its primary slot set up.
+        let fixture = try await BodyFixture.make()
+        defer { fixture.remove() }
+        let store = LibraryStore(directory: fixture.base.directory.appending(path: "second"), now: fixture.base.clock.now)
+        let adult = try await store.createAdultLibrary()
+        let category = try await adult.createCategory(name: "Adult", icon: .folder)
+        let source = Sample.source(in: category.id, url: "https://adult.example.invalid/feed", name: "Adult", at: fixture.base.clock.now())
+        try await adult.insert(source)
+        let article = Sample.article(in: source.id, externalID: "adult-1", title: "Adult story", at: fixture.base.clock.now())
+        try await adult.insert(article)
+        // The adult workspace's models: the adult library's own, over the
+        // same service, with no slot yet.
+        let adultModels = LibraryModels(library: adult, keys: InMemoryKeyStore(partition: .adult), http: fixture.service)
+        #expect(adultModels.belong(to: adult) && !adultModels.belong(to: fixture.library))
+        let translator = BodyTranslator(models: adultModels)
+        let plan = BodySegments.plan(BodyFixture.blocks(4), locale: .simplifiedChinese)
+        func run(article: UUID?) async {
+            await translator.start(fixture.job(plan, article: article))
+            await translator.settled()
+        }
+        func adultUsage() async throws -> Int {
+            try await adult.pool.read { db in try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage WHERE purpose = 'body'") ?? -1 }
+        }
+
+        await run(article: article.id)
+        await run(article: nil)
+        #expect(fixture.service.requests.isEmpty, "sent without an adult slot")
+        #expect(try await adultUsage() == 0)
+        #expect(try await fixture.usage().isEmpty)
+
+        // An adult slot on a host of its own.
+        let adultHost = "adult.models.example.invalid"
+        try await adultModels.save(
+            ModelSlotDraft(role: .primary, preset: .custom, address: "https://\(adultHost)/v1", model: "adult-model",
+                           newKey: key("sk-adult-0123456789")),
+            testedOutcome: nil
+        )
+        await run(article: article.id)
+        let afterArticle = fixture.service.requests.count
+        #expect(afterArticle > 0)
+        #expect(try await BodyTranslationStoreTests.rowCount(adult) > 0)
+        await run(article: nil)
+        #expect(fixture.service.requests.count > afterArticle, "reader mode is translated with the adult slot")
+        #expect(fixture.service.requests.allSatisfy { $0.host == adultHost }, "\(fixture.service.requests.map(\.host))")
+        #expect(try await adultUsage() == fixture.service.requests.count)
+        // Nothing of it in the normal library.
+        #expect(try await fixture.usage().isEmpty)
+        #expect(try await BodyTranslationStoreTests.rowCount(fixture.library) == 0)
+    }
+
     // MARK: - Criterion 14
 
     @Test("criterion 14: a job without an article (reader mode) writes nothing to body_translation; its requests are usage rows; the title is its first text")

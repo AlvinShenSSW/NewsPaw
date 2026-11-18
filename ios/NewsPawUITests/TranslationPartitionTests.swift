@@ -5,17 +5,10 @@ import XCTest
 /// (RD19); with none set up it shows its originals and sends nothing
 /// through the normal library's models, which are set up and translate the
 /// normal partition's rows.
-final class TranslationPartitionTests: AdultTestCase {
+final class TranslationPartitionTests: IsolationTestCase {
     static let feed = "https://translation.example.invalid/rss.xml"
     static let source = "Translation Feed"
     static let first = "Foreign story 01"
-
-    /// The translator fixture's requests so far, from the debug report.
-    private var translationRequests: Int {
-        let report = self.report
-        guard let range = report.range(of: "translationRequests=") else { return -1 }
-        return Int(report[range.upperBound...].prefix { $0.isNumber }) ?? -1
-    }
 
     func testTheAdultPartitionShowsOriginalsAndSendsNothing() {
         let application = XCUIApplication()
@@ -79,10 +72,22 @@ final class TranslationPartitionTests: AdultTestCase {
         return Int(match.1) ?? -2
     }
 
-    /// RD15 criterion 13: with the normal model set up, the adult
-    /// workspace shows no translation control, banner or progress line for
-    /// a foreign article or in reader mode, and no body request is made.
-    func testTheAdultPartitionTranslatesNoBody() {
+    /// The usage rows of body requests in the adult library (batch 3).
+    private var adultBodyRequests: Int {
+        guard let match = report.firstMatch(of: /adultBodyRequests=(-?\d+)/) else { return -2 }
+        return Int(match.1) ?? -2
+    }
+
+    /// RD15 criterion 13 under RD19's rule (batch 3): the adult workspace
+    /// translates bodies only through the adult library's own models. With
+    /// the normal model set up and no adult slot, an adult foreign body
+    /// sends nothing and shows the banner of a workspace without a model,
+    /// whose Open Settings opens the adult slots (S10), not the normal
+    /// ones; reader mode, whose job names no article, sends nothing either.
+    /// With an adult slot set up, the adult body is translated and its
+    /// usage rows are the adult library's; the normal library's count does
+    /// not move.
+    func testTheAdultPartitionTranslatesBodiesOnlyWithItsOwnModels() {
         let application = XCUIApplication()
         application.launchEnvironment[UITestLaunchKey.translationModels] = "primary"
         launch(application, authentication: ["passed", "passed", "passed"])
@@ -96,10 +101,7 @@ final class TranslationPartitionTests: AdultTestCase {
         // Its title may be translated already: the row is tapped and the
         // body waited for.
         waitFor(articleRow("Markup story")).tap()
-        let translated = app.descendants(matching: .any).matching(NSPredicate(
-            format: "identifier == %@ AND label BEGINSWITH %@", AccessibilityID.readingBlock(0), "译[zh-Hans]："
-        )).firstMatch
-        XCTAssertTrue(translated.waitForExistence(timeout: 60), "the normal partition's body was not translated")
+        XCTAssertTrue(translatedBlock.waitForExistence(timeout: 60), "the normal partition's body was not translated")
         waitFor(button(AccessibilityID.displayModeMenu))
         let stable = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in self.bodyRequests == 1 }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [stable], timeout: 20), .completed, report)
@@ -110,21 +112,26 @@ final class TranslationPartitionTests: AdultTestCase {
         createCategory("Velvet")
         addSource("https://bodies.example.invalid/rss.xml", to: "Velvet")
         addSource("https://fulltext.example.invalid/rss.xml", to: "Velvet")
+        let before = translationRequests
+        XCTAssertEqual(adultBodyRequests, 0, report)
+
+        // No adult slot: the body shows its originals and the banner of a
+        // workspace without a model; nothing is sent through any slot.
         openSourceList("Body Feed", in: "Velvet")
         openArticle("Long story")
         waitFor(element(AccessibilityID.readingBlock(0)))
-        Thread.sleep(forTimeInterval: 3)
-        for identifier in [
-            AccessibilityID.translateButton, AccessibilityID.displayModeMenu, AccessibilityID.bodyBanner, AccessibilityID.bodyProgress,
-            AccessibilityID.copyTranslationButton,
-        ] {
-            XCTAssertFalse(element(identifier).exists, "\(identifier) in the adult partition")
-        }
+        let banner = waitFor(element(AccessibilityID.bodyBanner))
+        XCTAssertTrue(button(AccessibilityID.bodyBannerOpenSettings).exists, banner.label)
         XCTAssertFalse(element(AccessibilityID.readingBlock(0)).label.contains("译["))
+        XCTAssertEqual(translationRequests, before, "a request was sent from the adult partition: \(report)")
         XCTAssertEqual(bodyRequests, 1, report)
+        XCTAssertEqual(adultBodyRequests, 0, report)
+        // Its Open Settings opens the adult slots, not the normal ones.
+        button(AccessibilityID.bodyBannerOpenSettings).tap()
+        waitFor(adultPrimaryRow)
+        XCTAssertFalse(element(AccessibilityID.primaryModelRow).exists, "the normal slots were opened")
 
-        // Reader mode in the adult partition: originals, nothing sent.
-        backToList()
+        // Reader mode, whose job names no article: originals, nothing sent.
         openSourceList("Full Text Feed", in: "Velvet")
         chooseFilter("All")
         openArticle("Fetched story")
@@ -136,9 +143,31 @@ final class TranslationPartitionTests: AdultTestCase {
         let title = waitFor(element(AccessibilityID.readerTitle))
         Thread.sleep(forTimeInterval: 3)
         XCTAssertFalse(title.label.contains("译["), title.label)
-        XCTAssertFalse(element(AccessibilityID.displayModeMenu).exists)
-        XCTAssertFalse(element(AccessibilityID.translateButton).exists)
-        XCTAssertFalse(element(AccessibilityID.bodyBanner).exists)
+        XCTAssertEqual(translationRequests, before, "a request was sent from the adult partition: \(report)")
         XCTAssertEqual(bodyRequests, 1, report)
+        XCTAssertEqual(adultBodyRequests, 0, report)
+
+        // An adult slot, set up in S10 with the normal slot's own values.
+        openAdultSettings()
+        waitFor(adultPrimaryRow).tap()
+        waitFor(button(AccessibilityID.saveButton))
+        fillForm(address: Isolation.translateAddress, model: Isolation.translator, key: Isolation.normalFixtureKey)
+        runTest(expecting: "Passed")
+        tapSave()
+        waitForAbsence(button(AccessibilityID.saveButton))
+
+        // The adult body is translated through it: adult usage rows only.
+        openSourceList("Body Feed", in: "Velvet")
+        openArticle("Long story")
+        XCTAssertTrue(translatedBlock.waitForExistence(timeout: 60), "the adult body was not translated with the adult slot: \(report)")
+        let adultRows = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in self.adultBodyRequests >= 1 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [adultRows], timeout: 20), .completed, report)
+        XCTAssertEqual(bodyRequests, 1, "a body request of the adult partition was recorded in the normal library: \(report)")
+    }
+
+    private var translatedBlock: XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier == %@ AND label BEGINSWITH %@", AccessibilityID.readingBlock(0), "译[zh-Hans]："
+        )).firstMatch
     }
 }

@@ -618,8 +618,8 @@ enum DebugAccessibilityID {
     /// scheduled=<yes|no> background=<none|notDue|collected|cancelled|failed|expired|released>
     /// runs=<number> adultOpens=<number> deliveries=<number> configuration=<none|normal|both>
     /// exportsWritten=<number> exportsEnded=<number> shareEnded=<none|intact|replaced|missing>@<number>
-    /// bodyRequests=<number> readerBlock=<number|none> bodyStartsInBackground=<number>
-    /// slotChanges=<number>`. `pool` is whether connections are open
+    /// bodyRequests=<number> adultBodyRequests=<number> readerBlock=<number|none>
+    /// bodyStartsInBackground=<number> slotChanges=<number>`. `pool` is whether connections are open
     /// on the file; the other three are whether the objects are gone from
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
@@ -636,7 +636,9 @@ enum DebugAccessibilityID {
     /// `exportsEnded` and `shareEnded` count configuration exports and say
     /// whether the last shared file was still the one written (RD20
     /// review round 2); `bodyRequests` is how many usage rows of body
-    /// requests the normal library holds (RD15 decision 16);
+    /// requests the normal library holds (RD15 decision 16), and
+    /// `adultBodyRequests` the adult library's (-1 while it is not open;
+    /// batch 3);
     /// `readerBlock` the block the reading screen last reported at its top
     /// (RD15 criterion 7); `bodyStartsInBackground` how many body jobs
     /// started while the application was in the background (RD15 review

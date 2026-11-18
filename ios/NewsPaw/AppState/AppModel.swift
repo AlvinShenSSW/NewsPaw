@@ -1493,6 +1493,7 @@ final class AppModel {
             + "exportsWritten=\(ConfigurationModel.debugExportsWritten) exportsEnded=\(ConfigurationModel.debugExportsEnded) "
             + "shareEnded=\(ConfigurationModel.debugShareEnded) "
             + "bodyRequests=\((try? await normal?.reading.library.usageCount(purpose: .body)) ?? -1) "
+            + "adultBodyRequests=\((try? await adult?.reading.library.usageCount(purpose: .body)) ?? -1) "
             + "readerBlock=\(normal?.reading.lastReportedPosition.map(String.init) ?? "none") "
             + "bodyStartsInBackground=\(BodyTranslationModel.startsInBackground) "
             + "slotChanges=\(BodyTranslationModel.slotChanges)"

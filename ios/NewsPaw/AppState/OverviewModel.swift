@@ -170,6 +170,12 @@ final class OverviewModel {
         return box.value
     }
 
+    /// How many due checks the writer was asked for (the debug report,
+    /// batch 4).
+    func dueCheckCount() async -> Int {
+        await chain.writer.dueChecks
+    }
+
     // MARK: - Triggers
 
     /// An entry into the app or the partition ended, after its refresh if

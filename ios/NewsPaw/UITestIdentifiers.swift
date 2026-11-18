@@ -654,7 +654,8 @@ enum DebugAccessibilityID {
     /// 4): its label is `file=<0|1> pool=<open|closed>
     /// library=<held|released> workspace=<none|held|released>
     /// browser=<none|held|released> sessions=<number> pages=<number>
-    /// translationRequests=<number> neverSent=<number> translateOn=<0|1>
+    /// translationRequests=<number> overviewRequests=<number> overviewDueChecks=<number>
+    /// neverSent=<number> translateOn=<0|1>
     /// seenAgain=<number> staleMirrors=<none|names> adultStore=<listed|absent>
     /// scheduled=<yes|no> background=<none|notDue|collected|cancelled|failed|expired|released>
     /// runs=<number> adultOpens=<number> deliveries=<number> configuration=<none|normal|both>
@@ -666,7 +667,9 @@ enum DebugAccessibilityID {
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
     /// requests the translator fixture has answered in this process (RD14
-    /// criterion 13); `neverSent` how many texts holding the sentinel
+    /// criterion 13), `overviewRequests` how many of them were overview
+    /// requests and `overviewDueChecks` how many due checks the normal
+    /// workspace's overview writer was asked for (batch 4); `neverSent` how many texts holding the sentinel
     /// `fixture:never` it received (RD16 criterion 5); `translateOn` whether
     /// a browser session has page translation on, and `seenAgain` how many
     /// times the normal workspace's sessions were told they are seen again

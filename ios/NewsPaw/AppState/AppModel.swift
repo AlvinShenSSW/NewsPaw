@@ -1610,6 +1610,7 @@ final class AppModel {
             + "pages=\((parts?.transport as? FixtureTransport)?.pageRequests ?? -1) "
             + "requests=\((parts?.transport as? FixtureTransport)?.requests ?? -1) "
             + "translationRequests=\(FixtureModelHTTP.translationRequests) "
+            + "overviewRequests=\(FixtureModelHTTP.overviewRequests) overviewDueChecks=\(await normal?.overviews.dueCheckCount() ?? -1) "
             + "adultStore=\(await adultStoreIsListed() ? "listed" : "absent") "
             + "scheduled=\((scheduler as? RecordingBackgroundScheduler)?.pending != nil ? "yes" : "no") "
             + "background=\(Self.reportName(of: lastBackgroundEnding)) "

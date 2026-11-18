@@ -155,6 +155,41 @@ final class BackgroundRefreshTests: AdultTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [written], timeout: Self.reportBound), .completed, summary.exists ? summary.label : "no summary")
     }
 
+    /// Batch 4, gate run 2: one overview due check per entry. With no
+    /// refresh recorded, the entry's refresh runs and its end makes the
+    /// check; the category's job fails at once (the fixture answers 429 to
+    /// "fixture:limit"), and no second check sends it again in that entry.
+    /// An entry with no refresh due makes one check of its own.
+    func testAnEntryMakesOneOverviewDueCheck() {
+        let application = XCUIApplication()
+        application.launchEnvironment[UITestLaunchKey.translationModels] = "primary"
+        launchDelivering(application)
+        createCategory("Limited")
+        addSource("https://translationwords.example.invalid/limit.xml", to: "Limited")
+        let checks = reported("overviewDueChecks")
+        let requests = reported("overviewRequests")
+        XCTAssertGreaterThanOrEqual(checks, 0, report)
+
+        // The entry's refresh runs (none is recorded yet); its end checks.
+        leaveAndReturn()
+        showToday()
+        let issue = element(AccessibilityID.overview("issue", "Limited"))
+        XCTAssertTrue(issue.waitForExistence(timeout: Self.reportBound), "no failure shown")
+        // Time for a second check, were one sent.
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertEqual(reported("overviewDueChecks"), checks + 1, report)
+        XCTAssertEqual(reported("overviewRequests"), requests + 1, "a second request in one entry: \(report)")
+
+        // An entry with no refresh due: its own one check.
+        leaveAndReturn()
+        let one = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            self.reported("overviewDueChecks") >= checks + 2
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [one], timeout: Self.reportBound), .completed, report)
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertEqual(reported("overviewDueChecks"), checks + 2, report)
+    }
+
     /// Category Settings › Overviews of `category`: Automatic, Manual or
     /// Off, saved.
     private func setOverviews(of category: String, to label: String) {

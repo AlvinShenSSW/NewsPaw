@@ -84,6 +84,13 @@ public final class FixtureModelHTTP: ModelHTTP {
         translationRequestCount.withLock { $0 }
     }
 
+    private static let overviewRequestCount = Mutex(0)
+
+    /// How many of those were overview requests (batch 4).
+    public static var overviewRequests: Int {
+        overviewRequestCount.withLock { $0 }
+    }
+
     /// The texts holding `Word.never` that the translator hosts received,
     /// for the UI tests' report (RD16 criterion 5).
     private static let neverSentCount = Mutex(0)
@@ -127,6 +134,9 @@ public final class FixtureModelHTTP: ModelHTTP {
             }
             Self.translationRequestCount.withLock { $0 += 1 }
             let (system, texts) = Self.messages(of: request.body)
+            if system.contains(OverviewPrompt.openingPhrase) {
+                Self.overviewRequestCount.withLock { $0 += 1 }
+            }
             let never = texts.filter { $0.contains(Word.never) }.count
             if never > 0 {
                 Self.neverSentCount.withLock { $0 += never }

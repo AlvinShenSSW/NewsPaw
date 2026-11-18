@@ -144,6 +144,10 @@ public actor OverviewWriter {
 
     // MARK: - The app's calls
 
+    /// How many due checks were asked of this writer (`runDue` calls): for
+    /// the UI tests' count of one check per entry (batch 4).
+    public private(set) var dueChecks = 0
+
     /// The reading locale the writer works in, as the last `configure` set
     /// it: for the UI tests' check that an import's change reached it.
     public var configuredLocale: ReadingLocale? {
@@ -168,6 +172,7 @@ public actor OverviewWriter {
     /// the slots and ends the hold if they differ from those held;
     /// otherwise it queues nothing and reports the due categories blocked.
     public func runDue() async {
+        dueChecks += 1
         // The one place a due check starts: never in the background (R1).
         guard !isStopped, isInFront, let locale else { return }
         if let held = hold {

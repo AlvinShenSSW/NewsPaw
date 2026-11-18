@@ -69,7 +69,7 @@ The first signed archive may need one registered device. If the driver asks:
 4. The first install on each device is the "fresh install" of the M1 walk. If NewsPaw was ever run on that device from Xcode, delete it first.
 5. NewsPaw › Settings › About shows the version and build, for example "0.1.0 (1012)".
 
-## 8. Upgrade over a previous build (O7)
+## 8. Upgrade over a previous build (O7) (to verify)
 
 1. When a newer build is ready, TestFlight › NewsPaw › Update. Never delete and reinstall: that is not an upgrade and loses the library.
 2. Then the upgrade check, section 2 of [device-checks.md](device-checks.md).
@@ -97,7 +97,7 @@ Never send, and never let the driver record: a source address, a site name, a ke
 
 ## 11. Build log
 
-One row per build archived. Entitlements are never pasted here unmasked. "Authorised by" quotes the owner's message and its date.
+One row per build archived. Entitlements are never pasted here unmasked, and a quoted error message (from `xcodebuild`, Xcode or App Store Connect) has the team masked as `<team>`; the scripts print `xcodebuild`'s output masked already. "Authorised by" quotes the owner's message and its date.
 
 | Version | Build | Commit | Archived | Uploaded | Authorised by | Processing result | Expires | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |

@@ -8,7 +8,7 @@ Devices: **P** = iPhone 18 Pro Max, **M** = iPad mini (8th generation), **I** = 
 
 1. A check is done only on a real device with a TestFlight build, or with a debug build where the row says so (rule 6). The simulator never counts.
 2. Status values: `not done`; `done` with device model, system version, build and date; `failed → #<issue>`; `declined` with the reason (the owner chose not to do it).
-3. Nothing private, ever — the repository is public: no source address, site name, account, key, model name beyond the service preset, content of the adult partition, team identifier, Apple ID, device name or serial number, or tester's e-mail. A note is one neutral sentence.
+3. Nothing private, ever — the repository is public: no source address, site name, account, key, model name beyond the service preset, content of the adult partition, team identifier, Apple ID, device name or serial number, or tester's e-mail. A quoted error message has the team masked as `<team>`. A note is one neutral sentence.
 4. The driver records results from the owner's reports, in documentation-only pull requests. A failure gets its issue before it is recorded.
 5. An item owed by several pull requests is one row naming each source. Nothing owed is dropped; a row may be split.
 6. A debug build on an owner's device is built from the commit of the TestFlight build installed there, only after that device's M1 walk and upgrade check, and the TestFlight build is reinstalled from TestFlight afterwards. A debug build from a later commit could carry a newer migration and leave the library unreadable by the TestFlight build. Whether a development install keeps the app's data is not yet known.

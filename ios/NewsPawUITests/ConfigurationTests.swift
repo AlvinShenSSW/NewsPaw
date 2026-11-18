@@ -413,12 +413,13 @@ final class ConfigurationTests: AdultTestCase {
     // MARK: - Batch 2: the import's write is a partition operation
 
     /// A Replace confirmed inside the adult partition, then a lock while the
-    /// write's completion waits: back in the normal partition, Settings ›
+    /// write's completion waits (60 s: on the iPad mini Data is reached about
+    /// 20 s after the confirmation): back in the normal partition, Settings ›
     /// Data's Import OPML — a change of the library's categories and
     /// sources — is dimmed until the import's operation has ended (RD19's
     /// table with the import's row).
     func testLibraryEditsWaitForAnImportsWrite() {
-        launchReading("both", authentication: ["passed", "passed", "passed"], writePause: 20)
+        launchReading("both", authentication: ["passed", "passed", "passed"], writePause: 60)
         turnOnAdult()
         enterAdult()
         openDataSettings()
@@ -431,7 +432,7 @@ final class ConfigurationTests: AdultTestCase {
         let opml = waitFor(button(AccessibilityID.importOPMLButton))
         XCTAssertFalse(opml.isEnabled, "Import OPML could be used while the import's write ran")
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: opml)
-        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 90), .completed, "Import OPML stayed dimmed after the import")
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 150), .completed, "Import OPML stayed dimmed after the import")
     }
 
     // MARK: - Review round 2, P2: a lock while the summary is shown

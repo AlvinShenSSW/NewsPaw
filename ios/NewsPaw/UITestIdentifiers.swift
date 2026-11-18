@@ -628,7 +628,7 @@ enum DebugAccessibilityID {
     /// library=<held|released> workspace=<none|held|released>
     /// browser=<none|held|released> sessions=<number> pages=<number>
     /// translationRequests=<number> neverSent=<number> translateOn=<0|1>
-    /// seenAgain=<number> adultStore=<listed|absent>
+    /// seenAgain=<number> staleMirrors=<none|names> adultStore=<listed|absent>
     /// scheduled=<yes|no> background=<none|notDue|collected|cancelled|failed|expired|released>
     /// runs=<number> adultOpens=<number> deliveries=<number> configuration=<none|normal|both>
     /// exportsWritten=<number> exportsEnded=<number> shareEnded=<none|intact|replaced|missing>@<number>
@@ -643,7 +643,9 @@ enum DebugAccessibilityID {
     /// `fixture:never` it received (RD16 criterion 5); `translateOn` whether
     /// a browser session has page translation on, and `seenAgain` how many
     /// times the normal workspace's sessions were told they are seen again
-    /// (RD16); `adultStore` is whether WebKit lists the adult
+    /// (RD16); `staleMirrors` the settings of the configuration file whose
+    /// in-memory mirror differs from what is stored (batch 3);
+    /// `adultStore` is whether WebKit lists the adult
     /// browser's own website data store (RD19); `scheduled` is whether a
     /// background request is pending, `background` how the last background
     /// run ended, `runs` how many background runs the record holds for the

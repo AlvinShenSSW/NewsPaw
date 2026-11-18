@@ -1469,6 +1469,51 @@ final class AppModel {
 
     // MARK: - The UI tests' report (decision 4)
 
+    /// The settings the configuration file carries whose in-memory mirror
+    /// differs from what is stored (batch 3): after an import every mirror
+    /// has been read again, so this is empty. One case per setting of the
+    /// file, global and per partition (`ConfigurationSettingName`): a
+    /// setting added to the file without a case here does not compile.
+    private func staleSettingMirrors() async -> [String] {
+        guard let preferences, let parts else { return ["unavailable"] }
+        var stale: [String] = []
+        for name in ConfigurationSettingName.allCases {
+            switch name {
+            case .refreshMinutes, .retentionDays, .backgroundRefresh, .readingLocale, .autoTranslateTitles, .showOriginalTitles,
+                 .translateBodyOnOpen:
+                let current: Bool = switch name {
+                case .refreshMinutes: parts.refreshSettings.interval == preferences.refreshInterval
+                case .retentionDays: parts.refreshSettings.retention == preferences.retention
+                case .backgroundRefresh: parts.refreshSettings.backgroundRefresh == preferences.backgroundRefresh
+                case .readingLocale: parts.translationSettings.readingLocale == preferences.readingLocale
+                case .autoTranslateTitles: parts.translationSettings.translatesTitlesAutomatically == preferences.autoTranslateTitles
+                case .showOriginalTitles: parts.translationSettings.showsOriginalTitles == preferences.showOriginalTitles
+                case .translateBodyOnOpen: parts.translationSettings.translatesBodyOnOpen == preferences.translatesBodyOnOpen
+                default: true
+                }
+                if !current {
+                    stale.append(name.rawValue)
+                }
+            case .dailyAutoLimit:
+                // No mirror: the limit is read from the library at each use.
+                break
+            case .listThumbnails:
+                for workspace in [normal, adult].compactMap(\.self) {
+                    let stored = try? await workspace.reading.library.listThumbnails()
+                    if stored != workspace.reading.showsThumbnails {
+                        stale.append("\(workspace.partition.rawValue).\(name.rawValue)")
+                    }
+                }
+            }
+        }
+        return stale
+    }
+
+    private func staleMirrorsReport() async -> String {
+        let stale = await staleSettingMirrors()
+        return stale.isEmpty ? "none" : stale.joined(separator: ",")
+    }
+
     /// Whether a browser session of either workspace has page
     /// translation on (RD16): the bottom bar's button does not pass its
     /// accessibility value to the UI tests.
@@ -1523,6 +1568,7 @@ final class AppModel {
             + "neverSent=\(FixtureModelHTTP.neverSent) "
             + "translateOn=\(pageTranslationIsOn ? 1 : 0) "
             + "seenAgain=\(pageTranslationSeenAgain) "
+            + "staleMirrors=\(await staleMirrorsReport()) "
             + "bodyRequests=\((try? await normal?.reading.library.usageCount(purpose: .body)) ?? -1) "
             + "adultBodyRequests=\((try? await adult?.reading.library.usageCount(purpose: .body)) ?? -1) "
             + "pageRequests=\((try? await normal?.reading.library.usageCount(purpose: .page)) ?? -1) "

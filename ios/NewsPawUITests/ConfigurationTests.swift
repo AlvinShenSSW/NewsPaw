@@ -274,6 +274,12 @@ final class ConfigurationTests: AdultTestCase {
         XCTAssertFalse(app.alerts.firstMatch.exists)
         replaceEverything(expectingOnlyNormal: true)
         waitFor(button(AccessibilityID.configurationDoneButton))
+        // Batch 3: the file changes every setting it carries from its
+        // default; each in-memory mirror is current without a relaunch.
+        let current = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            self.report.contains("staleMirrors=none ")
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [current], timeout: 10), .completed, report)
         screenshot("summary-replace")
         leaveSummary()
         waitForCategory("Hidden Stuff")

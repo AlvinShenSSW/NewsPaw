@@ -69,6 +69,7 @@ final class TranslationSettings {
         let locale = preferences.readingLocale
         let automatic = preferences.autoTranslateTitles
         let original = preferences.showOriginalTitles
+        let bodyOnOpen = preferences.translatesBodyOnOpen
         if locale != readingLocale {
             readingLocale = locale
         }
@@ -77,6 +78,11 @@ final class TranslationSettings {
         }
         if original != showsOriginalTitles {
             showsOriginalTitles = original
+        }
+        // RD15's switch (batch 3): BodyTranslationModel reads it at each
+        // opening.
+        if bodyOnOpen != translatesBodyOnOpen {
+            translatesBodyOnOpen = bodyOnOpen
         }
     }
 

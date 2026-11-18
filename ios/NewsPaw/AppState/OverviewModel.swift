@@ -163,6 +163,13 @@ final class OverviewModel {
 
     // MARK: - Triggers
 
+    /// An entry into the app or the partition ended, after its refresh if
+    /// one was due (RD24's handoff): the cards are read, then the due
+    /// categories are written, as at a run's end.
+    func entered() {
+        runEnded()
+    }
+
     /// A foreground refresh run ended: the cards are read, then the due
     /// categories are written.
     func runEnded() {

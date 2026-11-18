@@ -119,6 +119,59 @@ final class BackgroundRefreshTests: AdultTestCase {
         XCTAssertEqual(reported("adultOpens"), adultOpens, report)
     }
 
+    // MARK: - Overviews (RD23 with RD24's handoff; batch 4)
+
+    /// A background run collects but writes no overview (RD24: no
+    /// overviews in the background); the next entry into the app, with no
+    /// refresh due, writes it without a pull (RD24's handoff to RD23).
+    /// World is Manual while its source is added and the schedule is made,
+    /// so that no entry before the run writes its overview first.
+    func testABackgroundRunWritesNoOverviewAndTheNextEntryDoes() {
+        let application = XCUIApplication()
+        application.launchEnvironment[UITestLaunchKey.translationModels] = "primary"
+        launchDelivering(application)
+        createCategory("World")
+        setOverviews(of: "World", to: "Manual")
+        addSource(Fixture.counting, to: "World")
+        leaveAndReturn()
+        waitForReport("scheduled=yes", "runs=0", "background=none")
+        setOverviews(of: "World", to: "Automatic")
+
+        showToday()
+        deliver()
+        waitForReport("background=collected", "runs=1", seconds: Self.reportBound)
+        let summary = element(AccessibilityID.overview("summary", "World"))
+        // The run's articles are counted on the card; nothing was written.
+        waitFor(element(AccessibilityID.overview("newCount", "World")))
+        XCTAssertFalse(summary.exists, "a background run wrote an overview")
+
+        // The next entry: the run has just collected, so no refresh is due;
+        // the entry's due check writes the overview.
+        leaveAndReturn()
+        showToday()
+        let written = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            summary.exists && summary.label.contains("概览[zh-Hans]：")
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [written], timeout: Self.reportBound), .completed, summary.exists ? summary.label : "no summary")
+    }
+
+    /// Category Settings › Overviews of `category`: Automatic, Manual or
+    /// Off, saved.
+    private func setOverviews(of category: String, to label: String) {
+        openCategoryList(category)
+        openListSettings(source: false)
+        waitFor(app.textFields[AccessibilityID.nameField])
+        let picker = scrollTo(button(AccessibilityID.overviewModePicker))
+        picker.tap()
+        waitFor(app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch).tap()
+        let chosen = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            picker.exists && ((picker.value as? String)?.contains(label) == true || picker.label.contains(label))
+        }, object: nil)
+        _ = XCTWaiter.wait(for: [chosen], timeout: timeout)
+        tapSave()
+        waitForAbsence(app.textFields[AccessibilityID.nameField])
+    }
+
     // MARK: - Test 2: the switch
 
     /// Settings › Refresh: Background Refresh is on, with its footer and

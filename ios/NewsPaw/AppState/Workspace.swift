@@ -225,6 +225,12 @@ final class Workspace: Identifiable {
             translation?.refreshEnded()
             overviews?.runEnded()
         }
+        // Every entry into the app or the partition — launch, return to the
+        // front, unlock — ends with the overviews' due check, whether or not
+        // a refresh ran (RD24's handoff to RD23): what a background run
+        // collected is written without a pull. Out of front it sends nothing
+        // (`AppFront`).
+        refresh.onEntered = { [weak overviews] in overviews?.entered() }
         sources.onSettingsSaved = { [weak reading] in reading?.sourceSettingsSaved() }
         navigation.onListEntered = { [weak reading] list in reading?.entered(list) }
         navigation.onSearchStarted = { [weak reading] in reading?.dropSearch() }

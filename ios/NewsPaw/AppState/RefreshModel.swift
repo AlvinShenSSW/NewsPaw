@@ -45,6 +45,9 @@ final class RefreshModel {
     /// Told when a run has ended and the lists have been read again, so
     /// that an article list at its top reads itself again (RD09 decision 3).
     @ObservationIgnored var onRunEnded: (@MainActor () -> Void)?
+    /// Called at the end of every entry (`entered()`), after its run if one
+    /// was due, never by a background run.
+    @ObservationIgnored var onEntered: (@MainActor () -> Void)?
 
     @ObservationIgnored private let library: Library
     @ObservationIgnored private let settings: RefreshSettings
@@ -80,7 +83,20 @@ final class RefreshModel {
     ///
     /// An entry that a lock overtakes ends at its next step: a dropped
     /// workspace starts no run.
+    ///
+    /// Every entry ends with `onEntered`, whether or not a run was made
+    /// (RD23 with RD24's handoff): the overviews' due check, so that the
+    /// articles a background run collected get their overview without a
+    /// pull.
     func entered() async {
+        await cleanUpAndRefreshIfDue()
+        guard !isStopped else { return }
+        onEntered?()
+    }
+
+    private func cleanUpAndRefreshIfDue() async {
+        guard !isStopped else { return }
+        _ = try? await library.cleanUpOverviews(before: OverviewDay.oldestKept(now(), calendar: calendar))
         guard !isStopped else { return }
         _ = try? await library.cleanUpOverviews(before: OverviewDay.oldestKept(now(), calendar: calendar))
         guard !isStopped else { return }

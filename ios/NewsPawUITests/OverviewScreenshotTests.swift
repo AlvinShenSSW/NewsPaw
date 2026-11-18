@@ -34,6 +34,13 @@ final class OverviewScreenshotTests: OverviewTestCase {
 
     private var count = 0
 
+    /// Landscape on an iPad, where Today has two columns; portrait at the
+    /// largest text size, where the landscape sidebar does not show the
+    /// category rows the steps open (seen in review round 2's run).
+    private func orientation(_ capture: Capture) -> UIDeviceOrientation {
+        isPad && capture.variant != "largest-text" ? .landscapeLeft : .portrait
+    }
+
     private func shoot(_ capture: Capture, _ name: String) {
         count += 1
         let url = URL(fileURLWithPath: capture.directory)
@@ -43,7 +50,7 @@ final class OverviewScreenshotTests: OverviewTestCase {
 
     func testCaptureOverviewScreens() throws {
         let capture = try capture()
-        let landscape: UIDeviceOrientation = isPad ? .landscapeLeft : .portrait
+        let landscape = orientation(capture)
         // Set up in English at the default size: a done overview with
         // seeded earlier ones, a refused one, a manual category with new
         // articles, a slow manual one, a category with no source, and one
@@ -154,7 +161,7 @@ final class OverviewScreenshotTests: OverviewTestCase {
         let capture = try capture()
         launchOverviews(models: nil)
         addFeed(Translation.feed, to: Translation.category)
-        launchOverviews(models: nil, arguments: capture.arguments, isPad ? .landscapeLeft : .portrait)
+        launchOverviews(models: nil, arguments: capture.arguments, orientation(capture))
         showToday()
         waitFor(part("noModel", Translation.category))
         shoot(capture, "today-no-model")

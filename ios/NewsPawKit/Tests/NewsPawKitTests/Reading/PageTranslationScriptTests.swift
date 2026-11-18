@@ -605,7 +605,7 @@ struct PageTranslationScriptTests {
         let below = Self.longLine("下の箱の外に隠れた縦書きの文章です")
         let page = ScriptPage()
         await page.load("""
-            <!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+            <!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
             <style>body{margin:0} .box{position:absolute;overflow:hidden} p{white-space:nowrap;margin:0}
             .tall{writing-mode:vertical-rl}</style></head><body>
             <p>見える段落の文です</p>
@@ -615,6 +615,10 @@ struct PageTranslationScriptTests {
             <div class="box" style="left:80px;top:3000px;width:40px;height:200px"><p class="tall" style="margin-top:-2800px">\(below)</p></div>
             </body></html>
             """)
+        // The scale is held at 1: iOS would otherwise zoom out to the boxes
+        // placed beyond the view (to 1,200 by 2,154), bringing them into it.
+        let view = try await page.pageString("return innerWidth + 'x' + innerHeight")
+        #expect(view == "390x700", "the view is \(view)")
         // The shapes are as described: each unclipped rectangle crosses the
         // view.
         let crossing = try await page.pageString("""

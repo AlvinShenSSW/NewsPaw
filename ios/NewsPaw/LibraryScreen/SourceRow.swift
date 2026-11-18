@@ -91,16 +91,21 @@ struct SourceRow: View {
                 Button("Source Settings", systemImage: "gearshape") {
                     presentSheet { sources.beginSettings(source.id) }
                 }
+                // Not while a category move runs anywhere in the app (RD19
+                // review round 4): it copies and deletes sources.
                 if source.isFeedLike {
                     if source.paused {
                         Button("Resume", systemImage: "play") { sources.setPaused(source.id, false) }
+                            .disabled(sources.editsAreRefused)
                     } else {
                         Button("Pause", systemImage: "pause") { sources.setPaused(source.id, true) }
+                            .disabled(sources.editsAreRefused)
                     }
                 }
                 Button("Delete", systemImage: "trash", role: .destructive) {
                     sources.requestDeletion(source.id)
                 }
+                .disabled(sources.editsAreRefused)
             }
     }
 

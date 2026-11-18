@@ -1,13 +1,14 @@
 import SwiftUI
 
 /// A destination's truthful empty state: a symbol and a title, an optional
-/// line under it, and an optional button below them.
+/// line under it, and up to two buttons below them.
 struct EmptyStateView: View {
     let title: Text
     let systemImage: String
     let identifier: String
     var detail: Text?
     var action: Action?
+    var secondaryAction: Action?
 
     struct Action {
         let title: Text
@@ -35,7 +36,7 @@ struct EmptyStateView: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier(identifier)
-            if let action {
+            ForEach([action, secondaryAction].compactMap { $0 }, id: \.identifier) { action in
                 Button(action: action.perform) {
                     action.title
                         .frame(minWidth: Theme.minimumTapTarget, minHeight: Theme.minimumTapTarget)

@@ -78,9 +78,11 @@ struct FirstRunModelStep: View {
 }
 
 /// Step 3 (decision 6), in ux S12's order: "Add a Source…", which opens
-/// Add source with its suggested sources, and "Import OPML…" (RD08's
-/// import, its file picker, preview and summary presented on this step),
-/// then the six suggested
+/// Add source with its suggested sources, "Import OPML…" (RD08's import,
+/// its file picker, preview and summary presented on this step) and
+/// "Import Configuration…" (RD20's import with the first run's origin: the
+/// normal partition only, no question about the adult one), then the six
+/// suggested
 /// categories, all off, each with its icon; one that exists already by its
 /// name shows "Added" and cannot be unticked. The ticked categories are
 /// created by the first run when "Add a Source…" or Done is tapped.
@@ -88,6 +90,7 @@ struct FirstRunSourcesStep: View {
     @Environment(\.accent) private var accent
     @Environment(CategoryModel.self) private var categories
     @Environment(SourceModel.self) private var sources
+    @Environment(ConfigurationModel.self) private var configuration
     /// The icon's column grows with the text, so that at the accessibility
     /// sizes the symbol neither overlaps the name nor reaches the row's
     /// edge.
@@ -127,6 +130,25 @@ struct FirstRunSourcesStep: View {
                 }
                 .disabled(isCreating || sources.opmlImport?.stage == .reading)
                 .accessibilityIdentifier(AccessibilityID.firstRunImportOPML)
+                // RD20's import (ux S12; RD20 criterion 16): its file
+                // picker, preview and summary are presented at the root,
+                // above this step.
+                Button {
+                    configuration.beginImport(from: .firstRun)
+                } label: {
+                    HStack {
+                        Label("Import Configuration…", systemImage: "square.and.arrow.down.on.square")
+                            .foregroundStyle(accent)
+                        if configuration.origin == .firstRun, configuration.stage == .reading {
+                            Spacer(minLength: Theme.Spacing.small)
+                            ProgressView()
+                        }
+                    }
+                    .frame(minHeight: Theme.minimumTapTarget, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .disabled(isCreating || !configuration.canBeginImport)
+                .accessibilityIdentifier(AccessibilityID.firstRunImportConfiguration)
             } header: {
                 Text("Add Your Own")
                     .foregroundStyle(Theme.secondaryText)

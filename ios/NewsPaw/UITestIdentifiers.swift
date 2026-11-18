@@ -299,6 +299,9 @@ enum AccessibilityID {
     static let usageToday = "usage.today"
     static let usageLimitReached = "usage.limitReached"
     static let dailyLimitPicker = "usage.limit"
+    /// S10's Daily Automatic Limit row, inside the adult partition (RD19
+    /// decision 12).
+    static let adultDailyLimitRow = "adult.dailyLimit"
 
     /// The header of a model's section.
     static func usageModel(_ name: String) -> String {
@@ -314,6 +317,9 @@ enum AccessibilityID {
     static let todayStatus = "today.status"
     static let failedSourcesButton = "today.failedSources"
     static let refreshRow = "settings.refresh"
+    // Background refresh (RD24)
+    static let backgroundRefreshToggle = "refresh.background"
+    static let backgroundRuns = "refresh.backgroundRuns"
 
     // Models & Translation (RD13)
     static let modelsRow = "settings.models"
@@ -358,6 +364,73 @@ enum AccessibilityID {
     static let lockTimingPicker = "adult.lockTiming"
     static let turnOffAdultButton = "adult.turnOff"
 
+    // Adult partition isolation (RD19)
+    static let adultPrimaryModelRow = "adult.primaryModel"
+    static let adultBackupModelRow = "adult.backupModel"
+    static let adultBackupNeedsPrimary = "adult.backupNeedsPrimary"
+    static let showThumbnailsToggle = "adult.showThumbnails"
+    static let clearBrowsingDataButton = "adult.clearBrowsingData"
+    static let confirmClearBrowsingDataButton = "adult.confirmClearBrowsingData"
+    static let browsingDataCleared = "adult.browsingDataCleared"
+    static let adultSettingsElsewhere = "adult.settingsElsewhere"
+    static let moveCategoryButton = "editor.moveToOtherPartition"
+    static let confirmMoveButton = "move.confirm"
+
+    // Configuration file (RD20)
+    static let exportConfigurationButton = "data.exportConfiguration"
+    static let importConfigurationButton = "data.importConfiguration"
+    static let includeAdultToggle = "data.includeAdult"
+    static let addSourceImportConfigurationButton = "add.importConfiguration"
+    static let configurationHeader = "configuration.header"
+    static let configurationAdultSkipped = "configuration.adultSkipped"
+    static let configurationSettingsRow = "configuration.settings"
+    static let configurationMergeButton = "configuration.merge"
+    static let configurationReplaceEverythingButton = "configuration.replaceEverything"
+    static let configurationNothingNew = "configuration.nothingNew"
+    static let configurationCancelButton = "configuration.cancel"
+    static let configurationFailure = "configuration.failure"
+    static let configurationOnlyNormal = "configuration.onlyNormal"
+    static let configurationReplaceButton = "configuration.replace"
+    static let configurationPartial = "configuration.partial"
+    static let configurationDoneButton = "configuration.done"
+
+    // The helpers below take a partition's raw value (`normal`, `adult`)
+    // and a role's (`primary`, `backup`).
+
+    static func configurationCounts(_ partition: String) -> String {
+        "configuration.counts." + partition
+    }
+
+    /// `group`: `new`, `alreadyHere` or `conflicts`.
+    static func configurationGroup(_ group: String, _ partition: String) -> String {
+        "configuration.group.\(group).\(partition)"
+    }
+
+    static func configurationDeletedSources(_ partition: String) -> String {
+        "configuration.deletedSources." + partition
+    }
+
+    static func configurationDeletedArticles(_ partition: String) -> String {
+        "configuration.deletedArticles." + partition
+    }
+
+    static func configurationRemovedKey(_ partition: String, _ role: String) -> String {
+        "configuration.removedKey.\(partition).\(role)"
+    }
+
+    static func configurationKeysNeeded(_ partition: String) -> String {
+        "configuration.keysNeeded." + partition
+    }
+
+    /// `row`: `added`, `alreadyHere`, `changed` or `deleted`.
+    static func configurationSummaryRow(_ row: String, _ partition: String) -> String {
+        "configuration.summary.\(row).\(partition)"
+    }
+
+    static func configurationSetUpKeys(_ partition: String) -> String {
+        "configuration.setUpKeys." + partition
+    }
+
     /// A preset's row in the form's service picker.
     static func presetOption(_ rawValue: String) -> String {
         "slot.preset." + rawValue
@@ -380,6 +453,7 @@ enum AccessibilityID {
     static let firstRunPrimaryModel = "firstRun.primaryModel"
     static let firstRunAddSource = "firstRun.addSource"
     static let firstRunImportOPML = "firstRun.importOPML"
+    static let firstRunImportConfiguration = "firstRun.importConfiguration"
     static let firstRunCategoryPrefix = "firstRun.category."
 
     /// A suggested category's row in the first run, by its group's raw value.
@@ -389,6 +463,8 @@ enum AccessibilityID {
 
     // Today with no source (RD21 decision 10)
     static let todayAddSourceButton = "today.addSource"
+    /// "Import Configuration" under it (ux S1; RD20 with RD21).
+    static let todayImportConfigurationButton = "today.importConfiguration"
 
     // About's licences (RD21 decision 9)
     static let licenceText = "licence.text"
@@ -443,6 +519,18 @@ enum UITestLaunchKey {
     /// instead of presenting the file picker (RD08 decision 8); honoured
     /// only with `libraryDirectory`.
     static let opmlFixture = "NEWSPAW_UITEST_OPML_FIXTURE"
+    /// `both`, `normal` or `refused`: "Import Configuration" reads that
+    /// fixture file instead of presenting the file picker (RD20 decision
+    /// 10); honoured only with `libraryDirectory`.
+    static let configurationFixture = "NEWSPAW_UITEST_CONFIGURATION_FIXTURE"
+    /// A number of seconds a configuration import waits between its write
+    /// and its completion (RD20 criterion 13); honoured only with
+    /// `libraryDirectory`.
+    static let configurationWritePause = "NEWSPAW_UITEST_CONFIGURATION_WRITE_PAUSE"
+    /// `bytes` or `write`: where the adult workspace's configuration
+    /// export waits (RD20 review round 2); honoured only with
+    /// `libraryDirectory`.
+    static let configurationExportHold = "NEWSPAW_UITEST_CONFIGURATION_EXPORT_HOLD"
     /// "primary" or "primary,backup": the translator fixture's models are
     /// set up in the normal library at launch (RD14). Honoured only with
     /// `libraryDirectory`, and only while the library has no model.
@@ -454,10 +542,23 @@ enum UITestLaunchKey {
     /// honoured only with `libraryDirectory`. Without it a UI-test launch
     /// starts on the shell.
     static let firstRun = "NEWSPAW_UITEST_FIRST_RUN"
+    /// "1" makes the deletion of the next category move fail (RD19);
+    /// honoured only with `libraryDirectory`.
+    static let failNextMoveDeletion = "NEWSPAW_UITEST_FAIL_NEXT_MOVE_DELETION"
+    /// A number of seconds a category move waits between its copy and its
+    /// deletion (RD19); honoured only with `libraryDirectory`.
+    static let moveStepPause = "NEWSPAW_UITEST_MOVE_STEP_PAUSE"
+    /// A number of seconds Clear Browsing Data waits before it clears
+    /// (review round 2); honoured only with `libraryDirectory`.
+    static let clearPause = "NEWSPAW_UITEST_CLEAR_PAUSE"
     /// "1" inserts five usage rows of the model `seed-<partition>` into the
     /// normal library at launch and into the adult library at each unlock
     /// (RD17 decision 8); honoured only with `libraryDirectory`.
     static let seedUsage = "NEWSPAW_UITEST_SEED_USAGE"
+    /// "1" shows the "Deliver background refresh" control (RD24 decision
+    /// 9; review R3), so that no other test's tap can land on it; honoured
+    /// only with `libraryDirectory`.
+    static let backgroundDelivery = "NEWSPAW_UITEST_BACKGROUND_DELIVERY"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.
@@ -466,12 +567,29 @@ enum DebugAccessibilityID {
     /// 4): its label is `file=<0|1> pool=<open|closed>
     /// library=<held|released> workspace=<none|held|released>
     /// browser=<none|held|released> sessions=<number> pages=<number>
-    /// translationRequests=<number>`. `pool` is whether connections are open
+    /// translationRequests=<number> adultStore=<listed|absent>
+    /// scheduled=<yes|no> background=<none|notDue|collected|cancelled|failed|expired|released>
+    /// runs=<number> adultOpens=<number> deliveries=<number> configuration=<none|normal|both>
+    /// exportsWritten=<number> exportsEnded=<number> shareEnded=<none|intact|replaced|missing>@<number>`.
+    /// `pool` is whether connections are open
     /// on the file; the other three are whether the objects are gone from
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
     /// requests the translator fixture has answered in this process (RD14
-    /// criterion 13).
+    /// criterion 13); `adultStore` is whether WebKit lists the adult
+    /// browser's own website data store (RD19); `scheduled` is whether a
+    /// background request is pending, `background` how the last background
+    /// run ended, `runs` how many background runs the record holds for the
+    /// last 7 days, `adultOpens` how many times the adult library was asked
+    /// of the store, `deliveries` how many taps of "Deliver background
+    /// refresh" were handled (RD24); `configuration` is what the normal
+    /// workspace's configuration import holds: no document, one without an
+    /// adult part, or one with it (RD20 criterion 9); `exportsWritten`,
+    /// `exportsEnded` and `shareEnded` count configuration exports and say
+    /// whether the last shared file was still the one written (RD20
+    /// review round 2).
     static let adultReport = "debug.adultReport"
+    /// "Deliver background refresh" (RD24 decision 9).
+    static let deliverBackgroundRefresh = "debug.deliverBackgroundRefresh"
 }
 #endif

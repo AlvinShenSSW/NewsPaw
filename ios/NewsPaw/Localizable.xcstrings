@@ -23,6 +23,124 @@
         }
       }
     },
+    "%lld articles, %lld of them starred" : {
+      "comment" : "Review before replacing: articles deleted with their sources, and how many of them are starred.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%#@articles@, %#@starred@"
+          },
+          "substitutions" : {
+            "articles" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg article"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg articles"
+                    }
+                  }
+                }
+              }
+            },
+            "starred" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg of them starred"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg of them starred"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 篇文章，其中 %lld 篇已收藏"
+          }
+        }
+      }
+    },
+    "%lld categories · %lld sources" : {
+      "comment" : "Configuration import: numbers of categories and of sources.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%#@categories@ · %#@sources@"
+          },
+          "substitutions" : {
+            "categories" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg category"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg categories"
+                    }
+                  }
+                }
+              }
+            },
+            "sources" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg source"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg sources"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个分类 · %lld 个来源"
+          }
+        }
+      }
+    },
     "%lld input tokens" : {
       "comment" : "Usage screen: input tokens the services reported, summed.",
       "localizations" : {
@@ -51,6 +169,41 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld 个输入 token"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld models need a key." : {
+      "comment" : "Configuration import summary: models without a usable key.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld model needs a key."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld models need a key."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "有 %lld 个模型需要 Key。"
                 }
               }
             }
@@ -231,6 +384,17 @@
         }
       }
     },
+    "A backup model has no primary model (%@)." : {
+      "comment" : "Configuration import refusal; %@ is a position such as “model 2”.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有备用模型没有对应的主模型（%@）。"
+          }
+        }
+      }
+    },
     "A key can contain only English letters, digits and symbols, on one line." : {
       "comment" : "Footer of the key field in the model form when the typed key has a line break, a control or a non-ASCII character.",
       "localizations" : {
@@ -238,6 +402,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Key 只能包含英文字母、数字和符号，且只能有一行。"
+          }
+        }
+      }
+    },
+    "A model service address is not https (%@)." : {
+      "comment" : "Configuration import refusal; %@ is a position such as “model 1”.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有模型服务地址不是 https（%@）。"
+          }
+        }
+      }
+    },
+    "A name is empty or too long (%@)." : {
+      "comment" : "Configuration import refusal; %@ is a position such as “category 3”.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有名称为空或过长（%@）。"
+          }
+        }
+      }
+    },
+    "A value is not one this version of NewsPaw knows (%@)." : {
+      "comment" : "Configuration import refusal; %@ is a position such as “source 12” or “settings”.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有取值是这个版本的 NewsPaw 不认识的（%@）。"
           }
         }
       }
@@ -352,6 +549,17 @@
         }
       }
     },
+    "Address differs" : {
+      "comment" : "Configuration import: what differs between the file's model and this device's.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地址不同"
+          }
+        }
+      }
+    },
     "Addresses with a user name or password cannot be added." : {
       "comment" : "Message under the address field.",
       "localizations" : {
@@ -451,6 +659,17 @@
         }
       }
     },
+    "Already Here" : {
+      "comment" : "Configuration import preview group: entries this device already has, unchanged.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已存在"
+          }
+        }
+      }
+    },
     "Already in %@" : {
       "comment" : "OPML import, a skipped entry. %@ is the category that holds the address.",
       "localizations" : {
@@ -458,6 +677,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已在“%@”中"
+          }
+        }
+      }
+    },
+    "Already in the adult partition, so they stay here in “%@”: %@" : {
+      "comment" : "Part of the confirmation of moving a category: the sources that stay; the arguments are the category's name and the sources' names.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以下来源在成人分区中已存在，因此留在这里的“%@”中：%@"
+          }
+        }
+      }
+    },
+    "Already in the normal partition, so they stay here in “%@”: %@" : {
+      "comment" : "Part of the confirmation of moving a category: the sources that stay; the arguments are the category's name and the sources' names.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以下来源在普通分区中已存在，因此留在这里的“%@”中：%@"
           }
         }
       }
@@ -480,6 +721,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "总是抓取网页"
+          }
+        }
+      }
+    },
+    "An address is listed twice in one partition (%@)." : {
+      "comment" : "Configuration import refusal; %@ is a position such as “source 12”.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同一分区中有地址重复出现（%@）。"
+          }
+        }
+      }
+    },
+    "An address is not an http or https address (%@)." : {
+      "comment" : "Configuration import refusal; %@ is a position such as “source 12”.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有地址不是 http 或 https 地址（%@）。"
+          }
+        }
+      }
+    },
+    "An entry refers to a category that is not in the file (%@)." : {
+      "comment" : "Configuration import refusal; %@ is a position such as “source 12”.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有条目引用了文件中不存在的分类（%@）。"
           }
         }
       }
@@ -550,6 +824,17 @@
         }
       }
     },
+    "Background Refresh" : {
+      "comment" : "Settings › Refresh: the switch that lets the system refresh the library in the background (RD24).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "后台刷新"
+          }
+        }
+      }
+    },
     "Backup Model" : {
       "comment" : "Settings › Models & Translation: the backup model row and the title of its form.",
       "localizations" : {
@@ -557,6 +842,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "备用模型"
+          }
+        }
+      }
+    },
+    "Before Replacing" : {
+      "comment" : "Title of the review of what Replace Everything will change.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "替换前确认"
           }
         }
       }
@@ -594,6 +890,17 @@
         }
       }
     },
+    "Browsing data was cleared." : {
+      "comment" : "Footer under Clear Browsing Data once the adult partition's browser data were removed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览数据已清除。"
+          }
+        }
+      }
+    },
     "Building with columns" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -627,6 +934,17 @@
         }
       }
     },
+    "Categories, sources, settings and models, for your other devices. Keys are never included." : {
+      "comment" : "Footer of Settings › Data's Configuration section.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分类、来源、设置和模型，用于你的其他设备。Key 永远不会包含在内。"
+          }
+        }
+      }
+    },
     "Category" : {
       "comment" : "Row and screen title: the category a source is filed in.",
       "localizations" : {
@@ -645,6 +963,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分类设置"
+          }
+        }
+      }
+    },
+    "Category differs" : {
+      "comment" : "Configuration import: what differs between the file's entry and this device's.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分类不同"
+          }
+        }
+      }
+    },
+    "Changed" : {
+      "comment" : "Review before replacing and summary: what is changed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将修改"
           }
         }
       }
@@ -704,6 +1044,28 @@
         }
       }
     },
+    "Clear" : {
+      "comment" : "Destructive button of the question before the adult partition's browser data are removed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除"
+          }
+        }
+      }
+    },
+    "Clear Browsing Data" : {
+      "comment" : "Button in Settings › Adult Partition: removes the adult partition's browser data.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除浏览数据"
+          }
+        }
+      }
+    },
     "Clear Image Cache" : {
       "comment" : "Settings → Data: button that empties the current library's image cache.",
       "localizations" : {
@@ -711,6 +1073,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清除图片缓存"
+          }
+        }
+      }
+    },
+    "Clear the adult partition's browsing data?" : {
+      "comment" : "Question asked before the adult partition's browser data are removed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要清除成人分区的浏览数据吗？"
           }
         }
       }
@@ -759,6 +1132,28 @@
         }
       }
     },
+    "Configuration" : {
+      "comment" : "Settings › Data section: the configuration file.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置"
+          }
+        }
+      }
+    },
+    "Conflicts" : {
+      "comment" : "Configuration import preview group: entries this device has with different values.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有冲突"
+          }
+        }
+      }
+    },
     "Continue" : {
       "comment" : "Bar button of Add source: look up the typed address.",
       "localizations" : {
@@ -766,6 +1161,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "继续"
+          }
+        }
+      }
+    },
+    "Cookies, sign-ins and other website data of the adult partition's browser are removed from this device. The normal partition's are kept." : {
+      "comment" : "Message of the question before the adult partition's browser data are removed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "成人分区浏览器的 Cookie、登录状态和其他网站数据将从这台设备上移除，普通分区的不受影响。"
           }
         }
       }
@@ -936,7 +1342,7 @@
       }
     },
     "Daily Automatic Limit" : {
-      "comment" : "Usage screen: header of the section and accessibility label of the picker for the partition's daily limit on automatic model requests.",
+      "comment" : "Usage screen: header of the section and accessibility label of the picker for the partition's daily limit on automatic model requests. Also the configuration import's name of that partition setting (RD20).",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1041,6 +1447,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除“%@”？"
+          }
+        }
+      }
+    },
+    "Deleted" : {
+      "comment" : "Review before replacing and summary: what is deleted.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将删除"
           }
         }
       }
@@ -1155,6 +1572,39 @@
         }
       }
     },
+    "Every source of “%@” is already in the adult partition. Nothing was moved." : {
+      "comment" : "Alert after a move was asked for: every source of the category exists in the adult partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”的所有来源在成人分区中都已存在，没有移动任何内容。"
+          }
+        }
+      }
+    },
+    "Every source of “%@” is already in the normal partition. Nothing was moved." : {
+      "comment" : "Alert after a move was asked for: every source of the category exists in the normal partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”的所有来源在普通分区中都已存在，没有移动任何内容。"
+          }
+        }
+      }
+    },
+    "Everything in this file is already here." : {
+      "comment" : "Configuration import preview: Merge would add nothing.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件里的内容都已存在。"
+          }
+        }
+      }
+    },
     "Everything in this file is already in the library." : {
       "comment" : "OPML import preview when nothing would be added.",
       "localizations" : {
@@ -1177,6 +1627,17 @@
         }
       }
     },
+    "Export Configuration" : {
+      "comment" : "Settings › Data: export the configuration file.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出配置"
+          }
+        }
+      }
+    },
     "Export OPML" : {
       "comment" : "Settings › Data row.",
       "localizations" : {
@@ -1184,6 +1645,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "导出 OPML"
+          }
+        }
+      }
+    },
+    "Exported %@ by NewsPaw %@" : {
+      "comment" : "Header of the configuration import preview: when the file was exported (date and time) and by which app version.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 NewsPaw %2$@ 于 %1$@ 导出"
           }
         }
       }
@@ -1482,6 +1954,17 @@
         }
       }
     },
+    "Has not run in the background yet." : {
+      "comment" : "Settings › Refresh: below the Background Refresh footer, when no background run started in the last 7 days (RD24).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未在后台运行过。"
+          }
+        }
+      }
+    },
     "Heart" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -1625,6 +2108,28 @@
         }
       }
     },
+    "Import Configuration" : {
+      "comment" : "Settings › Data, Add Source, Today's empty state and the import sheet's title: import a NewsPaw configuration file.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入配置"
+          }
+        }
+      }
+    },
+    "Import Configuration…" : {
+      "comment" : "First run, step 3: imports a NewsPaw configuration file (RD20's import; the normal partition only).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入配置…"
+          }
+        }
+      }
+    },
     "Import OPML" : {
       "comment" : "Add source row and Settings › Data row; the preview's title.",
       "localizations" : {
@@ -1658,6 +2163,17 @@
         }
       }
     },
+    "Imported" : {
+      "comment" : "Title of the configuration import summary.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已导入"
+          }
+        }
+      }
+    },
     "Importing…" : {
       "comment" : "OPML import, accessibility label of the progress shown while importing.",
       "localizations" : {
@@ -1669,6 +2185,72 @@
         }
       }
     },
+    "In the File" : {
+      "comment" : "Configuration import: a setting's value in the file.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件中"
+          }
+        }
+      }
+    },
+    "Include the Adult Partition" : {
+      "comment" : "Settings › Data: whether the exported configuration includes the adult partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含成人分区"
+          }
+        }
+      }
+    },
+    "It has more than 5,000 sources." : {
+      "comment" : "Configuration import refusal.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来源超过 5,000 个。"
+          }
+        }
+      }
+    },
+    "It has more than 500 categories." : {
+      "comment" : "Configuration import refusal.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分类超过 500 个。"
+          }
+        }
+      }
+    },
+    "It is larger than 5 MB." : {
+      "comment" : "Configuration import refusal.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件超过 5 MB。"
+          }
+        }
+      }
+    },
+    "It is not a NewsPaw configuration file." : {
+      "comment" : "Configuration import refusal.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这不是 NewsPaw 配置文件。"
+          }
+        }
+      }
+    },
     "It was created by a newer version of the app. Update NewsPaw to open it." : {
       "comment" : "Library failure screen: the reason shown when the library was written by a newer version of the app.",
       "localizations" : {
@@ -1676,6 +2258,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "它由更新版本的 App 创建。请更新 NewsPaw 后再打开。"
+          }
+        }
+      }
+    },
+    "It was made by a newer version of NewsPaw. Update the app to import it." : {
+      "comment" : "Configuration import refusal.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它由更新版本的 NewsPaw 生成，请先更新应用再导入。"
           }
         }
       }
@@ -1733,6 +2326,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "它的 Key 会从这台设备上移除。"
+          }
+        }
+      }
+    },
+    "Its sources move there and are collected again; new articles there are translated by that partition's model. Here, its %lld articles are deleted with their translations and overviews, and read and starred states are lost." : {
+      "comment" : "Message of the confirmation of moving a category: the consequences; the argument is the number of its articles deleted in this partition.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Its sources move there and are collected again; new articles there are translated by that partition's model. Here, its %lld article is deleted with its translations and overviews, and read and starred states are lost."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Its sources move there and are collected again; new articles there are translated by that partition's model. Here, its %lld articles are deleted with their translations and overviews, and read and starred states are lost."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "它的来源会移到那里并重新收集，新文章由该分区的模型翻译。这里的 %lld 篇文章及其翻译和概览将被删除，已读和收藏状态也会丢失。"
+                }
+              }
+            }
           }
         }
       }
@@ -1858,6 +2486,17 @@
         }
       }
     },
+    "Keys removed" : {
+      "comment" : "Review before replacing: stored keys removed because a model's address changes or the model is removed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将移除的 Key"
+          }
+        }
+      }
+    },
     "Kind" : {
       "comment" : "Row in Add source: feed or web page.",
       "localizations" : {
@@ -1865,6 +2504,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "类型"
+          }
+        }
+      }
+    },
+    "Kind differs" : {
+      "comment" : "Configuration import: what differs between the file's entry and this device's.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "类型不同"
           }
         }
       }
@@ -2135,6 +2785,28 @@
         }
       }
     },
+    "Merge" : {
+      "comment" : "Configuration import: add what is new and keep everything here.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "合并"
+          }
+        }
+      }
+    },
+    "Merge keeps these as they are on this device." : {
+      "comment" : "Footer under Conflicts in a configuration import preview.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "合并会保留这台设备上的现状。"
+          }
+        }
+      }
+    },
     "Model" : {
       "comment" : "Header of the model-name section in the model form.",
       "localizations" : {
@@ -2164,6 +2836,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "模型测试"
+          }
+        }
+      }
+    },
+    "Model differs" : {
+      "comment" : "Configuration import: what differs between the file's model and this device's.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型不同"
           }
         }
       }
@@ -2201,6 +2884,17 @@
         }
       }
     },
+    "Models removed" : {
+      "comment" : "Review before replacing: model slots the file does not have.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将移除的模型"
+          }
+        }
+      }
+    },
     "More" : {
       "comment" : "Accessibility label of an article list's toolbar menu (Refresh, Category or Source Settings).",
       "localizations" : {
@@ -2212,6 +2906,17 @@
         }
       }
     },
+    "Move" : {
+      "comment" : "Destructive button of the confirmation of moving a category to the other partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移动"
+          }
+        }
+      }
+    },
     "Move Sources to “%@”" : {
       "comment" : "Button in the deletion dialog: move the deleted category's sources to the named category, then delete it. %@ is the other category's name.",
       "localizations" : {
@@ -2219,6 +2924,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "将来源移到“%@”"
+          }
+        }
+      }
+    },
+    "Move to Adult Partition…" : {
+      "comment" : "Button in a normal category's settings: moves the category to the adult partition, after unlocking it.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到成人分区…"
+          }
+        }
+      }
+    },
+    "Move to Normal Partition…" : {
+      "comment" : "Button in an adult category's settings: moves the category to the normal partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到普通分区…"
+          }
+        }
+      }
+    },
+    "Move “%@” to the adult partition?" : {
+      "comment" : "Title of the confirmation of moving a category; the argument is the category's name.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要把“%@”移到成人分区吗？"
+          }
+        }
+      }
+    },
+    "Move “%@” to the normal partition?" : {
+      "comment" : "Title of the confirmation of moving a category; the argument is the category's name.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要把“%@”移到普通分区吗？"
           }
         }
       }
@@ -2241,6 +2990,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "名称"
+          }
+        }
+      }
+    },
+    "Name differs" : {
+      "comment" : "Configuration import: what differs between the file's entry and this device's.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名称不同"
+          }
+        }
+      }
+    },
+    "New" : {
+      "comment" : "Configuration import preview group: entries this device does not have.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新增"
           }
         }
       }
@@ -2465,6 +3236,17 @@
         }
       }
     },
+    "Normal Partition Only" : {
+      "comment" : "Button of the configuration import's adult question: import the normal partition only.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只导入普通分区"
+          }
+        }
+      }
+    },
     "Not an http or https address" : {
       "comment" : "OPML import, a skipped entry with an address that is not http or https.",
       "localizations" : {
@@ -2564,6 +3346,17 @@
         }
       }
     },
+    "On This Device" : {
+      "comment" : "Configuration import: a setting's value on this device.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台设备上"
+          }
+        }
+      }
+    },
     "Only an excerpt is available" : {
       "comment" : "Reading screen, under a body that is only an excerpt of the article; followed by Open Original Page.",
       "localizations" : {
@@ -2582,6 +3375,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "只能添加 http 或 https 地址。"
+          }
+        }
+      }
+    },
+    "Only the normal partition is replaced." : {
+      "comment" : "Review before replacing: the file has no adult partition, which is left as it is.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只替换普通分区。"
           }
         }
       }
@@ -2659,6 +3463,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要在其他应用中打开这个链接吗？"
+          }
+        }
+      }
+    },
+    "Options differ" : {
+      "comment" : "Configuration import: what differs between the file's entry and this device's.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选项不同"
           }
         }
       }
@@ -2813,6 +3628,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "额度或频率受限"
+          }
+        }
+      }
+    },
+    "Ran in the background %lld time(s) in the last 7 days, most recently %@." : {
+      "comment" : "Settings › Refresh: below the Background Refresh footer, how many background runs started in the last 7 days; %@ is the relative time of the latest, such as “2 hours ago” (RD24).",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ran in the background %lld time in the last 7 days, most recently %@."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ran in the background %lld times in the last 7 days, most recently %@."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "最近 7 天在后台运行了 %lld 次，最近一次在%@。"
+                }
+              }
+            }
           }
         }
       }
@@ -2993,6 +3843,28 @@
         }
       }
     },
+    "Replace Everything" : {
+      "comment" : "Configuration import: make each partition of the file exactly the file's.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部替换"
+          }
+        }
+      }
+    },
+    "Replace now?" : {
+      "comment" : "Second question before Replace Everything.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "现在替换吗？"
+          }
+        }
+      }
+    },
     "Required" : {
       "comment" : "OPML import preview, the category row before a category is chosen.",
       "localizations" : {
@@ -3158,6 +4030,17 @@
         }
       }
     },
+    "Set Up Keys" : {
+      "comment" : "Configuration import summary: open the model settings to type the keys.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置 Key"
+          }
+        }
+      }
+    },
     "Set a device passcode to use the adult partition." : {
       "comment" : "Alert: the device has no passcode, so nothing can authenticate.",
       "localizations" : {
@@ -3198,6 +4081,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "设置"
+          }
+        }
+      }
+    },
+    "Settings replaced" : {
+      "comment" : "Review before replacing: settings that take the file's value.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将替换的设置"
           }
         }
       }
@@ -3264,6 +4158,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示边栏"
+          }
+        }
+      }
+    },
+    "Show Thumbnails in Lists" : {
+      "comment" : "Switch in Settings › Adult Partition, inside the adult partition: whether the adult partition's article lists show thumbnails.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在列表中显示缩略图"
           }
         }
       }
@@ -3357,7 +4262,7 @@
       }
     },
     "Sources" : {
-      "comment" : "First run, step 3: its title.",
+      "comment" : "First run, step 3: its title. Also a section header of the configuration import's preview: sources (RD20).",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -3576,6 +4481,17 @@
         }
       }
     },
+    "The adult partition in this file was skipped." : {
+      "comment" : "Configuration import: the adult part of the file was not compared or imported.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个文件中的成人分区已跳过。"
+          }
+        }
+      }
+    },
     "The adult partition is a second, separate library. Its categories, sources and articles are shown only after Face ID, Touch ID or the device passcode, and it locks again when you leave the app." : {
       "comment" : "Settings › Adult Partition while it is off: the explanation under the switch.",
       "localizations" : {
@@ -3594,6 +4510,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "成人分区仍处于锁定状态。"
+          }
+        }
+      }
+    },
+    "The adult partition was imported. The normal partition and the settings could not be, and are unchanged." : {
+      "comment" : "Configuration import summary: the normal partition's write failed after the adult one committed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "成人分区已导入；普通分区和设置未能导入，保持不变。"
           }
         }
       }
@@ -3631,6 +4558,17 @@
         }
       }
     },
+    "The adult partition's models, list thumbnails and daily limit are set inside the adult partition." : {
+      "comment" : "Footer of Settings › Adult Partition when it is opened from the normal partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "成人分区的模型、列表缩略图和每日上限需在成人分区内设置。"
+          }
+        }
+      }
+    },
     "The backup model is used when the primary model fails for network, rate-limit or server reasons." : {
       "comment" : "First sentence of the backup model's form (ux S9).",
       "localizations" : {
@@ -3653,6 +4591,17 @@
         }
       }
     },
+    "The category could not be moved. Nothing was changed." : {
+      "comment" : "Alert after a move of a category failed before anything was written.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法移动这个分类，没有做任何更改。"
+          }
+        }
+      }
+    },
     "The category is created when you import. If a category or a folder of the file has this name, the feeds go there." : {
       "comment" : "OPML import, footer of the new category name.",
       "localizations" : {
@@ -3671,6 +4620,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法保存这项更改。"
+          }
+        }
+      }
+    },
+    "The configuration could not be exported." : {
+      "comment" : "Configuration export failed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法导出配置。"
           }
         }
       }
@@ -3741,6 +4701,17 @@
         }
       }
     },
+    "The file is not encrypted: anyone who has it can read the adult partition's categories and sources." : {
+      "comment" : "Footer of Settings › Data's Configuration section when the adult partition is included.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件没有加密：拿到文件的人都能看到成人分区的分类和来源。"
+          }
+        }
+      }
+    },
     "The file is not well-formed XML (line %lld)." : {
       "comment" : "OPML import refusal. %lld is the line the parser stopped at.",
       "localizations" : {
@@ -3785,6 +4756,28 @@
         }
       }
     },
+    "The file's adult partition entries do not match its header." : {
+      "comment" : "Configuration import refusal.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件中的成人分区条目与文件头不一致。"
+          }
+        }
+      }
+    },
+    "The file's adult partition was not imported. You can import it from Settings › Data." : {
+      "comment" : "Configuration import from the first run: the adult part of the file is not imported.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件中的成人分区没有导入，可以之后在“设置 › 数据”中导入。"
+          }
+        }
+      }
+    },
     "The first %lld are shown." : {
       "comment" : "Add source: the page declares more feeds than are listed.",
       "localizations" : {
@@ -3816,6 +4809,17 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "The import could not be completed. Nothing was changed." : {
+      "comment" : "Configuration import: the write failed and nothing was written.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入没有完成，没有任何改动。"
           }
         }
       }
@@ -4073,6 +5077,17 @@
         }
       }
     },
+    "This cannot be undone." : {
+      "comment" : "Message of the second question before Replace Everything.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此操作无法撤销。"
+          }
+        }
+      }
+    },
     "This category has %lld sources. Move them to another category, or delete them with it." : {
       "comment" : "Message of the deletion dialog when the category has sources and another category exists. %lld is the number of sources.",
       "localizations" : {
@@ -4150,6 +5165,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这个 Feed 还没有内容"
+          }
+        }
+      }
+    },
+    "This file also contains the adult partition." : {
+      "comment" : "Title of the question asked when a configuration file to import contains the adult partition and the import began in the normal partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个文件还包含成人分区。"
           }
         }
       }
@@ -4271,6 +5297,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "标题、摘要和文章正文，以及你翻译的网页文字，会发送给这个服务。Key 只保存在这台设备上。可以先跳过，以后在设置里设置。"
+          }
+        }
+      }
+    },
+    "To include the adult partition, export from inside it." : {
+      "comment" : "Footer of Settings › Data's Configuration section in the normal partition while the adult partition is on.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要包含成人分区，请在成人分区里导出。"
+          }
+        }
+      }
+    },
+    "To take the file's settings, use Replace Everything." : {
+      "comment" : "Footer under the settings that differ in a configuration import preview.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要采用文件中的设置，请使用“全部替换”。"
           }
         }
       }
@@ -4453,6 +5501,17 @@
         }
       }
     },
+    "Turn On and Unlock" : {
+      "comment" : "Button of the configuration import's adult question while the adult partition is off.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启并解锁"
+          }
+        }
+      }
+    },
     "Turn off the adult partition?" : {
       "comment" : "Alert title: the first question of turning the adult partition off.",
       "localizations" : {
@@ -4497,6 +5556,17 @@
         }
       }
     },
+    "Unlock" : {
+      "comment" : "Button of the configuration import's adult question: unlock the adult partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解锁"
+          }
+        }
+      }
+    },
     "Unlock the adult partition" : {
       "comment" : "The sentence in the system's authentication prompt when the adult partition is chosen.",
       "localizations" : {
@@ -4504,6 +5574,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "解锁成人分区"
+          }
+        }
+      }
+    },
+    "Unlock the adult partition to compare and import that part. Otherwise only the normal partition is imported." : {
+      "comment" : "Message of the adult-partition question of a configuration import.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解锁成人分区后才能比较并导入这一部分；否则只导入普通分区。"
           }
         }
       }
@@ -4629,6 +5710,17 @@
         }
       }
     },
+    "Value differs" : {
+      "comment" : "Configuration import: a model's service differs between the file and this device.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取值不同"
+          }
+        }
+      }
+    },
     "Version" : {
       "comment" : "Label of the app's version in About.",
       "localizations" : {
@@ -4658,6 +5750,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "网页"
+          }
+        }
+      }
+    },
+    "When NewsPaw is not open, the system may let it collect your sources and translate new titles. The system decides when and how often. Nothing is refreshed in the background with Manual Only, and no notification is sent." : {
+      "comment" : "Settings › Refresh: the footer of the Background Refresh switch (RD24).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NewsPaw 未打开时，系统可能会让它收取来源并翻译新标题。何时运行、多久一次由系统决定。选择“仅手动”时不会在后台刷新，也不会发送通知。"
+          }
+        }
+      }
+    },
+    "When off, article lists in the adult partition show no pictures and download none." : {
+      "comment" : "Footer under Show Thumbnails in Lists in Settings › Adult Partition.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭后，成人分区的文章列表不显示、也不下载缩略图。"
           }
         }
       }
@@ -4717,6 +5831,17 @@
         }
       }
     },
+    "Your library has more than 500 categories or 5,000 sources, which a configuration file cannot hold." : {
+      "comment" : "Configuration export refused: over the file's limits.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "资料库的分类超过 500 个或来源超过 5,000 个，配置文件无法容纳。"
+          }
+        }
+      }
+    },
     "action.star" : {
       "comment" : "Swipe, menu item and reading-screen button: stars an article. (\"Star\" alone is the category icon's name.)",
       "localizations" : {
@@ -4734,6 +5859,28 @@
         }
       }
     },
+    "and %lld more" : {
+      "comment" : "After the first ten names of the sources that stay when a category is moved: how many more there are.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等另外 %lld 个"
+          }
+        }
+      }
+    },
+    "category %lld" : {
+      "comment" : "Position in a refused configuration file: the n-th category.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %lld 个分类"
+          }
+        }
+      }
+    },
     "could not connect" : {
       "comment" : "Reason a source could not be read, used after “·”; lower case in English.",
       "localizations" : {
@@ -4741,6 +5888,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "连接不上"
+          }
+        }
+      }
+    },
+    "model %lld" : {
+      "comment" : "Position in a refused configuration file: the n-th model.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %lld 个模型"
           }
         }
       }
@@ -4756,6 +5914,17 @@
         }
       }
     },
+    "settings" : {
+      "comment" : "Position in a refused configuration file: its settings.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置"
+          }
+        }
+      }
+    },
     "something went wrong" : {
       "comment" : "Reason a source could not be read, used after “·”; lower case in English.",
       "localizations" : {
@@ -4763,6 +5932,51 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "出了点问题"
+          }
+        }
+      }
+    },
+    "source %lld" : {
+      "comment" : "Position in a refused configuration file: the n-th source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %lld 个来源"
+          }
+        }
+      }
+    },
+    "summary.changed" : {
+      "comment" : "Configuration import summary row: what was changed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已修改"
+          }
+        }
+      }
+    },
+    "summary.deleted" : {
+      "comment" : "Configuration import summary row: what was deleted.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleted"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已删除"
           }
         }
       }
@@ -4829,6 +6043,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重定向次数太多"
+          }
+        }
+      }
+    },
+    "“%@” was copied to the adult partition but could not be removed here. Move it again to finish." : {
+      "comment" : "Alert after a move copied the category to the adult partition and could not delete it here.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”已复制到成人分区，但无法从这里移除。请再移动一次以完成。"
+          }
+        }
+      }
+    },
+    "“%@” was copied to the normal partition but could not be removed here. Move it again to finish." : {
+      "comment" : "Alert after a move copied the category to the normal partition and could not delete it here.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”已复制到普通分区，但无法从这里移除。请再移动一次以完成。"
           }
         }
       }

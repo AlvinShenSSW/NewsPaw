@@ -18,6 +18,11 @@ struct RootView: View {
                     AdultDebugElement()
                 }
             }
+            .overlay(alignment: .trailing) {
+                if model.showsDeliveryControl {
+                    DeliverBackgroundRefreshButton()
+                }
+            }
         #endif
     }
 
@@ -37,11 +42,13 @@ struct RootView: View {
                     .environment(workspace.reading)
                     .environment(workspace.browser)
                     .environment(workspace.modelSettings)
+                    .environment(\.partitionModelSettings, workspace.partitionModelSettings)
                     .environment(workspace.usage)
                     .environment(workspace.readingSettings)
                     .environment(workspace.translationSettings)
                     .environment(workspace.translation)
                     .environment(workspace.navigation)
+                    .environment(workspace.configuration)
                     // The accent follows the partition (decision 7).
                     .environment(\.accent, Theme.accent(of: workspace.partition))
                     // The cover waits for the shell of the workspace
@@ -82,6 +89,30 @@ private struct AdultDebugElement: View {
             }
     }
 }
+
+/// The UI tests' "Deliver background refresh" (RD24 decision 9): an
+/// invisible 30-point control at the window's trailing edge, halfway down,
+/// where no test taps; present only under a UI-test library directory with
+/// its own launch key, which only `BackgroundRefreshTests` sets (review
+/// R3); a debug build only. (A control of a few points beside the report was
+/// measured: the harness's tap never reached it.)
+private struct DeliverBackgroundRefreshButton: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button {
+            Task { await model.deliverBackgroundRefreshForUITests() }
+        } label: {
+            // Two percent grey, as measured; nothing a person sees.
+            Color.gray.opacity(0.02)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: "Deliver background refresh"))
+        .accessibilityIdentifier(DebugAccessibilityID.deliverBackgroundRefresh)
+    }
+}
 #endif
 
 /// Measures the window's width and shows the first run (RD21 decision 1),
@@ -98,6 +129,7 @@ struct ShellView: View {
     @Environment(ReadingModel.self) private var reading
     @Environment(BrowserModel.self) private var browser
     @Environment(TranslationModel.self) private var translation: TranslationModel?
+    @Environment(ConfigurationModel.self) private var configuration
     @State private var width = 0.0
 
     private var layout: WindowLayout {
@@ -145,8 +177,11 @@ struct ShellView: View {
                 .sourceDialogs(host: .sheet)
                 .environment(categories)
                 .environment(sources)
+                .environment(configuration)
+                .environment(navigation)
                 .tint(accent)
         }
+        .configurationImport()
         .categoryDialogs(host: .root)
         .sourceDialogs(host: .root)
         .markAllReadDialog(host: .root)
@@ -173,14 +208,18 @@ struct ShellView: View {
         case .categorySettings(let id): CategorySheetView(sheet: .settings(id))
         case .addSource: AddSourceView()
         case .sourceSettings(let id): SourceSettingsView(sourceID: id)
+        case .configurationImport: ConfigurationImportSheet()
         }
     }
 
     /// A sheet closed by any means. Add source cancels its detection and
-    /// releases what it parsed.
+    /// releases what it parsed. A configuration import's sheet ends the
+    /// import; one begun on Add source presents its picker now (RD20).
     private func sheetDismissed() {
         if navigation.sheet != .addSource, sources.addSource != nil {
             sources.addSourceClosed()
         }
+        configuration.sheetClosed()
+        configuration.sheetDidClose()
     }
 }

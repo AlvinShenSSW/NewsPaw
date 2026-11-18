@@ -46,6 +46,9 @@ struct AdultScanTests {
     static let debugOnlyNames = [
         "FixtureAuthenticator", "DebugLaunchOptions", "UITestLaunchKey", "NEWSPAW_UITEST_", "DebugAccessibilityID",
         "AdultDebugElement",
+        // RD24 decision 9: the background refresh's debug seams.
+        "RecordingBackgroundScheduler", "DebugClock", "adultOpensForUITests", "deliverBackgroundRefreshForUITests",
+        "DeliverBackgroundRefreshButton", "lastBackgroundEnding", "showsDeliveryControl", "deliveriesHandled", "backgroundDelivery",
     ]
 
     /// `ios/` in the repository.

@@ -112,6 +112,10 @@ enum SettingsRoute: Hashable {
     case models
     /// The form of one model slot (ux S9), pushed on Models & Translation.
     case modelSlot(ModelRole)
+    /// The form of one of the adult partition's model slots (ux S9; RD19
+    /// decision 2), pushed on Settings › Adult Partition inside the adult
+    /// partition.
+    case adultModelSlot(ModelRole)
     case refresh
     /// Reading (ux S8; RD11): text size, line spacing, typeface.
     case reading
@@ -128,7 +132,10 @@ enum SettingsRoute: Hashable {
     /// Whether the route's screen is a form the owner types into, which
     /// has to stay clear of the keyboard in a pane too (`paneRoot`).
     var isFormOfTextFields: Bool {
-        if case .modelSlot = self { true } else { false }
+        switch self {
+        case .modelSlot, .adultModelSlot: true
+        default: false
+        }
     }
 }
 
@@ -139,6 +146,8 @@ enum AppSheet: Hashable, Identifiable {
     case categorySettings(UUID)
     case addSource
     case sourceSettings(UUID)
+    /// The configuration import's preview, review and summary (RD20).
+    case configurationImport
 
     var id: Self { self }
 }
@@ -248,6 +257,10 @@ final class NavigationModel {
     /// How many times the Search screen was asked to focus its field: the
     /// screen watches it (RD25 decision 9).
     private(set) var searchFocusRequests = 0
+    /// The source of an open article, as the reading model knows it, so
+    /// that a move closes the articles of the sources it took away (RD19
+    /// decision 11). Set by the workspace.
+    @ObservationIgnored var sourceOfArticle: @MainActor (UUID) -> UUID? = { _ in nil }
 
     /// The tab, as the tab bar reads and selects it. Selecting a tab whose
     /// stack has a list at its top enters that list.
@@ -560,6 +573,60 @@ final class NavigationModel {
         }
     }
 
+    /// Closes every browser route, on the Library and the Starred stack:
+    /// an article's page goes and the article under it stays, a web-page
+    /// source's route goes, as another sidebar selection closes them (RD10
+    /// decision 3). Clear Browsing Data does this first, so that no adult
+    /// page writes during or after the clear (RD19 decision 5).
+    func closeBrowsers() {
+        if case .page = libraryPath.last {
+            libraryPath.removeLast()
+        } else if browserRoute(of: .library) != nil {
+            libraryPath = []
+        }
+        if case .page = starredPath.last {
+            starredPath.removeLast()
+        }
+    }
+
+    /// A category was moved to the other partition (RD19 decision 11):
+    /// every route that shows it, one of the moved `sources` or an article
+    /// of one is closed, on every stack — its list or a moved source's
+    /// (the Library stack goes to its root, All Unread on the panes), an
+    /// article of a moved source with any page above it, on the Library
+    /// and the Starred stack — and so is a sheet of the category or of a
+    /// moved source.
+    func close(showing sources: Set<UUID>, category: UUID) {
+        switch sheet {
+        case .categorySettings(category)?:
+            sheet = nil
+        case .sourceSettings(let id)? where sources.contains(id):
+            sheet = nil
+        default:
+            break
+        }
+        let showsMoved: (LibraryRoute) -> Bool = { route in
+            switch route {
+            case .category(let id): id == category
+            case .source(let id): sources.contains(id)
+            case .article(let id): self.sourceOfArticle(id).map(sources.contains) ?? false
+            // Search (RD25) lists articles; one of a moved source is closed
+            // as its `.article` route, and the list is read again.
+            case .allUnread, .page, .search: false
+            }
+        }
+        if libraryPath.contains(where: { route in
+            if case .article = route { false } else { showsMoved(route) }
+        }) {
+            closeLibraryList()
+        } else if let index = libraryPath.firstIndex(where: showsMoved) {
+            libraryPath.removeSubrange(index...)
+        }
+        if let index = starredPath.firstIndex(where: showsMoved) {
+            starredPath.removeSubrange(index...)
+        }
+    }
+
     /// After the sources were read again: a source list whose source no
     /// longer exists closes as a deleted category's does (decision 19).
     func sourcesChanged(existing: Set<UUID>) {
@@ -612,14 +679,29 @@ final class NavigationModel {
         }
     }
 
+    /// Where this workspace's own model slots are: Settings › Models &
+    /// Translation for the normal library, Settings › Adult Partition for
+    /// the adult one (RD19 decision 2; review round 1). Set by the
+    /// workspace.
+    @ObservationIgnored var modelSettingsRoute = SettingsRoute.models
+
     /// "Open Settings" of a translation that a model's set-up stops (RD14
-    /// decision 9): Settings › Models & Translation, over whatever was
-    /// shown.
+    /// decision 9): the screen of this workspace's own model slots, over
+    /// whatever was shown.
     func openModelSettings() {
         sheet = nil
         closeSlideOver()
         select(.settings)
-        settingsPath = [.models]
+        settingsPath = [modelSettingsRoute]
+    }
+
+    /// "Set Up Keys" of a configuration import's summary (RD20): a screen
+    /// of Settings, over whatever was shown.
+    func openSettings(_ route: SettingsRoute) {
+        sheet = nil
+        closeSlideOver()
+        select(.settings)
+        settingsPath = [route]
     }
 
     /// The workspace of this navigation is dropped: nothing stays

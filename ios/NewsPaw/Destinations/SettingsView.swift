@@ -85,6 +85,7 @@ struct SettingsDestination: View {
         switch route {
         case .models: ModelsView()
         case .modelSlot(let role): ModelSlotForm(role: role)
+        case .adultModelSlot(let role): AdultModelSlotForm(role: role)
         case .refresh: RefreshSettingsView()
         case .reading: ReadingSettingsScreen()
         case .adultPartition: AdultPartitionView()
@@ -96,13 +97,30 @@ struct SettingsDestination: View {
     }
 }
 
+/// The form of one of the adult library's slots (ux S9 inside S10; RD19
+/// decision 2): RD13's form on the adult workspace's model of them.
+struct AdultModelSlotForm: View {
+    let role: ModelRole
+    @Environment(\.partitionModelSettings) private var models
+
+    var body: some View {
+        if let models {
+            ModelSlotForm(role: role)
+                .environment(models)
+        }
+    }
+}
+
 /// Settings → Refresh (ux S8; RD06): the interval and how long articles are
 /// kept, each an inline picker whose options are rows, so that at the
 /// largest text size every option wraps instead of being cut (a menu
-/// picker's value is truncated there, measured). Background refresh arrives
-/// with RD24.
+/// picker's value is truncated there, measured); between them background
+/// refresh (RD24 decision 6), whose footer says how often it ran in the
+/// last 7 days, read when the screen appears.
 struct RefreshSettingsView: View {
     @Environment(RefreshModel.self) private var refresh
+    /// The background runs of the last 7 days, oldest first.
+    @State private var backgroundRuns: [Date] = []
 
     var body: some View {
         @Bindable var refresh = refresh
@@ -122,6 +140,18 @@ struct RefreshSettingsView: View {
             } footer: {
                 Text("When you open the app and this long has passed since the last refresh, the library is refreshed. Pull down on Today to refresh at any time.")
                     .foregroundStyle(Theme.secondaryText)
+            }
+            .listRowBackground(Theme.surface)
+            Section {
+                Toggle("Background Refresh", isOn: $refresh.backgroundRefresh)
+                    .accessibilityIdentifier(AccessibilityID.backgroundRefreshToggle)
+            } footer: {
+                VStack(alignment: .leading, spacing: Theme.Spacing.small) {
+                    Text("When NewsPaw is not open, the system may let it collect your sources and translate new titles. The system decides when and how often. Nothing is refreshed in the background with Manual Only, and no notification is sent.")
+                    backgroundRunsLine
+                        .accessibilityIdentifier(AccessibilityID.backgroundRuns)
+                }
+                .foregroundStyle(Theme.secondaryText)
             }
             .listRowBackground(Theme.surface)
             Section {
@@ -146,16 +176,30 @@ struct RefreshSettingsView: View {
         .scrollContentBackground(.hidden)
         .stackBackground(Theme.groupedBackground)
         .navigationTitle("Refresh")
+        .onAppear { backgroundRuns = refresh.recentBackgroundRuns() }
+    }
+
+    /// How many times a background run ran in the last 7 days and when the
+    /// last one ran, relative to the library's clock.
+    private var backgroundRunsLine: Text {
+        guard let last = backgroundRuns.last else {
+            return Text("Has not run in the background yet.")
+        }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        let when = formatter.localizedString(for: last, relativeTo: refresh.now())
+        return Text("Ran in the background \(backgroundRuns.count) time(s) in the last 7 days, most recently \(when).")
     }
 }
 
-/// Settings → Data (ux S8; RD09 decision 14; RD08): OPML import and export
-/// of the current library, the size of its image cache, read each time the
-/// screen is shown, and Clear for that cache only. The configuration file
-/// arrives with RD20.
+/// Settings → Data (ux S8; RD09 decision 14; RD08; RD20): the
+/// configuration file's export and import, OPML import and export of the
+/// current library, the size of its image cache, read each time the
+/// screen is shown, and Clear for that cache only.
 struct DataSettingsView: View {
     @Environment(ReadingModel.self) private var reading
     @Environment(SourceModel.self) private var sources
+    @Environment(ConfigurationModel.self) private var configuration
     @State private var size: Int?
     @State private var isClearing = false
     @State private var isExporting = false
@@ -175,6 +219,7 @@ struct DataSettingsView: View {
 
     var body: some View {
         List {
+            ConfigurationSection()
             Section {
                 Button {
                     sources.beginOPMLImport(from: .settings)
@@ -188,7 +233,7 @@ struct DataSettingsView: View {
                     }
                     .frame(minHeight: Theme.minimumTapTarget)
                 }
-                .disabled(sources.opmlImport?.stage == .reading)
+                .disabled(sources.opmlImport?.stage == .reading || sources.editsAreRefused)
                 .accessibilityIdentifier(AccessibilityID.importOPMLButton)
                 Button {
                     export()
@@ -265,10 +310,15 @@ struct DataSettingsView: View {
         .navigationTitle("Data")
         .onAppear {
             isShown = true
+            // "Include the Adult Partition" is off each time the screen
+            // opens (RD20 decision 7).
+            configuration.includesAdult = false
+            configuration.isDataShown = true
             Task { size = await reading.library.imageCache.size() }
         }
         .onDisappear {
             isShown = false
+            configuration.isDataShown = false
         }
         .opmlImport(from: .settings)
     }
@@ -277,7 +327,7 @@ struct DataSettingsView: View {
     /// export's directory is removed.
     private func removeShownExport() {
         if let url = shownExport {
-            OPMLExportFile.remove(url)
+            ExportFolder.opml.remove(url)
             shownExport = nil
         }
     }
@@ -293,9 +343,9 @@ struct DataSettingsView: View {
             defer { isExporting = false }
             do {
                 let data = try await library.opmlExport()
-                let url = try await Task.detached { try OPMLExportFile.write(data, on: Date()) }.value
+                let url = try await Task.detached { try ExportFolder.opml.write(data, on: Date()) }.value
                 guard !sources.isStopped, isShown, exported == nil else {
-                    OPMLExportFile.remove(url)
+                    ExportFolder.opml.remove(url)
                     return
                 }
                 shownExport = url
@@ -316,6 +366,115 @@ struct DataSettingsView: View {
             size = await cache.size()
             isClearing = false
         }
+    }
+}
+
+/// The Configuration section of Settings › Data (ux S8, S11; RD20
+/// decisions 7 and 9): "Include the Adult Partition" — hidden while the
+/// partition is off or unavailable, shown disabled and off in the normal
+/// partition, enabled inside the adult one — then Export and Import.
+private struct ConfigurationSection: View {
+    @Environment(ConfigurationModel.self) private var configuration
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        @Bindable var configuration = configuration
+        Section {
+            if showsSwitch {
+                Toggle("Include the Adult Partition", isOn: $configuration.includesAdult)
+                    .disabled(!configuration.canIncludeAdult || configuration.isExporting)
+                    .frame(minHeight: Theme.minimumTapTarget)
+                    .accessibilityIdentifier(AccessibilityID.includeAdultToggle)
+            }
+            Button {
+                configuration.export()
+            } label: {
+                HStack {
+                    Text("Export Configuration")
+                    if configuration.isExporting {
+                        Spacer(minLength: Theme.Spacing.small)
+                        ProgressView()
+                    }
+                }
+                .frame(minHeight: Theme.minimumTapTarget)
+            }
+            .disabled(configuration.isExporting)
+            .accessibilityIdentifier(AccessibilityID.exportConfigurationButton)
+            // On the row: the list's other rows carry OPML's sheet and alert.
+            .sheet(
+                item: Binding {
+                    configuration.exportedFile.map(SharedConfiguration.init)
+                } set: { shared in
+                    if shared == nil, configuration.exportedFile != nil {
+                        configuration.exportEnded()
+                    }
+                },
+                onDismiss: { configuration.exportEnded() }
+            ) { shared in
+                ShareSheet(url: shared.url) {
+                    configuration.exportEnded()
+                }
+                .ignoresSafeArea()
+            }
+            .alert(
+                Text("Could not export"),
+                isPresented: Binding {
+                    configuration.exportFailure != nil
+                } set: { presented in
+                    if !presented {
+                        configuration.exportFailure = nil
+                    }
+                },
+                presenting: configuration.exportFailure
+            ) { _ in
+                Button("OK") {}
+            } message: { failure in
+                switch failure {
+                case .tooLarge: Text("Your library has more than 500 categories or 5,000 sources, which a configuration file cannot hold.")
+                case .failed: Text("The configuration could not be exported.")
+                }
+            }
+            Button {
+                configuration.beginImport(from: .settings)
+            } label: {
+                HStack {
+                    Text("Import Configuration")
+                    if configuration.origin == .settings, configuration.stage == .reading {
+                        Spacer(minLength: Theme.Spacing.small)
+                        ProgressView()
+                    }
+                }
+                .frame(minHeight: Theme.minimumTapTarget)
+            }
+            .disabled(!configuration.canBeginImport)
+            .accessibilityIdentifier(AccessibilityID.importConfigurationButton)
+        } header: {
+            Text("Configuration")
+                .foregroundStyle(Theme.secondaryText)
+        } footer: {
+            VStack(alignment: .leading, spacing: Theme.Spacing.small) {
+                Text("Categories, sources, settings and models, for your other devices. Keys are never included.")
+                if showsSwitch, !configuration.canIncludeAdult {
+                    Text("To include the adult partition, export from inside it.")
+                }
+                if configuration.includesAdult {
+                    Text("The file is not encrypted: anyone who has it can read the adult partition's categories and sources.")
+                }
+            }
+            .foregroundStyle(Theme.secondaryText)
+        }
+        .listRowBackground(Theme.surface)
+    }
+
+    /// The switch exists only while the partition is on.
+    private var showsSwitch: Bool {
+        app.gateState == .locked || app.gateState == .unlocked
+    }
+
+    /// The file handed to the share sheet.
+    private struct SharedConfiguration: Identifiable {
+        let url: URL
+        var id: URL { url }
     }
 }
 

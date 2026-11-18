@@ -1,12 +1,13 @@
 import NewsPawKit
 import SwiftUI
 
-/// New category (name and icon) or Category settings (name, icon, delete).
-/// What is typed lives in the category model, so the sheet survives a
-/// container switch with its text.
+/// New category (name and icon) or Category settings (name, icon, moving
+/// to the other partition, delete). What is typed lives in the category
+/// model, so the sheet survives a container switch with its text.
 struct CategorySheetView: View {
     let sheet: CategorySheet
     @Environment(CategoryModel.self) private var categories
+    @Environment(AppModel.self) private var model
     @State private var isSaving = false
     @FocusState private var isNameFocused: Bool
 
@@ -55,6 +56,9 @@ struct CategorySheetView: View {
                         .foregroundStyle(Theme.secondaryText)
                 }
                 .listRowBackground(Theme.surface)
+                if case .settings(let id) = sheet, model.showsPartitionSwitch {
+                    moveSection(id, locked: locked)
+                }
                 if case .settings(let id) = sheet {
                     Section {
                         Button("Delete Category", role: .destructive) {
@@ -97,6 +101,44 @@ struct CategorySheetView: View {
             }
         }
         .interactiveDismissDisabled(locked)
+    }
+
+    /// "Move to Adult Partition…" or "Move to Normal Partition…" (ux S13;
+    /// RD19 decision 11), while the partition is on. In the normal
+    /// partition it unlocks and switches first, carrying the move across;
+    /// in the adult partition it begins the move. Not while the sheet has
+    /// unsaved changes, a save runs, the system's authentication is asked
+    /// for, or a partition operation runs anywhere in the app — a move, a
+    /// clear or Turn Off (RD19 review rounds 2 to 4).
+    private func moveSection(_ id: UUID, locked: Bool) -> some View {
+        Section {
+            Button {
+                if categories.partition == .normal {
+                    // The sheet closes first: what the unlock has to say is
+                    // shown at the root.
+                    categories.cancelSheet()
+                    Task { await model.chooseAdult(pending: .move(categoryID: id)) }
+                } else {
+                    categories.beginMove(id, from: .adult)
+                }
+            } label: {
+                Group {
+                    if categories.partition == .normal {
+                        Text("Move to Adult Partition…")
+                    } else {
+                        Text("Move to Normal Partition…")
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: Theme.minimumTapTarget, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .disabled(
+                locked || categories.isMoving || model.operations.running != nil || model.isAuthenticating
+                    || categories.sheetHasChanges(id)
+            )
+            .accessibilityIdentifier(AccessibilityID.moveCategoryButton)
+        }
+        .listRowBackground(Theme.surface)
     }
 
     private var title: Text {

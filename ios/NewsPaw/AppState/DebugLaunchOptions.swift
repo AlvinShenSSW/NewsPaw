@@ -38,6 +38,17 @@ struct DebugLaunchOptions {
     /// picker (RD08 decision 8). Applied only together with
     /// `libraryDirectory`.
     let opmlFixture: OPMLFixture?
+    /// The configuration file "Import Configuration" reads instead of
+    /// presenting the file picker (RD20 decision 10). Applied only
+    /// together with `libraryDirectory`.
+    let configurationFixture: ConfigurationFixture?
+    /// How long a configuration import waits between its write and its
+    /// completion (RD20 criterion 13). Applied only together with
+    /// `libraryDirectory`.
+    let configurationWritePause: Duration?
+    /// Where the adult workspace's configuration export waits (RD20 review
+    /// round 2). Applied only together with `libraryDirectory`.
+    let configurationExportHold: ConfigurationExportHold?
     /// The translator fixture's models to set up in the normal library
     /// (RD14): the primary, and the backup after it. Applied only together
     /// with `libraryDirectory`, and only to a library with no model yet.
@@ -49,10 +60,23 @@ struct DebugLaunchOptions {
     /// library directory it is shown, and its flag kept, only when asked
     /// for, so that the other suites start on the shell.
     let firstRun: Bool
+    /// Whether the deletion of the next category move fails (RD19
+    /// criterion 12). Applied only together with `libraryDirectory`.
+    let failNextMoveDeletion: Bool
+    /// How long a category move waits between its copy and its deletion,
+    /// so that a lock can come during the run (RD19 criterion 12). Applied
+    /// only together with `libraryDirectory`.
+    let moveStepPause: Duration?
+    /// How long Clear Browsing Data waits before it clears (review round
+    /// 2). Applied only together with `libraryDirectory`.
+    let clearPause: Duration?
     /// Whether five usage rows of `seed-<partition>` are inserted into the
     /// normal library at launch and into the adult library at each unlock
     /// (RD17 decision 8). Applied only together with `libraryDirectory`.
     let seedsUsage: Bool
+    /// Whether the "Deliver background refresh" control is shown (RD24
+    /// review R3). Applied only together with `libraryDirectory`.
+    let backgroundDelivery: Bool
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -89,6 +113,13 @@ struct DebugLaunchOptions {
             articlePageSize = nil
         }
         opmlFixture = environment[UITestLaunchKey.opmlFixture].flatMap(OPMLFixture.init(rawValue:))
+        configurationFixture = environment[UITestLaunchKey.configurationFixture].flatMap(ConfigurationFixture.init(rawValue:))
+        if let text = environment[UITestLaunchKey.configurationWritePause], let seconds = Int(text), seconds > 0 {
+            configurationWritePause = .seconds(seconds)
+        } else {
+            configurationWritePause = nil
+        }
+        configurationExportHold = environment[UITestLaunchKey.configurationExportHold].flatMap(ConfigurationExportHold.init(rawValue:))
         translationModels = switch environment[UITestLaunchKey.translationModels] {
         case "primary": [.primary]
         case "primary,backup": [.primary, .backup]
@@ -100,7 +131,19 @@ struct DebugLaunchOptions {
             dailyAutomaticLimit = nil
         }
         firstRun = environment[UITestLaunchKey.firstRun] == "1"
+        failNextMoveDeletion = environment[UITestLaunchKey.failNextMoveDeletion] == "1"
+        if let text = environment[UITestLaunchKey.moveStepPause], let seconds = Int(text), seconds > 0 {
+            moveStepPause = .seconds(seconds)
+        } else {
+            moveStepPause = nil
+        }
+        if let text = environment[UITestLaunchKey.clearPause], let seconds = Int(text), seconds > 0 {
+            clearPause = .seconds(seconds)
+        } else {
+            clearPause = nil
+        }
         seedsUsage = environment[UITestLaunchKey.seedUsage] == "1"
+        backgroundDelivery = environment[UITestLaunchKey.backgroundDelivery] == "1"
     }
 
     /// Accepts only a name that stays inside the temporary directory.

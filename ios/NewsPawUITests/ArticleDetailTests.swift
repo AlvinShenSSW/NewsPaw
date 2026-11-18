@@ -57,6 +57,15 @@ final class ArticleDetailTests: ArticleTestCase {
         requireFullWidth()
         openCategoryList("World")
         let image = waitFor(articleRow("Image story"))
+        // The category's overview card heads the list (RD23 decision 12) and
+        // at this size takes most of the screen, so the rows are brought up
+        // by dragging the list itself, the image row to where the card
+        // starts: on the iPad the list is a pane at the leading edge, and a
+        // swipe at the app's centre lands in the reading pane.
+        let card = waitFor(element(AccessibilityID.overview("card", "World")))
+        let start = image.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: card.frame.minY - image.frame.minY)),
+                    withVelocity: 600, thenHoldForDuration: 0.3)
         let plain = scrollTo(articleRow("Plain story"))
         let taller = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             image.frame.height - plain.frame.height >= Self.thumbnailSide

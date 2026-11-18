@@ -181,6 +181,9 @@ final class TranslationPartitionTests: IsolationTestCase {
         } else {
             openSourceList("Body Feed", in: "Velvet")
         }
+        // The article has been read, so a list opened again under Unread
+        // leaves it out: All shows it.
+        chooseFilter("All")
         // Its title may be translated now: the row is tapped and the body
         // waited for.
         waitFor(articleRow("Long story")).tap()

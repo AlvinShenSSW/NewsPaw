@@ -23,6 +23,7 @@ struct PageTranslationRestoreTests {
             <script>window.shows = []; addEventListener("pageshow", e => shows.push(e.persisted));</script>
             </body></html>
             """,
+        "/tabs.html": PageTranslationScriptTests.tabsPage,
         // No letters: nothing to collect or send on the page between.
         "/b.html": "<!doctype html><html><body><p>12345</p></body></html>",
     ]
@@ -68,14 +69,14 @@ struct PageTranslationRestoreTests {
 
         private var scripting: (any PageScripting)?
 
-        init(service: TranslationService, dropsCollects: Int = 0) async throws {
+        init(service: TranslationService, dropsCollects: Int = 0, poll: Duration = .milliseconds(50)) async throws {
             server = try LoopbackServer { request, _ in
                 guard let html = PageTranslationRestoreTests.pages[request.path] else { return LoopbackServer.Reply("404 Not Found") }
                 return LoopbackServer.Reply(headers: ["Content-Type: text/html; charset=utf-8"], body: Data(html.utf8))
             }
             fixture = try await TranslatorFixture.make(service: service)
             var timing = PageTranslationSession.Timing()
-            timing.poll = .milliseconds(50)
+            timing.poll = poll
             timing.afterScroll = .milliseconds(1)
             timing.decideAfter = .seconds(600)
             let scripting: any PageScripting = dropsCollects > 0 ? DroppingScripting(page.bridge, drops: dropsCollects) : page.bridge
@@ -210,5 +211,25 @@ struct PageTranslationRestoreTests {
         try await rig.eventually { rig.session.line == .translated(.simplifiedChinese) }
         #expect(rig.session.isOn)
         #expect(service.requests.count == 1)
+    }
+
+    @Test("review round 5: with the app's own poll, a panel a radio tab reveals through CSS alone is translated within two seconds")
+    func cssRevealedPanel() async throws {
+        let service = TranslationService()
+        let rig = try await Rig(service: service, poll: PageTranslationSession.Timing().poll)
+        defer { rig.end() }
+        await rig.open("tabs.html")
+        rig.session.turnOn()
+        try await rig.eventually { try await rig.text("p1") == "T:一つ目のパネルの文です" }
+        try await rig.eventually { rig.session.line == .translated(.simplifiedChinese) }
+        // The write's own flag is spent by the polls that follow: the page
+        // then answers unchanged until something sets the flag again.
+        try await Task.sleep(for: .seconds(3))
+        let clock = ContinuousClock()
+        let start = clock.now
+        try await rig.page.page(#"document.querySelector("label[for=t2]").click()"#)
+        try await rig.eventually { try await rig.text("p2") == "T:二つ目のパネルの文です" }
+        let elapsed = clock.now - start
+        #expect(elapsed <= .seconds(2), "\(elapsed)")
     }
 }

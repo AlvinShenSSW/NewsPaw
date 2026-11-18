@@ -115,6 +115,7 @@ struct PageTranslationScriptTests {
         <div style="clip-path: inset(100%)">fixture:never clip-path inset</div>
         <div style="position:relative;overflow:hidden;height:40px"><p style="position:absolute;top:200px;margin:0">fixture:never outside its parent</p></div>
         <div style="transform:translateX(0);overflow:hidden;height:40px"><p style="position:fixed;top:200px;left:0;margin:0">fixture:never fixed outside its transformed box</p></div>
+        <div style="overflow:hidden;width:200px;height:40px"><div style="overflow:hidden;width:100px;height:40px;margin-left:250px"><p style="white-space:nowrap;margin:0 0 0 -250px">fixture:never across two clipping boxes that do not overlap, long enough to reach both</p></div></div>
         <script>
         document.getElementById("filled").value = "fixture:never typed";
         document.getElementById("host").attachShadow({mode: "open"}).innerHTML = "<p>fixture:never shadow</p>";
@@ -569,6 +570,44 @@ struct PageTranslationScriptTests {
         for shown in ["変形した箱の中の固定文", "固定されたヘッダー"] {
             #expect(texts.contains(shown), "\(shown)")
         }
+    }
+
+    @Test("review round 5: a long line cut by nested clipping boxes is displayed only where the boxes overlap: across two boxes that do not, it is not; through both, it is")
+    func nestedClips() async throws {
+        let page = ScriptPage()
+        await page.load("""
+            <!doctype html><html lang="ja"><head><meta name="viewport" content="width=device-width">
+            <style>body{margin:0} .outer{overflow:hidden;width:200px;height:40px;margin:4px 0} .inner{overflow:hidden;width:100px;height:40px}
+            p{white-space:nowrap;margin:0}</style></head><body>
+            <div class="outer"><div class="inner" style="margin-left:250px"><p style="margin-left:-250px">重ならない二つの箱にまたがる長い一行の文章です、とても長い</p></div></div>
+            <div class="outer"><div class="inner" style="margin-left:100px"><p style="margin-left:-100px">二つの箱の重なりから見える長い一行の文章です、とても長い</p></div></div>
+            </body></html>
+            """)
+        let texts = Set(try await page.runs().map(\.text))
+        #expect(!texts.contains("重ならない二つの箱にまたがる長い一行の文章です、とても長い"), "\(texts)")
+        #expect(texts.contains("二つの箱の重なりから見える長い一行の文章です、とても長い"), "\(texts)")
+    }
+
+    nonisolated static let tabsPage = """
+        <!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+        <style>.panel{display:none} #t1:checked ~ #p1, #t2:checked ~ #p2{display:block}</style></head><body>
+        <input type="radio" name="tabs" id="t1" checked><label for="t1">タブ一</label>
+        <input type="radio" name="tabs" id="t2"><label for="t2">タブ二</label>
+        <div class="panel" id="p1">一つ目のパネルの文です</div>
+        <div class="panel" id="p2">二つ目のパネルの文です</div>
+        </body></html>
+        """
+
+    @Test("review round 5: a tab revealed by CSS alone (a radio's :checked, no node changed) sets the flag, and its panel is collected")
+    func revealedByCSS() async throws {
+        let page = ScriptPage()
+        await page.load(Self.tabsPage)
+        let first = Set(try await page.runs().map(\.text))
+        #expect(first.contains("一つ目のパネルの文です") && !first.contains("二つ目のパネルの文です"), "\(first)")
+        #expect(try await page.collect().isUnchanged)
+        try await page.page(#"document.querySelector("label[for=t2]").click()"#)
+        #expect(try await page.pageString("return document.activeElement.localName") == "body")
+        #expect(try await page.runs().contains { $0.text == "二つ目のパネルの文です" })
     }
 
     @Test("review round 4: focus on a block that may host a closed shadow root holds collection, whatever its tabindex; after it leaves the echo is collected; a focused link does not hold")

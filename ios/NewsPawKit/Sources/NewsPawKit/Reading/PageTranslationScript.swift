@@ -11,8 +11,9 @@ import Foundation
 /// What it does:
 /// - `collect`: on the first call in a document it makes its state, an own
 ///   property of the world's global named `stateName`, with a mutation
-///   observer and a passive capture-phase `scroll` listener that only set a
-///   dirty flag. It answers `{held: true}` while a field has focus,
+///   observer and passive capture-phase `scroll`, `change`, `input`,
+///   `click`, `toggle` and `transitionend` listeners that only set a dirty
+///   flag (the last five for text that CSS alone reveals). It answers `{held: true}` while a field has focus,
 ///   `{unchanged: true}` when nothing changed since the last walk, and
 ///   otherwise the displayed runs in and near the viewport. Its input names
 ///   the app's `period` (the document generation) and the reading `locale`:
@@ -94,6 +95,7 @@ const FOCUSABLE = new Set(["a", "area", "button", "summary", "details", "audio",
 // rests there by default).
 const HOSTS = new Set(["article", "aside", "blockquote", "div", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "main",
   "nav", "p", "section", "span"]);
+const REVEALING = ["change", "input", "click", "toggle", "transitionend"];
 const VISIT_BOUND = 50000;
 const OUTSIDE_BOUND = 300;
 const RUNS_BOUND = 500;
@@ -120,6 +122,9 @@ function makeState() {
   state.observer.observe(doc, { subtree: true, childList: true, characterData: true, attributes: true });
   state.onScroll = () => { state.dirty = true; };
   listen.call(G, "scroll", state.onScroll, { capture: true, passive: true });
+  // What reveals text through CSS alone (a :checked tab, an opened
+  // details, a transition) changes no node: these events only set the flag.
+  for (const type of REVEALING) listen.call(G, type, state.onScroll, { capture: true, passive: true });
   Object.defineProperty(G, NAME, { value: state, configurable: true, enumerable: false, writable: false });
   return state;
 }
@@ -268,10 +273,11 @@ function clipInfoOf(element, cache) {
   return info;
 }
 
-// Displayed: the parent is visible, the text has a rectangle of at least
-// 2 by 2 points, no ancestor hides it, and at least one of its rectangles
-// overlaps, by 2 points or more on each clipped axis, the clipping box of
-// every ancestor whose overflow clips it. A fixed-position ancestor's
+// Displayed: the parent is visible, no ancestor hides it, and a part of at
+// least 2 by 2 points of one of its rectangles is left once the rectangles
+// are cut, ancestor by ancestor, to the clipping box of every ancestor whose
+// overflow clips them (on the axes it clips): what one ancestor cuts away
+// is not given back by the next. A fixed-position ancestor's
 // descendants escape the overflow of the ancestors above it only up to the
 // nearest one that is the containing block of fixed descendants: from that
 // one upwards the clipping applies again.
@@ -279,7 +285,7 @@ function isDisplayed(node, rects, caches) {
   if (rects.length === 0) return false;
   const parent = parentOf.call(node);
   if (!parent || !visibleOf.call(parent, { opacityProperty: true, visibilityProperty: true })) return false;
-  let shown = rects;
+  let shown = rects.map((rect) => ({ left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }));
   let escaped = false;
   let element = parent;
   while (element) {
@@ -288,9 +294,12 @@ function isDisplayed(node, rects, caches) {
     if (info.containing) escaped = false;
     if (!escaped && info.box) {
       const box = info.box;
-      shown = shown.filter((rect) =>
-        (!info.clipsX || Math.min(rect.right, box.right) - Math.max(rect.left, box.left) >= 2) &&
-        (!info.clipsY || Math.min(rect.bottom, box.bottom) - Math.max(rect.top, box.top) >= 2));
+      shown = shown.map((rect) => ({
+        left: info.clipsX ? Math.max(rect.left, box.left) : rect.left,
+        right: info.clipsX ? Math.min(rect.right, box.right) : rect.right,
+        top: info.clipsY ? Math.max(rect.top, box.top) : rect.top,
+        bottom: info.clipsY ? Math.min(rect.bottom, box.bottom) : rect.bottom
+      })).filter((rect) => rect.right - rect.left >= 2 && rect.bottom - rect.top >= 2);
       if (shown.length === 0) return false;
     }
     if (info.fixed) escaped = true;
@@ -585,6 +594,7 @@ function end(state, input) {
   }
   state.observer.disconnect();
   unlisten.call(G, "scroll", state.onScroll, { capture: true, passive: true });
+  for (const type of REVEALING) unlisten.call(G, type, state.onScroll, { capture: true, passive: true });
   delete G[NAME];
   return { had: true, restored: restored };
 }

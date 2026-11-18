@@ -37,7 +37,10 @@ final class PaneStructureTests: NewsPawUITestCase {
     /// F1: after the software keyboard has been used in portrait, panes
     /// created after rotating to landscape keep the whole height: each pane
     /// reaches the bottom of the window and its empty state is centred in
-    /// the pane below its bar.
+    /// the pane below its bar. The category's list is headed by its overview
+    /// card, with its empty state a row below the card (RD23 decision 12),
+    /// so there the list itself is measured: it reaches the bottom of its
+    /// pane.
     func testPanesKeepTheirHeightAfterTypingAndRotating() throws {
         launch()
         rotate(.portrait)
@@ -49,12 +52,15 @@ final class PaneStructureTests: NewsPawUITestCase {
         requireFullWidth()
         let destinations: [(row: String, emptyStates: [String])] = [
             (AccessibilityID.allUnreadRow, [AccessibilityID.allUnreadEmpty, AccessibilityID.noArticleSelected]),
-            (AccessibilityID.categoryRow("World"), [AccessibilityID.categoryEmpty, AccessibilityID.noArticleSelected]),
+            (AccessibilityID.categoryRow("World"), [AccessibilityID.noArticleSelected]),
             (AccessibilityID.starredRow, [AccessibilityID.starredEmpty, AccessibilityID.noArticleSelected]),
             (AccessibilityID.todayRow, [AccessibilityID.todayEmpty]),
         ]
         for destination in destinations {
             selectInSidebar(destination.row)
+            if destination.row == AccessibilityID.categoryRow("World") {
+                assertListReachesTheBottomBelowTheCard(of: "World")
+            }
             for emptyState in destination.emptyStates {
                 assertCentredInItsPane(emptyState)
             }
@@ -90,6 +96,7 @@ final class PaneStructureTests: NewsPawUITestCase {
         XCTAssertEqual(full.maxX, window.maxX, accuracy: 1)
         XCTAssertFalse(element(AccessibilityID.listPane).exists)
         XCTAssertTrue(element(AccessibilityID.todayEmpty).exists)
+        XCTAssertTrue(button(AccessibilityID.todayAddSourceButton).exists, "Today's empty state has no Add a Source")
         assertCentredInItsPane(AccessibilityID.todayEmpty)
         assertOneBarPerPane(panes: sidebarIsPane ? [AccessibilityID.sidebarPane, AccessibilityID.fullPane] : [AccessibilityID.fullPane])
         screenshot("today-\(Int(width))")
@@ -180,9 +187,15 @@ final class PaneStructureTests: NewsPawUITestCase {
 
     /// The empty state is centred vertically in its pane, below the pane's
     /// bar (the reading pane exposes no bar), within 30 pt; a pane that lost
-    /// part of its height moves it up by half of what it lost.
+    /// part of its height moves it up by half of what it lost. The state is
+    /// measured as it is drawn: its symbol and title (one element, which
+    /// carries the identifier) together with the buttons below them, such
+    /// as Today's "Add a Source" (RD21) and "Import Configuration" (RD20).
     private func assertCentredInItsPane(_ identifier: String, file: StaticString = #filePath, line: UInt = #line) {
-        let state = waitFor(element(identifier), file: file, line: line).frame
+        let state = Self.emptyStateButtons[identifier, default: []]
+            .map { button($0) }
+            .filter(\.exists)
+            .reduce(waitFor(element(identifier), file: file, line: line).frame) { $0.union($1.frame) }
         let panes = [AccessibilityID.fullPane, AccessibilityID.listPane, AccessibilityID.readingPane]
             .map { element($0) }
             .filter(\.exists)
@@ -193,8 +206,30 @@ final class PaneStructureTests: NewsPawUITestCase {
         }
         XCTAssertEqual(pane.maxY, window.maxY, accuracy: 1, "the pane \(pane) does not reach the bottom", file: file, line: line)
         let top = navigationBars(in: pane).first?.frame.maxY ?? pane.minY
+        print("PaneStructure: \(identifier) \(state) in \(pane) below \(top), off centre by \(state.midY - (top + pane.maxY) / 2)")
         XCTAssertEqual(state.midY, (top + pane.maxY) / 2, accuracy: 30,
                        "\(identifier) \(state) is not centred in \(pane) below \(top)", file: file, line: line)
+    }
+
+    /// The buttons an empty state shows below its title.
+    private static let emptyStateButtons = [
+        AccessibilityID.todayEmpty: [AccessibilityID.todayAddSourceButton, AccessibilityID.todayImportConfigurationButton],
+    ]
+
+    /// A category's list with overviews on (the default): the card heads it
+    /// and the empty state is a row below the card (RD23 decision 12), and
+    /// the list reaches the bottom of its pane, which reaches the bottom of
+    /// the window. A pane that kept a keyboard inset (F1) ends its list
+    /// above the pane's bottom by that inset.
+    private func assertListReachesTheBottomBelowTheCard(of category: String, file: StaticString = #filePath, line: UInt = #line) {
+        let pane = waitFor(element(AccessibilityID.listPane), file: file, line: line).frame
+        let card = waitFor(element(AccessibilityID.overview("card", category)), file: file, line: line).frame
+        let empty = waitFor(element(AccessibilityID.categoryEmpty), file: file, line: line).frame
+        XCTAssertLessThan(card.maxY, empty.minY + 1, "the empty state \(empty) is not below the card \(card)", file: file, line: line)
+        XCTAssertEqual(pane.maxY, window.maxY, accuracy: 1, "the pane \(pane) does not reach the bottom", file: file, line: line)
+        let list = waitFor(element(AccessibilityID.listPane).collectionViews.firstMatch, file: file, line: line).frame
+        print("PaneStructure: card \(card), \(AccessibilityID.categoryEmpty) \(empty), list \(list) in \(pane)")
+        XCTAssertEqual(list.maxY, pane.maxY, accuracy: 1, "the list \(list) does not reach the bottom of its pane \(pane)", file: file, line: line)
     }
 
     /// The colour at the middle of each edge of the pane (2 px in) is the

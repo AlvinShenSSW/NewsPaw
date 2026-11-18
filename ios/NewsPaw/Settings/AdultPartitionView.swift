@@ -1,13 +1,28 @@
 import NewsPawKit
 import SwiftUI
 
-/// Settings › Adult Partition (ux S10; RD18 decision 10). While the
-/// partition is off: a short explanation and one switch. While it is on:
-/// the lock timing and Turn Off the Adult Partition, whose questions the
-/// app model asks at the root. The models, thumbnails, the daily limit and
-/// Clear browsing data arrive with RD19.
+/// Settings › Adult Partition (ux S10; RD18 decision 10; RD19 decisions 2,
+/// 5 and 6). While the partition is off: a short explanation and one
+/// switch. While it is on, inside the adult partition: the adult library's
+/// primary and backup model, Show Thumbnails in Lists, the lock timing,
+/// Clear Browsing Data and Turn Off the Adult Partition. Opened from the
+/// normal partition, which never unlocks it (RD18), the rows that live in
+/// the adult library are not shown, and a sentence says where they are.
+/// Inside the adult partition the daily automatic limit's row shows the
+/// adult library's value and opens RD17's Usage screen, which edits it.
 struct AdultPartitionView: View {
     @Environment(AppModel.self) private var model
+    @Environment(ReadingModel.self) private var reading
+    /// The adult library's slots: set only inside the adult partition.
+    @Environment(\.partitionModelSettings) private var partitionModels
+    @State private var isAskingToClear = false
+    /// Said under Clear Browsing Data once a clear has ended, until the
+    /// screen is left.
+    @State private var browsingDataCleared = false
+    @State private var thumbnailsNotSaved = false
+    /// The adult library's daily automatic limit, read inside the adult
+    /// partition each time the screen appears.
+    @State private var dailyLimit: Int?
 
     var body: some View {
         List {
@@ -24,6 +39,29 @@ struct AdultPartitionView: View {
         .scrollContentBackground(.hidden)
         .stackBackground(Theme.groupedBackground)
         .navigationTitle("Adult Partition")
+        .task {
+            await partitionModels?.reload()
+            if partitionModels != nil {
+                dailyLimit = try? await reading.library.dailyAutomaticLimit()
+            }
+        }
+        .onDisappear { browsingDataCleared = false }
+        .alert(Text("Clear the adult partition's browsing data?"), isPresented: $isAskingToClear) {
+            Button("Clear", role: .destructive) {
+                Task {
+                    if await model.clearAdultBrowsingData() {
+                        browsingDataCleared = true
+                    }
+                }
+            }
+            .accessibilityIdentifier(AccessibilityID.confirmClearBrowsingDataButton)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Cookies, sign-ins and other website data of the adult partition's browser are removed from this device. The normal partition's are kept.")
+        }
+        .alert("The change could not be saved.", isPresented: $thumbnailsNotSaved) {
+            Button("OK") {}
+        }
     }
 
     @ViewBuilder
@@ -56,6 +94,36 @@ struct AdultPartitionView: View {
 
     @ViewBuilder
     private var onContents: some View {
+        if let partitionModels {
+            ModelSlotsSection(
+                primaryID: AccessibilityID.adultPrimaryModelRow, backupID: AccessibilityID.adultBackupModelRow,
+                backupNeedsPrimaryID: AccessibilityID.adultBackupNeedsPrimary
+            )
+            .environment(partitionModels)
+            Section {
+                Toggle("Show Thumbnails in Lists", isOn: showsThumbnails)
+                    .frame(minHeight: Theme.minimumTapTarget)
+                    .accessibilityIdentifier(AccessibilityID.showThumbnailsToggle)
+            } footer: {
+                Text("When off, article lists in the adult partition show no pictures and download none.")
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            .listRowBackground(Theme.surface)
+            // RD19 decision 12: the adult library's limit, edited on RD17's
+            // Usage screen of this (the adult) workspace.
+            Section {
+                NavigationLink(value: SettingsRoute.usage) {
+                    LabeledContent("Daily Automatic Limit") {
+                        if let dailyLimit {
+                            Text(dailyLimit, format: .number)
+                        }
+                    }
+                    .frame(minHeight: Theme.minimumTapTarget)
+                }
+                .accessibilityIdentifier(AccessibilityID.adultDailyLimitRow)
+            }
+            .listRowBackground(Theme.surface)
+        }
         Section {
             // Rows, not a menu, so that at the largest text size every
             // option wraps instead of being cut (as Settings › Refresh).
@@ -73,15 +141,54 @@ struct AdultPartitionView: View {
         }
         .listRowBackground(Theme.surface)
         Section {
+            Button {
+                isAskingToClear = true
+            } label: {
+                Text("Clear Browsing Data")
+                    .frame(maxWidth: .infinity, minHeight: Theme.minimumTapTarget, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .disabled(!model.canClearBrowsingData)
+            .accessibilityIdentifier(AccessibilityID.clearBrowsingDataButton)
+        } footer: {
+            if browsingDataCleared {
+                Text("Browsing data was cleared.")
+                    .foregroundStyle(Theme.secondaryText)
+                    .accessibilityIdentifier(AccessibilityID.browsingDataCleared)
+            }
+        }
+        .listRowBackground(Theme.surface)
+        Section {
             Button(role: .destructive) {
                 model.askToTurnOff()
             } label: {
                 Text("Turn Off the Adult Partition")
                     .frame(minHeight: Theme.minimumTapTarget)
             }
+            .disabled(!model.canTurnOff)
             .accessibilityIdentifier(AccessibilityID.turnOffAdultButton)
+        } footer: {
+            if partitionModels == nil {
+                Text("The adult partition's models, list thumbnails and daily limit are set inside the adult partition.")
+                    .foregroundStyle(Theme.secondaryText)
+                    .accessibilityIdentifier(AccessibilityID.adultSettingsElsewhere)
+            }
         }
         .listRowBackground(Theme.surface)
+    }
+
+    /// The switch shows the stored value: it changes once the value was
+    /// stored, and a failure says so.
+    private var showsThumbnails: Binding<Bool> {
+        Binding {
+            reading.showsThumbnails
+        } set: { shows in
+            Task {
+                if await !reading.setShowsThumbnails(shows) {
+                    thumbnailsNotSaved = true
+                }
+            }
+        }
     }
 
     private var lockTiming: Binding<LockTiming> {

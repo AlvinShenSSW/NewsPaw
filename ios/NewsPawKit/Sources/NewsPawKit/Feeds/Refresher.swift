@@ -62,8 +62,9 @@ public final class Refresher {
     /// any collection already held for one of them, and returns when every
     /// one has ended. A whole-library run then records its end time unless
     /// it was cancelled, or attempted at least one source and every attempt
-    /// failed (decision 5); a run with no source to attempt counts. A
-    /// category or source run records nothing.
+    /// failed (decision 5), or the library gained a source to collect while
+    /// it ran (RD19); a run with no source to attempt counts. A category or
+    /// source run records nothing.
     ///
     /// - Returns: each target's result.
     /// - Throws: a `LibraryError` when the targets cannot be read, and
@@ -87,8 +88,10 @@ public final class Refresher {
         }
         if scope == .library, generation == self.generation, Self.counts(results.values) {
             // A time that cannot be written leaves the run unrecorded, so
-            // the next entry refreshes again.
-            try? await library.setLastRefreshAt(library.now())
+            // the next entry refreshes again; so does a source added to the
+            // library while the run went on, which it did not collect
+            // (RD19, review round 1).
+            try? await library.setLastRefreshAt(library.now(), collected: Set(targets))
         }
         return results
     }

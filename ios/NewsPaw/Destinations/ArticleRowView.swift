@@ -47,7 +47,8 @@ enum ArticleActionWording {
 /// — the translation when there is one, with the original in one secondary
 /// line when that setting is on (RD14 decision 9) — the source name and
 /// relative time, a star when starred, and the thumbnail on the trailing
-/// side, below the text at the accessibility text sizes. Feed text and
+/// side, below the text at the accessibility text sizes, unless the
+/// library's lists show none (RD19 decision 6). Feed text and
 /// model text are shown as plain text. The row is one VoiceOver element
 /// whose label holds the unread state, title, source and time, "Starred"
 /// when starred, and the translation's state. The label is one language:
@@ -82,7 +83,7 @@ struct ArticleRowView: View {
                 : AnyLayout(HStackLayout(alignment: .top, spacing: Theme.Spacing.medium))
             layout {
                 text
-                if let thumbnail {
+                if reading.showsThumbnails, let thumbnail {
                     Image(uiImage: thumbnail)
                         .resizable()
                         .scaledToFill()
@@ -97,7 +98,9 @@ struct ArticleRowView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: accessibilityLabel))
         .accessibilityAddTraits(.isButton)
-        .task(id: row.imageAddress) {
+        // Keyed on the switch too (RD19 decision 6): turned off, the row
+        // lets its picture go and asks for none; turned on, it asks again.
+        .task(id: ThumbnailRequest(address: row.imageAddress, shows: reading.showsThumbnails)) {
             await loadThumbnail()
         }
     }
@@ -161,6 +164,10 @@ struct ArticleRowView: View {
     /// one while it loads or when it is unusable, and nothing animates. A
     /// row that leaves the screen cancels its request.
     private func loadThumbnail() async {
+        guard reading.showsThumbnails else {
+            thumbnail = nil
+            return
+        }
         guard let address = row.imageAddress else { return }
         guard let data = await reading.loader.thumbnail(for: address), !Task.isCancelled,
               let image = UIImage(data: data)
@@ -171,4 +178,11 @@ struct ArticleRowView: View {
             thumbnail = image
         }
     }
+}
+
+/// What a row's thumbnail task is for: the image's address and whether the
+/// lists show thumbnails.
+private struct ThumbnailRequest: Hashable {
+    let address: String?
+    let shows: Bool
 }

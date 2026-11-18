@@ -81,7 +81,7 @@ final class AdultSettingsTests: AdultTestCase {
 
         // Inside the adult partition its settings open without asking.
         tapAdultRow()
-        waitFor(turnOffButton).tap()
+        scrollTo(turnOffButton).tap()
         answerAlert(Wording.turnOffQuestion, with: "Delete Data")
         // Cancelling the second question deletes nothing.
         answerAlert(Wording.deleteQuestion, with: "Cancel")

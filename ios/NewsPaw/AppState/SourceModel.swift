@@ -51,6 +51,9 @@ final class SourceModel {
     private let navigation: NavigationModel
     private let categories: CategoryModel
     private let refresh: RefreshModel
+    /// The app's partition operation state (RD19 review round 4): while a
+    /// category move runs anywhere in the app no source is changed.
+    let operations: PartitionOperationState
     /// The last queued operation; each waits for the one before it.
     private var lastOperation: Task<Bool, Never>?
     private var queuedOperations = 0
@@ -77,8 +80,9 @@ final class SourceModel {
 
     init(
         library: Library, transport: any Transport, candidateLimit: Duration, navigation: NavigationModel,
-        categories: CategoryModel, refresh: RefreshModel
+        categories: CategoryModel, refresh: RefreshModel, operations: PartitionOperationState
     ) {
+        self.operations = operations
         self.library = library
         self.transport = transport
         self.candidateLimit = candidateLimit
@@ -92,9 +96,25 @@ final class SourceModel {
         refresh.engine.collecting
     }
 
-    /// Whether a source save is queued or running.
+    /// Whether a source save is queued or running, or a category move runs
+    /// anywhere in the app (review round 4): meanwhile Source settings are
+    /// locked.
     var isBusy: Bool {
-        queuedOperations > 0
+        queuedOperations > 0 || editsAreRefused
+    }
+
+    /// Whether every change of a source is refused now: while a category
+    /// move runs anywhere in the app, since it copies and deletes sources
+    /// (review round 4). The rows' Pause, Resume and Delete and Add
+    /// source's save follow it.
+    var editsAreRefused: Bool {
+        operations.refusesLibraryEdits
+    }
+
+    /// Waits for every change queued before now (review round 4: a move
+    /// begins after them).
+    func settle() async {
+        _ = await lastOperation?.value
     }
 
     func summary(_ id: UUID) -> SourceSummary? {
@@ -495,6 +515,9 @@ final class SourceModel {
         _ operation: @escaping @Sendable (Library) async throws -> Void,
         showingError: @escaping (any Error) -> Bool = { _ in true }
     ) async -> Bool {
+        // Refused while a category move runs (review round 4): nothing is
+        // written and nothing is shown; one queued before it ends first.
+        guard !editsAreRefused else { return false }
         let previous = lastOperation
         let library = library
         queuedOperations += 1

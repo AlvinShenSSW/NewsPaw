@@ -20,6 +20,36 @@ enum CategoryDialogHost {
     case sheet
 }
 
+/// What moving a category to the other partition needs (RD19 decision 11),
+/// given by the app model to the adult workspace's category model only: it
+/// holds the normal library and the adult one.
+struct CategoryMover {
+    /// Reads what moving the category out of the library of `from` would
+    /// do; `nil` when it cannot be read or the category is gone.
+    let plan: @MainActor (_ category: UUID, _ from: Partition) async -> CategoryMove.Plan?
+    /// Runs the move, lets the old workspace go of what it moved, clears
+    /// the old image cache and reads both workspaces again.
+    let run: @MainActor (CategoryMove.Plan) async -> CategoryMove.Outcome
+}
+
+/// What a move has to say (RD19 decision 11), as an alert with OK.
+enum MoveMessage: Identifiable, Equatable {
+    /// Every source of the category is in the destination already.
+    case nothingToMove(name: String, to: Partition)
+    /// Nothing was changed.
+    case notMoved
+    /// The copy was made and the old category could not be removed.
+    case copiedNotRemoved(name: String, to: Partition)
+
+    var id: String {
+        switch self {
+        case .nothingToMove(let name, let to): "nothing.\(to.rawValue).\(name)"
+        case .notMoved: "notMoved"
+        case .copiedNotRemoved(let name, let to): "copied.\(to.rawValue).\(name)"
+        }
+    }
+}
+
 /// The category list and every category operation (spec N02), at app level
 /// so that one model writes categories. What is typed in a sheet lives here,
 /// so a container switch cannot lose it.
@@ -75,6 +105,30 @@ final class CategoryModel {
 
     /// Whether the workspace of this model was dropped.
     private(set) var isStopped = false
+    /// The move waiting for its confirmation (RD19 decision 11). Cleared
+    /// by Cancel, by the alert's dismissal or by a lock, before its run has
+    /// begun: the move's operation ends.
+    var pendingMove: CategoryMove.Plan? {
+        didSet {
+            if pendingMove == nil, !isMoving {
+                endMove()
+            }
+        }
+    }
+    /// What the last move has to say.
+    var moveMessage: MoveMessage?
+    /// Whether a move's plan is being read or the move runs.
+    private(set) var isMoving = false
+    /// Given by the app model to the adult workspace's model only: moves
+    /// run inside the adult partition, in both directions.
+    @ObservationIgnored var mover: CategoryMover?
+    /// The app's partition operation state (review round 4), shared by
+    /// both workspaces: a move begins its operation here, and every change
+    /// of the library is refused while a move runs anywhere in the app.
+    let operations: PartitionOperationState
+    /// The move's operation, held from the reading of its plan to the end
+    /// of its run, or until its confirmation is cancelled or dropped.
+    @ObservationIgnored private var moveToken: PartitionOperations.Token?
 
     private let library: Library
     private let navigation: NavigationModel
@@ -102,9 +156,10 @@ final class CategoryModel {
     var slowNextSave: Duration?
     #endif
 
-    init(library: Library, navigation: NavigationModel) {
+    init(library: Library, navigation: NavigationModel, operations: PartitionOperationState) {
         self.library = library
         self.navigation = navigation
+        self.operations = operations
     }
 
     /// The workspace is dropped (RD18 decision 4): from here on nothing
@@ -113,13 +168,29 @@ final class CategoryModel {
         isStopped = true
         isShowingSaveError = false
         pendingDeletion = nil
+        pendingMove = nil
+        moveMessage = nil
     }
 
-    /// Whether a category save is queued or running. Meanwhile the open
-    /// editor is locked and rows cannot be moved or deleted: an edit made
-    /// then would be built on a list that is about to change (RD03 C2–C5).
+    /// The library's partition.
+    var partition: Partition {
+        library.partition
+    }
+
+    /// Whether a category save is queued or running, or a move's plan is
+    /// read or the move runs (review round 2). Meanwhile the open editor is
+    /// locked and rows cannot be moved or deleted: an edit made then would
+    /// be built on a list that is about to change (RD03 C2–C5), or saved in
+    /// a library the category is leaving. A move that runs anywhere in the
+    /// app counts too (reviews rounds 3 and 4).
     var isBusy: Bool {
-        queuedOperations > 0
+        queuedOperations > 0 || isMoving || operations.refusesLibraryEdits
+    }
+
+    /// Waits for every change queued before now (review round 4: a move
+    /// begins after them).
+    func settle() async {
+        _ = await lastOperation?.value
     }
 
     var activeDialogHost: CategoryDialogHost {
@@ -297,6 +368,94 @@ final class CategoryModel {
         }
     }
 
+    // MARK: - Moving to the other partition (RD19 decision 11)
+
+    /// Whether the open category sheet differs from the stored category.
+    func sheetHasChanges(_ id: UUID) -> Bool {
+        guard let stored = summary(id)?.category else { return false }
+        return draftName.trimmingCharacters(in: .whitespacesAndNewlines) != stored.name || draftIcon.rawValue != stored.iconName
+    }
+
+    /// Reads what moving the category `id` out of the library of `from`
+    /// would do, then asks for the confirmation; a category whose every
+    /// source stays says so at once. A plan that arrives after a lock
+    /// stopped this model is not presented.
+    func beginMove(_ id: UUID, from partition: Partition) {
+        guard let mover, !isMoving, !isStopped else { return }
+        // One partition operation at a time in the app (review round 4),
+        // whichever workspace began the other one: refused, nothing moves.
+        guard let token = operations.begin(.categoryMove) else {
+            moveMessage = .notMoved
+            return
+        }
+        moveToken = token
+        isMoving = true
+        let to: Partition = partition == .normal ? .adult : .normal
+        Task {
+            let plan = await mover.plan(id, partition)
+            isMoving = false
+            guard !isStopped else {
+                endMove()
+                return
+            }
+            guard let plan else {
+                endMove()
+                moveMessage = .notMoved
+                return
+            }
+            if plan.movesNothing {
+                endMove()
+                moveMessage = .nothingToMove(name: plan.category.name, to: to)
+            } else {
+                pendingMove = plan
+            }
+        }
+    }
+
+    /// Ends the move's operation, if this model holds it.
+    private func endMove() {
+        if let moveToken {
+            operations.end(moveToken)
+            self.moveToken = nil
+        }
+    }
+
+    /// "Move": runs the move. Success shows nothing.
+    func confirmMove(_ plan: CategoryMove.Plan) {
+        guard let mover, !isMoving, !isStopped, moveToken != nil else {
+            pendingMove = nil
+            return
+        }
+        // Set first: the confirmation's clearing keeps the operation.
+        isMoving = true
+        pendingMove = nil
+        let previous = lastOperation
+        Task {
+            // A category save queued before the move ends first; none can
+            // start meanwhile (`isBusy`).
+            _ = await previous?.value
+            let outcome = await mover.run(plan)
+            isMoving = false
+            endMove()
+            guard !isStopped else { return }
+            switch outcome {
+            case .moved:
+                break
+            case .nothingToMove:
+                moveMessage = .nothingToMove(name: plan.category.name, to: plan.to)
+            case .notMoved:
+                moveMessage = .notMoved
+            case .copiedNotRemoved:
+                moveMessage = .copiedNotRemoved(name: plan.category.name, to: plan.to)
+            }
+        }
+    }
+
+    /// Cancel: nothing is written.
+    func cancelMove() {
+        pendingMove = nil
+    }
+
     // MARK: - Saving
 
     /// Runs `operation` after every operation queued before it. On failure
@@ -305,6 +464,12 @@ final class CategoryModel {
     /// not replaced by an intermediate one. A `nil` operation only reloads,
     /// in its turn.
     private func perform(_ operation: (@Sendable (Library) async throws -> Void)?) async -> Bool {
+        // No change of the library is queued while a move runs anywhere in
+        // the app (review round 4): refused, nothing written, nothing shown.
+        // A reload still is.
+        if operation != nil, operations.refusesLibraryEdits {
+            return false
+        }
         let previous = lastOperation
         let library = library
         queuedOperations += 1

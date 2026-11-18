@@ -299,6 +299,9 @@ enum AccessibilityID {
     static let usageToday = "usage.today"
     static let usageLimitReached = "usage.limitReached"
     static let dailyLimitPicker = "usage.limit"
+    /// S10's Daily Automatic Limit row, inside the adult partition (RD19
+    /// decision 12).
+    static let adultDailyLimitRow = "adult.dailyLimit"
 
     /// The header of a model's section.
     static func usageModel(_ name: String) -> String {
@@ -357,6 +360,18 @@ enum AccessibilityID {
     static let adultExplanation = "adult.explanation"
     static let lockTimingPicker = "adult.lockTiming"
     static let turnOffAdultButton = "adult.turnOff"
+
+    // Adult partition isolation (RD19)
+    static let adultPrimaryModelRow = "adult.primaryModel"
+    static let adultBackupModelRow = "adult.backupModel"
+    static let adultBackupNeedsPrimary = "adult.backupNeedsPrimary"
+    static let showThumbnailsToggle = "adult.showThumbnails"
+    static let clearBrowsingDataButton = "adult.clearBrowsingData"
+    static let confirmClearBrowsingDataButton = "adult.confirmClearBrowsingData"
+    static let browsingDataCleared = "adult.browsingDataCleared"
+    static let adultSettingsElsewhere = "adult.settingsElsewhere"
+    static let moveCategoryButton = "editor.moveToOtherPartition"
+    static let confirmMoveButton = "move.confirm"
 
     /// A preset's row in the form's service picker.
     static func presetOption(_ rawValue: String) -> String {
@@ -454,6 +469,15 @@ enum UITestLaunchKey {
     /// honoured only with `libraryDirectory`. Without it a UI-test launch
     /// starts on the shell.
     static let firstRun = "NEWSPAW_UITEST_FIRST_RUN"
+    /// "1" makes the deletion of the next category move fail (RD19);
+    /// honoured only with `libraryDirectory`.
+    static let failNextMoveDeletion = "NEWSPAW_UITEST_FAIL_NEXT_MOVE_DELETION"
+    /// A number of seconds a category move waits between its copy and its
+    /// deletion (RD19); honoured only with `libraryDirectory`.
+    static let moveStepPause = "NEWSPAW_UITEST_MOVE_STEP_PAUSE"
+    /// A number of seconds Clear Browsing Data waits before it clears
+    /// (review round 2); honoured only with `libraryDirectory`.
+    static let clearPause = "NEWSPAW_UITEST_CLEAR_PAUSE"
     /// "1" inserts five usage rows of the model `seed-<partition>` into the
     /// normal library at launch and into the adult library at each unlock
     /// (RD17 decision 8); honoured only with `libraryDirectory`.
@@ -466,12 +490,13 @@ enum DebugAccessibilityID {
     /// 4): its label is `file=<0|1> pool=<open|closed>
     /// library=<held|released> workspace=<none|held|released>
     /// browser=<none|held|released> sessions=<number> pages=<number>
-    /// translationRequests=<number>`. `pool` is whether connections are open
+    /// translationRequests=<number> adultStore=<listed|absent>`. `pool` is whether connections are open
     /// on the file; the other three are whether the objects are gone from
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
     /// requests the translator fixture has answered in this process (RD14
-    /// criterion 13).
+    /// criterion 13); `adultStore` is whether WebKit lists the adult
+    /// browser's own website data store (RD19).
     static let adultReport = "debug.adultReport"
 }
 #endif

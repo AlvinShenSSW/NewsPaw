@@ -215,7 +215,13 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
                 <p><a href="/count">Load counter</a></p>
                 <p><a href="/hidden-asker">Hidden asker</a></p>
                 <p><a href="/media">Media page</a></p>
+                <p><a href="/storage">Storage page</a></p>
+                <p><a href="/writer">Writer page</a></p>
                 """))
+        case (_, "/storage"):
+            send(task, html: Self.storage)
+        case (_, "/writer"):
+            send(task, html: Self.writer)
         default:
             fail(task)
         }
@@ -295,6 +301,63 @@ final class BrowserFixtures: NSObject, WKURLSchemeHandler {
         let type = request.value(forHTTPHeaderField: "Content-Type") ?? "none"
         return page("\(request.httpMethod ?? "GET"): \(body.isEmpty ? "no body" : body)", "<p>Content type: \(type)</p>")
     }
+
+    /// A page that keeps a mark in its origin's `localStorage` (RD19
+    /// criterion 6): its title says what the store of the browser it is
+    /// shown in holds — "Storage: adult", "Storage: normal", "Storage:
+    /// none", or "Storage: unavailable" when the page cannot reach it — and
+    /// its two links store a mark. The data of a browser are its
+    /// partition's website data store, so a mark written in one partition
+    /// is absent from the other's.
+    private static let storage = """
+        <!DOCTYPE html>
+        <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Storage</title>
+        <style>body { font: -apple-system-body; margin: 16px; } a { display: inline-block; padding: 8px 0; }</style>
+        </head><body><h1>Storage</h1>
+        <p id="value">Reading…</p>
+        <p><a href="#" id="adult">Store Adult Mark</a></p>
+        <p><a href="#" id="normal">Store Normal Mark</a></p>
+        <script>
+        function show() {
+          var mark;
+          try { mark = window.localStorage.getItem('rd19') || 'none'; } catch (e) { mark = 'unavailable'; }
+          document.title = 'Storage: ' + mark;
+          document.getElementById('value').textContent = 'Stored: ' + mark;
+        }
+        function store(mark) {
+          try { window.localStorage.setItem('rd19', mark); } catch (e) {}
+          show();
+          return false;
+        }
+        document.getElementById('adult').onclick = function () { return store('adult'); };
+        document.getElementById('normal').onclick = function () { return store('normal'); };
+        show();
+        </script>
+        </body></html>
+        """
+
+    /// A page that will not stop writing (RD19, review round 1): every 200
+    /// ms it stores the mark "adult" in its origin's `localStorage` (the
+    /// `/storage` page's key) and sets a cookie, for as long as its document
+    /// lives. Clear Browsing Data must not leave anything of it behind.
+    private static let writer = """
+        <!DOCTYPE html>
+        <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Writer: writing</title>
+        <style>body { font: -apple-system-body; margin: 16px; }</style>
+        </head><body><h1>Writer</h1>
+        <p>This page writes its mark every 200 ms.</p>
+        <script>
+        function write() {
+          try { window.localStorage.setItem('rd19', 'adult'); } catch (e) {}
+          try { document.cookie = 'rd19=adult; max-age=3600; path=/'; } catch (e) {}
+        }
+        write();
+        setInterval(write, 200);
+        </script>
+        </body></html>
+        """
 
     /// Links from this host to the other one, in the fixture scheme, so
     /// that the policy decides what happens to each.

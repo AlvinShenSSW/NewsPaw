@@ -33,8 +33,8 @@ enum TranslationMark: Equatable {
 /// 12): the translator of the workspace's library, the articles in a
 /// request and the blocked ones with their reasons as the rows read them,
 /// the rows on screen, and the calls the rows and the triggers use. Made
-/// only for a workspace whose library has its own models; a workspace
-/// without one shows originals.
+/// for every workspace from its own library's models (RD19 decision 1);
+/// with no slot set up there, the rows show originals.
 @MainActor @Observable
 final class TranslationModel {
     /// The articles of the request in flight.

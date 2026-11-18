@@ -63,9 +63,9 @@ public actor AdultGate {
     public enum TurnOffResult: Sendable, Hashable {
         case turnedOff
         case refused(Refusal)
-        /// A file, the keys or the image cache could not be removed. The
-        /// partition stays on, so that deleting can be tried again; what
-        /// was removed stays removed.
+        /// A file, the keys, the browser's data or the image cache could not
+        /// be removed. The partition stays on, so that deleting can be tried
+        /// again; what was removed stays removed.
         case couldNotDelete
     }
 
@@ -73,6 +73,9 @@ public actor AdultGate {
     private let authenticator: any DeviceAuthenticator
     private let preferences: Preferences
     private let keys: any KeyStore
+    /// The adult browser's own website data store, removed with the rest
+    /// of the partition's data (RD19 decision 5).
+    private let browserData: any AdultBrowserData
     private let isEnabled: Bool
     private var isBusy = false
     private var isUnlocked = false
@@ -82,18 +85,20 @@ public actor AdultGate {
     /// - Parameters:
     ///   - keys: the adult partition's key store; a store of another
     ///     partition is a programming error.
+    ///   - browserData: the adult browser's website data store.
     ///   - isEnabled: the feature switch. The app passes
     ///     `BuildFeatures.adultPartition`; a debug build under the UI tests
     ///     may pass `false` for one launch.
     public init(
         store: LibraryStore, authenticator: any DeviceAuthenticator, preferences: Preferences, keys: any KeyStore,
-        isEnabled: Bool = BuildFeatures.adultPartition
+        browserData: any AdultBrowserData, isEnabled: Bool = BuildFeatures.adultPartition
     ) {
         precondition(keys.partition == .adult, "a key store of another partition")
         self.store = store
         self.authenticator = authenticator
         self.preferences = preferences
         self.keys = keys
+        self.browserData = browserData
         self.isEnabled = isEnabled
     }
 
@@ -195,8 +200,10 @@ public actor AdultGate {
 
     /// Turns the partition off. It is locked first. Keeping the data stores
     /// "off" and removes nothing. Deleting removes the database with its
-    /// side files, every key of the adult key store and, last, the image
-    /// cache directory, and only then stores "off"; it opens no library.
+    /// side files, every key of the adult key store, the adult browser's
+    /// website data store (RD19 decision 5) and, last, the image cache
+    /// directory, and only then stores "off"; it opens no library. A
+    /// failure stops there and leaves the partition on.
     public func turnOff(deletingData: Bool) async -> TurnOffResult {
         guard state == .locked || state == .unlocked else { return .refused(.notAllowed) }
         guard begin() else { return .refused(.busy) }
@@ -206,6 +213,7 @@ public actor AdultGate {
             do {
                 try await store.deleteAdultLibraryFiles()
                 try keys.removeAll()
+                try await browserData.removeStore()
                 try store.deleteAdultImageCache()
             } catch {
                 return .couldNotDelete

@@ -119,6 +119,17 @@ class AdultTestCase: BrowserTestCase {
         waitFor(adultRow).tap()
     }
 
+    /// Waits for Settings › Adult Partition's "on" contents by their first
+    /// row: the adult slots inside the adult partition, the lock timing
+    /// outside it. Turn Off, the last row, is below the fold on an iPhone
+    /// once the adult rows are shown (and then not in the hierarchy).
+    func waitForAdultSettings(file: StaticString = #filePath, line: UInt = #line) {
+        let slots = element(AccessibilityID.adultPrimaryModelRow)
+        let timing = element(AccessibilityID.lockTimingPicker)
+        let shown = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in slots.exists || timing.exists }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [shown], timeout: timeout), .completed, "Settings › Adult Partition is not shown", file: file, line: line)
+    }
+
     /// Turns the partition on through Settings; the stand-in's next answer
     /// must be `passed`. Ends on the screen's "on" contents.
     func turnOnAdult() {

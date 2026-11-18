@@ -20,6 +20,12 @@ import Foundation
 /// library is closed at every lock and before its data is deleted, and a
 /// thumbnail that was ending must not write its bytes, or create the
 /// directory again, after that.
+///
+/// No store lands after a clear (RD19 decision 7): `clear()` raises the
+/// cache's generation, and a store made with the generation its caller read
+/// before fetching writes nothing once a clear has come in between. A
+/// category's move clears the old partition's cache, and an image whose
+/// fetch began before that must not put a moved article's picture back.
 public actor ImageCache {
     /// 500 MB.
     public static let standardLimit = 500 * 1024 * 1024
@@ -32,6 +38,8 @@ public actor ImageCache {
     private var total: Int?
     /// Whether the cache's library was closed: a store then writes nothing.
     private var isClosed = false
+    /// Raised by every `clear()`.
+    public private(set) var generation = 0
 
     #if DEBUG
     /// Package tests only: runs inside a store that is about to write, so
@@ -65,7 +73,17 @@ public actor ImageCache {
     /// - Returns: whether the item was stored.
     @discardableResult
     public func store(_ data: Data, for address: String) -> Bool {
-        guard !isClosed, data.count <= limit else { return false }
+        store(data, for: address, generation: generation)
+    }
+
+    /// Stores `data` for `address` as `store(_:for:)` does, unless the
+    /// cache was cleared since its caller read `generation` (before it
+    /// began to fetch): then nothing is written.
+    ///
+    /// - Returns: whether the item was stored.
+    @discardableResult
+    public func store(_ data: Data, for address: String, generation: Int) -> Bool {
+        guard !isClosed, generation == self.generation, data.count <= limit else { return false }
         #if DEBUG
         storeWillWrite?()
         #endif
@@ -97,7 +115,9 @@ public actor ImageCache {
     }
 
     /// Removes every stored item it can; the total is then what is left.
+    /// A store whose fetch began before this writes nothing.
     public func clear() {
+        generation += 1
         var left = 0
         for item in entries() where (try? FileManager.default.removeItem(at: item.url)) == nil {
             left += item.size

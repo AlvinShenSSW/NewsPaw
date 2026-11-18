@@ -49,6 +49,16 @@ struct DebugLaunchOptions {
     /// library directory it is shown, and its flag kept, only when asked
     /// for, so that the other suites start on the shell.
     let firstRun: Bool
+    /// Whether the deletion of the next category move fails (RD19
+    /// criterion 12). Applied only together with `libraryDirectory`.
+    let failNextMoveDeletion: Bool
+    /// How long a category move waits between its copy and its deletion,
+    /// so that a lock can come during the run (RD19 criterion 12). Applied
+    /// only together with `libraryDirectory`.
+    let moveStepPause: Duration?
+    /// How long Clear Browsing Data waits before it clears (review round
+    /// 2). Applied only together with `libraryDirectory`.
+    let clearPause: Duration?
     /// Whether five usage rows of `seed-<partition>` are inserted into the
     /// normal library at launch and into the adult library at each unlock
     /// (RD17 decision 8). Applied only together with `libraryDirectory`.
@@ -100,6 +110,17 @@ struct DebugLaunchOptions {
             dailyAutomaticLimit = nil
         }
         firstRun = environment[UITestLaunchKey.firstRun] == "1"
+        failNextMoveDeletion = environment[UITestLaunchKey.failNextMoveDeletion] == "1"
+        if let text = environment[UITestLaunchKey.moveStepPause], let seconds = Int(text), seconds > 0 {
+            moveStepPause = .seconds(seconds)
+        } else {
+            moveStepPause = nil
+        }
+        if let text = environment[UITestLaunchKey.clearPause], let seconds = Int(text), seconds > 0 {
+            clearPause = .seconds(seconds)
+        } else {
+            clearPause = nil
+        }
         seedsUsage = environment[UITestLaunchKey.seedUsage] == "1"
     }
 

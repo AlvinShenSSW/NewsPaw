@@ -235,12 +235,12 @@ final class AdultLockTests: AdultTestCase {
         enterAdult()
         // Inside the adult partition its settings open without asking.
         tapAdultRow()
-        waitFor(turnOffButton)
-        XCTAssertTrue(timing("Immediately").isSelected)
+        waitForAdultSettings()
+        XCTAssertTrue(scrollTo(timing("Immediately")).isSelected)
         chooseTiming("After 1 Minute")
         leaveAndReturn(seconds: 3)
         // Still unlocked, and its settings still open.
-        XCTAssertTrue(turnOffButton.waitForExistence(timeout: 3))
+        XCTAssertTrue(element(AccessibilityID.lockTimingPicker).waitForExistence(timeout: 3))
         XCTAssertEqual(partitionLabel(), Wording.adult)
         waitForReport("pool=open", "library=held", "workspace=held")
 

@@ -18,7 +18,8 @@ import ImageIO
 ///
 /// At most `limit` requests are in flight; a freed slot goes to the first
 /// waiter, and a cancelled waiter leaves the queue (as in `ThumbnailLoader`,
-/// whose queue this repeats). A cancelled request stores nothing. Unlike a
+/// whose queue this repeats). A cancelled request stores nothing, and
+/// neither does one whose fetch began before the cache was cleared. Unlike a
 /// thumbnail, a failure is not remembered here: who shows the article
 /// decides when to ask again, which is when the article is opened again.
 /// So the answer says which it was: a request that was cancelled says
@@ -99,6 +100,9 @@ public actor BodyImageLoader {
     /// known to fail, and is not asked for again at once.
     public func load(_ url: URL) async -> Outcome {
         let key = Self.cacheKey(for: url)
+        // Read before anything is fetched: a clear that comes during the
+        // fetch keeps it out of the cache (RD19 decision 7).
+        let generation = await cache.generation
         if let cached = await cache.data(for: key) {
             return .image(cached)
         }
@@ -125,7 +129,7 @@ public actor BodyImageLoader {
         guard let image = await Self.reduce(response.body) else { return .failed }
         guard !Task.isCancelled else { return .cancelled }
         if stores {
-            await cache.store(image, for: key)
+            await cache.store(image, for: key, generation: generation)
         }
         return .image(image)
     }

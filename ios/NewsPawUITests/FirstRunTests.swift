@@ -337,6 +337,33 @@ final class FirstRunTests: FirstRunTestCase {
         XCTAssertFalse(element(AccessibilityID.categoryRow("Imported Private")).exists)
     }
 
+    /// Gate review of batch 2: "Add a Source…" in step 3, then Add source's
+    /// "Import Configuration" with a file holding both partitions. The import
+    /// is the first run's: no question about the adult partition, the
+    /// normal partition only, the one line; the sheet closes, the first run
+    /// stays on step 3, names no adult partition and makes no adult library.
+    func testImportConfigurationFromAddSourceInTheFirstRun() {
+        launchFirstRun(configurationFixture: "both")
+        waitForStep(1)
+        skipButton.tap()
+        waitForStep(2)
+        skipButton.tap()
+        waitForStep(3)
+        revealAboveTheBar(addSourceButton).tap()
+        importNormalPartitionOnly(from: scrollTo(button(AccessibilityID.addSourceImportConfigurationButton)))
+        waitForStep(3)
+        assertNoContainers()
+        assertNothingNamesTheAdultPartition("step 3 after an import from Add source")
+        waitForAdultFileAbsent()
+
+        doneButton.tap()
+        waitForShellOnToday()
+        XCTAssertFalse(element(AccessibilityID.partitionSwitch).exists, "the adult partition was turned on")
+        showCategoryList()
+        waitFor(element(AccessibilityID.categoryRow("Imported News")))
+        XCTAssertFalse(element(AccessibilityID.categoryRow("Imported Private")).exists)
+    }
+
     /// Today's empty state with no source has "Import Configuration" too
     /// (ux S1): in the normal partition the same import, the normal
     /// partition only; afterwards Today is no longer empty of sources.

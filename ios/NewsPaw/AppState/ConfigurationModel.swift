@@ -145,6 +145,10 @@ final class ConfigurationModel {
     private(set) var adultSkipped = false
     /// The import began in the first run: the adult part is not imported.
     private(set) var adultNotImported = false
+    /// The import began while the first run was on screen — from its step 3
+    /// or from the Add source sheet it presented (gate review of batch 2):
+    /// it brings the normal partition only, as the first run's origin does.
+    private var beganInFirstRun = false
     var path: [ConfigurationImportRoute] = []
     /// "Replace now?" is asked.
     var isConfirmingReplace = false
@@ -321,6 +325,7 @@ final class ConfigurationModel {
         self.origin = origin
         stage = .idle
         resetDocument()
+        beganInFirstRun = origin == .firstRun || navigation.isShowingFirstRun
         if origin == .addSource, navigation.sheet == .addSource {
             waitsForSheetToClose = true
             sources.addSourceClosed()
@@ -393,7 +398,7 @@ final class ConfigurationModel {
             buildPreview(document)
             return
         }
-        if origin == .firstRun {
+        if beganInFirstRun {
             adultNotImported = true
             buildPreview(document.withoutAdult)
             return

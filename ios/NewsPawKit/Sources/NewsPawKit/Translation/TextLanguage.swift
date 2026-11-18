@@ -170,36 +170,100 @@ enum TextLanguage {
         guard !texts.isEmpty else {
             return Judgement(title: title, excerpt: excerpt, decision: .keep)
         }
-        let units = texts.map(Units.init)
         let decision: Decision
-        switch reading {
-        case .simplifiedChinese:
-            if units.contains(where: { $0.kana > 0 || $0.han * 2 < $0.total })
-                || probability(of: [.simplifiedChinese, .traditionalChinese], in: strippedOfASCII(texts)) < recognizerThreshold {
-                decision = .send
-            } else {
-                let convertedTitle = title.flatMap(simplified)
-                let convertedExcerpt = excerpt.flatMap(simplified)
-                decision = convertedTitle == nil && convertedExcerpt == nil
-                    ? .keep : .converted(title: convertedTitle, excerpt: convertedExcerpt)
-            }
-        case .japanese:
-            let anyKana = units.contains { $0.kana > 0 }
-            if units.contains(where: { $0.kana == 0 && $0.han * 2 < $0.total })
-                || (!anyKana && probability(of: [.japanese], in: strippedOfASCII(texts)) < recognizerThreshold) {
-                decision = .send
-            } else {
-                decision = .keep
-            }
-        case .english:
-            if units.contains(where: { $0.han > 0 || $0.kana > 0 || Double($0.other) >= otherScriptShare * Double($0.total) })
-                || firstLanguage(of: texts.joined(separator: "\n")) != .english {
-                decision = .send
-            } else {
-                decision = .keep
-            }
+        if sends(texts, reading: reading) {
+            decision = .send
+        } else if reading == .simplifiedChinese {
+            let convertedTitle = title.flatMap(simplified)
+            let convertedExcerpt = excerpt.flatMap(simplified)
+            decision = convertedTitle == nil && convertedExcerpt == nil
+                ? .keep : .converted(title: convertedTitle, excerpt: convertedExcerpt)
+        } else {
+            decision = .keep
         }
         return Judgement(title: title, excerpt: excerpt, decision: decision)
+    }
+
+    /// What happens to one segment of a body (RD15 decision 4).
+    enum SegmentDecision: Equatable {
+        /// It goes to the model.
+        case send
+        /// It is shown as it is.
+        case keep
+        /// Written in Traditional Chinese under `zh-Hans`: the converted
+        /// text.
+        case converted(String)
+    }
+
+    /// Judges one segment of a body by the same per-text rules as an
+    /// article (RD15 decision 4), without the title's and excerpt's
+    /// character cuts: the segment is cut to `maximumScalars` for judging
+    /// only, and converted whole. A segment without a letter is kept.
+    static func judge(segment: String, reading: ReadingLocale) -> SegmentDecision {
+        let judged = cut(segment, characters: Int.max)
+        guard Units(judged).hasLetter else { return .keep }
+        if sends([judged], reading: reading) {
+            return .send
+        }
+        if reading == .simplifiedChinese, let converted = simplified(segment) {
+            return .converted(converted)
+        }
+        return .keep
+    }
+
+    /// What happens to the runs of one block of a web page (RD16
+    /// decision 5).
+    enum BlockDecision: Equatable {
+        /// The group goes to the model.
+        case send
+        /// It is left as it is.
+        case keep
+        /// Written in Traditional Chinese under `zh-Hans`: each run's
+        /// converted text, `nil` for one the transform left unchanged; at
+        /// least one is not `nil`.
+        case converted([String?])
+    }
+
+    /// Judges the runs of one block of a web page together, by the same
+    /// rules as an article's texts (decision 3): one text of another script
+    /// sends them all; an unsure recognizer sends. `pageHasKana` is true
+    /// once a run of the document has kana: under `zh-Hans` a group with Han
+    /// characters is then sent, never converted or kept (a kanji-only item
+    /// of a Japanese page). Each text is cut to `maximumScalars` for judging
+    /// only and converted whole. A group without a letter is kept.
+    static func judge(block texts: [String], reading: ReadingLocale, pageHasKana: Bool) -> BlockDecision {
+        let judged = texts.map { cut($0, characters: Int.max) }.filter { Units($0).hasLetter }
+        guard !judged.isEmpty else { return .keep }
+        if reading == .simplifiedChinese, pageHasKana, judged.contains(where: { Units($0).han > 0 }) {
+            return .send
+        }
+        if sends(judged, reading: reading) {
+            return .send
+        }
+        if reading == .simplifiedChinese {
+            let converted = texts.map(simplified)
+            return converted.allSatisfy({ $0 == nil }) ? .keep : .converted(converted)
+        }
+        return .keep
+    }
+
+    /// Whether texts that each have a letter go to the model under
+    /// `reading` (decision 3's rules): one text of another script sends
+    /// them all; an unsure recognizer sends.
+    private static func sends(_ texts: [String], reading: ReadingLocale) -> Bool {
+        let units = texts.map(Units.init)
+        switch reading {
+        case .simplifiedChinese:
+            return units.contains(where: { $0.kana > 0 || $0.han * 2 < $0.total })
+                || probability(of: [.simplifiedChinese, .traditionalChinese], in: strippedOfASCII(texts)) < recognizerThreshold
+        case .japanese:
+            let anyKana = units.contains { $0.kana > 0 }
+            return units.contains(where: { $0.kana == 0 && $0.han * 2 < $0.total })
+                || (!anyKana && probability(of: [.japanese], in: strippedOfASCII(texts)) < recognizerThreshold)
+        case .english:
+            return units.contains(where: { $0.han > 0 || $0.kana > 0 || Double($0.other) >= otherScriptShare * Double($0.total) })
+                || firstLanguage(of: texts.joined(separator: "\n")) != .english
+        }
     }
 
     /// The texts together, with ASCII letters and digits removed: what the

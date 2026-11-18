@@ -365,6 +365,7 @@ final class AppModel {
             moveStepPause = options.moveStepPause
             clearPause = options.clearPause
         }
+        let pageCeiling = options.libraryDirectory.flatMap { _ in options.pageTranslationCeiling } ?? PageTranslator.standardCeiling
         #else
         let directory = LibraryStore.defaultDirectory()
         let transport: any Transport = URLSessionTransport()
@@ -376,6 +377,7 @@ final class AppModel {
         let authenticator: any DeviceAuthenticator = SystemDeviceAuthenticator()
         let adultKeys = KeychainKeyStore(partition: .adult)
         let adultIsEnabled = BuildFeatures.adultPartition
+        let pageCeiling = PageTranslator.standardCeiling
         #endif
         makeScheduleParts()
         let now = self.now
@@ -395,6 +397,7 @@ final class AppModel {
                 readingSettings: ReadingSettings(preferences: preferences),
                 normalModels: models,
                 translationSettings: TranslationSettings(preferences: preferences),
+                pageCeiling: pageCeiling,
                 // The normal library's models: its workspace's translation
                 // resumes, whichever workspace's Settings saved.
                 slotsChanged: { [weak self] in self?.normal?.translation.slotsChanged() },
@@ -453,6 +456,16 @@ final class AppModel {
                 configurationFixture = options.configurationFixture
                 configurationWritePause = options.configurationWritePause
                 configurationExportHold = options.configurationExportHold
+                workspace.translation.body.holdsFirstPlanUntilBackground = options.holdsFirstBodyPlan
+                if options.failsFirstBodyWrite {
+                    workspace.translation.body.failNextWrites(1)
+                }
+                workspace.translation.body.holdsRetryWrite = options.holdsRetryWrite
+                if options.changesSlotsAfterReader {
+                    // The same call as a save in Settings.
+                    workspace.translation.body.changesSlotsAfterReaderTranslated = true
+                    workspace.translation.body.slotsChangedForUITests = { [weak self] in self?.parts?.slotsChanged() }
+                }
             }
             workspace.sources.opmlFixture = opmlFixture
             workspace.configuration.fixture = configurationFixture
@@ -1270,6 +1283,12 @@ final class AppModel {
     private func sceneDidEnterBackground() {
         sceneIsActive = false
         wasInBackground = true
+        // The bodies' translation stops (RD15 N06: leaving stops the work);
+        // a mere deactivation (Control Centre, an alert, the app switcher
+        // glimpsed) does not, so that no chunk is cancelled and sent again
+        // for nothing. `cameToFront` resumes what is still shown.
+        normal?.translation.appEnteredBackground()
+        adult?.translation.appEnteredBackground()
         // An unlock that is still running is discarded (decision 5).
         if let unlockAttempt {
             unlockAttempt.enteredBackground = true
@@ -1308,6 +1327,10 @@ final class AppModel {
         // The adult workspace is still shown: its pages may play again. One
         // that the lock dropped stays suspended for good.
         adult?.browser.allowMedia()
+        // Both workspaces' pages may be seen again: page translation counts
+        // nothing that failed across the absence against the page (RD16).
+        normal?.browser.sceneDidActivate()
+        adult?.browser.sceneDidActivate()
         if wasInBackground || launchEntryOwed {
             wasInBackground = false
             launchEntryOwed = false
@@ -1321,7 +1344,8 @@ final class AppModel {
             // The app came to the front: a translation pause of the normal
             // library may end (RD14 decision 6), whichever partition is
             // shown, since the normal workspace goes on working; and the
-            // adult library's, while it is shown.
+            // adult library's, while it is shown. Each one's body work,
+            // stopped in the background, may start again (RD15).
             normal?.translation.cameToFront()
             adult?.translation.cameToFront()
         } else if ranInBackground {
@@ -1445,6 +1469,67 @@ final class AppModel {
 
     // MARK: - The UI tests' report (decision 4)
 
+    /// The settings the configuration file carries whose in-memory mirror
+    /// differs from what is stored (batch 3): after an import every mirror
+    /// has been read again, so this is empty. One case per setting of the
+    /// file, global and per partition (`ConfigurationSettingName`): a
+    /// setting added to the file without a case here does not compile.
+    private func staleSettingMirrors() async -> [String] {
+        guard let preferences, let parts else { return ["unavailable"] }
+        var stale: [String] = []
+        for name in ConfigurationSettingName.allCases {
+            switch name {
+            case .refreshMinutes, .retentionDays, .backgroundRefresh, .readingLocale, .autoTranslateTitles, .showOriginalTitles,
+                 .translateBodyOnOpen:
+                let current: Bool = switch name {
+                case .refreshMinutes: parts.refreshSettings.interval == preferences.refreshInterval
+                case .retentionDays: parts.refreshSettings.retention == preferences.retention
+                case .backgroundRefresh: parts.refreshSettings.backgroundRefresh == preferences.backgroundRefresh
+                case .readingLocale: parts.translationSettings.readingLocale == preferences.readingLocale
+                case .autoTranslateTitles: parts.translationSettings.translatesTitlesAutomatically == preferences.autoTranslateTitles
+                case .showOriginalTitles: parts.translationSettings.showsOriginalTitles == preferences.showOriginalTitles
+                case .translateBodyOnOpen: parts.translationSettings.translatesBodyOnOpen == preferences.translatesBodyOnOpen
+                default: true
+                }
+                if !current {
+                    stale.append(name.rawValue)
+                }
+            case .dailyAutoLimit:
+                // No mirror: the limit is read from the library at each use.
+                break
+            case .listThumbnails:
+                for workspace in [normal, adult].compactMap(\.self) {
+                    let stored = try? await workspace.reading.library.listThumbnails()
+                    if stored != workspace.reading.showsThumbnails {
+                        stale.append("\(workspace.partition.rawValue).\(name.rawValue)")
+                    }
+                }
+            }
+        }
+        return stale
+    }
+
+    private func staleMirrorsReport() async -> String {
+        let stale = await staleSettingMirrors()
+        return stale.isEmpty ? "none" : stale.joined(separator: ",")
+    }
+
+    /// Whether a browser session of either workspace has page
+    /// translation on (RD16): the bottom bar's button does not pass its
+    /// accessibility value to the UI tests.
+    private var pageTranslationIsOn: Bool {
+        [normal?.browser, adult?.browser].compactMap(\.self)
+            .flatMap { [$0.session(.library), $0.session(.starred)].compactMap(\.self) }
+            .contains { $0.translation.isOn }
+    }
+
+    /// How many times the normal workspace's page translations were told
+    /// they are seen again.
+    private var pageTranslationSeenAgain: Int {
+        guard let browser = normal?.browser else { return -1 }
+        return [browser.session(.library), browser.session(.starred)].compactMap(\.self).map(\.translation.timesSeenAgain).reduce(0, +)
+    }
+
     /// Whether the adult library's file exists, whether a pool is open on
     /// it, whether the library object, the adult workspace and its browser
     /// model are gone from memory, how many browser sessions the app has
@@ -1455,7 +1540,10 @@ final class AppModel {
     /// assumption A2); and for RD24 whether a background request is
     /// pending, how the last background run ended, how many runs the
     /// record holds for the last 7 days, and how many times the adult
-    /// library was asked of the store.
+    /// library was asked of the store; and for RD16 how many texts with
+    /// the sentinel the fixture received, whether page translation is on
+    /// and how many times the normal pages were told they are seen again;
+    /// and for RD15 how the last Copy Translation was written.
     func adultDebugReport() async -> String {
         guard let gate else { return "" }
         let file = gate.adultLibraryFileExists ? 1 : 0
@@ -1477,7 +1565,19 @@ final class AppModel {
             + "deliveries=\(deliveriesHandled) "
             + "configuration=\(normal?.configuration.heldDocumentReport ?? "none") "
             + "exportsWritten=\(ConfigurationModel.debugExportsWritten) exportsEnded=\(ConfigurationModel.debugExportsEnded) "
-            + "shareEnded=\(ConfigurationModel.debugShareEnded)"
+            + "shareEnded=\(ConfigurationModel.debugShareEnded) "
+            + "neverSent=\(FixtureModelHTTP.neverSent) "
+            + "translateOn=\(pageTranslationIsOn ? 1 : 0) "
+            + "seenAgain=\(pageTranslationSeenAgain) "
+            + "staleMirrors=\(await staleMirrorsReport()) "
+            + "bodyRequests=\((try? await normal?.reading.library.usageCount(purpose: .body)) ?? -1) "
+            + "adultBodyRequests=\((try? await adult?.reading.library.usageCount(purpose: .body)) ?? -1) "
+            + "pageRequests=\((try? await normal?.reading.library.usageCount(purpose: .page)) ?? -1) "
+            + "adultPageRequests=\((try? await adult?.reading.library.usageCount(purpose: .page)) ?? -1) "
+            + "readerBlock=\(normal?.reading.lastReportedPosition.map(String.init) ?? "none") "
+            + "bodyStartsInBackground=\(BodyTranslationModel.startsInBackground) "
+            + "slotChanges=\(BodyTranslationModel.slotChanges) "
+            + "copy=\(TranslationCopy.lastWrite)"
     }
 
     private static func reportName(of ending: BackgroundRun.Ending?) -> String {

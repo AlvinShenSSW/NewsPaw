@@ -1,5 +1,6 @@
 import NewsPawKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The reading pane beside a list: the article open on that list, its
 /// page in the browser with Close (RD10), or "No article selected".
@@ -94,12 +95,22 @@ private struct ArticleScreen: View {
     @Environment(TranslationModel.self) private var translation: TranslationModel?
     @Environment(\.layoutDirection) private var layoutDirection
     @State private var isShowingSettings = false
+    @State private var isShowingInfo = false
     /// The title's size: 22 pt at the default Dynamic Type size, scaled
     /// with it and, as the body is, by the text-size setting.
     @ScaledMetric(relativeTo: .title2) private var scaledTitleSize = 22.0
 
     /// The column of ux section 5.
     private static let maximumColumnWidth = 680.0
+
+    /// The body's translation (RD15): only in a workspace with translation.
+    private var body_: BodyTranslationModel? {
+        translation?.body
+    }
+
+    private var key: BodyKey {
+        .article(row.id)
+    }
 
     var body: some View {
         ScrollView {
@@ -110,8 +121,17 @@ private struct ArticleScreen: View {
             .frame(maxWidth: Self.maximumColumnWidth, alignment: .leading)
             .padding(Theme.Spacing.standard)
             .frame(maxWidth: .infinity)
+            // The scroll content's own coordinates, for the rows' frames.
+            .coordinateSpace(.named(BlockRowFrames.space))
         }
-        .modifier(ReaderPosition(articleID: row.id, reading: reading))
+        // "Translating k of n" under the navigation bar while work runs
+        // (assumption A4).
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let progress = body_?.progress(of: key) {
+                BodyProgressLine(progress: progress)
+            }
+        }
+        .modifier(ReaderPosition(articleID: row.id, reading: reading, mode: body_?.mode(of: key)))
         // A body replaced by the article's page (RD12) starts at the top,
         // header and all: the scroll view and its position are made anew.
         // (Kept, the position would hold the old body's block at the top
@@ -125,15 +145,32 @@ private struct ArticleScreen: View {
             previous: isPushed ? nil : { reading.openPrevious(on: list) }
         )
         .toolbar { bars }
+        .sheet(isPresented: $isShowingInfo) {
+            ArticleInfoView(row: row, content: content, key: key)
+                .environment(translation)
+        }
         .onAppear {
             reading.loadBody(of: row)
             // The reading screen asks for its article as a row does (RD14
             // decision 7).
             translation?.articleOpened(row)
+            // Leaving the screen stops the body's work; coming back
+            // resumes it (RD15 decision 9).
+            body_?.screenAppeared(key)
         }
         .onDisappear {
             reading.readingScreenClosed(row.id)
             translation?.articleClosed(row.id)
+            body_?.screenDisappeared(key)
+        }
+    }
+
+    /// The body shown now, settled or interim.
+    private var content: ReadingContent? {
+        switch reading.bodies[row.id] {
+        case .loaded(let content): content
+        case .fetching(let feed): feed
+        default: nil
         }
     }
 
@@ -145,7 +182,12 @@ private struct ArticleScreen: View {
     @ViewBuilder
     private var header: some View {
         let translated = translation == nil ? nil : row.translatedTitle
+        // Each line carries its language for VoiceOver (RD15 decision 13):
+        // the translation the reading language, the original the
+        // recognizer's.
+        let originalLanguage = translation == nil ? nil : BodySegments.language(of: row.displayTitle)
         Text(verbatim: translated ?? row.displayTitle)
+            .speechLanguage(translated != nil ? body_?.readingLocale.rawValue : originalLanguage)
             .font(.system(size: min(scaledTitleSize * settings.textSize.factor, ReadingMetrics.maximumSize), weight: .bold))
             .foregroundStyle(Theme.text)
             .fixedSize(horizontal: false, vertical: true)
@@ -153,6 +195,7 @@ private struct ArticleScreen: View {
             .accessibilityIdentifier(AccessibilityID.readingTitle)
         if translated != nil {
             Text(verbatim: row.displayTitle)
+                .speechLanguage(originalLanguage)
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -183,6 +226,12 @@ private struct ArticleScreen: View {
         case .loaded(let content):
             if content.isExtracted {
                 note(Text("Full text from the original page"), identifier: AccessibilityID.readingFullTextNote)
+            }
+            // The banner is the first content above the body (ux S4).
+            if let body_, let banner = body_.banner(of: key, hasBackup: translation?.hasBackup ?? false) {
+                BodyBannerView(banner: banner) { step in
+                    take(step, body: body_)
+                }
             }
             blocks(content)
             if content.isCut {
@@ -230,9 +279,28 @@ private struct ArticleScreen: View {
     }
 
     private func blocks(_ content: ReadingContent) -> some View {
-        BlocksView(blocks: content.blocks, settings: settings, images: content.images) { url in
+        BlocksView(blocks: content.blocks, settings: settings, images: content.images, translation: blockTranslation) { url in
             // In the embedded browser above the article, never Safari.
             navigation.openPage(url, on: list)
+        }
+    }
+
+    /// What the blocks show of the body's translation.
+    private var blockTranslation: BlockTranslation? {
+        guard let body_, body_.openings[key]?.plan != nil else { return nil }
+        let key = key
+        return BlockTranslation(
+            mode: body_.mode(of: key), language: body_.readingLocale.rawValue,
+            text: { body_.translatedText(of: $0, in: key) }, originalLanguage: { body_.originalLanguage(of: $0, in: key) }
+        )
+    }
+
+    /// A banner step.
+    private func take(_ step: TranslationWording.Step, body: BodyTranslationModel) {
+        switch step {
+        case .retry: body.translate(key)
+        case .retryWithBackup: body.retryWithBackup(key)
+        case .openSettings: navigation.openModelSettings()
         }
     }
 
@@ -277,6 +345,19 @@ private struct ArticleScreen: View {
         }
         ToolbarItem(placement: .topBarTrailing) {
             Menu("More", systemImage: "ellipsis.circle") {
+                if let body_ {
+                    Button("Copy Translation", systemImage: "doc.on.doc") {
+                        if let text = body_.copyText(of: key, title: row.translatedTitle ?? row.displayTitle) {
+                            TranslationCopy.write(text, partition: reading.library.partition)
+                        }
+                    }
+                    .disabled(!body_.hasTranslation(key))
+                    .accessibilityIdentifier(AccessibilityID.copyTranslationButton)
+                }
+                Button("Article Info", systemImage: "info.circle") {
+                    isShowingInfo = true
+                }
+                .accessibilityIdentifier(AccessibilityID.articleInfoButton)
                 Button("Previous Article", systemImage: "chevron.up") {
                     reading.openPrevious(on: list)
                 }
@@ -288,6 +369,14 @@ private struct ArticleScreen: View {
             .accessibilityIdentifier(AccessibilityID.readingMoreMenu)
         }
         ToolbarItemGroup(placement: .bottomBar) {
+            // Display mode first (ux S4): Translate, or the mode menu.
+            if let body_, body_.control(for: key) != .none {
+                BodyControlView(
+                    control: body_.control(for: key), mode: body_.mode(of: key),
+                    translate: { body_.translate(key) }, setMode: { body_.setMode($0, of: key) }
+                )
+                Spacer()
+            }
             Button(ArticleActionWording.star(isStarred: row.isStarred), systemImage: row.isStarred ? "star.fill" : "star") {
                 reading.setStarred(row.id, !row.isStarred)
             }
@@ -314,6 +403,35 @@ private struct ArticleScreen: View {
     }
 }
 
+/// Copy Translation's pasteboard write (RD15, N09). In the adult partition
+/// the text is written local-only, so Universal Clipboard does not carry
+/// the article to the owner's other devices. In the normal partition it is
+/// the ordinary pasteboard. Plain text in both.
+@MainActor
+enum TranslationCopy {
+    #if DEBUG
+    /// How the last Copy Translation was written, for the UI tests' report:
+    /// "localOnly", "ordinary", or "none" before any.
+    static var lastWrite = "none"
+    #endif
+
+    static func write(_ text: String, partition: Partition) {
+        switch partition {
+        case .adult:
+            let options: [UIPasteboard.OptionsKey: Any] = [.localOnly: true]
+            UIPasteboard.general.setItems([[UTType.utf8PlainText.identifier: text]], options: options)
+            #if DEBUG
+            lastWrite = options[.localOnly] as? Bool == true ? "localOnly" : "ordinary"
+            #endif
+        case .normal:
+            UIPasteboard.general.string = text
+            #if DEBUG
+            lastWrite = "ordinary"
+            #endif
+        }
+    }
+}
+
 /// Keeps the reader's place in an open article (RD11, review round 1).
 ///
 /// The reading screen's scroll view reports the block at its top to the
@@ -325,23 +443,91 @@ private struct ArticleScreen: View {
 /// back with it (measured, and held by the UI test). The position is this
 /// modifier's own state, so that scrolling does not lay the screen out
 /// again.
-private struct ReaderPosition: ViewModifier {
+///
+/// A change of display mode sets the block that was at the top back at the
+/// top (RD15 decision 11, assumption A3).
+struct ReaderPosition: ViewModifier {
     let articleID: UUID
     let reading: ReadingModel
+    /// The body's display mode; `nil` without translation.
+    var mode: ReadingDisplayMode?
     @State private var position: ScrollPosition
 
-    init(articleID: UUID, reading: ReadingModel) {
+    init(articleID: UUID, reading: ReadingModel, mode: ReadingDisplayMode? = nil) {
         self.articleID = articleID
         self.reading = reading
+        self.mode = mode
         let start = reading.position(of: articleID)
         _position = State(initialValue: start.map { ScrollPosition(id: $0, anchor: .top) } ?? ScrollPosition(idType: Int.self))
     }
 
+    /// Where the reader's rows are and where the visible top edge is, in
+    /// the content's coordinates: not observed, read at a switch.
+    @State private var rows = BlockRowFrames()
+
     func body(content: Content) -> some View {
+        ScrollViewReader { proxy in
+            positioned(content, proxy: proxy)
+        }
+    }
+
+    private func positioned(_ content: Content, proxy: ScrollViewProxy) -> some View {
         content
+            .environment(\.blockRowFrames, rows)
             .scrollPosition($position, anchor: .top)
-            .onChange(of: position.viewID(type: Int.self)) { _, block in
-                reading.readerMoved(to: block, in: articleID)
+            .onScrollGeometryChange(for: Double.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top
+            } action: { _, top in
+                rows.visibleTop = top
+                // The reader's place is the block whose row holds the
+                // visible top edge, none while the header holds it — not
+                // the position's `viewID`, which names the first block
+                // below that edge (measured): at the article's top it named
+                // block 0, and a screen built again then scrolled the header
+                // away (RD11's `testPlaceIsKeptWhileTheArticleStaysOpen` on
+                // the iPad, fix round 1). Nothing is told before the rows
+                // are laid out, so that a screen built again keeps the
+                // place it was given.
+                guard let place = rows.place(atTop: top), place != rows.reported else { return }
+                rows.reported = place
+                reading.readerMoved(to: place.block, in: articleID)
             }
+            .onChange(of: mode) {
+                keepTopBlock(proxy)
+            }
+    }
+
+    /// Counts the switches, so that a newer one ends an older one's
+    /// scrolls.
+    @State private var switches = 0
+
+    /// The block at the top stays there across a switch (assumption A3).
+    /// It is the block whose row holds the visible top edge before the
+    /// switch — not the position's `viewID`, which names the first block
+    /// below that edge (measured: the reader saw block 16 at the top and
+    /// the position held 17). That block is scrolled to the top, and
+    /// scrolled to again after the lazy stack's next passes while the rows
+    /// around it take their new sizes; a newer switch ends these scrolls.
+    ///
+    /// Measured on the iPhone (fix round 1): scrolled to once, going into
+    /// Side by Side it landed 233 pt low (in the same update as the
+    /// switch) or 878 pt low (after one layout pass), or 790–970 pt above
+    /// the top (scrolled to before the blocks changed): the rows above it
+    /// are scrolled through at sizes not yet measured in the new mode. With
+    /// the scrolls repeated over 0.5 s its first line stayed at the top
+    /// (131 pt, the bar ending at 116) in every switch. Nothing is
+    /// scrolled at the article's top.
+    private func keepTopBlock(_ proxy: ScrollViewProxy) {
+        guard let block = rows.block(atTop: rows.visibleTop) else { return }
+        switches += 1
+        let switchNumber = switches
+        proxy.scrollTo(block, anchor: .top)
+        Task { @MainActor in
+            for delay in [0, 50, 150, 300] {
+                try? await Task.sleep(for: .milliseconds(delay))
+                guard switchNumber == switches else { return }
+                proxy.scrollTo(block, anchor: .top)
+            }
+        }
     }
 }

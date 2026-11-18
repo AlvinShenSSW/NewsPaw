@@ -49,8 +49,6 @@ struct SourceSettingsView: View {
                             Toggle("Translate When Opened", isOn: $sources.draftTranslatePage)
                                 .disabled(locked)
                                 .accessibilityIdentifier(AccessibilityID.translatePageToggle)
-                        } footer: {
-                            footnote
                         }
                         .listRowBackground(Theme.surface)
                     }
@@ -207,12 +205,4 @@ struct SourceSettingsView: View {
         .listRowBackground(Theme.surface)
     }
 
-    /// The footnote of the option saved before it is used: a web page's
-    /// "Translate When Opened" waits for page translation (RD16). A feed's
-    /// options are all used once RD12 (the body) and RD14 (the titles) are
-    /// in, so a feed has none (RD12 decision 9; RD14 decision 12).
-    private var footnote: some View {
-        Text("Saved now; used once page translation is available.")
-            .foregroundStyle(Theme.secondaryText)
-    }
 }

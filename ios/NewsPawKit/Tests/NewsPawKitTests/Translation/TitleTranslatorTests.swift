@@ -848,6 +848,56 @@ struct TitleTranslatorTests {
         #expect(fixture.reported == [.requesting(Set(ids)), .requesting([]), .stored(Set(ids))])
     }
 
+    // MARK: - RD15 decision 10: translateIfWaiting
+
+    @Test("RD15 criterion 11: translateIfWaiting sends one manual request for a waiting article, none when a row exists, and is not limited")
+    func translateIfWaiting() async throws {
+        let fixture = try await TranslatorFixture.make()
+        defer { fixture.remove() }
+        try await fixture.library.setDailyAutomaticLimit(0)
+        // A source with automatic titles off.
+        let source = try await fixture.source(autoTranslate: .off)
+        let waiting = try await fixture.article("A waiting story about the harbour", in: source)
+        await fixture.start()
+        #expect(fixture.service.requests.isEmpty)
+        #expect(await fixture.translator.translateIfWaiting(waiting) == .stored)
+        #expect(fixture.service.requests.count == 1)
+        #expect(try await fixture.translation(waiting)?.state == .done)
+        #expect(try await fixture.usage().map(\.automatic) == [false])
+        // A row exists now: nothing is sent.
+        #expect(await fixture.translator.translateIfWaiting(waiting) == .notWaiting)
+        #expect(fixture.service.requests.count == 1)
+        // A failed row counts as a row: it waits for Retry.
+        let refused = try await fixture.article("A refused story", in: source)
+        try await fixture.library.storeTranslations([
+            TranslationRecord(articleID: refused, locale: .simplifiedChinese, state: .failed, title: nil, excerpt: nil, failure: .refused, model: "m"),
+        ])
+        #expect(await fixture.translator.translateIfWaiting(refused) == .notWaiting)
+        #expect(fixture.service.requests.count == 1)
+    }
+
+    @Test("RD15 criterion 11: translateIfWaiting while an automatic request holds the article sends nothing more")
+    func translateIfWaitingAfterAutomatic() async throws {
+        let service = TranslationService()
+        service.hold(request: 1)
+        let fixture = try await TranslatorFixture.make(service: service)
+        defer { fixture.remove() }
+        let source = try await fixture.source()
+        let id = try await fixture.article("An automatic story about the harbour", in: source)
+        await fixture.translator.configure(TranslationConfiguration(locale: .simplifiedChinese, automatic: true))
+        await fixture.eventually { fixture.service.requests.count == 1 }
+        let manual = Task { await fixture.translator.translateIfWaiting(id) }
+        // The manual job is queued while the worker holds the article; only
+        // then is the automatic request let go.
+        await fixture.eventually { await fixture.translator.manualJobsQueued == 1 }
+        #expect(fixture.service.requests.count == 1)
+        service.release(request: 1)
+        #expect(await manual.value == .notWaiting)
+        await fixture.translator.settled()
+        #expect(fixture.service.requests.count == 1)
+        #expect(try await fixture.translation(id)?.state == .done)
+    }
+
     private static func rfc822(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

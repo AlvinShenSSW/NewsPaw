@@ -83,9 +83,10 @@ struct ConfigurationFileTests {
                 source["last_error"] = "gone"
             }
             var settings = object["settings"] as! [String: Any]
-            // RD15's member, not yet one of this version (RD24's
-            // `background_refresh` is one since batch 2).
-            settings["translate_body_on_open"] = true
+            // RD15's display mode, a device setting that is never a
+            // member (its `translate_body_on_open` is one since batch 3, as
+            // RD24's `background_refresh` since batch 2).
+            settings["reading_display_mode"] = "original"
             settings["reading_text_size"] = 5
             object["settings"] = settings
         }

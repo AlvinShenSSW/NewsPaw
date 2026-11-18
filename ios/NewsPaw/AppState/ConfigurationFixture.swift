@@ -66,10 +66,10 @@ enum ConfigurationFixture: String {
               "exported_at": "2026-11-16T09:00:00Z",
               "app_version": "0.1.0 (1)",
               "includes_adult": \(adult),
-              "settings": {"refresh_minutes": 60, "retention_days": 90, "reading_locale": "zh-Hans", "auto_translate_titles": true, "show_original_titles": false},
+              "settings": {"refresh_minutes": 60, "retention_days": 90, "reading_locale": "ja", "auto_translate_titles": false, "show_original_titles": true, "background_refresh": false, "translate_body_on_open": false},
               "categories": [\(normalCategory)\(adult ? ", " + adultCategory : "")],
               "sources": [\(normalSource)\(adult ? ", " + adultSource : "")],
-              "partition_settings": [{"partition": "normal", "daily_auto_limit": 150, "list_thumbnails": true}\(adult ? #", {"partition": "adult", "daily_auto_limit": 20, "list_thumbnails": false}"# : "")],
+              "partition_settings": [{"partition": "normal", "daily_auto_limit": 150, "list_thumbnails": false}\(adult ? #", {"partition": "adult", "daily_auto_limit": 20, "list_thumbnails": false}"# : "")],
               "model_slots": [\(normalSlot)\(adult ? ", " + adultSlot : "")]
             }
             """

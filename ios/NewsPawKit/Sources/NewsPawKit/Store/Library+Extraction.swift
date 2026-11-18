@@ -53,9 +53,11 @@ extension Library {
     /// with the article, in place of any body stored with it, with the
     /// library's time as its fetch time.
     ///
+    /// - Returns: the fetch time stored.
     /// - Throws: `unknownArticle` when the library no longer holds the
     ///   article; then nothing is written.
-    public func storeExtraction(html: String, address: URL, isCut: Bool = false, ofArticle id: UUID) async throws {
+    @discardableResult
+    public func storeExtraction(html: String, address: URL, isCut: Bool = false, ofArticle id: UUID) async throws -> Date {
         let envelope = ExtractionEnvelope(
             v: ExtractionEnvelope.version, html: html, address: address.absoluteString, cut: isCut ? true : nil
         )
@@ -71,5 +73,6 @@ extension Library {
                     origin = excluded.origin, blocks = excluded.blocks, fetched_at = excluded.fetched_at
                 """, arguments: [id.databaseKey, BodyOrigin.extracted.rawValue, text, now])
         }
+        return now
     }
 }

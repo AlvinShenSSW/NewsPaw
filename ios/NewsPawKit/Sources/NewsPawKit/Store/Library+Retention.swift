@@ -8,7 +8,8 @@ extension Library {
     /// its body. Each deleted article leaves its identifier in `seen` with
     /// the clean-up's time, so that it does not come back as new while its
     /// feed still lists it. "Forever" deletes nothing. The published time and
-    /// the read state play no part, and no `updated_at` changes.
+    /// the read state play no part, and no `updated_at` changes. Rows of
+    /// `page_text` not used for `retention` go in the same transaction.
     ///
     /// - Returns: the number of articles deleted.
     /// - Throws: a `LibraryError`; then nothing has been deleted.
@@ -18,6 +19,9 @@ extension Library {
         let now = now()
         let cutoff = now.addingTimeInterval(-TimeInterval(retention.rawValue) * 24 * 60 * 60)
         return try await write { db in
+            // Page text unused for the retention period (RD16 decision 7),
+            // before the articles: also on a day when no article expires.
+            try db.execute(sql: "DELETE FROM page_text WHERE last_used_at < ?", arguments: [cutoff])
             let expired = try Row.fetchAll(db, sql: """
                 SELECT id, source_id, external_id FROM article
                 WHERE starred_at IS NULL AND first_seen_at < ?

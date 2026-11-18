@@ -87,10 +87,14 @@ final class ConfigurationTests: AdultTestCase {
     /// Replace Everything → the review → Replace → "Replace now?" → Replace.
     func replaceEverything(expectingOnlyNormal: Bool, file: StaticString = #filePath, line: UInt = #line) {
         tapWhenEnabled(AccessibilityID.configurationReplaceEverythingButton, file: file, line: line)
-        waitFor(button(AccessibilityID.configurationReplaceButton), file: file, line: line)
+        waitFor(app.navigationBars["Before Replacing"], file: file, line: line)
+        // The fixture's file changes every setting it carries (batch 3):
+        // the review lists them all, and Replace, with the note above it,
+        // can be below the fold on the iPhone.
+        let replace = scrollTo(button(AccessibilityID.configurationReplaceButton), file: file, line: line)
         XCTAssertEqual(element(AccessibilityID.configurationOnlyNormal).exists, expectingOnlyNormal, file: file, line: line)
         screenshot("review")
-        button(AccessibilityID.configurationReplaceButton).tap()
+        replace.tap()
         answer(Wording.replaceNow, with: "Replace", file: file, line: line)
     }
 
@@ -274,6 +278,12 @@ final class ConfigurationTests: AdultTestCase {
         XCTAssertFalse(app.alerts.firstMatch.exists)
         replaceEverything(expectingOnlyNormal: true)
         waitFor(button(AccessibilityID.configurationDoneButton))
+        // Batch 3: the file changes every setting it carries from its
+        // default; each in-memory mirror is current without a relaunch.
+        let current = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
+            self.report.contains("staleMirrors=none ")
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [current], timeout: 10), .completed, report)
         screenshot("summary-replace")
         leaveSummary()
         waitForCategory("Hidden Stuff")

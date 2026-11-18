@@ -10,6 +10,7 @@ public enum ConfigurationSettingName: String, Sendable, Hashable, CaseIterable {
     case autoTranslateTitles = "auto_translate_titles"
     case showOriginalTitles = "show_original_titles"
     case backgroundRefresh = "background_refresh"
+    case translateBodyOnOpen = "translate_body_on_open"
     case dailyAutoLimit = "daily_auto_limit"
     case listThumbnails = "list_thumbnails"
 }
@@ -49,6 +50,8 @@ public struct ConfigurationSettings: Codable, Sendable, Hashable {
     public var showOriginalTitles: Bool?
     /// RD24's switch (spec section 4).
     public var backgroundRefresh: Bool?
+    /// RD15's switch (spec section 4): articles are translated when opened.
+    public var translateBodyOnOpen: Bool?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case refreshMinutes = "refresh_minutes"
@@ -57,11 +60,12 @@ public struct ConfigurationSettings: Codable, Sendable, Hashable {
         case autoTranslateTitles = "auto_translate_titles"
         case showOriginalTitles = "show_original_titles"
         case backgroundRefresh = "background_refresh"
+        case translateBodyOnOpen = "translate_body_on_open"
     }
 
     public init(
         refreshMinutes: Int? = nil, retentionDays: Int? = nil, readingLocale: String? = nil, autoTranslateTitles: Bool? = nil,
-        showOriginalTitles: Bool? = nil, backgroundRefresh: Bool? = nil
+        showOriginalTitles: Bool? = nil, backgroundRefresh: Bool? = nil, translateBodyOnOpen: Bool? = nil
     ) {
         self.refreshMinutes = refreshMinutes
         self.retentionDays = retentionDays
@@ -69,6 +73,7 @@ public struct ConfigurationSettings: Codable, Sendable, Hashable {
         self.autoTranslateTitles = autoTranslateTitles
         self.showOriginalTitles = showOriginalTitles
         self.backgroundRefresh = backgroundRefresh
+        self.translateBodyOnOpen = translateBodyOnOpen
     }
 
     /// The stored key each member is written under, in `Preferences`.
@@ -79,6 +84,7 @@ public struct ConfigurationSettings: Codable, Sendable, Hashable {
         .autoTranslateTitles: Preferences.autoTranslateTitlesKey,
         .showOriginalTitles: Preferences.showOriginalTitlesKey,
         .backgroundRefresh: Preferences.backgroundRefreshKey,
+        .translateBodyOnOpen: Preferences.translateBodyOnOpenKey,
     ]
 
     /// The stored keys that are never exported (spec section 4, N10): the
@@ -93,6 +99,8 @@ public struct ConfigurationSettings: Codable, Sendable, Hashable {
         Preferences.lockTimingKey,
         Preferences.firstRunDoneKey,
         Preferences.backgroundRunsKey,
+        // RD15: the display mode an article opens in is a device setting.
+        Preferences.readingDisplayModeKey,
         Library.lastRefreshKey,
     ]
 
@@ -104,7 +112,8 @@ public struct ConfigurationSettings: Codable, Sendable, Hashable {
             readingLocale: preferences.readingLocale.rawValue,
             autoTranslateTitles: preferences.autoTranslateTitles,
             showOriginalTitles: preferences.showOriginalTitles,
-            backgroundRefresh: preferences.backgroundRefresh
+            backgroundRefresh: preferences.backgroundRefresh,
+            translateBodyOnOpen: preferences.translatesBodyOnOpen
         )
     }
 
@@ -143,6 +152,9 @@ public struct ConfigurationSettings: Codable, Sendable, Hashable {
         if let backgroundRefresh {
             preferences.backgroundRefresh = backgroundRefresh
         }
+        if let translateBodyOnOpen {
+            preferences.translatesBodyOnOpen = translateBodyOnOpen
+        }
     }
 
     /// The members present in the file whose value differs from `here`'s.
@@ -158,6 +170,7 @@ public struct ConfigurationSettings: Codable, Sendable, Hashable {
         compare(.autoTranslateTitles, autoTranslateTitles, here.autoTranslateTitles) { .flag($0) }
         compare(.showOriginalTitles, showOriginalTitles, here.showOriginalTitles) { .flag($0) }
         compare(.backgroundRefresh, backgroundRefresh, here.backgroundRefresh) { .flag($0) }
+        compare(.translateBodyOnOpen, translateBodyOnOpen, here.translateBodyOnOpen) { .flag($0) }
         return result
     }
 }

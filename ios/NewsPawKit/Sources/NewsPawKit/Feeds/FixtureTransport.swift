@@ -29,6 +29,9 @@ public final class FixtureTransport: Transport {
         public static let oneFeed = "https://onefeed.example.invalid/"
         /// A page with a title and no feed.
         public static let noFeed = "https://nofeed.example.invalid/"
+        /// The page translation list page (RD16): a page with a title and
+        /// no feed, saved as a web-page source by the UI tests.
+        public static let pageTranslationList = "https://pages.example.invalid/ja-list"
         /// An address answering 403.
         public static let forbidden = "https://forbidden.example.invalid/"
         /// An address that does not answer.
@@ -102,6 +105,20 @@ public final class FixtureTransport: Transport {
         public static func translationWord(_ word: String) -> String {
             "https://translationwords.example.invalid/\(word).xml"
         }
+
+        /// A feed for body translation (RD15 decision 16), newest first:
+        /// "Long story" (16 paragraphs of about 700 characters, eight
+        /// chunks, `fixture:stall-once` in paragraph 7, chunk 4), "Refused
+        /// paragraph story" (the same with `fixture:refuse` in paragraph 3,
+        /// chunk 2), "Flaky story" (six paragraphs, `fixture:fail-once` in
+        /// paragraph 3), "Primary refuses story" (four paragraphs,
+        /// `fixture:refuse-primary` in the first), "Markup story" (a
+        /// paragraph holding Markdown, an HTML link and a script address
+        /// as text), "Many paragraphs story" (40 short paragraphs),
+        /// a Chinese article, "Short note" (an excerpt, no link) and
+        /// "Excerpt only story" (content that gives no block: its excerpt is
+        /// the body). No item links to an address that answers.
+        public static let bodies = "https://bodies.example.invalid/rss.xml"
 
         /// A feed of articles whose bodies come from their pages (RD12):
         /// "Fetched story", "Scripted story", "List story", "Huge story",
@@ -218,6 +235,8 @@ public final class FixtureTransport: Transport {
             return answer(Self.rss(title: "One Feed", items: ["One feed story"]), type: rss)
         case Address.noFeed:
             return answer(Self.page(title: "Plain Page", links: []), type: html)
+        case Address.pageTranslationList:
+            return answer(Self.page(title: "Japanese List", links: []), type: html)
         case Address.forbidden:
             return answer("", type: html, status: 403)
         case Address.timesOut:
@@ -268,6 +287,8 @@ public final class FixtureTransport: Transport {
             return answer(Self.searchFeed, type: rss)
         case Address.privateSearch:
             return answer(Self.privateSearchFeed, type: rss)
+        case Address.bodies:
+            return answer(Self.bodiesFeed, type: rss)
         case Address.translationWord("refuse"), Address.translationWord("limit"), Address.translationWord("slow"):
             return answer(Self.translationWordFeed(String(url.deletingPathExtension().lastPathComponent)), type: rss)
         case GitHubFeedAddress.of("project", "releases"):
@@ -617,6 +638,101 @@ public final class FixtureTransport: Transport {
         }
         return channel(title: feed, items: [translationItem(title, slug: "word-\(word)", minutesAgo: 5, description: "")])
     }
+
+    // MARK: - The body translation feed (RD15)
+
+    /// The sentences the long paragraphs are made of.
+    private static let bodySentences = [
+        "The council met in the old library on the hill, where the windows look over the harbour and the fishing boats.",
+        "Every item on the agenda was read aloud twice, once for the members and once for the people standing at the back.",
+        "The treasurer explained that the roof would need new slates before the winter storms reached the coast again.",
+        "A long discussion followed about the bus timetable, which still does not meet the first ferry of the morning.",
+        "The school asked for a crossing on the main road, and the members agreed to write to the county about it.",
+        "Someone proposed a summer market on the quay, with stalls for the farms and the bakery and the island's potters.",
+        "The meeting ended late, and the caretaker locked the doors while the last members walked down to the harbour.",
+    ]
+
+    /// Paragraph `number` of a long body: about 700 characters, its own
+    /// text, with `word` at its end when given.
+    public static func bodyParagraph(_ number: Int, of story: String, word: String? = nil) -> String {
+        var text = "\(story), paragraph \(number)."
+        var index = number
+        while text.count < 600 {
+            text += " " + bodySentences[index % bodySentences.count]
+            index += 1
+        }
+        if let word {
+            text += " " + word
+        }
+        return text
+    }
+
+    /// The paragraphs of "Many paragraphs story": 40 short ones.
+    public static func shortParagraph(_ number: Int) -> String {
+        "Short paragraph \(number). " + bodySentences[number % bodySentences.count]
+    }
+
+    /// The text of "Markup story"'s first paragraph, as it is shown.
+    public static let markupParagraph = "Read **this in bold**, <a href=\"https://example.invalid/link\">an HTML link</a>, "
+        + "[a Markdown link](https://example.invalid/markdown) and javascript:alert(1) here."
+
+    /// The excerpt of "Excerpt only story", whose content gives no block.
+    public static let excerptOnlyText = "The ferry timetable changes next week, the harbour office said."
+
+    public static let chineseBodyTitle = "海港议会讨论新的渡轮时刻表"
+    public static let chineseBodyParagraphs = [
+        "海港议会昨晚在山上的旧图书馆开会，讨论新的渡轮时刻表。议员们一致认为，早班渡轮应该提前十分钟出发，以便学生按时到校。",
+        "财务主管表示，图书馆的屋顶需要在冬季风暴到来之前更换瓦片，费用将由议会和县政府共同承担。",
+        "会议结束时已是深夜，最后一批议员沿着小路走回港口。",
+    ]
+
+    private static func bodyItem(_ title: String, slug: String, minutesAgo: Int, paragraphs: [String], link: Bool = true) -> String {
+        let escape = { (text: String) in
+            text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+        }
+        let html = paragraphs.map { "<p>\(escape($0))</p>" }.joined()
+        let address = link ? "<link>https://example.invalid/bodies/\(slug)</link>" : ""
+        return "<item><title>\(title)</title>\(address)<guid>bodies-\(slug)</guid>"
+            + "<description>The summary of \(title.lowercased()).</description>"
+            + "<content:encoded><![CDATA[\(html)]]></content:encoded>"
+            + "<pubDate>\(date(minutesAgo: minutesAgo))</pubDate></item>"
+    }
+
+    private static let bodiesFeed: String = {
+        let long = (1...16).map { bodyParagraph($0, of: "Long story", word: $0 == 7 ? FixtureModelHTTP.Word.stallOnce : nil) }
+        let refused = (1...16).map { number in
+            bodyParagraph(number, of: "Refused paragraph story", word: number == 3 ? FixtureModelHTTP.Word.refuse
+                : number == 7 ? FixtureModelHTTP.Word.stallOnce : nil)
+        }
+        let flaky = (1...6).map { bodyParagraph($0, of: "Flaky story", word: $0 == 3 ? FixtureModelHTTP.Word.failOnce : nil) }
+        let primaryRefuses = (1...4).map {
+            bodyParagraph($0, of: "Primary refuses story", word: $0 == 1 ? FixtureModelHTTP.Word.refusePrimary : nil)
+        }
+        let items = [
+            bodyItem("Long story", slug: "long", minutesAgo: 5, paragraphs: long),
+            bodyItem("Refused paragraph story", slug: "refused", minutesAgo: 10, paragraphs: refused),
+            bodyItem("Flaky story", slug: "flaky", minutesAgo: 15, paragraphs: flaky),
+            bodyItem("Primary refuses story", slug: "primary-refuses", minutesAgo: 20, paragraphs: primaryRefuses),
+            bodyItem("Markup story", slug: "markup", minutesAgo: 25, paragraphs: [markupParagraph, bodyParagraph(2, of: "Markup story")]),
+            bodyItem("Many paragraphs story", slug: "many", minutesAgo: 30, paragraphs: (1...40).map(shortParagraph)),
+            bodyItem(chineseBodyTitle, slug: "chinese", minutesAgo: 35, paragraphs: chineseBodyParagraphs),
+            "<item><title>Short note</title><guid>bodies-short</guid>"
+                + "<description>A short note about the harbour, only a few words long.</description>"
+                + "<pubDate>\(date(minutesAgo: 40))</pubDate></item>",
+            // Its content gives no block: the excerpt is put in as the body.
+            "<item><title>Excerpt only story</title><guid>bodies-excerpt-only</guid>"
+                + "<description>\(excerptOnlyText)</description>"
+                + "<content:encoded><![CDATA[<script>var hidden = 1;</script>]]></content:encoded>"
+                + "<pubDate>\(date(minutesAgo: 45))</pubDate></item>",
+        ]
+        return """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Body Feed</title>\
+            <link>https://bodies.example.invalid/</link>
+            \(items.joined(separator: "\n"))
+            </channel></rss>
+            """
+    }()
 
     // MARK: - The full-text feed and its pages (RD12)
 

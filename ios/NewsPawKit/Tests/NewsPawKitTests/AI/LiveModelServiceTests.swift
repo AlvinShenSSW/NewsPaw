@@ -1,5 +1,6 @@
 import Foundation
 @testable import NewsPawKit
+import Synchronization
 import Testing
 
 /// RD13 decision 13 (criterion 14): the real-service check. Disabled unless
@@ -23,6 +24,18 @@ import Testing
 /// requests it took, their outcomes, and how many articles were translated
 /// or, for the failed ones, which check failed. It prints counts and
 /// reasons only, never a text.
+///
+/// RD15 adds a sixth step per service (decision 16, assumption A5): one
+/// fixed English article of eight chunks through `BodyTranslator` into
+/// Simplified Chinese, on a library of its own, reporting the requests,
+/// the chunks accepted, the failed check if any, and the seconds to the
+/// first chunk. Counts, reasons and times only, never a text.
+///
+/// RD16 adds a seventh step per service: three fixed page requests through
+/// `PageTranslator` (40 short Japanese titles; a paragraph split into five
+/// runs by links; a block with a number and a name), reporting the
+/// requests, their outcomes and tokens, and the runs accepted or the
+/// failed check. Never a text or the key.
 @Suite("Real model services (enabled by NEWSPAW_LIVE_MODEL_KEYS)")
 struct LiveModelServiceTests {
     static let variable = "NEWSPAW_LIVE_MODEL_KEYS"
@@ -41,7 +54,7 @@ struct LiveModelServiceTests {
     static let translateTexts = ["The weather is fine today.", "The library opens at nine in the morning."]
 
     @Test(
-        "each service in the owner's key file: list, translate, wrong key, missing model, 20 articles through the translator",
+        "each service in the owner's key file: list, translate, wrong key, missing model, 20 articles and an 8-chunk body through the translators",
         .enabled(if: ProcessInfo.processInfo.environment[variable] != nil, "set NEWSPAW_LIVE_MODEL_KEYS to the owner's key file")
     )
     func realServices() async throws {
@@ -123,7 +136,101 @@ struct LiveModelServiceTests {
 
             // 5. Twenty articles through the translator (RD14).
             try await Self.translateArticles(name, preset: preset, address: address, model: model, key: realKey, http: http)
+
+            // 6. An eight-chunk body through the body translator (RD15).
+            try await Self.translateBody(name, preset: preset, address: address, model: model, key: realKey, http: http)
+
+            // 7. Three page requests through the page translator (RD16).
+            try await Self.translatePage(name, preset: preset, address: address, model: model, key: realKey, http: http)
         }
+    }
+
+    /// The page requests of step 7: 40 short Japanese titles, each its own
+    /// block; a paragraph split into five runs by links; a block with a
+    /// number and a name.
+    static let pageGroups: [(String, [PageGroup])] = [
+        ("40 titles", (1...40).map { number in
+            PageGroup(block: number, runs: [PageRun(id: number, block: number, text: "新しい製品が発表されました、その \(number)", whole: true, inView: true)])
+        }),
+        ("paragraph in five runs", [PageGroup(block: 100, runs: [
+            "The harbour council published", "its new plan", "for the coming year, and", "the ferry timetable", "changes in March.",
+        ].enumerated().map { PageRun(id: 100 + $0.offset, block: 100, text: $0.element, whole: false, inView: true) })]),
+        ("mixed block", [PageGroup(block: 200, runs: [
+            PageRun(id: 200, block: 200, text: "Tim Cook", whole: false, inView: true),
+            PageRun(id: 201, block: 200, text: "announced 3 new products on 12 March", whole: false, inView: true),
+        ])]),
+    ]
+
+    private static func translatePage(
+        _ name: String, preset: ModelPreset, address: String, model: String, key: SecretKey, http: URLSessionModelHTTP
+    ) async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = try await LibraryStore(directory: directory, cacheRoot: directory.appending(path: "Images")).openNormal()
+        let models = LibraryModels(library: library, keys: InMemoryKeyStore(), http: http)
+        try await models.save(ModelSlotDraft(role: .primary, preset: preset, address: address, model: model, newKey: key), testedOutcome: nil)
+        let translator = PageTranslator(models: models)
+        for (label, groups) in pageGroups {
+            let before = try await library.usageRecords().count
+            var accepted = 0
+            var failed: [String] = []
+            for unit in PageBatcher.units(groups) {
+                let outcome = await translator.send(unit, host: "live.example.invalid", locale: .simplifiedChinese, route: .primary)
+                accepted += outcome.writes.count
+                failed += outcome.failed.map { "\($0.reason)" }
+            }
+            let usage = try await library.usageRecords().dropFirst(before)
+            let runs = groups.reduce(0) { $0 + $1.runs.count }
+            let tokens = usage.map { "\($0.inputTokens.map(String.init) ?? "-")/\($0.outputTokens.map(String.init) ?? "-")" }.joined(separator: ", ")
+            Self.report(name, "page: \(label)", "\(usage.count) requests (\(usage.map(\.outcome.rawValue).joined(separator: ", "))), "
+                + "\(accepted) of \(runs) runs accepted, tokens \(tokens)\(failed.isEmpty ? "" : ", failed: \(Set(failed).sorted().joined(separator: ", "))")")
+            #expect(accepted == runs, "\(name) page \(label): \(accepted) of \(runs) runs accepted")
+        }
+    }
+
+    /// The article of step 6: 16 paragraphs of about 700 characters.
+    static let bodyParagraphs = (1...16).map { FixtureTransport.bodyParagraph($0, of: "The harbour council's report") }
+
+    private static func translateBody(
+        _ name: String, preset: ModelPreset, address: String, model: String, key: SecretKey, http: URLSessionModelHTTP
+    ) async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = try await LibraryStore(directory: directory, cacheRoot: directory.appending(path: "Images")).openNormal()
+        let models = LibraryModels(library: library, keys: InMemoryKeyStore(), http: http)
+        try await models.save(ModelSlotDraft(role: .primary, preset: preset, address: address, model: model, newKey: key), testedOutcome: nil)
+        let category = try await library.createCategory(name: "Live", icon: .newspaper)
+        let source = Sample.source(in: category.id, url: "https://live.example.invalid/body", name: "Live", at: Date())
+        try await library.insert(source)
+        let article = Sample.article(in: source.id, externalID: "live-body", title: "The harbour council's report", at: Date())
+        try await library.insert(article)
+        let plan = BodySegments.plan(bodyParagraphs.map { ArticleBlock(.paragraph([InlineRun($0)])) }, locale: .simplifiedChinese)
+        let translator = BodyTranslator(models: models)
+        let start = ContinuousClock.now
+        let firstChunk = Mutex<Duration?>(nil)
+        let failures = Mutex<[String]>([])
+        let ends = Mutex<[BodyTranslationEnd]>([])
+        await translator.setObserver { event in
+            switch event {
+            case .translated:
+                firstChunk.withLock { $0 = $0 ?? (ContinuousClock.now - start) }
+            case .failed(_, let failed):
+                failures.withLock { $0 += failed.values.map(\.rawValue) }
+            case .ended(_, let end):
+                ends.withLock { $0.append(end) }
+            }
+        }
+        await translator.start(BodyTranslationJob(article: article.id, locale: .simplifiedChinese, chunks: plan.chunks, route: .primary))
+        await translator.settled()
+        let usage = try await library.usageRecords()
+        let stored = try await library.bodyTranslations(ofArticle: article.id, locale: .simplifiedChinese)
+        let done = plan.finishedChunks(done: stored.compactMapValues(\.text))
+        let seconds = firstChunk.withLock { $0 }.map { String(format: "%.1f s", Double($0.components.seconds) + Double($0.components.attoseconds) / 1e18) } ?? "none"
+        let failed = Set(failures.withLock { $0 }).sorted()
+        Self.report(name, "body", "\(usage.count) requests (\(usage.map(\.outcome.rawValue).joined(separator: ", "))), "
+            + "\(done) of \(plan.chunks.count) chunks accepted, first chunk after \(seconds)"
+            + "\(failed.isEmpty ? "" : ", failed: \(failed.joined(separator: ", "))"), end: \(ends.withLock { $0 }.map { "\($0)" }.joined())")
+        #expect(done == plan.chunks.count, "\(name) body: \(done) of \(plan.chunks.count) chunks accepted")
     }
 
     /// The 20 articles of step 5: short English titles and full excerpts.

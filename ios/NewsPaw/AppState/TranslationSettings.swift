@@ -2,10 +2,10 @@ import Foundation
 import NewsPawKit
 import Observation
 
-/// The three translation settings of Settings › Models & Translation (spec
-/// N06; RD14 decision 1): the reading language, whether titles are
-/// translated automatically, and whether a list row shows the original
-/// title too. Global settings over the preferences store, one object for
+/// The four translation settings of Settings › Models & Translation (spec
+/// N06; RD14 decision 1; RD15 decision 1): the reading language, whether
+/// titles are translated automatically, whether an article is translated
+/// when it opens, and whether a list row shows the original title too. Global settings over the preferences store, one object for
 /// the app, shared by every workspace as the refresh settings are (RD18
 /// decision 3). A change applies at once and is stored; the translation
 /// models listening are told.
@@ -35,6 +35,12 @@ final class TranslationSettings {
         didSet { preferences.showOriginalTitles = showsOriginalTitles }
     }
 
+    /// "Translate Articles When Opened" (RD15 decision 1): it applies from
+    /// the next opening.
+    var translatesBodyOnOpen: Bool {
+        didSet { preferences.translatesBodyOnOpen = translatesBodyOnOpen }
+    }
+
     /// The configuration a translator works with.
     var configuration: TranslationConfiguration {
         TranslationConfiguration(locale: readingLocale, automatic: translatesTitlesAutomatically)
@@ -53,6 +59,7 @@ final class TranslationSettings {
         readingLocale = preferences.readingLocale
         translatesTitlesAutomatically = preferences.autoTranslateTitles
         showsOriginalTitles = preferences.showOriginalTitles
+        translatesBodyOnOpen = preferences.translatesBodyOnOpen
     }
 
     /// Reads the preferences again after a configuration import wrote
@@ -62,6 +69,7 @@ final class TranslationSettings {
         let locale = preferences.readingLocale
         let automatic = preferences.autoTranslateTitles
         let original = preferences.showOriginalTitles
+        let bodyOnOpen = preferences.translatesBodyOnOpen
         if locale != readingLocale {
             readingLocale = locale
         }
@@ -70,6 +78,11 @@ final class TranslationSettings {
         }
         if original != showsOriginalTitles {
             showsOriginalTitles = original
+        }
+        // RD15's switch (batch 3): BodyTranslationModel reads it at each
+        // opening.
+        if bodyOnOpen != translatesBodyOnOpen {
+            translatesBodyOnOpen = bodyOnOpen
         }
     }
 

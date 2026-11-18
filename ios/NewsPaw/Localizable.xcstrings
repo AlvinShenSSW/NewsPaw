@@ -725,6 +725,17 @@
         }
       }
     },
+    "Always Translate This Source" : {
+      "comment" : "Browser More menu switch for a web-page source: open its pages translated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "总是翻译这个来源"
+          }
+        }
+      }
+    },
     "An address is listed twice in one partition (%@)." : {
       "comment" : "Configuration import refusal; %@ is a position such as “source 12”.",
       "localizations" : {
@@ -754,6 +765,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "有条目引用了文件中不存在的分类（%@）。"
+          }
+        }
+      }
+    },
+    "Article Info" : {
+      "comment" : "Reading screen, More menu, and the title of its sheet: where the body came from and how it was translated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文章信息"
           }
         }
       }
@@ -868,6 +890,17 @@
         }
       }
     },
+    "Body Translation" : {
+      "comment" : "Article Info: the section about the translation of the article body.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正文翻译"
+          }
+        }
+      }
+    },
     "Book" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -974,6 +1007,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分类不同"
+          }
+        }
+      }
+    },
+    "Change Display Mode" : {
+      "comment" : "Keyboard shortcut T: cycles the reading screen between translation, original and side by side.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换显示方式"
           }
         }
       }
@@ -1165,6 +1209,17 @@
         }
       }
     },
+    "Converted on this device" : {
+      "comment" : "Article Info: the text was converted from Traditional to Simplified Chinese on the device, without a model.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在本机转换"
+          }
+        }
+      }
+    },
     "Cookies, sign-ins and other website data of the adult partition's browser are removed from this device. The normal partition's are kept." : {
       "comment" : "Message of the question before the adult partition's browser data are removed.",
       "localizations" : {
@@ -1194,6 +1249,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "复制链接"
+          }
+        }
+      }
+    },
+    "Copy Translation" : {
+      "comment" : "Reading screen, More menu: copies the translated title and body as plain text.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝译文"
           }
         }
       }
@@ -1374,6 +1440,17 @@
         }
       }
     },
+    "Default Display Mode" : {
+      "comment" : "Settings, Reading: the display mode an article opens in.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认显示方式"
+          }
+        }
+      }
+    },
     "Delete" : {
       "comment" : "Context-menu item of a source; the last button before the adult partition's data is deleted.",
       "localizations" : {
@@ -1480,6 +1557,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要放弃所做的更改吗？"
+          }
+        }
+      }
+    },
+    "Display Mode" : {
+      "comment" : "Reading screen bottom bar: the menu of translation, original and side by side.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示方式"
           }
         }
       }
@@ -1715,6 +1803,17 @@
         }
       }
     },
+    "Fetched %@" : {
+      "comment" : "Article Info: when the original page was fetched; the argument is a date and time.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "获取于 %@"
+          }
+        }
+      }
+    },
     "Film" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -1862,6 +1961,17 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "From the feed" : {
+      "comment" : "Article Info: the body is the one the feed gave.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来自订阅源"
           }
         }
       }
@@ -3313,6 +3423,17 @@
         }
       }
     },
+    "Nothing to translate on this page" : {
+      "comment" : "Browser translation line: the page is already in the reading language.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个页面没有需要翻译的文字"
+          }
+        }
+      }
+    },
     "OK" : {
       "comment" : "Button: dismisses an alert.",
       "localizations" : {
@@ -3478,6 +3599,17 @@
         }
       }
     },
+    "Original" : {
+      "comment" : "A display mode: the original text only.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原文"
+          }
+        }
+      }
+    },
     "Outside Any Folder" : {
       "comment" : "OPML import preview, section of the feeds not in a folder.",
       "localizations" : {
@@ -3529,6 +3661,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分区：普通"
+          }
+        }
+      }
+    },
+    "Partly translated" : {
+      "comment" : "Article Info: some paragraphs of the body are not translated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分已翻译"
           }
         }
       }
@@ -3964,17 +4107,6 @@
         }
       }
     },
-    "Saved now; used once page translation is available." : {
-      "comment" : "Source settings footnote under a web page's options.",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "现在先保存，网页翻译可用后生效。"
-          }
-        }
-      }
-    },
     "Search" : {
       "comment" : "Search: the button that opens the Search screen, its title, and the Command-F shortcut's name.",
       "localizations" : {
@@ -4140,6 +4272,17 @@
         }
       }
     },
+    "Show Original" : {
+      "comment" : "Browser translation line action: puts the page's own text back.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示原文"
+          }
+        }
+      }
+    },
     "Show Original Titles in Lists" : {
       "comment" : "Settings switch: a list row shows the original title under its translation.",
       "localizations" : {
@@ -4195,6 +4338,17 @@
         }
       }
     },
+    "Side by Side" : {
+      "comment" : "A display mode: each translated paragraph followed by its original.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对照"
+          }
+        }
+      }
+    },
     "Simplified Chinese" : {
       "comment" : "A reading language: Simplified Chinese.",
       "localizations" : {
@@ -4235,6 +4389,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "较小"
+          }
+        }
+      }
+    },
+    "Some text could not be translated" : {
+      "comment" : "Reading screen banner: shown before the reason when part of the body is translated.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分文字没有翻译成功"
+          }
+        }
+      }
+    },
+    "Some text could not be translated · %@" : {
+      "comment" : "Browser translation line: part of the page failed; the reason follows the dot.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分文字没有翻译成功 · %@"
           }
         }
       }
@@ -4923,6 +5099,17 @@
         }
       }
     },
+    "The page did not respond" : {
+      "comment" : "Browser translation line: the page did not answer the app's script.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "页面没有响应"
+          }
+        }
+      }
+    },
     "The page stopped working." : {
       "comment" : "Reason shown in the embedded browser's failure state when the page's web content process ended.",
       "localizations" : {
@@ -5007,6 +5194,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "服务拒绝了这个 Key"
+          }
+        }
+      }
+    },
+    "The translation could not be read." : {
+      "comment" : "Reading screen banner: the stored translation could not be read.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取译文。"
           }
         }
       }
@@ -5257,6 +5455,17 @@
         }
       }
     },
+    "Title Translation" : {
+      "comment" : "Article Info: the section about the translation of the title.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标题翻译"
+          }
+        }
+      }
+    },
     "Titles and Summaries" : {
       "comment" : "Usage screen: purpose of model requests that translate titles and summaries.",
       "localizations" : {
@@ -5297,6 +5506,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "标题、摘要和文章正文，以及你翻译的网页文字，会发送给这个服务。Key 只保存在这台设备上。可以先跳过，以后在设置里设置。"
+          }
+        }
+      }
+    },
+    "Titles, summaries and articles are translated into this language." : {
+      "comment" : "Settings, Models & Translation: footer of the reading language.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标题、摘要和正文会翻译成这种语言。"
           }
         }
       }
@@ -5402,6 +5622,28 @@
         }
       }
     },
+    "Translate" : {
+      "comment" : "Reading screen bottom bar: translates the article now.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译"
+          }
+        }
+      }
+    },
+    "Translate Articles When Opened" : {
+      "comment" : "Settings, Models & Translation: switch; when on, an article body is translated as it opens.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开文章时翻译正文"
+          }
+        }
+      }
+    },
     "Translate Titles" : {
       "comment" : "Picker in Source settings.",
       "localizations" : {
@@ -5435,6 +5677,39 @@
         }
       }
     },
+    "Translated by %@" : {
+      "comment" : "Article Info: the models that translated; the argument is a list of model names.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %@ 翻译"
+          }
+        }
+      }
+    },
+    "Translated to %@" : {
+      "comment" : "Browser translation line: the page is translated into the reading language, named here.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已翻译成%@"
+          }
+        }
+      }
+    },
+    "Translating %lld of %lld" : {
+      "comment" : "Reading screen progress line: chunks of the body translated so far, of all chunks.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在翻译 %1$lld / %2$lld 段"
+          }
+        }
+      }
+    },
     "Translating…" : {
       "comment" : "A list row's activity mark and its VoiceOver state: the title is being translated.",
       "localizations" : {
@@ -5464,6 +5739,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "翻译模型"
+          }
+        }
+      }
+    },
+    "Translation paused on this long page" : {
+      "comment" : "Browser translation line: the request ceiling was reached; Continue allows more.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "长页面的翻译已暂停"
           }
         }
       }
@@ -5776,6 +6062,17 @@
         }
       }
     },
+    "When this is off, an article is translated when you tap Translate." : {
+      "comment" : "Settings, Models & Translation: footer of the translation switches.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭后，点按“翻译”才会翻译文章。"
+          }
+        }
+      }
+    },
     "When today's automatic requests reach this number, nothing more is sent automatically until tomorrow. Translations you start yourself are not limited." : {
       "comment" : "Usage screen: footer of the daily automatic limit.",
       "localizations" : {
@@ -5888,6 +6185,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "连接不上"
+          }
+        }
+      }
+    },
+    "displayMode.translation" : {
+      "comment" : "A display mode: the translated text. A key of its own: \"Translation\" alone is the settings section.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "译文"
           }
         }
       }

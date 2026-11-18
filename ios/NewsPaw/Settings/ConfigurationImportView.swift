@@ -812,6 +812,7 @@ enum ConfigurationWording {
         case .autoTranslateTitles: Text("Translate Titles Automatically")
         case .showOriginalTitles: Text("Show Original Titles in Lists")
         case .backgroundRefresh: Text("Background Refresh")
+        case .translateBodyOnOpen: Text("Translate Articles When Opened")
         case .dailyAutoLimit: Text("Daily Automatic Limit")
         case .listThumbnails: Text("Show Thumbnails in Lists")
         }

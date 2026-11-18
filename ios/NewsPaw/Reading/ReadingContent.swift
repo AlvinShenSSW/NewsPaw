@@ -14,6 +14,13 @@ struct ReadingContent {
     /// The body was extracted from the article's page (RD12): the screen
     /// says "Full text from the original page".
     let isExtracted: Bool
+    /// The body is the row's excerpt, put in as one paragraph because the
+    /// HTML gave no block (RD15 decision 5's pre-fill).
+    let isExcerptFallback: Bool
+    /// The page an extracted body came from, and when it was fetched
+    /// (Article Info, RD15 decision 12).
+    let pageAddress: URL?
+    let fetchedAt: Date?
     /// The images of this opening. A new opening has a new one, so an
     /// image that failed is asked for again.
     let images: BodyImageSession
@@ -23,6 +30,7 @@ struct ReadingContent {
         var blocks: [ArticleBlock]
         var isCut: Bool
         var isFullText: Bool
+        var isExcerptFallback = false
     }
 
     /// Converts `html`, off the main actor. A body with no block at all
@@ -31,10 +39,14 @@ struct ReadingContent {
     static func convert(html: String?, excerpt: String?, baseURL: URL?) async -> Converted {
         let converted = ArticleBlocks.make(html: html ?? "", baseURL: baseURL)
         var blocks = converted.blocks
+        var isExcerptFallback = false
         if blocks.isEmpty, let excerpt, !excerpt.isEmpty {
             blocks = [ArticleBlock(.paragraph([InlineRun(excerpt)]))]
+            isExcerptFallback = true
         }
-        return Converted(blocks: blocks, isCut: converted.isCut, isFullText: ArticleBlocks.isFullText(blocks))
+        return Converted(
+            blocks: blocks, isCut: converted.isCut, isFullText: ArticleBlocks.isFullText(blocks), isExcerptFallback: isExcerptFallback
+        )
     }
 
     /// - Parameter mayLoad: whether the opening's images may still be
@@ -46,6 +58,9 @@ struct ReadingContent {
         isCut = converted.isCut
         isFullText = converted.isFullText
         isExtracted = false
+        isExcerptFallback = converted.isExcerptFallback
+        pageAddress = nil
+        fetchedAt = nil
         self.images = BodyImageSession(loader: images, mayLoad: mayLoad)
     }
 
@@ -57,6 +72,9 @@ struct ReadingContent {
         isCut = extracted.blocks.isCut
         isFullText = true
         isExtracted = true
+        isExcerptFallback = false
+        pageAddress = extracted.address
+        fetchedAt = extracted.fetchedAt
         self.images = BodyImageSession(loader: images, mayLoad: mayLoad)
     }
 }

@@ -171,6 +171,37 @@ enum AccessibilityID {
     static let readingLoadingNote = "reading.loadingNote"
     static let hideListButton = "reading.hideList"
 
+    // Body translation (RD15)
+    /// "Translating k of n" under the navigation bar.
+    static let bodyProgress = "translation.bodyProgress"
+    /// The banner above the body, and its steps.
+    static let bodyBanner = "translation.banner"
+    static let bodyBannerRetry = "translation.banner.retry"
+    static let bodyBannerRetryBackup = "translation.banner.retryBackup"
+    static let bodyBannerOpenSettings = "translation.banner.openSettings"
+    /// The bar's Translate button and its display-mode menu.
+    static let translateButton = "translation.translate"
+    static let displayModeMenu = "translation.displayMode"
+    static let copyTranslationButton = "reading.copyTranslation"
+    static let articleInfoButton = "reading.articleInfo"
+    static let articleInfo = "articleInfo"
+    static let articleInfoBody = "articleInfo.body"
+    static let articleInfoTitle = "articleInfo.title"
+    static let articleInfoTranslation = "articleInfo.translation"
+    static let articleInfoDoneButton = "articleInfo.done"
+    static let defaultDisplayModePicker = "readingSettings.displayMode"
+    static let translateBodyOnOpenToggle = "translation.bodyOnOpen"
+
+    /// A display mode's option in the mode menu and in Settings › Reading.
+    static func displayModeOption(_ rawValue: String) -> String {
+        "displayMode." + rawValue
+    }
+
+    /// The original under a translated block in Side by Side.
+    static func readingOriginalBlock(_ index: Int) -> String {
+        "reading.original." + String(index)
+    }
+
     // The body's blocks, by their place in the body (RD11)
     static let readingBlockPrefix = "reading.block."
 
@@ -235,6 +266,15 @@ enum AccessibilityID {
 
     // Reader mode (RD12)
     static let browserReaderButton = "browser.reader"
+    // Page translation (RD16)
+    static let browserTranslateButton = "browser.translate"
+    static let pageTranslationLine = "browser.translationLine"
+    static let pageTranslationShowOriginal = "browser.translationLine.showOriginal"
+    static let pageTranslationRetry = "browser.translationLine.retry"
+    static let pageTranslationRetryBackup = "browser.translationLine.retryBackup"
+    static let pageTranslationContinue = "browser.translationLine.continue"
+    static let pageTranslationOpenSettings = "browser.translationLine.openSettings"
+    static let alwaysTranslateToggle = "browser.alwaysTranslate"
     /// The temporary article shown in place of the page.
     static let readerArticle = "reader.article"
     static let readerTitle = "reader.title"
@@ -559,6 +599,26 @@ enum UITestLaunchKey {
     /// 9; review R3), so that no other test's tap can land on it; honoured
     /// only with `libraryDirectory`.
     static let backgroundDelivery = "NEWSPAW_UITEST_BACKGROUND_DELIVERY"
+    /// "1" holds the normal workspace's first body plan until the app is
+    /// in the background, and a second more (RD15 review round 3);
+    /// honoured only with `libraryDirectory`.
+    static let holdFirstBodyPlan = "NEWSPAW_UITEST_HOLD_FIRST_BODY_PLAN"
+    /// "1" makes the normal workspace's first write of body results fail
+    /// (RD15 review round 4); honoured only with `libraryDirectory`.
+    static let failFirstBodyWrite = "NEWSPAW_UITEST_FAIL_FIRST_BODY_WRITE"
+    /// "1": six seconds after the first temporary article of the normal
+    /// workspace is translated, its slots are reported changed, as a save
+    /// in Settings reports it (RD15 review round 4); honoured only with
+    /// `libraryDirectory`.
+    static let slotsChangeAfterReader = "NEWSPAW_UITEST_SLOTS_CHANGE_AFTER_READER"
+    /// "1": Retry's write of texts that could not be written waits eight
+    /// seconds before it is made (RD15 review round 5); honoured only with
+    /// `libraryDirectory`.
+    static let holdRetryWrite = "NEWSPAW_UITEST_HOLD_RETRY_WRITE"
+    /// A whole number of at least 1: the requests page translation sends
+    /// in one period before it pauses (RD16 decision 11), lowered for the
+    /// paused line's test. Honoured only with `libraryDirectory`.
+    static let pageTranslationCeiling = "NEWSPAW_UITEST_PAGE_TRANSLATION_CEILING"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.
@@ -567,16 +627,25 @@ enum DebugAccessibilityID {
     /// 4): its label is `file=<0|1> pool=<open|closed>
     /// library=<held|released> workspace=<none|held|released>
     /// browser=<none|held|released> sessions=<number> pages=<number>
-    /// translationRequests=<number> adultStore=<listed|absent>
+    /// translationRequests=<number> neverSent=<number> translateOn=<0|1>
+    /// seenAgain=<number> staleMirrors=<none|names> adultStore=<listed|absent>
     /// scheduled=<yes|no> background=<none|notDue|collected|cancelled|failed|expired|released>
     /// runs=<number> adultOpens=<number> deliveries=<number> configuration=<none|normal|both>
-    /// exportsWritten=<number> exportsEnded=<number> shareEnded=<none|intact|replaced|missing>@<number>`.
-    /// `pool` is whether connections are open
+    /// exportsWritten=<number> exportsEnded=<number> shareEnded=<none|intact|replaced|missing>@<number>
+    /// bodyRequests=<number> adultBodyRequests=<number> pageRequests=<number>
+    /// adultPageRequests=<number> readerBlock=<number|none>
+    /// bodyStartsInBackground=<number> slotChanges=<number>`. `pool` is whether connections are open
     /// on the file; the other three are whether the objects are gone from
     /// memory; `pages` is how many article pages the fixture transport has
     /// answered or refused (RD12); `translationRequests` is how many
     /// requests the translator fixture has answered in this process (RD14
-    /// criterion 13); `adultStore` is whether WebKit lists the adult
+    /// criterion 13); `neverSent` how many texts holding the sentinel
+    /// `fixture:never` it received (RD16 criterion 5); `translateOn` whether
+    /// a browser session has page translation on, and `seenAgain` how many
+    /// times the normal workspace's sessions were told they are seen again
+    /// (RD16); `staleMirrors` the settings of the configuration file whose
+    /// in-memory mirror differs from what is stored (batch 3);
+    /// `adultStore` is whether WebKit lists the adult
     /// browser's own website data store (RD19); `scheduled` is whether a
     /// background request is pending, `background` how the last background
     /// run ended, `runs` how many background runs the record holds for the
@@ -587,7 +656,16 @@ enum DebugAccessibilityID {
     /// adult part, or one with it (RD20 criterion 9); `exportsWritten`,
     /// `exportsEnded` and `shareEnded` count configuration exports and say
     /// whether the last shared file was still the one written (RD20
-    /// review round 2).
+    /// review round 2); `bodyRequests` is how many usage rows of body
+    /// requests the normal library holds (RD15 decision 16), and
+    /// `adultBodyRequests` the adult library's (-1 while it is not open;
+    /// batch 3); `pageRequests` and `adultPageRequests` the same for page
+    /// requests (RD16, batch 3);
+    /// `readerBlock` the block the reading screen last reported at its top
+    /// (RD15 criterion 7); `bodyStartsInBackground` how many body jobs
+    /// started while the application was in the background (RD15 review
+    /// round 3); `slotChanges` how many slot changes the body translation
+    /// saw (RD15 review round 4).
     static let adultReport = "debug.adultReport"
     /// "Deliver background refresh" (RD24 decision 9).
     static let deliverBackgroundRefresh = "debug.deliverBackgroundRefresh"

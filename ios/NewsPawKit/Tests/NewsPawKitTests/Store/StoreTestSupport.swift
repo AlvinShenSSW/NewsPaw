@@ -4,6 +4,10 @@ import GRDB
 import Synchronization
 import Testing
 
+/// The migrations a library of this build has, in order: the one list the
+/// tests compare with, so that a new migration is named here once.
+let currentMigrations = ["v1", "v2", "v3", "v4", "v5", "v6", Schema.searchMigration, Schema.bodyTranslationMigration, Schema.pageTextMigration]
+
 /// A clock the tests move by hand. Times are whole seconds so that they
 /// survive the database's millisecond text form unchanged.
 final class TestClock: Sendable {

@@ -33,12 +33,14 @@ extension Library {
         }
     }
 
-    /// The one statement that makes every failed translation of the library
-    /// wait again (RD14 decision 2): run with every change of a slot — a
-    /// save, a removal, a key removed — so that a fault of the model stored
-    /// on many articles is repaired by repairing the slot.
+    /// The statements that make every failed translation of the library
+    /// wait again (RD14 decision 2), the titles' and the bodies' texts
+    /// (RD15 decision 2): run with every change of a slot — a save, a
+    /// removal, a key removed — so that a fault of the model stored on many
+    /// articles is repaired by repairing the slot.
     static func deleteFailedTranslations(_ db: Database) throws {
         try db.execute(sql: "DELETE FROM translation WHERE state = ?", arguments: [TranslationState.failed.rawValue])
+        try db.execute(sql: "DELETE FROM body_translation WHERE state = ?", arguments: [TranslationState.failed.rawValue])
     }
 
     /// Deletes the row of `role`, and with it the library's failed
@@ -85,6 +87,14 @@ extension Library {
 
     func insertUsage(_ record: UsageRecord) async throws {
         try await write { db in try record.insert(db) }
+    }
+
+    /// How many usage rows of `purpose` the library holds: the UI tests'
+    /// report counts body requests with it (RD15 decision 16).
+    public func usageCount(purpose: UsagePurpose) async throws -> Int {
+        try await read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage WHERE purpose = ?", arguments: [purpose.rawValue]) ?? 0
+        }
     }
 
     /// Every usage row, oldest first.

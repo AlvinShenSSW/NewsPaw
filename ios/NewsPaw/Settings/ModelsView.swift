@@ -2,7 +2,8 @@ import NewsPawKit
 import SwiftUI
 
 /// Settings → Models & Translation (ux S8; RD13 decision 14; RD14 decision
-/// 12): the reading language, the two translation switches, then the
+/// 12; RD15 decision 1): the reading language, the three translation
+/// switches, then the
 /// primary and backup model, each with its name and state. The settings are
 /// global; the models are the normal library's, in either partition.
 struct ModelsView: View {
@@ -28,7 +29,7 @@ struct ModelsView: View {
                 Text("Reading Language")
                     .foregroundStyle(Theme.secondaryText)
             } footer: {
-                Text("Titles and summaries are translated into this language.")
+                Text("Titles, summaries and articles are translated into this language.")
                     .foregroundStyle(Theme.secondaryText)
             }
             .listRowBackground(Theme.surface)
@@ -36,11 +37,18 @@ struct ModelsView: View {
                 Toggle("Translate Titles Automatically", isOn: $translation.translatesTitlesAutomatically)
                     .frame(minHeight: Theme.minimumTapTarget)
                     .accessibilityIdentifier(AccessibilityID.autoTranslateToggle)
+                // ux S8's order (RD15 decision 1).
+                Toggle("Translate Articles When Opened", isOn: $translation.translatesBodyOnOpen)
+                    .frame(minHeight: Theme.minimumTapTarget)
+                    .accessibilityIdentifier(AccessibilityID.translateBodyOnOpenToggle)
                 Toggle("Show Original Titles in Lists", isOn: $translation.showsOriginalTitles)
                     .frame(minHeight: Theme.minimumTapTarget)
                     .accessibilityIdentifier(AccessibilityID.showOriginalTitlesToggle)
             } header: {
                 Text("Translation")
+                    .foregroundStyle(Theme.secondaryText)
+            } footer: {
+                Text("When this is off, an article is translated when you tap Translate.")
                     .foregroundStyle(Theme.secondaryText)
             }
             .listRowBackground(Theme.surface)

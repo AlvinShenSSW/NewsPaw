@@ -28,6 +28,9 @@ struct WorkspaceParts {
     /// The translation settings (RD14 decision 1): global, one object for
     /// the app.
     let translationSettings: TranslationSettings
+    /// The requests page translation sends in one period (RD16 decision
+    /// 11): `PageTranslator.standardCeiling`, lowered only by a UI test.
+    let pageCeiling: Int
     /// Called after a slot of `normalModels` changed, from the Settings of
     /// any workspace: the normal library's translation resumes.
     let slotsChanged: @MainActor () -> Void
@@ -147,6 +150,15 @@ final class Workspace: Identifiable {
             isInFront: { UIApplication.shared.applicationState == .active },
             navigation: navigation, sources: sources, refresh: refresh
         )
+        // The browser's page translators (RD16 decision 13) are made, like
+        // every translator of the workspace, from its own models (RD19
+        // decision 1): the adult workspace's from the adult library's.
+        let ceiling = parts.pageCeiling
+        let sharedTranslationSettings = parts.translationSettings
+        let pages = BrowserPageTranslation(
+            makeTranslator: { PageTranslator(models: models, ceiling: ceiling) },
+            readingLocale: { sharedTranslationSettings.readingLocale }
+        )
         let browser = BrowserModel(
             dataStore: setup.dataStore, navigation: navigation, sources: sources,
             // Reader mode's images are fetched like a body's and not kept:
@@ -155,7 +167,7 @@ final class Workspace: Identifiable {
                 transport: parts.transport, extractor: extractor,
                 images: BodyImageLoader(transport: parts.transport, cache: library.imageCache, stores: false)
             ),
-            addressMap: setup.addressMap, schemeHandlers: setup.schemeHandlers,
+            pages: pages, addressMap: setup.addressMap, schemeHandlers: setup.schemeHandlers,
             allowsPictureInPicture: setup.allowsPictureInPicture
         )
         let modelSettings = ModelSettingsModel(
@@ -171,6 +183,11 @@ final class Workspace: Identifiable {
         let translation = TranslationModel(models: models, settings: parts.translationSettings, reading: reading, now: parts.now)
         reading.translationLocale = { [weak translation] in translation?.settings.readingLocale }
         translation.autoTranslateOfSource = { [weak sources] id in sources?.summary(id)?.autoTranslate }
+        // The bodies the reading model settles and lets go (RD15).
+        reading.onBodySettled = { [weak translation] id, content in translation?.body.bodySettled(id, content: content) }
+        reading.onBodyDropped = { [weak translation] id in translation?.body.bodyDropped(id) }
+        let sharedReadingSettings = parts.readingSettings
+        translation.body.defaultMode = { sharedReadingSettings.defaultDisplayMode }
         // A change of the normal slots resumes the normal library's
         // translation, whichever workspace's Settings made it; a change of
         // the adult slots, the adult library's.
@@ -189,6 +206,7 @@ final class Workspace: Identifiable {
         navigation.onSearchStarted = { [weak reading] in reading?.dropSearch() }
         navigation.isWebPageSource = { [weak sources] id in sources?.summary(id)?.kind == .webpage }
         navigation.onStacksChanged = { [weak browser] in browser?.stacksChanged() }
+        browser.onTemporaryArticleEnded = { [weak translation] id in translation?.body.readerClosed(id) }
         navigation.onSettingsPathChanged = { [weak modelSettings, weak partitionModelSettings] path in
             modelSettings?.settingsPathChanged(path)
             partitionModelSettings?.settingsPathChanged(path)

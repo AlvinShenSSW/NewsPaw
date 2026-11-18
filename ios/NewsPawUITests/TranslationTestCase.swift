@@ -50,10 +50,12 @@ class TranslationTestCase: ReadingTestCase {
     /// primary, or the primary and the backup — and, when given, the daily
     /// automatic limit.
     func launchTranslating(
-        models: String = "primary", limit: Int? = nil, arguments: [String] = [], _ orientation: UIDeviceOrientation = .portrait
+        models: String = "primary", limit: Int? = nil, arguments: [String] = [], environment: [String: String] = [:],
+        _ orientation: UIDeviceOrientation = .portrait
     ) {
         app.terminate()
         let application = XCUIApplication()
+        application.launchEnvironment.merge(environment) { _, new in new }
         application.launchEnvironment[UITestLaunchKey.translationModels] = models
         if let limit {
             application.launchEnvironment[UITestLaunchKey.dailyAutomaticLimit] = String(limit)

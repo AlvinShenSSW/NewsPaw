@@ -38,10 +38,41 @@ public final class FixtureModelHTTP: ModelHTTP {
         public static let limit = "fixture:limit"
         /// The answer comes after `slowAnswer`.
         public static let slow = "fixture:slow"
+        /// The first request carrying it in this process answers after
+        /// `stallingAnswer` unless it is cancelled; later ones at once
+        /// (RD15 decision 16).
+        public static let stallOnce = "fixture:stall-once"
+        /// The first request carrying it in this process answers 503; later
+        /// ones translate.
+        public static let failOnce = "fixture:fail-once"
+        /// `translate` refuses; the backup translates.
+        public static let refusePrimary = "fixture:refuse-primary"
+        /// A sentinel that must never be sent (RD16 criterion 5): every
+        /// received text holding it is counted.
+        public static let never = "fixture:never"
     }
 
     /// How long the translator takes for a request with `Word.slow`.
     static let slowAnswer = Duration.seconds(2)
+    /// How long the first request with `Word.stallOnce` takes.
+    static let stallingAnswer = Duration.seconds(60)
+
+    /// Whether a request with `Word.stallOnce`, and one with
+    /// `Word.failOnce`, has arrived in this process.
+    private static let onceWords = Mutex<Set<String>>([])
+
+    /// Whether the stalling request has begun its wait (for the package
+    /// test, which other tests' requests would confuse with the count).
+    private static let stallStarted = Mutex(false)
+
+    static var hasStalled: Bool {
+        stallStarted.withLock { $0 }
+    }
+
+    /// Whether this is the first request of the process carrying `word`.
+    private static func firstTime(_ word: String) -> Bool {
+        onceWords.withLock { $0.insert(word).inserted }
+    }
 
     /// The chat requests this process has sent to the translator hosts, for
     /// the UI tests' report.
@@ -49,6 +80,14 @@ public final class FixtureModelHTTP: ModelHTTP {
 
     public static var translationRequests: Int {
         translationRequestCount.withLock { $0 }
+    }
+
+    /// The texts holding `Word.never` that the translator hosts received,
+    /// for the UI tests' report (RD16 criterion 5).
+    private static let neverSentCount = Mutex(0)
+
+    public static var neverSent: Int {
+        neverSentCount.withLock { $0 }
     }
 
     /// The three models `passed` lists, in the order it lists them.
@@ -86,10 +125,24 @@ public final class FixtureModelHTTP: ModelHTTP {
             }
             Self.translationRequestCount.withLock { $0 += 1 }
             let (system, texts) = Self.messages(of: request.body)
+            let never = texts.filter { $0.contains(Word.never) }.count
+            if never > 0 {
+                Self.neverSentCount.withLock { $0 += never }
+            }
             if texts.contains(where: { $0.contains(Word.slow) }) {
                 try await Task.sleep(for: Self.slowAnswer)
             }
-            if texts.contains(where: { $0.contains(Word.refuse) }) {
+            if texts.contains(where: { $0.contains(Word.stallOnce) }), Self.firstTime(Word.stallOnce) {
+                Self.stallStarted.withLock { $0 = true }
+                try await Task.sleep(for: Self.stallingAnswer)
+            }
+            if texts.contains(where: { $0.contains(Word.failOnce) }), Self.firstTime(Word.failOnce) {
+                return answer(503, "Service Unavailable")
+            }
+            if host == "translate.models.example.invalid", texts.contains(where: { $0.contains(Word.refusePrimary) }) {
+                return answer(200, Self.completion(content: nil, refusal: "I can't translate this."))
+            }
+            if texts.contains(where: { $0.contains(Word.refuse) && !$0.contains(Word.refusePrimary) }) {
                 return answer(200, Self.completion(content: nil, refusal: "I can't translate this."))
             }
             if host == "translate.models.example.invalid", texts.contains(where: { $0.contains(Word.limit) }) {

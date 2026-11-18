@@ -10,10 +10,16 @@ import SwiftUI
 ///
 /// It sits inside the caller's vertical scroll view. A tapped link goes to
 /// `openLink` and nowhere else; a tapped image opens the full-screen viewer.
+///
+/// With a translation (RD15 decision 11), a translated text block shows its
+/// translation in its own kind and place (Translation), or its translation
+/// followed by its original in the secondary colour (Side by Side); other
+/// blocks show their originals, as every block does in Original.
 struct BlocksView: View {
     let blocks: [ArticleBlock]
     let settings: ReadingSettings
     let images: BodyImageSession
+    var translation: BlockTranslation?
     let openLink: (URL) -> Void
 
     @ScaledMetric(relativeTo: .body) private var scaledBodySize = 17.0
@@ -28,7 +34,10 @@ struct BlocksView: View {
             ForEach(blocks.indices, id: \.self) { index in
                 BlockRow(
                     block: blocks[index], index: index, metrics: metrics, images: images,
-                    spaceAbove: index == 0 ? 0 : metrics.blockSpacing
+                    spaceAbove: index == 0 ? 0 : metrics.blockSpacing,
+                    translated: translation?.mode == .original ? nil : translation?.text(index),
+                    mode: translation?.mode ?? .original, language: translation?.language,
+                    originalLanguage: translation?.originalLanguage(index)
                 ) { image in
                     viewed = image
                 }
@@ -47,6 +56,69 @@ struct BlocksView: View {
     }
 }
 
+/// Where each laid-out block row stands in the reading screen's scroll
+/// content, and the content's visible top edge (RD15 decision 11): what a
+/// display-mode switch keeps at the top. A plain reference, not observed:
+/// written as rows lay out and as the reader scrolls, read at a switch.
+@MainActor
+final class BlockRowFrames {
+    /// The coordinate space of the scroll content the frames are in.
+    nonisolated static let space = "reading.content"
+
+    private(set) var frames: [Int: CGRect] = [:]
+    /// The content's y at the visible top edge, under the bars.
+    var visibleTop = 0.0
+
+    func set(_ frame: CGRect, of block: Int) {
+        frames[block] = frame
+    }
+
+    func remove(_ block: Int) {
+        frames[block] = nil
+    }
+
+    /// The block whose row holds `top`: its row begins at or above it and
+    /// ends below it (a point of tolerance, so that a row set exactly at
+    /// the top is still the one at the top).
+    func block(atTop top: Double) -> Int? {
+        frames.filter { $0.value.minY <= top + 1 && $0.value.maxY > top + 1 }.map(\.key).min()
+    }
+
+    /// The reader's place at `top`: the block at the top, or none when the
+    /// top is above every laid-out row (the header); unknown (`nil`) while
+    /// no row is laid out or the top is below them all.
+    struct Place: Equatable {
+        let block: Int?
+    }
+
+    /// The place last told to the reading model.
+    var reported: Place?
+
+    func place(atTop top: Double) -> Place? {
+        if let block = block(atTop: top) {
+            return Place(block: block)
+        }
+        guard let first = frames.values.map(\.minY).min(), top + 1 < first else { return nil }
+        return Place(block: nil)
+    }
+}
+
+extension EnvironmentValues {
+    /// The reading screen's row frames; none elsewhere (reader mode).
+    @Entry var blockRowFrames: BlockRowFrames?
+}
+
+/// How a body's blocks show its translation (RD15 decisions 11 and 13).
+struct BlockTranslation {
+    let mode: ReadingDisplayMode
+    /// The reading language's tag: what a translated text is read in.
+    let language: String
+    /// A text block's translation, or `nil` while it shows its original.
+    let text: (Int) -> String?
+    /// The recognizer's language of a block's original, for VoiceOver.
+    let originalLanguage: (Int) -> String?
+}
+
 /// One block where it stands: behind its quote bars, indented by its lists,
 /// with its marker.
 private struct BlockRow: View {
@@ -56,9 +128,16 @@ private struct BlockRow: View {
     let images: BodyImageSession
     /// The space between this block and the one before it.
     let spaceAbove: Double
+    /// The block's translation, when it is shown (not in Original).
+    let translated: String?
+    let mode: ReadingDisplayMode
+    let language: String?
+    let originalLanguage: String?
     let view: (ViewedImage) -> Void
     /// The block is an image that is not drawn: it takes no room at all.
     @State private var isUndrawn = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.blockRowFrames) private var rowFrames
 
     private static let quoteBarWidth = 3.0
     private static let quoteStep = 12.0
@@ -70,6 +149,17 @@ private struct BlockRow: View {
                 .accessibilityHidden(true)
         } else {
             row.padding(.top, spaceAbove)
+                // A block that becomes translated fades in (ux section 5),
+                // not under Reduce Motion.
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: translated)
+                .onGeometryChange(for: CGRect.self) { geometry in
+                    geometry.frame(in: .named(BlockRowFrames.space))
+                } action: { frame in
+                    rowFrames?.set(frame, of: index)
+                }
+                .onDisappear {
+                    rowFrames?.remove(index)
+                }
         }
     }
 
@@ -135,9 +225,9 @@ private struct BlockRow: View {
         switch block.kind {
         case .paragraph(let runs):
             let size = block.isCaption ? metrics.captionSize : metrics.bodySize
-            text(runs, size: size, weight: .regular, isSecondary: block.isCaption || block.quoteDepth > 0)
+            shown(runs, size: size, weight: .regular, isSecondary: block.isCaption || block.quoteDepth > 0)
         case .heading(let level, let runs):
-            text(runs, size: metrics.headingSize(level: level), weight: .semibold, isSecondary: block.quoteDepth > 0)
+            shown(runs, size: metrics.headingSize(level: level), weight: .semibold, isSecondary: block.quoteDepth > 0)
                 .accessibilityAddTraits(.isHeader)
         case .image(let image):
             BodyImageView(image: image, index: index, session: images, view: view) {
@@ -169,7 +259,44 @@ private struct BlockRow: View {
         }
     }
 
-    private func text(_ runs: [InlineRun], size: Double, weight: Font.Weight, isSecondary: Bool) -> some View {
+    /// A text block as the mode shows it: its translation; its translation
+    /// over its original in the secondary colour; or its original.
+    @ViewBuilder
+    private func shown(_ runs: [InlineRun], size: Double, weight: Font.Weight, isSecondary: Bool) -> some View {
+        if let translated, mode == .translation {
+            translation(translated, size: size, weight: weight, isSecondary: isSecondary)
+                .transition(.opacity)
+        } else if let translated, mode == .sideBySide {
+            VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
+                translation(translated, size: size, weight: weight, isSecondary: isSecondary)
+                text(runs, size: size, weight: weight, isSecondary: true, identifier: AccessibilityID.readingOriginalBlock(index))
+            }
+            .transition(.opacity)
+        } else {
+            text(runs, size: size, weight: weight, isSecondary: isSecondary)
+        }
+    }
+
+    /// A model's text: drawn verbatim, never parsed, so no Markdown, HTML,
+    /// link or style reaches the screen (decision 13). It carries the
+    /// reading language for VoiceOver and, for Chinese and Japanese, for
+    /// its forms.
+    private func translation(_ text: String, size: Double, weight: Font.Weight, isSecondary: Bool) -> some View {
+        let typesets = language == ReadingLocale.simplifiedChinese.rawValue || language == ReadingLocale.japanese.rawValue
+        return Text(verbatim: text)
+            .font(metrics.font(size: size, weight: weight))
+            .lineHeight(.exact(points: metrics.lineHeight(size: size, isMostlyCJK: ArticleBlocks.isMostlyCJK(text))))
+            .typesettingLanguage(Locale.Language(identifier: language ?? "en"), isEnabled: typesets)
+            .foregroundStyle(isSecondary ? Theme.secondaryText : Theme.text)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .speechLanguage(language)
+            .accessibilityIdentifier(AccessibilityID.readingBlock(index))
+    }
+
+    private func text(
+        _ runs: [InlineRun], size: Double, weight: Font.Weight, isSecondary: Bool, identifier: String? = nil
+    ) -> some View {
         let plain = runs.map(\.text).joined()
         let isMostlyCJK = ArticleBlocks.isMostlyCJK(plain)
         return Text(Self.attributed(runs))
@@ -181,7 +308,8 @@ private struct BlockRow: View {
             .foregroundStyle(isSecondary ? Theme.secondaryText : Theme.text)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier(AccessibilityID.readingBlock(index))
+            .speechLanguage(originalLanguage)
+            .accessibilityIdentifier(identifier ?? AccessibilityID.readingBlock(index))
     }
 
     /// The runs as one attributed string: bold, italic and code as inline
@@ -255,5 +383,21 @@ private struct ListRowLayout: Layout {
             x += column
         }
         block.place(at: CGPoint(x: x, y: bounds.minY), anchor: .topLeading, proposal: ProposedViewSize(width: max(bounds.maxX - x, 0), height: nil))
+    }
+}
+
+extension View {
+    /// The language VoiceOver reads this text in (RD15 decision 13): the
+    /// environment's locale, which SwiftUI passes to the accessibility
+    /// element as its speech language (assumption A1, measured on the iOS
+    /// 27 simulator: a `languageIdentifier` on the attributed string did not
+    /// reach it). Nothing changes without a language.
+    @ViewBuilder
+    func speechLanguage(_ language: String?) -> some View {
+        if let language {
+            environment(\.locale, Locale(identifier: language))
+        } else {
+            self
+        }
     }
 }

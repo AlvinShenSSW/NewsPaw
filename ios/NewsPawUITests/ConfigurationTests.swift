@@ -22,8 +22,14 @@ final class ConfigurationTests: AdultTestCase {
     }
 
     /// Launches with "Import Configuration" reading `fixture`.
-    func launchReading(_ fixture: String?, authentication: [String] = [], writePause: Int? = nil, exportHold: String? = nil) {
+    func launchReading(
+        _ fixture: String?, authentication: [String] = [], writePause: Int? = nil, exportHold: String? = nil, models: String? = nil
+    ) {
         let application = XCUIApplication()
+        if let models {
+            // The translator fixture's models in the normal library (RD14).
+            application.launchEnvironment[UITestLaunchKey.translationModels] = models
+        }
         if let fixture {
             application.launchEnvironment[UITestLaunchKey.configurationFixture] = fixture
         }
@@ -433,6 +439,31 @@ final class ConfigurationTests: AdultTestCase {
         XCTAssertFalse(opml.isEnabled, "Import OPML could be used while the import's write ran")
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: opml)
         XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 150), .completed, "Import OPML stayed dimmed after the import")
+    }
+
+    /// Gate review of batch 2: the normal primary model exists; a Replace
+    /// confirmed inside the adult partition, then a lock while the write's
+    /// completion waits. Back in the normal partition the primary model's
+    /// form opens, but Save and Remove Model are dimmed until the import's
+    /// operation has ended; then Save can be used again.
+    func testModelSlotsWaitForAnImportsWrite() {
+        launchReading("both", authentication: ["passed", "passed", "passed"], writePause: 60, models: "primary")
+        turnOnAdult()
+        enterAdult()
+        openDataSettings()
+        button(AccessibilityID.importConfigurationButton).tap()
+        waitFor(element(AccessibilityID.configurationCounts("adult")))
+        replaceEverything(expectingOnlyNormal: false)
+        leaveAndReturn()
+        waitForReport(AdultTestCase.closed)
+        openSettings()
+        waitFor(element(AccessibilityID.modelsRow)).tap()
+        waitFor(element(AccessibilityID.primaryModelRow)).tap()
+        let save = waitFor(button(AccessibilityID.saveButton))
+        XCTAssertFalse(save.isEnabled, "the model could be saved while the import's write ran")
+        XCTAssertFalse(scrollTo(button(AccessibilityID.removeModelButton)).isEnabled, "the model could be removed while the import's write ran")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: save)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 150), .completed, "Save stayed dimmed after the import")
     }
 
     // MARK: - Review round 2, P2: a lock while the summary is shown

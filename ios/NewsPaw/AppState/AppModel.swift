@@ -976,6 +976,9 @@ final class AppModel {
             await workspace.categories.settle()
             await workspace.sources.settle()
         }
+        // Model slots and keys, in every workspace, a dropped one included
+        // (gate review of batch 2).
+        await operations.modelWrites.settle()
     }
 
     private func mover(adult library: Library, workspace: Workspace) -> CategoryMover {

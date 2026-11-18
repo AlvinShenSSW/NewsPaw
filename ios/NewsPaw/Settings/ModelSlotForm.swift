@@ -217,7 +217,7 @@ struct ModelSlotForm: View {
                         .frame(maxWidth: .infinity, minHeight: Theme.minimumTapTarget, alignment: .leading)
                         .contentShape(Rectangle())
                 }
-                .disabled(models.isBusy)
+                .disabled(models.isBusy || models.editsAreRefused)
                 .accessibilityIdentifier(AccessibilityID.removeKeyButton)
                 // An alert, like the Mark All as Read question: as a popover
                 // on its row the question was a narrow column at the largest
@@ -332,7 +332,7 @@ struct ModelSlotForm: View {
                     .frame(maxWidth: .infinity, minHeight: Theme.minimumTapTarget, alignment: .leading)
                     .contentShape(Rectangle())
             }
-            .disabled(blocked || models.isBusy)
+            .disabled(blocked || models.isBusy || models.editsAreRefused)
             .accessibilityIdentifier(AccessibilityID.removeModelButton)
             .alert("Remove this model?", isPresented: $models.isConfirmingSlotRemoval) {
                 Button("Remove Model", role: .destructive) {

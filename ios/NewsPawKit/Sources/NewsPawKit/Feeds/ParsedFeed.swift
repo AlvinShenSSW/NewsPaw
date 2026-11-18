@@ -12,6 +12,8 @@ public struct ParsedFeed: Sendable, Hashable {
         case atom
         /// JSON Feed.
         case json
+        /// The Hub's list of an account's models (RD26).
+        case huggingFace
     }
 
     public var format: Format

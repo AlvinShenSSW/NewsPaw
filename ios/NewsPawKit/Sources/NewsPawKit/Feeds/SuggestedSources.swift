@@ -1,4 +1,5 @@
-/// The group a suggested source is listed under. The app words each one.
+/// The group a suggested source is listed under, and the suggested category
+/// of the first run (spec N02). The app words each one.
 public enum SuggestedSourceGroup: String, Sendable, Hashable, CaseIterable {
     case world
     case japan
@@ -6,6 +7,18 @@ public enum SuggestedSourceGroup: String, Sendable, Hashable, CaseIterable {
     case china
     case tech
     case ai
+
+    /// The icon of the suggested category of this name (RD21 decision 6):
+    /// a globe for World, the Asia-Pacific globe for Japan, Australia and
+    /// China, a laptop for Tech and a chip for AI.
+    public var icon: CategoryIcon {
+        switch self {
+        case .world: .globe
+        case .japan, .australia, .china: .globeAsia
+        case .tech: .laptop
+        case .ai: .cpu
+        }
+    }
 }
 
 /// A feed offered in Add source (spec N03; RD05 decision 10).

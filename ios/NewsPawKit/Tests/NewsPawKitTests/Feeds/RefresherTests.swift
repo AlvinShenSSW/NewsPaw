@@ -38,7 +38,6 @@ struct RefresherTests {
         defer { fixture.remove() }
         let github = try await fixture.addFeed("github", kind: .github)
         let paused = try await fixture.addFeed("pausedgithub", paused: true, kind: .github)
-        try await fixture.addFeed("hub", kind: .huggingface)
         #expect(try await fixture.library.refreshTargets(.library) == [github.id])
         #expect(try await fixture.library.refreshTargets(.category(fixture.categoryID)) == [github.id])
         #expect(try await fixture.library.refreshTargets(.source(github.id)) == [github.id])
@@ -48,6 +47,39 @@ struct RefresherTests {
         let results = try await refresher.refresh(.library)
         #expect(results.count == 1)
         #expect(transport.received.map(\.absoluteString) == [RefreshFixture.address("github")])
+        #expect(try await refresher.refresh(.source(paused.id)).isEmpty)
+        #expect(transport.received.count == 1)
+    }
+
+    @Test("a Hugging Face source is a target of every scope, collected through its list; a paused one is not requested (RD26 criterion 10)")
+    func huggingFaceTargets() async throws {
+        let fixture = try await RefreshFixture.make()
+        defer { fixture.remove() }
+        func addAccount(_ name: String, paused: Bool = false) async throws -> Source {
+            var source = Sample.source(in: fixture.categoryID, url: "https://huggingface.co/\(name)", name: name, at: fixture.clock.now())
+            source.kind = .huggingface
+            source.paused = paused
+            try await fixture.library.insert(source)
+            return source
+        }
+        let hub = try await addAccount("lamplight-lab")
+        let paused = try await addAccount("paused-lab", paused: true)
+        // Stored by hand at an address that is not an account's page.
+        let model = try await fixture.addFeed("model", kind: .huggingface)
+        try await fixture.addFeed("page", kind: .webpage)
+        #expect(Set(try await fixture.library.refreshTargets(.library)) == [hub.id, model.id])
+        #expect(Set(try await fixture.library.refreshTargets(.category(fixture.categoryID))) == [hub.id, model.id])
+        #expect(try await fixture.library.refreshTargets(.source(hub.id)) == [hub.id])
+        #expect(try await fixture.library.refreshTargets(.source(paused.id)).isEmpty)
+        let list = try HubFixture.data("models-reduced.json")
+        let transport = CountingTransport { TransportResponse(finalURL: $0, status: 200, headers: [:], body: list) }
+        let refresher = Refresher(library: fixture.library, transport: transport)
+        let results = try await refresher.refresh(.library)
+        #expect(results[hub.id] == .outcome(.collected(newArticles: 5, complete: true)))
+        #expect(results[model.id] == .outcome(.failed(.unsupportedAddress)))
+        #expect(results.count == 2)
+        #expect(transport.received.map(\.absoluteString)
+            == ["https://huggingface.co/api/models?author=lamplight-lab&sort=createdAt&direction=-1&limit=30&expand=createdAt"])
         #expect(try await refresher.refresh(.source(paused.id)).isEmpty)
         #expect(transport.received.count == 1)
     }

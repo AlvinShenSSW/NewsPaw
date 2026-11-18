@@ -254,6 +254,12 @@ public actor LibraryStore {
             configuration.prepareDatabase { db in
                 // No connection of a library can reach another database file.
                 _ = sqlite3_limit(db.sqliteConnection, SQLITE_LIMIT_ATTACHED, 0)
+                // The search triggers call it (RD25 decision 5): every
+                // connection that can write `article` or `translation` —
+                // the writer, and with it the migrations — has it. Measured
+                // on iOS 26.5 and 27 (assumption A7): `trusted_schema` is
+                // on, so a trigger may call it as registered.
+                db.add(function: SearchQuery.makeFoldFunction())
             }
             let pool = try DatabasePool(path: url.path, configuration: configuration)
             if try pool.read({ db in try migrator.hasBeenSuperseded(db) }) {

@@ -120,6 +120,74 @@ final class TranslationTests: TranslationTestCase {
         XCTAssertFalse(element(AccessibilityID.readingOriginalTitle).exists)
     }
 
+    /// RD21 criterion 10 (spec N01): with no model set up, the foreign rows
+    /// of a source that translates automatically show the warning mark,
+    /// and a row in the reading language none; the mark's question says
+    /// "Set up a model to translate" with "Open Settings", which opens
+    /// Models & Translation; once a primary model is saved the marks go and
+    /// the titles translate.
+    func testNoModelMarkOpensSettings() {
+        launchReading()
+        addFeed(Translation.feed, to: Translation.category)
+        let row = waitFor(articleRow(Translation.foreign(1)))
+        let mark = waitFor(warningMark(Translation.foreign(1)))
+        waitForLabel(row, containing: "Not translated, Set up a model to translate")
+        XCTAssertEqual(mark.label, Sentence.notTranslated)
+        XCTAssertFalse(warningMark(Translation.simplified).exists, "a row in the reading language is marked")
+        XCTAssertFalse(row.label.contains("译["), row.label)
+
+        // RD21 fix round 1: with automatic translation off the rows are not
+        // waiting for a model, and say nothing of one, also after a
+        // refresh; turned back on, still with no model, the marks return.
+        openTranslationSettings()
+        let automatic = app.switches[AccessibilityID.autoTranslateToggle]
+        flip(automatic)
+        XCTAssertEqual(automatic.value as? String, "0")
+        openCategoryList(Translation.category)
+        waitForAbsence(warningMark(Translation.foreign(1)))
+        waitForLabel(waitFor(articleRow(Translation.foreign(1))), containing: "Set up a model to translate", false)
+        pullList()
+        waitFor(articleRow(Translation.foreign(1)))
+        XCTAssertFalse(warningMark(Translation.foreign(1)).waitForExistence(timeout: 3), "the mark came back after a refresh")
+        openTranslationSettings()
+        flip(app.switches[AccessibilityID.autoTranslateToggle])
+        openCategoryList(Translation.category)
+        waitFor(warningMark(Translation.foreign(1))).tap()
+        waitFor(question("Set up a model to translate"))
+        XCTAssertEqual(Set(alertButtonLabels()), ["Open Settings", "Cancel"])
+        XCTAssertFalse(readingTitle.exists, "the mark's tap opened the article")
+        alertButton("Open Settings").tap()
+        waitForAbsence(question("Set up a model to translate"))
+        waitFor(element(AccessibilityID.primaryModelRow)).tap()
+        setUpTranslatorInForm()
+        waitFor(element(AccessibilityID.primaryModelRow))
+
+        openCategoryList(Translation.category)
+        let translated = waitFor(articleRow(Translation.foreign(1)))
+        waitLong(for: translated, containing: Translation.translated(Translation.foreign(1)))
+        XCTAssertFalse(warningMark(Translation.foreign(1)).exists, "the mark stayed after a model was saved")
+    }
+
+    /// RD21 fix round 1: with no model, setting the source not to translate
+    /// takes its rows' marks away at once.
+    func testNoModelMarkFollowsTheSourceSetting() {
+        launchReading()
+        addFeed(Translation.feed, to: Translation.category)
+        waitFor(warningMark(Translation.foreign(1)))
+        openSourceSettings(Translation.source, in: Translation.category)
+        waitFor(button(AccessibilityID.translateTitlesPicker)).tap()
+        waitFor(app.buttons["Off"].firstMatch).tap()
+        let chosen = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label CONTAINS 'Off'"), object: button(AccessibilityID.translateTitlesPicker)
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [chosen], timeout: timeout), .completed)
+        tapSave()
+        waitForAbsence(app.textFields[AccessibilityID.nameField])
+        waitFor(articleRow(Translation.foreign(1)))
+        waitForAbsence(warningMark(Translation.foreign(1)))
+        XCTAssertFalse(articleRow(Translation.foreign(1)).label.contains("Set up a model to translate"))
+    }
+
     /// Criterion 5 (UI): a 429 without a backup blocks the row with the
     /// service's sentence and Retry; a retry that fails again says so in
     /// an alert and stores nothing.

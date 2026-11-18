@@ -88,6 +88,13 @@ public final class FixtureTransport: Transport {
         /// Traditional Chinese item, then 60 English items "Foreign story
         /// 01" … "60" with short excerpts, an hour apart.
         public static let translation = "https://translation.example.invalid/rss.xml"
+        /// A feed for search (RD25): "東京で新型ＡＩ発表" (full-width
+        /// letters), "苹果发布新款芯片" and "Kestrel sightings rise in
+        /// spring", an hour apart, newest first.
+        public static let search = "https://search.example.invalid/rss.xml"
+        /// A feed for search in the adult partition (RD25 criterion 10):
+        /// "Nightjar observatory notes".
+        public static let privateSearch = "https://search.example.invalid/private.xml"
 
         /// A feed of one English item whose title holds the translator's
         /// word "fixture:<word>" (`FixtureModelHTTP.Word`: "refuse",
@@ -129,6 +136,20 @@ public final class FixtureTransport: Transport {
         /// A repository whose Tags feed answers after the candidate limit on
         /// a transport's first request for it, at once afterwards.
         public static let gitHubSlow = "https://github.com/NewsPaw-Fixture/Slow"
+        /// A Hugging Face organisation (RD26), typed in another letter case
+        /// than the Hub's `newspaw-fixture`: its overview answers in any
+        /// case, the user overview 404, and its list three models plus, at
+        /// every answer, one created now that no earlier answer had, in
+        /// this process or another. Its address is on the Hub's host
+        /// because recognition is bound to it; nothing is requested from
+        /// that host, and no UI test opens a model's page.
+        public static let huggingFaceOrganization = "https://huggingface.co/NewsPaw-Fixture"
+        /// A Hugging Face user with no public model: the organisation
+        /// overview 404, the user overview 200, the list `[]`.
+        public static let huggingFaceEmpty = "https://huggingface.co/newspaw-empty"
+        /// A name that is no Hugging Face account: both overviews and the
+        /// page 404.
+        public static let huggingFaceMissing = "https://huggingface.co/newspaw-missing"
     }
 
     /// The feed addresses of the fixture repositories, as detection builds
@@ -137,6 +158,13 @@ public final class FixtureTransport: Transport {
         static func of(_ repository: String, _ feed: String) -> String {
             "https://github.com/newspaw-fixture/\(repository)/\(feed).atom"
         }
+    }
+
+    /// How many requests this transport was asked for, whatever their
+    /// address and answer: the request log the UI tests' report shows, so
+    /// that a test can see an action made none (RD25 criterion 11).
+    public var requests: Int {
+        requestCount.withLock { $0 }
     }
 
     /// How many requests for the full-text pages this transport was asked
@@ -155,6 +183,7 @@ public final class FixtureTransport: Transport {
 
     private let sequenceRequests = Mutex(0)
     private let pageRequestCount = Mutex(0)
+    private let requestCount = Mutex(0)
     private let slowTagsRequests = Mutex(0)
     private let stallingRequests = Mutex(0)
     /// When `flaky.png` was first asked for.
@@ -163,6 +192,7 @@ public final class FixtureTransport: Transport {
     public init() {}
 
     public func fetch(_ request: TransportRequest) async throws -> TransportResponse {
+        requestCount.withLock { $0 += 1 }
         try Task.checkCancellation()
         let url = request.url
         func answer(_ body: String, type: String, status: Int = 200) -> TransportResponse {
@@ -234,6 +264,10 @@ public final class FixtureTransport: Transport {
             return answer(Self.readingFeed, type: rss)
         case Address.translation:
             return answer(Self.translationFeed, type: rss)
+        case Address.search:
+            return answer(Self.searchFeed, type: rss)
+        case Address.privateSearch:
+            return answer(Self.privateSearchFeed, type: rss)
         case Address.translationWord("refuse"), Address.translationWord("limit"), Address.translationWord("slow"):
             return answer(Self.translationWordFeed(String(url.deletingPathExtension().lastPathComponent)), type: rss)
         case GitHubFeedAddress.of("project", "releases"):
@@ -261,6 +295,10 @@ public final class FixtureTransport: Transport {
             return answer(Self.gitHubTags(repository: "slow"), type: atomType)
         case GitHubFeedAddress.of("slow", "commits"):
             return answer(Self.gitHubCommits(repository: "slow"), type: atomType)
+        case let address where address.hasPrefix(Self.hubAPI):
+            return try hubAnswer(String(address.dropFirst(Self.hubAPI.count)), at: url)
+        case Address.huggingFaceMissing:
+            return answer("", type: html, status: 404)
         case let address where address.hasPrefix(Address.readingImages):
             return try readingImage(String(address.dropFirst(Address.readingImages.count)), at: url)
         case Address.fullText:
@@ -549,6 +587,28 @@ public final class FixtureTransport: Transport {
         return channel(title: "Translation Feed", items: items)
     }()
 
+    // MARK: - The search feeds (RD25)
+
+    /// The titles of the search feed, newest first.
+    public static let searchTitles = ["東京で新型ＡＩ発表", "苹果发布新款芯片", "Kestrel sightings rise in spring"]
+    /// The title of the adult search feed's one item.
+    public static let privateSearchTitle = "Nightjar observatory notes"
+
+    private static func searchItem(_ title: String, slug: String, hoursAgo: Int) -> String {
+        "<item><title>\(title)</title><link>https://example.invalid/search/\(slug)</link>"
+            + "<guid>search-\(slug)</guid><description>A story for search.</description>"
+            + "<pubDate>\(date(hoursAgo: hoursAgo))</pubDate></item>"
+    }
+
+    private static let searchFeed = channel(
+        title: "Search Feed",
+        items: searchTitles.enumerated().map { index, title in searchItem(title, slug: "item-\(index + 1)", hoursAgo: index + 1) }
+    )
+
+    private static let privateSearchFeed = channel(
+        title: "Private Search Feed", items: [searchItem(privateSearchTitle, slug: "private-1", hoursAgo: 1)]
+    )
+
     private static func translationWordFeed(_ word: String) -> String {
         let (feed, title) = switch word {
         case "refuse": ("Refusing Feed", "A story the model refuses fixture:refuse")
@@ -666,6 +726,55 @@ public final class FixtureTransport: Transport {
             </channel></rss>
             """
     }()
+
+    // MARK: - Hugging Face accounts (RD26)
+
+    private static let hubAPI = "https://huggingface.co/api/"
+
+    /// The Hub's answers for the fixture accounts, by the address after
+    /// `hubAPI`; any other address does not answer.
+    private func hubAnswer(_ path: String, at url: URL) throws -> TransportResponse {
+        func json(_ body: String, status: Int = 200) -> TransportResponse {
+            TransportResponse(finalURL: url, status: status, headers: ["Content-Type": "application/json; charset=utf-8"], body: Data(body.utf8))
+        }
+        let notFound = json(#"{"error":"Not Found"}"#, status: 404)
+        // The overviews answer whatever the letter case, as the Hub does.
+        switch path.lowercased() {
+        case "organizations/newspaw-fixture/overview":
+            return json(#"{"_id":"6a0000000000000000000001","fullname":"NewsPaw Fixture","name":"newspaw-fixture","numModels":3}"#)
+        case "users/newspaw-fixture/overview", "organizations/newspaw-empty/overview",
+             "organizations/newspaw-missing/overview", "users/newspaw-missing/overview":
+            return notFound
+        case "users/newspaw-empty/overview":
+            return json(#"{"_id":"6a0000000000000000000002","fullname":"NewsPaw Empty","user":"newspaw-empty","type":"user","numModels":0}"#)
+        default:
+            break
+        }
+        switch path {
+        case "models?author=newspaw-fixture&sort=createdAt&direction=-1&limit=30&expand=createdAt":
+            return json(Self.hubModels(fresh: String(UUID().uuidString.prefix(8)).lowercased()))
+        case "models?author=newspaw-empty&sort=createdAt&direction=-1&limit=30&expand=createdAt":
+            return json("[]")
+        default:
+            throw TransportFailure.unreachable
+        }
+    }
+
+    /// The organisation's list, newest first: one model created now, named
+    /// with `fresh`, then three fixed ones.
+    private static func hubModels(fresh: String) -> String {
+        let models = [
+            ("6a00000000000000000000f1", "newspaw-fixture/Lantern-7B-Instruct", 5),
+            ("6a00000000000000000000f2", "newspaw-fixture/Lantern-7B", 30),
+            ("6a00000000000000000000f3", "newspaw-fixture/Harbour-Vision", 300),
+        ]
+        let now = ISO8601DateFormatter().string(from: Date())
+        let freshEntry = #"{"_id":"6a\#(fresh)00000000000000","id":"newspaw-fixture/Nightly-\#(fresh)","createdAt":"\#(now)"}"#
+        let fixed = models.map { id, name, hours in
+            #"{"_id":"\#(id)","id":"\#(name)","createdAt":"\#(isoDate(hoursAgo: hours))"}"#
+        }
+        return "[" + ([freshEntry] + fixed).joined(separator: ",") + "]"
+    }
 
     // MARK: - GitHub repositories (RD07)
 

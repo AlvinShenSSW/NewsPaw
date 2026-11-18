@@ -85,6 +85,15 @@ final class ReadingModel {
     private(set) var replacements: [UUID: Int] = [:]
     /// Whether the workspace of this model was dropped (RD18 decision 4).
     @ObservationIgnored private(set) var isStopped = false
+    /// The pause after typing before Search reads (RD25 decision 11).
+    static let searchDelay = Duration.milliseconds(300)
+    /// The pending read of what was typed into Search.
+    @ObservationIgnored private var searchDebounce: Task<Void, Never>?
+    #if DEBUG
+    /// Set by the UI tests: the next search read fails before reaching
+    /// storage (RD25: the failure state).
+    @ObservationIgnored var failNextSearch = false
+    #endif
     /// Fetches, extracts and keeps bodies from the articles' pages, and
     /// remembers the failures (RD12 decisions 5 and 6): this workspace's
     /// own, on its library, its transport and its extractor.
@@ -195,6 +204,9 @@ final class ReadingModel {
     /// Reads the list's first page afresh, in the queue.
     @discardableResult
     func reload(_ model: ArticleListModel) -> Task<Void, Never> {
+        if model.kind == .search {
+            return reloadSearch(model)
+        }
         model.beginLoading()
         let library = library
         return enqueue {
@@ -216,6 +228,9 @@ final class ReadingModel {
     func loadNextPage(_ model: ArticleListModel) -> Task<Void, Never> {
         guard model.hasMore, !model.isReadingPage, !model.readFailed else {
             return Task {}
+        }
+        if model.kind == .search {
+            return loadNextSearchPage(model)
         }
         model.isReadingPage = true
         let library = library
@@ -242,6 +257,122 @@ final class ReadingModel {
             reload(model)
         } else {
             loadNextPage(model)
+        }
+    }
+
+    // MARK: - Search (RD25 decision 11)
+
+    /// Search is opened anew: its list is dropped, so that it starts empty.
+    func dropSearch() {
+        searchDebounce?.cancel()
+        searchDebounce = nil
+        lists[.search] = nil
+    }
+
+    /// The search field's text changed. An unchanged query (a trailing
+    /// space) reads nothing; no query clears the rows at once; another
+    /// query is read after a pause, unless the text changes again first.
+    /// Typing never waits for the database.
+    func setSearchText(_ text: String) {
+        let model = list(.search)
+        model.text = text
+        let query = SearchQuery(text)
+        guard query != model.query else {
+            searchDebounce?.cancel()
+            searchDebounce = nil
+            return
+        }
+        searchDebounce?.cancel()
+        guard let query else {
+            searchDebounce = nil
+            model.clearQuery()
+            return
+        }
+        searchDebounce = Task { [weak self] in
+            try? await Task.sleep(for: Self.searchDelay)
+            guard let self, !Task.isCancelled else { return }
+            self.search(query, in: model)
+        }
+    }
+
+    /// Return in the search field: the text is read at once.
+    func submitSearch() {
+        let model = list(.search)
+        searchDebounce?.cancel()
+        searchDebounce = nil
+        guard let query = SearchQuery(model.text) else {
+            model.clearQuery()
+            return
+        }
+        search(query, in: model)
+    }
+
+    /// Reads `query` for `model`, if it is still wanted: the workspace is
+    /// not dropped, the model is still the Search list, and its text still
+    /// gives the same query.
+    private func search(_ query: SearchQuery, in model: ArticleListModel) {
+        guard !isStopped, lists[.search] === model, SearchQuery(model.text) == query else { return }
+        model.setQuery(query, text: model.text)
+        reloadSearch(model)
+    }
+
+    /// Search's first page: none without a query (the prompt); otherwise a
+    /// new generation of reads, which a later one supersedes before it
+    /// touches the database and before it applies its page.
+    @discardableResult
+    private func reloadSearch(_ model: ArticleListModel) -> Task<Void, Never> {
+        guard let query = model.query else {
+            model.clearQuery()
+            return Task {}
+        }
+        model.beginLoading()
+        let read = model.reads.firstPage(of: query)
+        let library = library
+        return enqueue {
+            guard model.reads.mayRead(read) else { return }
+            do {
+                #if DEBUG
+                if self.failNextSearch {
+                    self.failNextSearch = false
+                    throw LibraryError.storage("The UI tests' failing search read")
+                }
+                #endif
+                let page = try await library.articleRows(
+                    .library, filter: .all, limit: self.pageSize, translationsIn: self.translationLocale(), matching: read.query
+                )
+                guard model.reads.mayApply(read), self.lists[.search] === model else { return }
+                model.replace(with: page, pageSize: self.pageSize)
+                model.searchResultsApplied()
+                model.reads.didApply(read)
+            } catch {
+                guard model.reads.mayApply(read), self.lists[.search] === model else { return }
+                model.readDidFail(.firstPage)
+            }
+        }
+    }
+
+    /// Search's next page, in the generation of the rows shown.
+    private func loadNextSearchPage(_ model: ArticleListModel) -> Task<Void, Never> {
+        guard let last = model.rows.last, let read = model.reads.page(after: last.position) else {
+            return Task {}
+        }
+        model.isReadingPage = true
+        let library = library
+        return enqueue {
+            defer { model.isReadingPage = false }
+            guard model.reads.mayRead(read) else { return }
+            do {
+                let page = try await library.articleRows(
+                    .library, filter: .all, after: read.cursor, limit: self.pageSize, translationsIn: self.translationLocale(),
+                    matching: read.query
+                )
+                guard model.reads.mayApply(read), self.lists[.search] === model else { return }
+                model.append(page, pageSize: self.pageSize)
+                model.reads.didApply(read)
+            } catch {
+                guard model.reads.mayApply(read), self.lists[.search] === model else { return }
+                model.readDidFail(.nextPage)
+            }
         }
     }
 
@@ -480,6 +611,9 @@ final class ReadingModel {
     /// the source and category models' saves do.
     func stop() {
         isStopped = true
+        // A search typed in this workspace reads nothing more (RD25).
+        searchDebounce?.cancel()
+        searchDebounce = nil
         // No page fetch, extraction or stored extraction starts from here
         // on (RD12 decision 8).
         pages.stop()

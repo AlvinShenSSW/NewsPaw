@@ -286,6 +286,50 @@
         }
       }
     },
+    "Add Your Own" : {
+      "comment" : "First run, step 3: header of the row that opens Add source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自己添加"
+          }
+        }
+      }
+    },
+    "Add a Source" : {
+      "comment" : "Button under Today's empty state when the library has no source: opens Add source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加来源"
+          }
+        }
+      }
+    },
+    "Add a Source…" : {
+      "comment" : "First run, step 3: opens Add source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加来源…"
+          }
+        }
+      }
+    },
+    "Add your sources, and pick categories to start with." : {
+      "comment" : "First run, step 3: what the step is for.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加你的来源，再选几个分类作为开始。"
+          }
+        }
+      }
+    },
     "Added" : {
       "comment" : "Mark on a suggested source that is already in the library.",
       "localizations" : {
@@ -1210,6 +1254,34 @@
         }
       }
     },
+    "Finds articles by their original or translated title." : {
+      "comment" : "Search: the line under the empty state before anything is typed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按原标题或译文标题查找文章。"
+          }
+        }
+      }
+    },
+    "FirstRun.Back" : {
+      "comment" : "First run: the bar button that returns to the step before. Its own key: the catalog's \"Back\" is the browser's.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "返回"
+          }
+        }
+      }
+    },
     "Flask" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -1564,6 +1636,17 @@
         }
       }
     },
+    "Import OPML…" : {
+      "comment" : "First run, step 3: imports subscriptions from an OPML file (RD08's import).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入 OPML…"
+          }
+        }
+      }
+    },
     "Import subscriptions from another reader: its folders become categories. Export writes this library's feeds; web pages are not included." : {
       "comment" : "Settings › Data, footer of the OPML section.",
       "localizations" : {
@@ -1837,6 +1920,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "订阅"
+          }
+        }
+      }
+    },
+    "Licences" : {
+      "comment" : "About: header of the bundled libraries' licences.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "许可协议"
           }
         }
       }
@@ -2206,6 +2300,17 @@
         }
       }
     },
+    "NewsPaw is built with these open-source libraries." : {
+      "comment" : "About: footer under the licences.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NewsPaw 使用了以下开源库。"
+          }
+        }
+      }
+    },
     "Newspaper" : {
       "comment" : "Accessibility label of a category icon in the icon grid: what the symbol shows.",
       "localizations" : {
@@ -2228,6 +2333,17 @@
         }
       }
     },
+    "No Results" : {
+      "comment" : "Search: the empty state when no title contains the typed text.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有结果"
+          }
+        }
+      }
+    },
     "No app on this device can open this link." : {
       "comment" : "Alert after Open when the system has no app for the link's scheme.",
       "localizations" : {
@@ -2246,6 +2362,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未选择文章"
+          }
+        }
+      }
+    },
+    "No article title contains “%@”." : {
+      "comment" : "Search: the line under No Results; the argument is the typed text.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有文章标题包含“%@”。"
           }
         }
       }
@@ -2301,6 +2428,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此时段内没有模型请求。"
+          }
+        }
+      }
+    },
+    "No sources yet" : {
+      "comment" : "Today's empty state when the library has no source.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有来源"
           }
         }
       }
@@ -2965,6 +3103,28 @@
         }
       }
     },
+    "Search" : {
+      "comment" : "Search: the button that opens the Search screen, its title, and the Command-F shortcut's name.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索"
+          }
+        }
+      }
+    },
+    "Search Article Titles" : {
+      "comment" : "Search: the empty state before anything is typed.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索文章标题"
+          }
+        }
+      }
+    },
     "Sends one short request with what the form shows. Saving does not test." : {
       "comment" : "Footer of the Test section in the model form.",
       "localizations" : {
@@ -3141,6 +3301,17 @@
         }
       }
     },
+    "Skip" : {
+      "comment" : "First run: the bar button that goes on without doing the step.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳过"
+          }
+        }
+      }
+    },
     "Skipped" : {
       "comment" : "OPML import, entries not imported; title of their list.",
       "localizations" : {
@@ -3181,6 +3352,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "来源设置"
+          }
+        }
+      }
+    },
+    "Sources" : {
+      "comment" : "First run, step 3: its title.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来源"
           }
         }
       }
@@ -3258,6 +3440,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "状态"
+          }
+        }
+      }
+    },
+    "Step %lld of 3" : {
+      "comment" : "First run: which of the three steps is shown.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %lld 步，共 3 步"
+          }
+        }
+      }
+    },
+    "Suggested Categories" : {
+      "comment" : "First run, step 3: header of the suggested categories.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推荐分类"
           }
         }
       }
@@ -3803,6 +4007,28 @@
         }
       }
     },
+    "There is no Hugging Face account with this name." : {
+      "comment" : "Under the failure of a Hugging Face account address whose account and page do not exist (RD26).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有这个名字的 Hugging Face 账号。"
+          }
+        }
+      }
+    },
+    "This account has no public models yet" : {
+      "comment" : "Preview of a Hugging Face account that lists no public model (RD26).",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个账号还没有公开的模型"
+          }
+        }
+      }
+    },
     "This address is already in “%@” as “%@”." : {
       "comment" : "Add source outcome. The first %@ is the category's name, the second the source's name.",
       "localizations" : {
@@ -3994,6 +4220,17 @@
         }
       }
     },
+    "Ticked categories are added when you add a source or tap Done. You can rename them later." : {
+      "comment" : "First run, step 3: footer under the suggested categories.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "勾选的分类会在你添加来源或轻点“完成”时加入，之后可以改名。"
+          }
+        }
+      }
+    },
     "Titles and Summaries" : {
       "comment" : "Usage screen: purpose of model requests that translate titles and summaries.",
       "localizations" : {
@@ -4012,6 +4249,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "标题和摘要会翻译成这种语言。"
+          }
+        }
+      }
+    },
+    "Titles, Original or Translated" : {
+      "comment" : "Search: the search field's prompt; titles are searched in the original and in the translation.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原标题或译文标题"
+          }
+        }
+      }
+    },
+    "Titles, excerpts and article text, and the text of pages you translate, are sent to this service. The key stays on this device. You can skip this and set it up later in Settings." : {
+      "comment" : "First run, step 2: what is sent to the model service.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标题、摘要和文章正文，以及你翻译的网页文字，会发送给这个服务。Key 只保存在这台设备上。可以先跳过，以后在设置里设置。"
           }
         }
       }
@@ -4146,6 +4405,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "翻译"
+          }
+        }
+      }
+    },
+    "Translation Model" : {
+      "comment" : "First run, step 2: its title.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译模型"
           }
         }
       }

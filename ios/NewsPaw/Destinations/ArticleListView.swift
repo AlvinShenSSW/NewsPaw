@@ -5,7 +5,9 @@ import SwiftUI
 /// list's snapshot from the reading model, with the Unread / All control of
 /// a category or source, swipes and a menu on every row, "Mark All as Read"
 /// and a menu with Refresh and the settings in the toolbar, and pull to
-/// refresh.
+/// refresh. Search (RD25 decision 10) is the same list with the search
+/// field in its bar, its prompt and no-results states, and no filter,
+/// toolbar or refresh.
 struct ArticleListView: View {
     let kind: ArticleListKind
     @Environment(ReadingModel.self) private var reading
@@ -23,19 +25,94 @@ private struct ArticleListContent: View {
     @Environment(CategoryModel.self) private var categories
     @Environment(NavigationModel.self) private var navigation
     @Environment(RefreshModel.self) private var refresh
+    /// Whether Search's field is active (`searchable`'s presentation).
+    @State private var isSearchPresented = false
+    /// Whether Search's field has the keyboard focus: while it has, the
+    /// single-letter shortcuts are absent so that every letter reaches it
+    /// (RD25 assumption A3).
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
-        List {
-            ForEach(model.rows) { row in
-                ArticleRowButton(row: row, kind: kind, model: model)
-            }
-            footer
+        if kind == .search {
+            list
+                .searchable(
+                    text: searchText, isPresented: $isSearchPresented,
+                    placement: .navigationBarDrawer(displayMode: .always), prompt: Text("Titles, Original or Translated")
+                )
+                // The bar keeps its items while the field is active: the
+                // back button (tabs) and the sidebar button (panes below
+                // 1100 pt), which the system otherwise hides then, leaving
+                // no way out of Search on the iPad's two columns.
+                .searchPresentationToolbarBehavior(.avoidHidingContent)
+                .searchFocused($isSearchFocused)
+                .autocorrectionDisabled()
+                .onSubmit(of: .search) {
+                    reading.submitSearch()
+                }
+                // A drag on the results hides the keyboard, so that every
+                // row can be reached in a pane, which ignores the keyboard
+                // (RD25 assumption A6).
+                .scrollDismissesKeyboard(.immediately)
+                .onAppear(perform: focusIfAsked)
+                .onChange(of: navigation.searchFocusRequests) {
+                    focusIfAsked()
+                }
+                // Opening a result ends the field's focus: in the panes the
+                // field stays on screen beside the reading pane, and the
+                // software keyboard would stay up over that pane's bottom
+                // bar (Star, Share, Next). On the tab structure the push
+                // ends it anyway. The text and the rows are kept.
+                .onChange(of: navigation.openArticle(on: .search)) { _, opened in
+                    if opened != nil {
+                        isSearchFocused = false
+                    }
+                }
+        } else {
+            list
+                .refreshable {
+                    await reading.refresh(kind)
+                }
         }
+    }
+
+    /// Search was opened (RD25 decision 9): its field takes the focus, once
+    /// per request, also when the screen is built after the request.
+    private func focusIfAsked() {
+        guard model.handledFocusRequest != navigation.searchFocusRequests else { return }
+        model.handledFocusRequest = navigation.searchFocusRequests
+        isSearchPresented = true
+        isSearchFocused = true
+    }
+
+    private var searchText: Binding<String> {
+        Binding {
+            model.text
+        } set: { text in
+            reading.setSearchText(text)
+        }
+    }
+
+    private var list: some View {
+        rows
         // Over the list, which still scrolls and refreshes under it
         // (measured: a pull on the empty state refreshes).
         .overlay {
             if showsEmptyState {
-                emptyState
+                if kind == .search {
+                    // With the keyboard up, a large text size leaves the
+                    // state less height than it needs: it scrolls then,
+                    // rather than cutting its lines short.
+                    ViewThatFits(in: .vertical) {
+                        emptyState
+                        ScrollView {
+                            emptyState
+                                .padding(.vertical, Theme.Spacing.standard)
+                        }
+                        .scrollDismissesKeyboard(.immediately)
+                    }
+                } else {
+                    emptyState
+                }
             }
         }
         .listStyle(.plain)
@@ -53,11 +130,10 @@ private struct ArticleListContent: View {
                 filterControl
             }
         }
-        .refreshable {
-            await reading.refresh(kind)
-        }
         .background {
-            ArticleShortcuts(list: kind)
+            if !(kind == .search && isSearchFocused) {
+                ArticleShortcuts(list: kind)
+            }
         }
         .onAppear {
             reading.appeared(kind)
@@ -65,6 +141,24 @@ private struct ArticleListContent: View {
         .stackBackground(Theme.background)
         .navigationTitle(title)
         .toolbar { toolbar }
+    }
+
+    /// The rows and the footer. Search's list carries its identifier on
+    /// the list alone: set further out, it would replace the identifiers
+    /// of the empty state laid over it.
+    @ViewBuilder
+    private var rows: some View {
+        let list = List {
+            ForEach(model.rows) { row in
+                ArticleRowButton(row: row, kind: kind, model: model)
+            }
+            footer
+        }
+        if kind == .search {
+            list.accessibilityIdentifier(AccessibilityID.searchList)
+        } else {
+            list
+        }
     }
 
     // MARK: - Filter
@@ -123,13 +217,30 @@ private struct ArticleListContent: View {
     // MARK: - Empty states (decision 16)
 
     private var showsEmptyState: Bool {
-        model.state == .loaded && model.rows.isEmpty && !model.readFailed
+        if kind == .search {
+            // The prompt without a query; "No Results" once the query's
+            // first page is read and empty.
+            return model.query == nil || (model.hasResults && model.rows.isEmpty && !model.readFailed)
+        }
+        return model.state == .loaded && model.rows.isEmpty && !model.readFailed
     }
 
     @ViewBuilder
     private var emptyState: some View {
         let stored = sources.articleCount(of: kind)
         switch kind {
+        case .search:
+            if model.query == nil {
+                EmptyStateView(
+                    title: Text("Search Article Titles"), systemImage: "magnifyingglass", identifier: AccessibilityID.searchPrompt,
+                    detail: Text("Finds articles by their original or translated title.")
+                )
+            } else {
+                EmptyStateView(
+                    title: Text("No Results"), systemImage: "magnifyingglass", identifier: AccessibilityID.searchNoResults,
+                    detail: Text("No article title contains “\(model.queryText)”.")
+                )
+            }
         case .starred:
             EmptyStateView(title: Text("No starred articles"), systemImage: "star", identifier: AccessibilityID.starredEmpty)
         case .allUnread:
@@ -170,6 +281,7 @@ private struct ArticleListContent: View {
         case .starred: Text("Starred")
         case .category(let id): Text(verbatim: categories.summary(id)?.category.name ?? "")
         case .source(let id): Text(verbatim: sources.summary(id)?.name ?? "")
+        case .search: Text("Search")
         }
     }
 
@@ -209,7 +321,7 @@ private struct ArticleListContent: View {
                 Button("Source Settings", systemImage: "gearshape") {
                     sources.beginSettings(id)
                 }
-            case .allUnread, .starred:
+            case .allUnread, .starred, .search:
                 EmptyView()
             }
         }
@@ -392,8 +504,11 @@ struct ArticleShortcuts: View {
             shortcut("Mark as Read or Unread", "u") {
                 reading.toggleReadOfOpenArticle(on: list)
             }
-            shortcut("Refresh", "r") {
-                Task { await reading.refresh(list) }
+            // Search is not refreshed from itself (RD25 decision 10).
+            if list.offersRefresh {
+                shortcut("Refresh", "r") {
+                    Task { await reading.refresh(list) }
+                }
             }
         }
         .opacity(0)

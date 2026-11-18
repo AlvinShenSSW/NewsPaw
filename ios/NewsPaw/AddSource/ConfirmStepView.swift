@@ -97,8 +97,13 @@ struct ConfirmStepView: View {
             if let feed = model.chosenFeed {
                 Section {
                     if feed.latestItems.isEmpty {
-                        Text("This feed has no items yet")
-                            .foregroundStyle(Theme.secondaryText)
+                        if feed.kind == .huggingface {
+                            Text("This account has no public models yet")
+                                .foregroundStyle(Theme.secondaryText)
+                        } else {
+                            Text("This feed has no items yet")
+                                .foregroundStyle(Theme.secondaryText)
+                        }
                     }
                     ForEach(Array(feed.latestItems.enumerated()), id: \.offset) { _, item in
                         VStack(alignment: .leading, spacing: 2) {
@@ -144,6 +149,8 @@ struct ConfirmStepView: View {
         // The repository as typed, without www., .git or a deeper path
         // (RD07 decision 7).
         case .github(let repository): repository.repository.pageAddress
+        // The account's page in the Hub's spelling (RD26 decision 9).
+        case .huggingFace(let account): account.account.pageAddress
         case .failed(let failure): failure.address
         case .duplicate, .invalidAddress, nil: model.addressText
         }
@@ -155,6 +162,8 @@ struct ConfirmStepView: View {
         case .feed:
             if let gitHubFeed = model.chosenGitHubFeed {
                 Text("GitHub · \(SourceWording.gitHubFeed(gitHubFeed))")
+            } else if model.chosenFeed?.kind == .huggingface {
+                Text(verbatim: "Hugging Face")
             } else if let feed = model.chosenFeed {
                 Text("Feed · \(SourceWording.format(feed.format))")
             }

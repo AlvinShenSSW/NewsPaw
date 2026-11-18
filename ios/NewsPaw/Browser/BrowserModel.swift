@@ -189,7 +189,7 @@ final class BrowserModel {
             return url
         case .source(let id):
             return sources.summary(id).flatMap { URL(string: $0.address) }
-        case .allUnread, .category, .article:
+        case .allUnread, .category, .search, .article:
             return nil
         }
     }

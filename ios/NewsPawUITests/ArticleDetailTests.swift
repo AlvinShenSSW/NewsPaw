@@ -93,12 +93,15 @@ final class ArticleDetailTests: ArticleTestCase {
         openCategoryList("World")
         let row = waitFor(articleRow("Plain story"))
         XCTAssertTrue(row.label.hasPrefix("Unread, Plain story, Articles Feed, "), row.label)
-        XCTAssertTrue(row.label.hasSuffix(" ago"), row.label)
+        // The relative time follows the source; with no model set up the
+        // translation's mark follows it (RD21 decision 7).
+        let parts = row.label.components(separatedBy: ", ")
+        XCTAssertTrue(parts.count > 3 && parts[3].hasSuffix(" ago"), row.label)
         XCTAssertFalse(row.label.contains("Starred"))
         XCTAssertEqual(articleRowsShown().filter { $0.identifier == row.identifier }.count, 1, "one element per row")
         swipeAction(on: row, leading: false, "Star")
         waitForLabel(row, containing: ", Starred")
-        XCTAssertTrue(row.label.hasSuffix(", Starred"), row.label)
+        XCTAssertEqual(row.label.components(separatedBy: ", ").dropFirst(4).first, "Starred", row.label)
 
         // Icon-only controls: labels, and their tap targets.
         let markAll = waitFor(button(AccessibilityID.markAllReadButton))

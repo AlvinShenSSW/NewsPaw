@@ -142,7 +142,7 @@ extension Library {
             let rows = try Row.fetchAll(db, sql: "SELECT id, category_id, kind, url, name, site_url FROM source")
             var feeds: [String: [(key: String, feed: OPMLWriter.Feed)]] = [:]
             for row in rows {
-                guard let kind = SourceKind(rawValue: row["kind"]), kind.isCollectedAsFeed else { continue }
+                guard let kind = SourceKind(rawValue: row["kind"]), kind.storesFeedAddress else { continue }
                 let feed = OPMLWriter.Feed(name: row["name"], address: row["url"], siteAddress: row["site_url"])
                 feeds[row["category_id"], default: []].append((row["id"], feed))
             }

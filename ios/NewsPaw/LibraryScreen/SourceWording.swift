@@ -60,6 +60,7 @@ enum SourceWording {
         case .rss, .rdf: "RSS"
         case .atom: "Atom"
         case .json: "JSON Feed"
+        case .huggingFace: "Hugging Face"
         }
     }
 
@@ -81,6 +82,19 @@ enum SourceWording {
         case .china: Text("China")
         case .tech: Text("Tech")
         case .ai: Text("AI")
+        }
+    }
+
+    /// A group's name as a stored category's name (RD21 decision 6): the
+    /// same catalog keys, in the interface language of the moment.
+    static func groupName(_ group: SuggestedSourceGroup) -> String {
+        switch group {
+        case .world: String(localized: "World")
+        case .japan: String(localized: "Japan")
+        case .australia: String(localized: "Australia")
+        case .china: String(localized: "China")
+        case .tech: String(localized: "Tech")
+        case .ai: String(localized: "AI")
         }
     }
 

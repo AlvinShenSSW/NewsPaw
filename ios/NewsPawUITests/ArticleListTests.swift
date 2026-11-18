@@ -79,7 +79,9 @@ final class ArticleListTests: ArticleTestCase {
         openSourceList("Articles Feed", in: "World")
         chooseFilter("All")
         waitForUnread(articleRow("Plain story"), false)
-        XCTAssertTrue(articleRow("Linkless story").label.hasSuffix(", Starred"), articleRow("Linkless story").label)
+        // "Starred" follows the time; with no model set up the
+        // translation's mark follows it (RD21 decision 7).
+        XCTAssertTrue(articleRow("Linkless story").label.contains(", Starred"), articleRow("Linkless story").label)
         XCTAssertTrue(isUnread(articleRow("Image story")))
         openStarred()
         waitFor(articleRow("Linkless story"))
@@ -471,8 +473,15 @@ final class ArticleListTests: ArticleTestCase {
             point.press(forDuration: 0.1, thenDragTo: point.withOffset(CGVector(dx: 0, dy: distance)), withVelocity: .slow, thenHoldForDuration: 0.5)
         }
 
-        // A third of a row: the first row is still on screen.
-        let rowHeight = waitFor(articleRow(first ?? "")).frame.height
+        // A third of a row: the first row is still on screen. A row's
+        // height is the distance from one row to the next: beside a row
+        // with a translation mark (RD21, no model set up) the row's own
+        // element is its button, shorter than the row (measured on the
+        // iPhone: 50 pt in an 80 pt row), and a third of that is a drag the
+        // large title turns into a full collapse.
+        waitFor(articleRow(first ?? ""))
+        let shown = articleRowsShown()
+        let rowHeight = shown[1].frame.minY - shown[0].frame.minY
         drag(by: -rowHeight / 3)
         updateNowFromTheList()
         let second = waitForNewTopRow(after: first)

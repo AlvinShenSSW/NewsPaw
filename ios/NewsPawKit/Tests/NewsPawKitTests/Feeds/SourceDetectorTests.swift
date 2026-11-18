@@ -911,3 +911,480 @@ extension TimedAndHeavySuites {
         }
     }
 }
+
+// MARK: - Hugging Face accounts (RD26)
+
+/// The Hub's addresses for the invented accounts of the fixtures: the
+/// organisation `lamplight-lab`, the user `wick-keeper`.
+enum HubAddress {
+    static func organization(_ name: String) -> String {
+        "https://huggingface.co/api/organizations/\(name)/overview"
+    }
+
+    static func user(_ name: String) -> String {
+        "https://huggingface.co/api/users/\(name)/overview"
+    }
+
+    static func models(_ name: String) -> String {
+        "https://huggingface.co/api/models?author=\(name)&sort=createdAt&direction=-1&limit=30&expand=createdAt"
+    }
+
+    static func page(_ name: String) -> String {
+        "https://huggingface.co/\(name)"
+    }
+
+    static let json = "application/json; charset=utf-8"
+
+    /// A fixture's bytes, 200, with an ETag when given.
+    static func fixture(_ name: String, etag: String? = nil) -> RoutedTransport.Route {
+        { request in
+            var headers = ["Content-Type": json]
+            headers["ETag"] = etag
+            return TransportResponse(finalURL: request.url, status: 200, headers: headers, body: try HubFixture.data(name))
+        }
+    }
+
+    /// An empty answer with `status`, as the transport hands over any
+    /// status that is not 2xx.
+    static func status(_ status: Int) -> RoutedTransport.Route {
+        RoutedTransport.answer("", type: json, status: status)
+    }
+
+    /// The organisation `lamplight-lab` typed as `typed`: its overview, the
+    /// user overview 404, and its list.
+    static func organizationRoutes(
+        typed: String = "Lamplight-Lab", list: @escaping RoutedTransport.Route = fixture("models-reduced.json", etag: "W/\"d6b-1\""),
+        extra: [String: RoutedTransport.Route] = [:]
+    ) -> [String: RoutedTransport.Route] {
+        [
+            organization(typed): fixture("organization-overview.json"),
+            user(typed): status(404),
+            models("lamplight-lab"): list,
+        ].merging(extra) { _, new in new }
+    }
+}
+
+/// RD26 criteria 3–7 and 9: detecting an account address, and Save.
+@Suite("Source detection: Hugging Face accounts")
+struct HuggingFaceDetectionTests {
+    private func detect(_ text: String, _ transport: RoutedTransport, in library: Library) async throws -> Detection {
+        try await SourceDetector(transport: transport).detect(text, in: library)
+    }
+
+    private func account(_ detection: Detection) throws -> HuggingFaceDetection {
+        guard case .huggingFace(let found) = detection else {
+            Issue.record("not an account: \(detection)")
+            throw CancellationError()
+        }
+        return found
+    }
+
+    private static let reducedNames = ["lamplight-lab/Wick-7B-Instruct", "lamplight-lab/Wick-7B", "lamplight-lab/Glass-Vision-Exp"]
+
+    @Test("an organisation: exactly the two overviews and the list in the Hub's spelling, no validators; one usable candidate")
+    func organization() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let transport = RoutedTransport(HubAddress.organizationRoutes())
+        let found = try account(try await detect("huggingface.co/Lamplight-Lab", transport, in: fixture.library))
+        #expect(Set(transport.requested) == [
+            HubAddress.organization("Lamplight-Lab"), HubAddress.user("Lamplight-Lab"), HubAddress.models("lamplight-lab"),
+        ])
+        #expect(transport.requested.count == 3)
+        #expect(transport.requested.last == HubAddress.models("lamplight-lab"))
+        #expect(transport.requestsWithValidators == 0)
+        #expect(found.account.name == "lamplight-lab")
+        #expect(found.account.pageAddress == HubAddress.page("lamplight-lab"))
+        #expect(found.candidate.kind == .huggingface)
+        #expect(found.candidate.address == HubAddress.page("lamplight-lab"))
+        #expect(found.candidate.siteURL == HubAddress.page("lamplight-lab"))
+        #expect(found.candidate.format == .huggingFace)
+        #expect(found.candidate.itemCount == 5)
+        #expect(found.candidate.latestItems.map(\.title) == Self.reducedNames)
+        #expect(found.candidate.latestItems.map(\.publishedAt) == [
+            date("2026-11-02T09:30:00Z"), date("2026-10-17T02:40:38Z"), date("2026-09-10T02:17:58.250Z"),
+        ])
+        #expect(try await rowCounts(fixture.library)["source"] == 0)
+    }
+
+    @Test("every recognised form of the address detects the same account")
+    func forms() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        for typed in ["https://www.huggingface.co/Lamplight-Lab/", "hf.co/Lamplight-Lab?x=1", "http://huggingface.co/Lamplight-Lab#models"] {
+            let transport = RoutedTransport(HubAddress.organizationRoutes())
+            let found = try account(try await detect(typed, transport, in: fixture.library))
+            #expect(found.candidate.address == HubAddress.page("lamplight-lab"), "\(typed)")
+            #expect(transport.requested.count == 3, "\(typed)")
+        }
+    }
+
+    @Test("a user, found by the user overview when the organisation overview is gone")
+    func user() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        // The reader does not tie a model to its account: any list will do.
+        let transport = RoutedTransport([
+            HubAddress.organization("Wick-Keeper"): HubAddress.status(404),
+            HubAddress.user("Wick-Keeper"): HubAddress.fixture("user-overview.json"),
+            HubAddress.models("wick-keeper"): HubAddress.fixture("models-reduced.json"),
+        ])
+        let found = try account(try await detect("huggingface.co/Wick-Keeper", transport, in: fixture.library))
+        #expect(transport.requested.count == 3)
+        #expect(transport.requested.last == HubAddress.models("wick-keeper"))
+        #expect(transport.requestsWithValidators == 0)
+        #expect(found.account.name == "wick-keeper")
+        #expect(found.candidate.address == HubAddress.page("wick-keeper"))
+        #expect(found.candidate.kind == .huggingface)
+        #expect(found.candidate.latestItems.map(\.title) == Self.reducedNames)
+    }
+
+    @Test("both overviews found: the organisation's spelling")
+    func bothFound() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let transport = RoutedTransport(HubAddress.organizationRoutes(extra: [
+            HubAddress.user("Lamplight-Lab"): RoutedTransport.answer(#"{"user":"Lamplight-LAB","type":"user"}"#, type: HubAddress.json),
+        ]))
+        let found = try account(try await detect("huggingface.co/Lamplight-Lab", transport, in: fixture.library))
+        #expect(found.account.name == "lamplight-lab")
+    }
+
+    @Test("an account with no models: a usable, empty candidate")
+    func noModels() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let transport = RoutedTransport(HubAddress.organizationRoutes(
+            typed: "lamplight-lab", list: HubAddress.fixture("models-empty.json", etag: "W/\"2-e\"")
+        ))
+        let found = try account(try await detect("huggingface.co/lamplight-lab", transport, in: fixture.library))
+        #expect(found.candidate.itemCount == 0)
+        #expect(found.candidate.latestItems.isEmpty)
+        #expect(found.candidate.newestItemAt == nil)
+        let id = try await fixture.library.addFeedSource(found.candidate, name: found.account.name, categoryID: fixture.category)
+        let source = try #require(try await fixture.library.sources().first)
+        #expect(source.id == id)
+        #expect(source.kind == .huggingface)
+        #expect(try await fixture.library.articles().isEmpty)
+        #expect(transport.requested.count == 3)
+    }
+
+    // MARK: Criterion 4
+
+    @Test("a source at the account's page, ignoring ASCII case, of any kind: a duplicate before any request",
+          arguments: [SourceKind.webpage, .feed, .github, .huggingface])
+    func duplicate(kind: SourceKind) async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        var stored = Sample.source(in: fixture.category, url: "https://huggingface.co/lamplight-lab", name: "Stored", at: fixture.clock.now())
+        stored.kind = kind
+        try await fixture.library.insert(stored)
+        let existing = ExistingSource(sourceID: stored.id, name: "Stored", categoryID: fixture.category, categoryName: "News")
+        // A transport that fails everything.
+        let transport = RoutedTransport([:])
+        for typed in ["huggingface.co/Lamplight-Lab", "hf.co/LAMPLIGHT-LAB/", "https://www.huggingface.co/lamplight-lab"] {
+            #expect(try await detect(typed, transport, in: fixture.library) == .duplicate(existing), "\(typed)")
+        }
+        #expect(transport.requested.isEmpty)
+    }
+
+    // MARK: Criterion 5
+
+    @Test("both overviews gone, the page 404: today's failure with the missing-account flag, after three requests")
+    func missing() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let transport = RoutedTransport([
+            HubAddress.organization("nobody-here"): HubAddress.status(404),
+            HubAddress.user("nobody-here"): HubAddress.status(410),
+            HubAddress.page("nobody-here"): RoutedTransport.answer("", type: "text/html", status: 404),
+        ])
+        let detection = try await detect("huggingface.co/nobody-here", transport, in: fixture.library)
+        var expected = DetectionFailure(address: HubAddress.page("nobody-here"), reason: .gone, offersWebPage: false, addedScheme: true)
+        expected.missingHuggingFaceAccount = true
+        #expect(detection == .failed(expected))
+        #expect(transport.requested.count == 3)
+        #expect(transport.requested.last == HubAddress.page("nobody-here"))
+        #expect(try await rowCounts(fixture.library)["source"] == 0)
+    }
+
+    @Test("both overviews gone, the page fails otherwise: today's failure without the flag")
+    func missingOtherFailure() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let transport = RoutedTransport([
+            HubAddress.organization("nobody-here"): HubAddress.status(404),
+            HubAddress.user("nobody-here"): HubAddress.status(404),
+            HubAddress.page("nobody-here"): RoutedTransport.answer("", type: "text/html", status: 500),
+        ])
+        let detection = try await detect("https://huggingface.co/nobody-here", transport, in: fixture.library)
+        #expect(detection == .failed(DetectionFailure(
+            address: HubAddress.page("nobody-here"), reason: .httpStatus(500), offersWebPage: true, addedScheme: false
+        )))
+    }
+
+    @Test("both overviews gone, the page declaring a feed: today's page result")
+    func reservedPathWithFeed() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let transport = RoutedTransport([
+            HubAddress.organization("blog"): HubAddress.status(404),
+            HubAddress.user("blog"): HubAddress.status(404),
+            HubAddress.page("blog"): RoutedTransport.answer(page(rssLink("/blog/feed.xml"), title: "Blog"), type: "text/html"),
+            "https://huggingface.co/blog/feed.xml": RoutedTransport.rss("Blog"),
+        ])
+        let detection = try await detect("huggingface.co/blog", transport, in: fixture.library)
+        guard case .page(let found) = detection else {
+            Issue.record("not a page: \(detection)")
+            return
+        }
+        #expect(found.address == HubAddress.page("blog"))
+        #expect(found.title == "Blog")
+        #expect(found.candidates.map(\.address) == ["https://huggingface.co/blog/feed.xml"])
+        guard case .usable(let feed) = found.candidates[0].state else {
+            Issue.record("\(found.candidates[0].state)")
+            return
+        }
+        #expect(feed.kind == .feed)
+        #expect(transport.requested.count == 4)
+    }
+
+    @Test("both overviews gone, the typed address already a source: a duplicate after the two overviews")
+    func missingDuplicate() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        // With its trailing slash, the address is not the account's page.
+        let id = try await fixture.library.addWebPageSource(
+            address: "https://huggingface.co/nobody-here/", name: "Page", categoryID: fixture.category
+        )
+        let transport = RoutedTransport([
+            HubAddress.organization("nobody-here"): HubAddress.status(404),
+            HubAddress.user("nobody-here"): HubAddress.status(404),
+        ])
+        #expect(try await detect("huggingface.co/nobody-here/", transport, in: fixture.library)
+            == .duplicate(ExistingSource(sourceID: id, name: "Page", categoryID: fixture.category, categoryName: "News")))
+        #expect(transport.requested.count == 2)
+    }
+
+    // MARK: Criterion 6
+
+    /// The cases of `overviewFailures`, by name: the two answers, the reason
+    /// and whether a web page is offered.
+    static func overviewFailure(_ name: String) -> (RoutedTransport.Route, RoutedTransport.Route, CollectionFailure, Bool) {
+        let gone = HubAddress.status(404)
+        func json(_ text: String) -> RoutedTransport.Route { RoutedTransport.answer(text, type: HubAddress.json) }
+        return switch name {
+        case "both unreachable":
+            (RoutedTransport.failing(.unreachable), RoutedTransport.failing(.unreachable), .unreachable, false)
+        case "both timed out":
+            (RoutedTransport.failing(.timedOut), RoutedTransport.failing(.timedOut), .timedOut, false)
+        case "organisation 429":
+            (HubAddress.status(429), gone, .httpStatus(429), true)
+        case "user 500":
+            (gone, HubAddress.status(500), .httpStatus(500), true)
+        case "organisation 500, user unreachable":
+            (HubAddress.status(500), RoutedTransport.failing(.unreachable), .httpStatus(500), true)
+        case "organisation gone, user too many redirects":
+            (gone, RoutedTransport.failing(.tooManyRedirects), .tooManyRedirects, true)
+        case "an array":
+            (json(#"[{"name":"lamplight-lab"}]"#), gone, .notAFeed, false)
+        case "not JSON":
+            (RoutedTransport.answer("<html></html>", type: "text/html"), gone, .notAFeed, false)
+        case "another name":
+            (json(#"{"name":"lamplight-labs"}"#), gone, .notAFeed, false)
+        case "a name outside the rule":
+            (json(#"{"name":"lamplight-lab/../x"}"#), gone, .notAFeed, false)
+        case "a user overview without user":
+            (gone, json(#"{"name":"lamplight-lab","type":"user"}"#), .notAFeed, false)
+        default:
+            (json(String(repeating: "[", count: 70)), gone, .notAFeed, false)
+        }
+    }
+
+    @Test("overview failures: failed with the organisation's reason, else the user's; no http hint; no list or page requested",
+          arguments: ["both unreachable", "both timed out", "organisation 429", "user 500", "organisation 500, user unreachable",
+                      "organisation gone, user too many redirects", "an array", "not JSON", "another name",
+                      "a name outside the rule", "a user overview without user", "past the limits"])
+    func overviewFailures(name: String) async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let (organization, user, reason, offersWebPage) = Self.overviewFailure(name)
+        let transport = RoutedTransport([
+            HubAddress.organization("Lamplight-Lab"): organization,
+            HubAddress.user("Lamplight-Lab"): user,
+            HubAddress.models("lamplight-lab"): HubAddress.fixture("models-reduced.json"),
+            HubAddress.page("Lamplight-Lab"): RoutedTransport.answer(page(""), type: "text/html"),
+        ])
+        let detection = try await detect("huggingface.co/Lamplight-Lab", transport, in: fixture.library)
+        #expect(detection == .failed(DetectionFailure(
+            address: HubAddress.page("Lamplight-Lab"), reason: reason, offersWebPage: offersWebPage, addedScheme: false
+        )), "\(name)")
+        #expect(Set(transport.requested) == [HubAddress.organization("Lamplight-Lab"), HubAddress.user("Lamplight-Lab")], "\(name)")
+        #expect(transport.requested.count == 2, "\(name)")
+    }
+
+    @Test("a failed list: failed with its reason",
+          arguments: [("500", CollectionFailure.httpStatus(500), true), ("unreachable", .unreachable, false),
+                      ("an object", .notAFeed, false), ("an Atom feed", .notAFeed, false), ("404", .gone, false)])
+    func failedList(name: String, reason: CollectionFailure, offersWebPage: Bool) async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let list: RoutedTransport.Route = switch name {
+        case "500": HubAddress.status(500)
+        case "404": HubAddress.status(404)
+        case "unreachable": RoutedTransport.failing(.unreachable)
+        case "an object": HubAddress.fixture("organization-overview.json")
+        default: GitHubFixture.feed("atom.xml")
+        }
+        let transport = RoutedTransport(HubAddress.organizationRoutes(list: list))
+        let detection = try await detect("huggingface.co/Lamplight-Lab", transport, in: fixture.library)
+        #expect(detection == .failed(DetectionFailure(
+            address: HubAddress.page("Lamplight-Lab"), reason: reason, offersWebPage: offersWebPage, addedScheme: false
+        )), "\(name)")
+        #expect(transport.requested.count == 3)
+    }
+
+    // MARK: Cancellation and writes
+
+    @Test("cancelled while the overviews are in flight: throws, the list is not requested, nothing written")
+    func cancelledDuringOverviews() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let before = try await rowCounts(fixture.library)
+        let started = Signal()
+        let transport = RoutedTransport(HubAddress.organizationRoutes(extra: [
+            HubAddress.organization("Lamplight-Lab"): { _ in
+                started.fire()
+                try await Task.sleep(for: .seconds(3_600))
+                throw TransportFailure.timedOut
+            },
+        ]))
+        let library = fixture.library
+        let task = Task { try await SourceDetector(transport: transport).detect("huggingface.co/Lamplight-Lab", in: library) }
+        await started.wait()
+        task.cancel()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(!transport.requested.contains(HubAddress.models("lamplight-lab")))
+        #expect(transport.requested.count <= 2)
+        #expect(try await rowCounts(fixture.library) == before)
+    }
+
+    @Test("cancelled while the overviews are answered: throws, the list is not requested")
+    func cancelledAsTheOverviewsAnswer() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let holder = Holder<Task<Detection, any Error>>()
+        let answered = Mutex(0)
+        // The second overview to answer cancels the detection, then answers.
+        let counting: (@escaping RoutedTransport.Route) -> RoutedTransport.Route = { route in
+            { request in
+                let count = answered.withLock { count in
+                    count += 1
+                    return count
+                }
+                if count == 2 {
+                    holder.value?.cancel()
+                }
+                return try await route(request)
+            }
+        }
+        let transport = RoutedTransport(HubAddress.organizationRoutes(extra: [
+            HubAddress.organization("Lamplight-Lab"): counting(HubAddress.fixture("organization-overview.json")),
+            HubAddress.user("Lamplight-Lab"): counting(HubAddress.status(404)),
+        ]))
+        let library = fixture.library
+        let started = Signal()
+        let task = Task {
+            await started.wait()
+            return try await SourceDetector(transport: transport).detect("huggingface.co/Lamplight-Lab", in: library)
+        }
+        holder.set(task)
+        started.fire()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(transport.requested.count == 2)
+    }
+
+    @Test("cancelled while the list is in flight: throws, nothing written, no further request")
+    func cancelledDuringList() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let before = try await rowCounts(fixture.library)
+        let started = Signal()
+        let transport = RoutedTransport(HubAddress.organizationRoutes(list: { _ in
+            started.fire()
+            try await Task.sleep(for: .seconds(3_600))
+            throw TransportFailure.timedOut
+        }))
+        let library = fixture.library
+        let task = Task { try await SourceDetector(transport: transport).detect("huggingface.co/Lamplight-Lab", in: library) }
+        await started.wait()
+        task.cancel()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(transport.requested.count == 3)
+        #expect(try await rowCounts(fixture.library) == before)
+    }
+
+    // MARK: Criterion 9
+
+    @Test("Save: kind huggingface, the page in the Hub's spelling as address and site, the name, validators and articles, no request")
+    func save() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let transport = RoutedTransport(HubAddress.organizationRoutes())
+        let before = try await rowCounts(fixture.library)
+        let found = try account(try await detect("huggingface.co/Lamplight-Lab", transport, in: fixture.library))
+        #expect(try await rowCounts(fixture.library) == before, "nothing is written before Save")
+        let id = try await fixture.library.addFeedSource(found.candidate, name: found.account.name, categoryID: fixture.category)
+        let source = try #require(try await fixture.library.sources().first)
+        #expect(source.id == id)
+        #expect(source.kind == .huggingface)
+        #expect(source.url == "https://huggingface.co/lamplight-lab")
+        #expect(source.siteURL == "https://huggingface.co/lamplight-lab")
+        #expect(source.name == "lamplight-lab")
+        #expect(source.etag == "W/\"d6b-1\"")
+        #expect(source.lastModified == nil)
+        #expect(source.lastSuccessAt == fixture.clock.now())
+        let articles = try await fixture.library.articles()
+        #expect(articles.count == 5)
+        #expect(Set(articles.map(\.externalID)) == Set((1...5).map { "6ad2e0265a59c8bc1870000\($0)" }))
+        #expect(articles.allSatisfy { $0.url == "https://huggingface.co/" + ($0.title ?? "") })
+        #expect(articles.allSatisfy { $0.imageURL == nil && $0.excerpt == nil && $0.author == nil })
+        #expect(transport.requested.count == 3, "Save makes no request")
+    }
+
+    @Test("no account detection changes the library")
+    func detectionNeverWrites() async throws {
+        let fixture = try await SourceFixture.make()
+        defer { fixture.remove() }
+        let before = try await rowCounts(fixture.library)
+        let transport = RoutedTransport(HubAddress.organizationRoutes().merging([
+            HubAddress.organization("nobody-here"): HubAddress.status(404),
+            HubAddress.user("nobody-here"): HubAddress.status(404),
+            HubAddress.page("nobody-here"): HubAddress.status(404),
+        ]) { first, _ in first })
+        for typed in ["huggingface.co/Lamplight-Lab", "huggingface.co/nobody-here", "hf.co/unreachable-one"] {
+            _ = try await detect(typed, transport, in: fixture.library)
+        }
+        #expect(try await rowCounts(fixture.library) == before)
+    }
+}
+
+extension TimedAndHeavySuites {
+    /// RD26 criterion 6: a list that does not answer within the candidate
+    /// limit.
+    @Suite("Source detection: Hugging Face accounts, timed")
+    struct HuggingFaceDetectionTimedTests {
+        @Test("a list not answered within the candidate limit: failed, timed out")
+        func listNotChecked() async throws {
+            let fixture = try await SourceFixture.make()
+            defer { fixture.remove() }
+            let transport = RoutedTransport(HubAddress.organizationRoutes(list: RoutedTransport.never))
+            let detection = try await SourceDetector(transport: transport, candidateLimit: .milliseconds(300))
+                .detect("huggingface.co/Lamplight-Lab", in: fixture.library)
+            #expect(detection == .failed(DetectionFailure(
+                address: HubAddress.page("Lamplight-Lab"), reason: .timedOut, offersWebPage: false, addedScheme: false
+            )))
+            #expect(transport.requested.count == 3)
+        }
+    }
+}

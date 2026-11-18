@@ -91,6 +91,7 @@ struct SettingsDestination: View {
         case .data: DataSettingsView()
         case .usage: UsageView()
         case .about: AboutView()
+        case .licence(let id): LicenceView(id: id)
         }
     }
 }
@@ -202,7 +203,7 @@ struct DataSettingsView: View {
                     .frame(minHeight: Theme.minimumTapTarget)
                 }
                 // Only feeds and GitHub sources are written.
-                .disabled(isExporting || !sources.summaries.contains { $0.kind.isCollectedAsFeed })
+                .disabled(isExporting || !sources.summaries.contains { $0.kind.storesFeedAddress })
                 .accessibilityIdentifier(AccessibilityID.exportOPMLButton)
                 // On the row, not on the list: the list carries the import's
                 // sheet and alert, and two of a kind on one view do not both
@@ -318,7 +319,8 @@ struct DataSettingsView: View {
     }
 }
 
-/// About: the app's version.
+/// About: the app's version, and the licence of every bundled library
+/// (ux S8; RD21 decision 9).
 struct AboutView: View {
     var body: some View {
         List {
@@ -330,6 +332,29 @@ struct AboutView: View {
                 } label: {
                     Text("Version")
                 }
+            }
+            .listRowBackground(Theme.surface)
+            Section {
+                ForEach(ThirdPartyNotices.all) { notice in
+                    NavigationLink(value: SettingsRoute.licence(notice.id)) {
+                        VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
+                            Text(verbatim: notice.name)
+                                .foregroundStyle(Theme.text)
+                            Text(verbatim: notice.licence)
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.secondaryText)
+                        }
+                        .frame(minHeight: Theme.minimumTapTarget, alignment: .leading)
+                        .accessibilityElement(children: .combine)
+                    }
+                    .accessibilityIdentifier(AccessibilityID.licenceRow(notice.id))
+                }
+            } header: {
+                Text("Licences")
+                    .foregroundStyle(Theme.secondaryText)
+            } footer: {
+                Text("NewsPaw is built with these open-source libraries.")
+                    .foregroundStyle(Theme.secondaryText)
             }
             .listRowBackground(Theme.surface)
         }
@@ -345,5 +370,37 @@ struct AboutView: View {
         let short = info["CFBundleShortVersionString"] as? String ?? "?"
         let build = info["CFBundleVersion"] as? String ?? "?"
         return "\(short) (\(build))"
+    }
+}
+
+/// One bundled library's licence (RD21 decision 9): its address and its
+/// whole text, in English as published, selectable and scrolling.
+struct LicenceView: View {
+    let id: String
+
+    var body: some View {
+        let notice = ThirdPartyNotices.all.first { $0.id == id }
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Spacing.standard) {
+                if let notice {
+                    Text(verbatim: notice.address)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier(AccessibilityID.licenceAddress)
+                    Text(verbatim: notice.text)
+                        .font(.footnote.monospaced())
+                        .foregroundStyle(Theme.text)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier(AccessibilityID.licenceText)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Theme.Spacing.standard)
+        }
+        .stackBackground(Theme.background)
+        .navigationTitle(Text(verbatim: notice?.name ?? ""))
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

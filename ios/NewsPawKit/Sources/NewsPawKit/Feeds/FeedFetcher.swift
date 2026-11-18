@@ -12,9 +12,25 @@ public struct FeedFetcher: Sendable {
 
     /// Fetches `address`, sending the stored validators.
     ///
+    /// A source of kind `huggingface` stores its account's page: the list of
+    /// the account's models is built from it and requested instead, and its
+    /// answer is read by `HuggingFaceModels`; a stored address that is not
+    /// an account's page fails `unsupportedAddress` without a request (RD26
+    /// decision 6). Every other kind's answer is read by `FeedParser`. There
+    /// is no fallback from one reader to the other.
+    ///
     /// - Throws: only `CancellationError`. Every other failure is a result.
-    public func fetch(_ address: String, etag: String? = nil, lastModified: String? = nil) async throws -> FetchResult {
-        guard let url = URL(string: address), url.isCollectableAddress else {
+    public func fetch(
+        _ address: String, etag: String? = nil, lastModified: String? = nil, kind: SourceKind = .feed
+    ) async throws -> FetchResult {
+        let requested: String
+        if kind == .huggingface {
+            guard let account = HuggingFaceAccount(normalForm: address) else { return .failed(.unsupportedAddress) }
+            requested = account.modelsAddress
+        } else {
+            requested = address
+        }
+        guard let url = URL(string: requested), url.isCollectableAddress else {
             return .failed(.unsupportedAddress)
         }
         let response: TransportResponse
@@ -43,7 +59,10 @@ public struct FeedFetcher: Sendable {
         }
 
         let contentType = ContentType(response.header("Content-Type"))
-        guard let feed = FeedParser.parse(response.body, charset: contentType.charset, baseURL: response.finalURL) else {
+        let parsed = kind == .huggingface
+            ? HuggingFaceModels.read(response.body)
+            : FeedParser.parse(response.body, charset: contentType.charset, baseURL: response.finalURL)
+        guard let feed = parsed else {
             return .notAFeed(NonFeedDocument(
                 body: response.body, mediaType: contentType.mediaType, charset: contentType.charset, finalURL: response.finalURL
             ))
@@ -54,7 +73,8 @@ public struct FeedFetcher: Sendable {
         return .feed(FetchedFeed(feed: feed, validators: validators, finalURL: response.finalURL))
     }
 
-    private static func reason(for failure: TransportFailure) -> CollectionFailure {
+    /// The reason a transport failure is recorded as.
+    static func reason(for failure: TransportFailure) -> CollectionFailure {
         switch failure {
         case .unreachable: .unreachable
         case .timedOut: .timedOut

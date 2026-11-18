@@ -49,6 +49,28 @@ final class ArticleListModel {
     /// Whether a next page is being read.
     @ObservationIgnored var isReadingPage = false
 
+    // MARK: Search (RD25 decision 11)
+
+    /// What the search field shows. Search's list only; never stored.
+    var text = ""
+    /// What the rows were read for, or are being read for; `nil` with no
+    /// query. Search's list only.
+    var query: SearchQuery?
+    /// The text as typed, trimmed, of the query whose rows are shown: the
+    /// no-results sentence names it.
+    private(set) var queryText = ""
+    /// The same, of the query being read.
+    @ObservationIgnored private var wantedText = ""
+    /// The reads of `query`: superseded ones neither read nor apply.
+    @ObservationIgnored var reads = SearchReads()
+    /// The last of the navigation's focus requests the Search screen has
+    /// acted on: a request is acted on once, also when the screen is built
+    /// after it.
+    @ObservationIgnored var handledFocusRequest = 0
+    /// Whether the first page of the current query has been applied, so
+    /// that an empty list means no match rather than not read yet.
+    private(set) var hasResults = false
+
     init(kind: ArticleListKind, filter: ArticleFilter) {
         self.kind = kind
         self.filter = filter
@@ -83,6 +105,32 @@ final class ArticleListModel {
 
     func setFilter(_ filter: ArticleFilter) {
         self.filter = filter
+    }
+
+    /// A query is wanted (RD25): the rows stay until its first page
+    /// replaces them.
+    func setQuery(_ query: SearchQuery, text: String) {
+        self.query = query
+        wantedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// No query: no rows, no read wanted; the prompt is shown.
+    func clearQuery() {
+        query = nil
+        queryText = ""
+        wantedText = ""
+        reads.clear()
+        rows = []
+        hasMore = false
+        hasResults = false
+        failedRead = nil
+        state = .loaded
+    }
+
+    /// The first page of the current query replaced the rows.
+    func searchResultsApplied() {
+        hasResults = true
+        queryText = wantedText
     }
 
     func beginLoading() {

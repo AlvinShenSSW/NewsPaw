@@ -67,7 +67,9 @@ extension Library {
     }
 
     /// Whether a source's articles are translated without the owner asking.
-    static func translatesAutomatically(_ setting: AutoTranslate, automatic: Bool) -> Bool {
+    /// The app asks it too, to show a translation's block only on a row that
+    /// is (RD21).
+    public static func translatesAutomatically(_ setting: AutoTranslate, automatic: Bool) -> Bool {
         switch setting {
         case .on: true
         case .inherit: automatic

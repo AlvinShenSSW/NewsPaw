@@ -12,6 +12,8 @@ struct DebugLaunchOptions {
     let syntheticSources: Int?
     /// Whether the next category save fails.
     let failNextSave: Bool
+    /// The next search read fails (RD25).
+    let failNextSearch: Bool
     /// How long the next save waits before it runs.
     let slowNextSave: Duration?
     /// Whether the next source save fails.
@@ -43,6 +45,10 @@ struct DebugLaunchOptions {
     /// The daily automatic limit to store (RD14 decision 8). Applied only
     /// together with `libraryDirectory`.
     let dailyAutomaticLimit: Int?
+    /// Whether the first run may be shown (RD21 decision 1): under a UI-test
+    /// library directory it is shown, and its flag kept, only when asked
+    /// for, so that the other suites start on the shell.
+    let firstRun: Bool
     /// Whether five usage rows of `seed-<partition>` are inserted into the
     /// normal library at launch and into the adult library at each unlock
     /// (RD17 decision 8). Applied only together with `libraryDirectory`.
@@ -61,6 +67,7 @@ struct DebugLaunchOptions {
             syntheticSources = nil
         }
         failNextSave = environment[UITestLaunchKey.failNextSave] == "1"
+        failNextSearch = environment[UITestLaunchKey.failNextSearch] == "1"
         failNextSourceSave = environment[UITestLaunchKey.failNextSourceSave] == "1"
         if let text = environment[UITestLaunchKey.slowNextSave], let seconds = Int(text), seconds > 0 {
             slowNextSave = .seconds(seconds)
@@ -92,6 +99,7 @@ struct DebugLaunchOptions {
         } else {
             dailyAutomaticLimit = nil
         }
+        firstRun = environment[UITestLaunchKey.firstRun] == "1"
         seedsUsage = environment[UITestLaunchKey.seedUsage] == "1"
     }
 

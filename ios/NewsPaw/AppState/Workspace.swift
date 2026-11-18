@@ -107,6 +107,7 @@ final class Workspace: Identifiable {
             ? TranslationModel(models: parts.models, settings: parts.translationSettings, reading: reading, now: parts.now)
             : nil
         reading.translationLocale = { [weak translation] in translation?.settings.readingLocale }
+        translation?.autoTranslateOfSource = { [weak sources] id in sources?.summary(id)?.autoTranslate }
         modelSettings.onSlotsChanged = parts.slotsChanged
         categories.onReload = { [weak sources] in await sources?.reload() }
         categories.sourcesOf = { [weak sources] id in Set(sources?.sources(in: id).map(\.id) ?? []) }
@@ -118,6 +119,7 @@ final class Workspace: Identifiable {
         }
         sources.onSettingsSaved = { [weak reading] in reading?.sourceSettingsSaved() }
         navigation.onListEntered = { [weak reading] list in reading?.entered(list) }
+        navigation.onSearchStarted = { [weak reading] in reading?.dropSearch() }
         navigation.isWebPageSource = { [weak sources] id in sources?.summary(id)?.kind == .webpage }
         navigation.onStacksChanged = { [weak browser] in browser?.stacksChanged() }
         navigation.onSettingsPathChanged = { [weak modelSettings] path in modelSettings?.settingsPathChanged(path) }

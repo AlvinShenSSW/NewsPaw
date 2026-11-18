@@ -119,6 +119,18 @@ enum AccessibilityID {
     static let couldNotLoad = "list.couldNotLoad"
     static let showAllButton = "list.showAll"
 
+    // Search (RD25)
+    /// The Search button in the Library root's navigation bar (tabs).
+    static let searchButton = "search.open"
+    /// The Search button in the sidebar's navigation bar (panes).
+    static let sidebarSearchButton = "search.openFromSidebar"
+    /// The Search screen's list.
+    static let searchList = "search.list"
+    /// The empty state with no query.
+    static let searchPrompt = "search.prompt"
+    /// The empty state of a query without a match.
+    static let searchNoResults = "search.noResults"
+
     /// A list row, named by its article's original title (RD14 decision
     /// 9: not by a translation it shows).
     static func articleRow(_ title: String) -> String {
@@ -355,6 +367,37 @@ enum AccessibilityID {
     static func modelListRow(_ name: String) -> String {
         modelListPrefix + name
     }
+
+    // First run (RD21)
+    static let firstRun = "firstRun"
+    static let firstRunStep = "firstRun.step"
+    static let firstRunSkip = "firstRun.skip"
+    static let firstRunBack = "firstRun.back"
+    static let firstRunContinue = "firstRun.continue"
+    static let firstRunDone = "firstRun.done"
+    static let firstRunLanguagePicker = "firstRun.language"
+    static let firstRunText = "firstRun.text"
+    static let firstRunPrimaryModel = "firstRun.primaryModel"
+    static let firstRunAddSource = "firstRun.addSource"
+    static let firstRunImportOPML = "firstRun.importOPML"
+    static let firstRunCategoryPrefix = "firstRun.category."
+
+    /// A suggested category's row in the first run, by its group's raw value.
+    static func firstRunCategory(_ group: String) -> String {
+        firstRunCategoryPrefix + group
+    }
+
+    // Today with no source (RD21 decision 10)
+    static let todayAddSourceButton = "today.addSource"
+
+    // About's licences (RD21 decision 9)
+    static let licenceText = "licence.text"
+    static let licenceAddress = "licence.address"
+
+    /// A licence's row in About, by its notice's identifier.
+    static func licenceRow(_ id: String) -> String {
+        "about.licence." + id
+    }
 }
 
 #if DEBUG
@@ -372,6 +415,9 @@ enum UITestLaunchKey {
     static let slowNextSave = "NEWSPAW_UITEST_SLOW_NEXT_SAVE"
     /// "1" makes the next source save fail.
     static let failNextSourceSave = "NEWSPAW_UITEST_FAIL_NEXT_SOURCE_SAVE"
+    /// "1" makes the next search read fail (RD25: the failure state);
+    /// honoured only with `libraryDirectory`.
+    static let failNextSearch = "NEWSPAW_UITEST_FAIL_NEXT_SEARCH"
     /// A whole number of days added to the app's clock; honoured only with
     /// `libraryDirectory`.
     static let clockOffsetDays = "NEWSPAW_UITEST_CLOCK_OFFSET_DAYS"
@@ -404,6 +450,10 @@ enum UITestLaunchKey {
     /// A whole number stored as the daily automatic limit (RD14 decision
     /// 8); honoured only with `libraryDirectory`.
     static let dailyAutomaticLimit = "NEWSPAW_UITEST_DAILY_AUTOMATIC_LIMIT"
+    /// "1" lets the first run show and its flag be read and written (RD21);
+    /// honoured only with `libraryDirectory`. Without it a UI-test launch
+    /// starts on the shell.
+    static let firstRun = "NEWSPAW_UITEST_FIRST_RUN"
     /// "1" inserts five usage rows of the model `seed-<partition>` into the
     /// normal library at launch and into the adult library at each unlock
     /// (RD17 decision 8); honoured only with `libraryDirectory`.

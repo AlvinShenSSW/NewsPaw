@@ -37,30 +37,34 @@ final class PaneStructureTests: NewsPawUITestCase {
     /// F1: after the software keyboard has been used in portrait, panes
     /// created after rotating to landscape keep the whole height: each pane
     /// reaches the bottom of the window and its empty state is centred in
-    /// the pane below its bar. The category's list is headed by its overview
-    /// card, with its empty state a row below the card (RD23 decision 12),
-    /// so there the list itself is measured: it reaches the bottom of its
-    /// pane.
+    /// the pane below its bar. The category's overviews are turned off: with
+    /// them on (the default) the overview card heads its list and the empty
+    /// state is a row below the card (RD23 decision 12), which says nothing
+    /// about the pane's height — the list's frame keeps the whole pane even
+    /// when a keyboard inset is left (measured with F1 put back).
     func testPanesKeepTheirHeightAfterTypingAndRotating() throws {
         launch()
         rotate(.portrait)
         requireFullWidth()
         createCategory("World")
+        openCategorySettings("World")
+        scrollTo(button(AccessibilityID.overviewModePicker)).tap()
+        waitFor(app.buttons.matching(NSPredicate(format: "label == %@", "Off")).firstMatch).tap()
+        tapSave()
+        waitForAbsence(app.textFields[AccessibilityID.nameField])
+        openSidebarIfNeeded()
         button(AccessibilityID.closeSidebarButton).tap()
         waitForAbsence(element(AccessibilityID.slideOverPanel))
         rotate(.landscapeLeft)
         requireFullWidth()
         let destinations: [(row: String, emptyStates: [String])] = [
             (AccessibilityID.allUnreadRow, [AccessibilityID.allUnreadEmpty, AccessibilityID.noArticleSelected]),
-            (AccessibilityID.categoryRow("World"), [AccessibilityID.noArticleSelected]),
+            (AccessibilityID.categoryRow("World"), [AccessibilityID.categoryEmpty, AccessibilityID.noArticleSelected]),
             (AccessibilityID.starredRow, [AccessibilityID.starredEmpty, AccessibilityID.noArticleSelected]),
             (AccessibilityID.todayRow, [AccessibilityID.todayEmpty]),
         ]
         for destination in destinations {
             selectInSidebar(destination.row)
-            if destination.row == AccessibilityID.categoryRow("World") {
-                assertListReachesTheBottomBelowTheCard(of: "World")
-            }
             for emptyState in destination.emptyStates {
                 assertCentredInItsPane(emptyState)
             }
@@ -215,22 +219,6 @@ final class PaneStructureTests: NewsPawUITestCase {
     private static let emptyStateButtons = [
         AccessibilityID.todayEmpty: [AccessibilityID.todayAddSourceButton, AccessibilityID.todayImportConfigurationButton],
     ]
-
-    /// A category's list with overviews on (the default): the card heads it
-    /// and the empty state is a row below the card (RD23 decision 12), and
-    /// the list reaches the bottom of its pane, which reaches the bottom of
-    /// the window. A pane that kept a keyboard inset (F1) ends its list
-    /// above the pane's bottom by that inset.
-    private func assertListReachesTheBottomBelowTheCard(of category: String, file: StaticString = #filePath, line: UInt = #line) {
-        let pane = waitFor(element(AccessibilityID.listPane), file: file, line: line).frame
-        let card = waitFor(element(AccessibilityID.overview("card", category)), file: file, line: line).frame
-        let empty = waitFor(element(AccessibilityID.categoryEmpty), file: file, line: line).frame
-        XCTAssertLessThan(card.maxY, empty.minY + 1, "the empty state \(empty) is not below the card \(card)", file: file, line: line)
-        XCTAssertEqual(pane.maxY, window.maxY, accuracy: 1, "the pane \(pane) does not reach the bottom", file: file, line: line)
-        let list = waitFor(element(AccessibilityID.listPane).collectionViews.firstMatch, file: file, line: line).frame
-        print("PaneStructure: card \(card), \(AccessibilityID.categoryEmpty) \(empty), list \(list) in \(pane)")
-        XCTAssertEqual(list.maxY, pane.maxY, accuracy: 1, "the list \(list) does not reach the bottom of its pane \(pane)", file: file, line: line)
-    }
 
     /// The colour at the middle of each edge of the pane (2 px in) is the
     /// colour of the pane's background a quarter of the way in. Checking all

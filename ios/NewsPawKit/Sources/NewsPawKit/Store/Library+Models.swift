@@ -18,8 +18,9 @@ extension Library {
     }
 
     /// Writes `slot`, replacing the row of its role, and deletes the
-    /// library's failed translations in the same transaction (RD14 decision
-    /// 2): they wait again. A backup is written only while a primary exists.
+    /// library's failed translations and failed overviews in the same
+    /// transaction (RD14 decision 2, RD23 Storage): they wait again. A
+    /// backup is written only while a primary exists.
     ///
     /// - Throws: `ModelSettingsError.primaryNeeded` for a backup without a
     ///   primary.
@@ -29,22 +30,24 @@ extension Library {
                 throw ModelSettingsError.primaryNeeded
             }
             try slot.save(db)
-            try Self.deleteFailedTranslations(db)
+            try Self.deleteStoredFailures(db)
         }
     }
 
-    /// The statements that make every failed translation of the library
-    /// wait again (RD14 decision 2), the titles' and the bodies' texts
-    /// (RD15 decision 2): run with every change of a slot — a save, a
-    /// removal, a key removed — so that a fault of the model stored on many
-    /// articles is repaired by repairing the slot.
-    static func deleteFailedTranslations(_ db: Database) throws {
+    /// The statements that make every stored failure of the library wait
+    /// again — its failed translations, the titles' (RD14 decision 2) and
+    /// the bodies' texts (RD15 decision 2), and its failed overviews (RD23
+    /// Storage): run with every change of a slot — a save, a removal, a key
+    /// removed, an import's slots — so that a fault of the model stored on
+    /// many articles or categories is repaired by repairing the slot.
+    static func deleteStoredFailures(_ db: Database) throws {
         try db.execute(sql: "DELETE FROM translation WHERE state = ?", arguments: [TranslationState.failed.rawValue])
         try db.execute(sql: "DELETE FROM body_translation WHERE state = ?", arguments: [TranslationState.failed.rawValue])
+        try db.execute(sql: "DELETE FROM overview WHERE state = ?", arguments: [OverviewState.failed.rawValue])
     }
 
-    /// Deletes the row of `role`, and with it the library's failed
-    /// translations. The primary is not deleted while a backup exists.
+    /// Deletes the row of `role`, and with it the library's stored
+    /// failures. The primary is not deleted while a backup exists.
     ///
     /// - Throws: `ModelSettingsError.backupExists`.
     func deleteModelSlot(_ role: ModelRole) async throws {
@@ -53,14 +56,14 @@ extension Library {
                 throw ModelSettingsError.backupExists
             }
             if try ModelSlot.deleteOne(db, key: role.rawValue) {
-                try Self.deleteFailedTranslations(db)
+                try Self.deleteStoredFailures(db)
             }
         }
     }
 
     /// Clears the key reference and the Test result of `role`'s row when it
-    /// still names `keyRef`, and then deletes the library's failed
-    /// translations.
+    /// still names `keyRef`, and then deletes the library's stored
+    /// failures.
     func clearModelKey(_ role: ModelRole, keyRef: String) async throws {
         let now = now()
         try await write { db in
@@ -69,7 +72,7 @@ extension Library {
                 arguments: [now, role.rawValue, keyRef]
             )
             if db.changesCount > 0 {
-                try Self.deleteFailedTranslations(db)
+                try Self.deleteStoredFailures(db)
             }
         }
     }

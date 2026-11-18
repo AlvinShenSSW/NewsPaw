@@ -81,7 +81,11 @@ final class CategoryFlowTests: NewsPawUITestCase {
         createCategory("Same")
         createCategory("Same")
         showCategoryList()
-        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == 'Same'")).count, 2, "duplicate names are allowed")
+        // Counted in the category list only: on an iPad, Today beside it
+        // shows every category too (RD23).
+        let panes = [AccessibilityID.slideOverPanel, AccessibilityID.sidebarPane].map { element($0) }.filter(\.exists)
+        let list: XCUIElement = panes.first ?? app
+        XCTAssertEqual(list.staticTexts.matching(NSPredicate(format: "label == 'Same'")).count, 2, "duplicate names are allowed")
     }
 
     /// Criterion 5: a category with sources offers moving them to another

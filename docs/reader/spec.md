@@ -223,7 +223,7 @@ Primary keys are UUID strings. Times are UTC. Configuration entities carry `upda
 | `article_body` | article_id, origin (`feed` / `extracted`), blocks (JSON: paragraphs, headings, images …), fetched_at |
 | `translation` | article_id, locale, title, excerpt, body_blocks (JSON, may be partial), state, error, model, updated_at |
 | `page_text` | text_hash, locale, translated, model, updated_at, last_used_at (cache for in-place page translation) |
-| `overview` | id, category_id, day, locale, text, highlights (JSON: article id + one sentence), article_count, model, state, created_at |
+| `overview` | id, category_id, day (the device's local day, `yyyy-MM-dd`), locale, text, highlights (JSON: article id + one sentence), article_count, covered_until (the newest first-seen time of the articles it was written from), model, state (`done` / `failed`), error (the reason of a failed one), created_at; one row per category, day and locale |
 | `seen` | source_id, external_id_hash, last_seen_at (identifiers of cleaned-up items) |
 | `usage` | id, model, purpose, input_tokens, output_tokens, outcome, at |
 | `model_slot` | role (`primary` / `backup`), preset, base_url, model, key_ref, updated_at |

@@ -24,7 +24,9 @@ public final class FixtureModelHTTP: ModelHTTP {
         public static let redirect = "https://redirect.models.example.invalid/v1"
         /// A translator (RD14 decision 13): it answers each text with
         /// "译[<language asked for>]：" before it, and obeys the words of
-        /// `Word` in the texts it is sent.
+        /// `Word` in the texts it is sent. An overview request (RD23
+        /// decision 16) is answered with a summary and three highlights,
+        /// the last naming a number out of range (`overviewReply`).
         public static let translate = "https://translate.models.example.invalid/v1"
         /// The same without the 429, as a backup.
         public static let translateBackup = "https://translate-backup.models.example.invalid/v1"
@@ -148,12 +150,30 @@ public final class FixtureModelHTTP: ModelHTTP {
             if host == "translate.models.example.invalid", texts.contains(where: { $0.contains(Word.limit) }) {
                 return answer(429, #"{"error":{"message":"Rate limit reached","type":"requests"}}"#)
             }
+            if system.contains(OverviewPrompt.openingPhrase) {
+                let reply = Self.overviewReply(texts, tag: Self.languageTag(in: system))
+                return answer(200, Self.completion(content: #"{"texts":\#(ChatWire.jsonArray(reply))}"#))
+            }
             let mark = "译[" + Self.languageTag(in: system) + "]："
             let translated = ChatWire.jsonArray(texts.map { mark + $0 })
             return answer(200, Self.completion(content: #"{"texts":\#(translated)}"#))
         default:
             throw ModelHTTPFailure.unreachable
         }
+    }
+
+    /// The fixture's overview of the texts of a request: the summary
+    /// `"概览[<tag>]：" + N + " · " + <text 1>` cut to 600 characters, then
+    /// `[1] 要点：<text 1>`, `[2] 要点：<text 2>` and `[N+1] out of range`,
+    /// where <text n> is the first line of text n without its number.
+    static func overviewReply(_ texts: [String], tag: String) -> [String] {
+        func text(_ number: Int) -> String {
+            guard texts.indices.contains(number - 1) else { return "" }
+            let firstLine = texts[number - 1].split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+            return String(firstLine.drop { $0 != " " }.dropFirst())
+        }
+        let summary = String(("概览[\(tag)]：\(texts.count) · " + text(1)).prefix(600))
+        return [summary, "[1] 要点：" + text(1), "[2] 要点：" + text(2), "[\(texts.count + 1)] out of range"]
     }
 
     /// A completion whose content is `{"texts": [...]}` with the texts of the

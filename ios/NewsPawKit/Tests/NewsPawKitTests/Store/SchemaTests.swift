@@ -230,7 +230,7 @@ struct SchemaTests {
         let library = try await LibraryStore(directory: directory).openNormal()
 
         let (migrations, columns, indexes) = try await library.pool.read { db in
-            let migrations = try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY identifier")
+            let migrations = try String.fetchAll(db, sql: migrationsInOrderSQL)
             let columns = try Row.fetchAll(db, sql: "PRAGMA table_info(article)").map { row in
                 ColumnInfo(row["name"], row["type"], notNull: row["notnull"], default: row["dflt_value"], pk: row["pk"])
             }
@@ -379,11 +379,12 @@ struct SchemaTests {
         #expect(after.integrity == ["ok"])
         // The only schema change of v4 is the order index; v5's tables and
         // index (RD13), v6's table (RD14), the search migration's objects
-        // (RD25), the body-translation migration's table (RD15) and the
-        // page-text migration's (RD16) are left out here.
+        // (RD25), the body-translation migration's table (RD15), the
+        // page-text migration's (RD16) and the overview table (RD23) are left
+        // out here.
         let added = after.schema.filter {
             !before.schema.contains($0)
-                && !["model_slot", "usage", "translation", "search_text", "body_translation", "page_text"].contains($0[2])
+                && !["model_slot", "usage", "translation", "search_text", "body_translation", "page_text", "overview"].contains($0[2])
                 && !Self.searchMigrationObjects.contains("\($0[0] ?? "") \($0[1] ?? "")")
         }
         #expect(added == [["index", "article_order", "article",
@@ -475,10 +476,11 @@ struct SchemaTests {
         // Four titled articles, two done Chinese rows, four titled done Japanese rows.
         #expect(try await expectSearchTextMatchesDerivation(library) == 4 + 2 + 4)
         let added = Set(after.schema.filter { !before.schema.contains($0) }.map { "\($0[0] ?? "") \($0[1] ?? "")" })
-        // With the body-translation (RD15) and page-text (RD16) migrations'
-        // objects, which run after.
+        // With the body-translation (RD15), page-text (RD16) and overview
+        // (RD23) migrations' objects, which run after.
         #expect(added == Self.searchMigrationObjects.union(Self.bodyTranslationMigrationObjects).union([
             "index page_text_last_used", "index sqlite_autoindex_page_text_1", "table page_text",
+            "index sqlite_autoindex_overview_1", "index sqlite_autoindex_overview_2", "table overview",
         ]))
         #expect(before.schema.allSatisfy { after.schema.contains($0) })
         // The function is registered on the migrated library's connections:

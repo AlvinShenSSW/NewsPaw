@@ -44,6 +44,9 @@ final class ArticleListModel {
     /// The height of the first row, as its view reports it; a usual row's
     /// until then.
     @ObservationIgnored private var firstRowHeight = 60.0
+    /// The height of the overview card above the rows (RD23 decision 12),
+    /// as its view reports it; 0 without one.
+    @ObservationIgnored private var cardHeight = 0.0
     /// Refreshes started from this list that have not ended.
     @ObservationIgnored var ownRefreshes = 0
     /// Whether a next page is being read.
@@ -77,12 +80,13 @@ final class ArticleListModel {
     }
 
     /// Whether the list's first row is on screen (ux S3): the list is
-    /// scrolled from its top by less than that row's height. Taken from the
-    /// scroll position, not from the row's appear and disappear events,
-    /// which SwiftUI sends at distances that differ between devices (RD11
-    /// decision 15). An empty list is at its top.
+    /// scrolled from its top by less than that row's height, and the
+    /// overview card's above it (RD23). Taken from the scroll position, not
+    /// from the row's appear and disappear events, which SwiftUI sends at
+    /// distances that differ between devices (RD11 decision 15). An empty
+    /// list is at its top.
     var isAtTop: Bool {
-        rows.isEmpty || offsetFromTop < firstRowHeight
+        rows.isEmpty || offsetFromTop < cardHeight + firstRowHeight
     }
 
     /// The list's view scrolled: its content offset relative to its top
@@ -95,6 +99,11 @@ final class ArticleListModel {
         if height > 0 {
             firstRowHeight = height
         }
+    }
+
+    /// The overview card's height; 0 once it is gone.
+    func cardMeasured(height: Double) {
+        cardHeight = max(0, height)
     }
 
     func index(of id: UUID) -> Int? {

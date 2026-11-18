@@ -35,6 +35,8 @@ final class RefreshModel {
     private(set) var lastRefreshAt: Date?
     /// The clock the library uses, so that "Updated …" agrees with it.
     let now: @Sendable () -> Date
+    /// Where the device's local day starts, for the overviews' clean-up.
+    @ObservationIgnored private let calendar = Calendar.autoupdatingCurrent
 
     /// Reads the lists again; set by the app model.
     @ObservationIgnored var onListsChanged: (@MainActor () async -> Void)?
@@ -73,11 +75,14 @@ final class RefreshModel {
 
     /// Entering the app (decision 3): clean up, then refresh the whole
     /// library when a refresh is due. Silent: a failure is tried again at
-    /// the next entry.
+    /// the next entry. The overviews older than the 7-day window go first,
+    /// whatever the retention (RD23 decision 15).
     ///
     /// An entry that a lock overtakes ends at its next step: a dropped
     /// workspace starts no run.
     func entered() async {
+        guard !isStopped else { return }
+        _ = try? await library.cleanUpOverviews(before: OverviewDay.oldestKept(now(), calendar: calendar))
         guard !isStopped else { return }
         let deleted = (try? await library.cleanUp(keeping: retention)) ?? 0
         guard !isStopped else { return }

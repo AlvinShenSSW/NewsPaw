@@ -290,11 +290,17 @@ public final class LibraryModels: Sendable {
     /// with it (RD14 decision 4) and is what the daily automatic limit
     /// counts.
     ///
+    /// - Parameter eligible: asked once more after the slot and the key are
+    ///   resolved, immediately before the request goes to the transport,
+    ///   with no suspension between (RD23 review round 4). `false` sends
+    ///   nothing and writes no usage row: the send throws
+    ///   `CancellationError`. `nil` for every caller but the overview writer.
     /// - Throws: a `ModelFailure` (`noModelSetUp` and `keyNeeded` without a
     ///   request or a row), `UsageNotRecorded` for an automatic request
     ///   whose usage row could not be written, or `CancellationError`.
     public func send(
-        texts: [String], instructions: String, purpose: UsagePurpose, role: ModelRole, automatic: Bool = false
+        texts: [String], instructions: String, purpose: UsagePurpose, role: ModelRole, automatic: Bool = false,
+        eligible: (@Sendable () -> Bool)? = nil
     ) async throws -> ModelReply {
         guard let slot = try await library.modelSlot(role) else {
             throw ModelFailure.noModelSetUp
@@ -310,7 +316,8 @@ public final class LibraryModels: Sendable {
             throw ModelFailure.keyNeeded
         }
         let exchange = try await chat(
-            address: address, model: model, instructions: instructions, texts: texts, key: key, purpose: purpose, automatic: automatic
+            address: address, model: model, instructions: instructions, texts: texts, key: key, purpose: purpose, automatic: automatic,
+            eligible: eligible
         )
         switch exchange {
         case .completion(.success(var reply)):
@@ -333,10 +340,15 @@ public final class LibraryModels: Sendable {
     /// ended. A cancelled request writes its row and throws.
     private func chat(
         address: String, model: String, instructions: String, texts: [String], key: SecretKey, purpose: UsagePurpose,
-        automatic: Bool = false
+        automatic: Bool = false, eligible: (@Sendable () -> Bool)? = nil
     ) async throws -> ChatExchange {
         guard let request = ChatWire.chatRequest(address: address, model: model, instructions: instructions, texts: texts, key: key) else {
             throw ModelFailure.unreachable
+        }
+        // The caller's last word, with nothing awaited between it and the
+        // transport: not sent, not counted.
+        if let eligible, !eligible() {
+            throw CancellationError()
         }
         let classified: Result<ChatWire.Completion, ModelFailure>
         do {

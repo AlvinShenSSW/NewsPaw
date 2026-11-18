@@ -1,15 +1,17 @@
 import NewsPawKit
 import SwiftUI
 
-/// Today until overviews exist (ux S1; RD09 decision 10): the date, the
-/// status line once the library has a feed-like source (RD06), then one
-/// compact row per category that has unread articles — icon, name, unread
-/// count — each showing that category's list, or "Nothing new today"; with
-/// no source at all, "No sources yet", "Add a Source" (RD21 decision 10)
-/// and "Import Configuration" (ux S1; RD20 with RD21: in the normal
-/// partition with the first run's origin, the normal partition only and no
-/// question; inside the adult partition as from Settings › Data). Pull to
-/// refresh refreshes the whole library.
+/// Today (ux S1; RD23 decision 12): the date, the status line once the
+/// library has a feed-like source (RD06), then, in the owner's order, a
+/// card or a compact nothing-new row for each category with overviews on,
+/// in an adaptive grid — two columns on an iPad when there is room — and
+/// each category with overviews off as its own rounded row. With no
+/// source at all, "No sources yet", "Add a Source" (RD21 decision 10) and
+/// "Import Configuration" (ux S1; RD20 with RD21: in the normal partition
+/// with the first run's origin, the normal partition only and no question;
+/// inside the adult partition as from Settings › Data); with sources and
+/// no category, "Nothing new today". Pull to refresh refreshes the whole
+/// library.
 struct TodayView: View {
     @Environment(SourceModel.self) private var sources
     @Environment(CategoryModel.self) private var categories
@@ -17,14 +19,15 @@ struct TodayView: View {
     @Environment(ConfigurationModel.self) private var configuration
 
     var body: some View {
-        let rows = sources.categoriesWithUnread(categories.summaries)
+        let shown = categories.listedSummaries.map(\.category)
+        let noSources = sources.summaries.isEmpty && !sources.loadFailed
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 TodayDateLine()
                 if sources.hasFeedLikeSource {
                     TodayStatusLine()
                 }
-                if rows.isEmpty, sources.summaries.isEmpty, !sources.loadFailed {
+                if noSources {
                     // The identifier stays on the title, as on "Nothing new
                     // today"; the button has its own.
                     EmptyStateView(
@@ -38,23 +41,56 @@ struct TodayView: View {
                             perform: { configuration.beginImport(from: configuration.partition == .normal ? .firstRun : .settings) }
                         ) : nil
                     )
-                } else if rows.isEmpty {
+                } else if shown.isEmpty {
                     EmptyStateView(title: Text("Nothing new today"), systemImage: "sun.max", identifier: AccessibilityID.todayEmpty)
                 } else {
-                    TodayCategoryRows(rows: rows)
+                    TodayOverviews(categories: shown)
                         .padding(.top, Theme.Spacing.medium)
+                        .padding(.bottom, Theme.Spacing.large)
                 }
             }
             // The empty state fills what the bars leave, as it did before
-            // Today could scroll. With rows the content keeps its own height,
-            // so rows below the fold can be scrolled to.
-            .modifier(FillsViewport(when: rows.isEmpty))
+            // Today could scroll. With cards the content keeps its own
+            // height, so cards below the fold can be scrolled to.
+            .modifier(FillsViewport(when: noSources || shown.isEmpty))
         }
         .refreshable {
             await refresh.refresh(.library)
         }
         .stackBackground(Theme.groupedBackground)
         .navigationTitle("Today")
+    }
+}
+
+/// The cards and rows of the categories with overviews on, in an adaptive
+/// grid of at least 340 points a column (assumption A4), then the rows of
+/// those with overviews off.
+private struct TodayOverviews: View {
+    let categories: [LibraryCategory]
+    @Environment(SourceModel.self) private var sources
+
+    /// The narrowest a column of cards may be.
+    static let columnWidth = 340.0
+
+    var body: some View {
+        let on = categories.filter { $0.overview != .off }
+        let off = categories.filter { $0.overview == .off }
+        VStack(alignment: .leading, spacing: Theme.Spacing.medium) {
+            if !on.isEmpty {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: Self.columnWidth), spacing: Theme.Spacing.medium, alignment: .top)],
+                    alignment: .leading, spacing: Theme.Spacing.medium
+                ) {
+                    ForEach(on, id: \.id) { category in
+                        OverviewTodayItem(category: category, unread: sources.unreadCount(in: category.id))
+                    }
+                }
+            }
+            ForEach(off, id: \.id) { category in
+                OverviewTodayItem(category: category, unread: sources.unreadCount(in: category.id))
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.standard)
     }
 }
 
@@ -87,59 +123,6 @@ struct TodayDateLine: View {
         }
         .padding(.horizontal, Theme.Spacing.standard)
         .padding(.bottom, Theme.Spacing.tight)
-    }
-}
-
-/// The categories with unread articles, in the owner's order, in one
-/// rounded group. A row selects the category as the sidebar or Library
-/// does; on iPhone that moves to the Library tab.
-struct TodayCategoryRows: View {
-    @Environment(\.accent) private var accent
-    let rows: [(category: LibraryCategory, unread: Int)]
-    @Environment(NavigationModel.self) private var navigation
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.element.category.id) { index, row in
-                if index > 0 {
-                    Theme.hairline
-                        .frame(height: 1)
-                        .padding(.leading, Theme.Spacing.standard + 28 + Theme.Spacing.medium)
-                        .accessibilityHidden(true)
-                }
-                Button {
-                    navigation.select(.category(row.category.id))
-                } label: {
-                    HStack(spacing: Theme.Spacing.medium) {
-                        Image(systemName: row.category.icon.rawValue)
-                            .foregroundStyle(accent)
-                            .frame(width: 28)
-                            .accessibilityHidden(true)
-                        Text(verbatim: row.category.name)
-                            .foregroundStyle(Theme.text)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Text(row.unread, format: .number)
-                            .foregroundStyle(Theme.secondaryText)
-                        Image(systemName: "chevron.forward")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(Theme.secondaryText)
-                            .accessibilityHidden(true)
-                    }
-                    .padding(.horizontal, Theme.Spacing.standard)
-                    .padding(.vertical, Theme.Spacing.small)
-                    .frame(minHeight: Theme.minimumTapTarget)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text(verbatim: row.category.name))
-                .accessibilityValue(Text("\(row.unread) unread"))
-                .accessibilityAddTraits(.isButton)
-                .accessibilityIdentifier(AccessibilityID.todayCategoryRow(row.category.name))
-            }
-        }
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
-        .padding(.horizontal, Theme.Spacing.standard)
     }
 }
 

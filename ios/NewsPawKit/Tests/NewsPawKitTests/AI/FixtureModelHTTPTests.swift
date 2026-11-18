@@ -99,4 +99,25 @@ struct FixtureModelHTTPTests {
         let backup = try await models.send(texts: ["a fixture:refuse-primary b"], instructions: instructions, purpose: .body, role: .backup)
         #expect(backup.texts == ["译[zh-Hans]：a fixture:refuse-primary b"])
     }
+
+    @Test("RD23: the translator hosts answer an overview request with a summary and three highlights, one out of range, and obey its words")
+    func overview() async throws {
+        let fixture = try await ModelsFixture.make(http: FixtureModelHTTP())
+        defer { fixture.remove() }
+        try await fixture.save(address: FixtureModelHTTP.Address.translate)
+        let texts = ["[1] First title\nIts excerpt.", "[2] Second title", "[3] Third title"]
+        let reply = try await fixture.models.send(
+            texts: texts, instructions: OverviewPrompt.instructions(into: .japanese), purpose: .overview, role: .primary
+        )
+        #expect(reply.texts == ["概览[ja]：3 · First title", "[1] 要点：First title", "[2] 要点：Second title", "[4] out of range"])
+        let accepted = try OverviewAcceptance.check(reply: reply, count: 3).get()
+        #expect(accepted.highlights.map(\.number) == [1, 2])
+        let instructions = OverviewPrompt.instructions(into: .english)
+        await #expect(throws: ModelFailure.refused) {
+            try await fixture.models.send(texts: ["[1] a fixture:refuse b"], instructions: instructions, purpose: .overview, role: .primary)
+        }
+        await #expect(throws: ModelFailure.limited) {
+            try await fixture.models.send(texts: ["[1] a fixture:limit b"], instructions: instructions, purpose: .overview, role: .primary)
+        }
+    }
 }

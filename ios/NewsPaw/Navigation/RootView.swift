@@ -47,6 +47,7 @@ struct RootView: View {
                     .environment(workspace.readingSettings)
                     .environment(workspace.translationSettings)
                     .environment(workspace.translation)
+                    .environment(workspace.overviews)
                     .environment(workspace.navigation)
                     .environment(workspace.configuration)
                     // The accent follows the partition (decision 7).
@@ -130,6 +131,7 @@ struct ShellView: View {
     @Environment(BrowserModel.self) private var browser
     @Environment(TranslationModel.self) private var translation: TranslationModel?
     @Environment(ConfigurationModel.self) private var configuration
+    @Environment(OverviewModel.self) private var overviews
     @State private var width = 0.0
 
     private var layout: WindowLayout {
@@ -179,6 +181,7 @@ struct ShellView: View {
                 .environment(sources)
                 .environment(configuration)
                 .environment(navigation)
+                .environment(overviews)
                 .tint(accent)
         }
         .configurationImport()
@@ -187,6 +190,7 @@ struct ShellView: View {
         .markAllReadDialog(host: .root)
         .browserDialogs()
         .translationDialogs()
+        .overviewDialogs()
         .tint(accent)
         .foregroundStyle(Theme.text)
     }
@@ -209,6 +213,7 @@ struct ShellView: View {
         case .addSource: AddSourceView()
         case .sourceSettings(let id): SourceSettingsView(sourceID: id)
         case .configurationImport: ConfigurationImportSheet()
+        case .earlierOverviews(let id): EarlierOverviewsView(categoryID: id)
         }
     }
 

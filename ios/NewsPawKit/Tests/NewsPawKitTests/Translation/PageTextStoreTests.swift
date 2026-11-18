@@ -16,7 +16,7 @@ struct PageTextStoreTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let library = try await LibraryStore(directory: directory).openNormal()
         let (columns, indexes, migrations) = try await library.pool.read { db in
-            let migrations = try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY identifier")
+            let migrations = try String.fetchAll(db, sql: migrationsInOrderSQL)
             let columns = try Row.fetchAll(db, sql: "PRAGMA table_info(page_text)").map { row in
                 SchemaTests.ColumnInfo(row["name"], row["type"], notNull: row["notnull"], default: row["dflt_value"], pk: row["pk"])
             }
@@ -73,7 +73,7 @@ struct PageTextStoreTests {
             }
             before = try await library.pool.read { try DatabaseSnapshot.read($0) }
         }
-        #expect(before.appliedMigrations == Array(currentMigrations.dropLast()))
+        #expect(before.appliedMigrations == Array(currentMigrations.prefix { $0 != Schema.pageTextMigration }))
 
         let library = try await LibraryStore(directory: directory).openNormal()
 
@@ -86,7 +86,12 @@ struct PageTextStoreTests {
         #expect(after.rows["page_text"] == [])
         #expect(after.integrity == ["ok"])
         let added = after.schema.filter { !before.schema.contains($0) }.map { "\($0[0] ?? "") \($0[1] ?? "")" }
-        #expect(added.sorted() == ["index page_text_last_used", "index sqlite_autoindex_page_text_1", "table page_text"])
+        // The page-text table, and the overview table registered after it
+        // (RD23, batch 4).
+        #expect(added.sorted() == [
+            "index page_text_last_used", "index sqlite_autoindex_overview_1", "index sqlite_autoindex_overview_2",
+            "index sqlite_autoindex_page_text_1", "table overview", "table page_text",
+        ])
     }
 
     // MARK: - Criterion 10: rows

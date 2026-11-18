@@ -234,8 +234,13 @@ final class ArticleListTests: ArticleTestCase {
         waitForUnread(articleRow("Linkless story"), false)
     }
 
-    // MARK: - Criterion 9: Today
+    // MARK: - Criterion 9: Today (as RD23 changed it)
 
+    /// Today with categories: one card or row per category in the owner's
+    /// order, each with its unread count, under the status line — also a
+    /// category without unread articles (RD23 replaced RD09's interim rows,
+    /// which listed only categories with unread articles). Its header opens
+    /// the category's list; after Mark All as Read the row stays at 0.
     func testTodayRows() {
         launchAtFullWidth()
         showToday()
@@ -251,12 +256,15 @@ final class ArticleListTests: ArticleTestCase {
         let tech = waitFor(element(AccessibilityID.todayCategoryRow("Tech")))
         XCTAssertEqual(world.value as? String, "3 unread")
         XCTAssertEqual(tech.value as? String, "3 unread")
-        XCTAssertFalse(element(AccessibilityID.todayCategoryRow("Quiet")).exists, "a category without unread articles")
         XCTAssertFalse(element(AccessibilityID.todayEmpty).exists)
-        XCTAssertLessThan(world.frame.minY, tech.frame.minY, "the owner's order")
+        // The owner's order: above, or, in two columns on an iPad, to the
+        // left on the same line.
+        let sameLine = abs(world.frame.minY - tech.frame.minY) < 1
+        XCTAssertTrue(world.frame.minY < tech.frame.minY || (sameLine && world.frame.minX < tech.frame.minX),
+                      "the owner's order: \(world.frame) \(tech.frame)")
         let status = waitFor(element(AccessibilityID.todayStatus))
         XCTAssertLessThanOrEqual(element(AccessibilityID.todayDate).frame.maxY, status.frame.minY + 0.5)
-        XCTAssertLessThanOrEqual(status.frame.maxY, world.frame.minY + 0.5, "the status line stays above the rows")
+        XCTAssertLessThanOrEqual(status.frame.maxY, world.frame.minY + 0.5, "the status line stays above the cards")
         screenshot("today-rows")
 
         world.tap()
@@ -268,15 +276,10 @@ final class ArticleListTests: ArticleTestCase {
         button(AccessibilityID.markAllReadButton).tap()
         waitFor(app.alerts.firstMatch).buttons["Mark as Read"].tap()
         showToday()
-        waitForAbsence(element(AccessibilityID.todayCategoryRow("World")))
+        waitForValue(waitFor(element(AccessibilityID.todayCategoryRow("World"))), "0 unread")
         XCTAssertEqual(element(AccessibilityID.todayCategoryRow("Tech")).value as? String, "3 unread")
-        openCategoryList("Tech")
-        waitFor(articleRow("Fixture story one"))
-        button(AccessibilityID.markAllReadButton).tap()
-        waitFor(app.alerts.firstMatch).buttons["Mark as Read"].tap()
-        showToday()
-        waitFor(element(AccessibilityID.todayEmpty))
-        XCTAssertEqual(element(AccessibilityID.todayEmpty).label, "Nothing new today")
+        let quiet = scrollTo(element(AccessibilityID.todayCategoryRow("Quiet")))
+        XCTAssertEqual(quiet.value as? String, "0 unread")
     }
 
     /// Today scrolls past one screen: with six long-named categories at
@@ -501,6 +504,62 @@ final class ArticleListTests: ArticleTestCase {
         sleep(1)
         XCTAssertEqual(topRowTitle(), second, "no new row while the list is scrolled past its first row")
         record("list-top", "first row \(rowHeight) pt; at its top when scrolled \(rowHeight / 3) pt, not when scrolled \(rowHeight * 2.5) pt")
+    }
+
+    /// RD23 review round 1 (G3): a category list whose overview card is
+    /// tall, scrolled by more than an article row's height but with the
+    /// first article row still on screen, counts as at its top: a refresh
+    /// run it did not start reads it again, after the list has left the
+    /// screen for Today and come back. (It passed before the fix as well:
+    /// coming back measures the card again. The case the fix is for — the
+    /// card's row taken out of the list while the first article row is on
+    /// screen — could not be produced in the harness; see the hand-back.)
+    /// In the tab structure only: the run is started from Today's tab while
+    /// the list stays on its own.
+    func testTallOverviewCardKeepsTheListAtItsTop() throws {
+        let application = XCUIApplication()
+        application.launchEnvironment[UITestLaunchKey.translationModels] = "primary"
+        launch(application)
+        rotate(.portrait)
+        requireFullWidth()
+        guard usesTabs else {
+            throw XCTSkip("in the panes Today replaces the list; the tab structure keeps it while a run starts elsewhere")
+        }
+        createCategory("World")
+        addSource(Fixture.longCounting, to: "World")
+        openCategoryList("World")
+        // The list's own run writes the overview: the done card, expanded.
+        waitFor(button(AccessibilityID.listMenu)).tap()
+        waitFor(app.buttons.matching(NSPredicate(format: "label == %@", "Refresh")).firstMatch).tap()
+        let summary = element(AccessibilityID.overview("summary", "World"))
+        let written = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true"), object: summary)
+        XCTAssertEqual(XCTWaiter.wait(for: [written], timeout: 30), .completed, "no overview was written")
+        waitFor(button(AccessibilityID.overview("expand", "World"))).tap()
+        waitFor(element(AccessibilityID.overview("note", "World")))
+        let card = waitFor(element(AccessibilityID.overview("card", "World")))
+        let first = try XCTUnwrap(topRowTitle())
+        let row = waitFor(articleRow(first))
+
+        // Scrolled by more than a row's height, less than the card's: the
+        // first row is still on screen.
+        let distance = min(card.frame.height - 40, row.frame.height * 2.5)
+        XCTAssertGreaterThan(distance, row.frame.height * 1.5, "the card is not tall enough: \(card.frame)")
+        let point = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: window.midX, dy: window.maxY - 200))
+        point.press(forDuration: 0.1, thenDragTo: point.withOffset(CGVector(dx: 0, dy: -distance)), withVelocity: .slow, thenHoldForDuration: 0.5)
+        XCTAssertTrue(row.isHittable, "the first row is on screen: \(row.frame)")
+        sleep(1)
+
+        // A run the list did not start: a pull on Today.
+        app.tabBars.buttons.element(boundBy: 0).tap()
+        let date = waitFor(element(AccessibilityID.todayDate))
+        let start = date.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 400)), withVelocity: .slow, thenHoldForDuration: 1)
+        let status = waitFor(element(AccessibilityID.todayStatus))
+        let updated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Updated just now"), object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 30), .completed, "the run did not end: \(status.label)")
+        app.tabBars.buttons.element(boundBy: 1).tap()
+        _ = waitForNewTopRow(after: first)
+        record("list-top-tall-card", "card \(card.frame.height) pt, row \(row.frame.height) pt, scrolled \(distance) pt; the list was read again")
     }
 
     /// A list that was scrolled far down, left and entered again starts at

@@ -170,6 +170,22 @@ final class OverviewTests: OverviewTestCase {
         XCTAssertTrue(card("Quiet").exists)
     }
 
+    /// Batch 4 (RD17): a written overview's request is counted in
+    /// Settings › Usage under "Overviews".
+    func testUsageCountsOverviews() {
+        launchOverviews()
+        createCategory("World")
+        setOverviews(of: "World", to: "Manual")
+        addSource(Translation.feed, to: "World")
+        showToday()
+        waitFor(button(AccessibilityID.overview("write", "World"))).tap()
+        waitForText(summary("World"), Overview.summary(40, Translation.markup))
+        openSettings(row: AccessibilityID.usageRow)
+        scrollTo(element(AccessibilityID.usageRow)).tap()
+        let row = waitFor(element(AccessibilityID.usageTotal(model: "fixture-translator", purpose: "overview")))
+        XCTAssertTrue(row.label.hasPrefix("Overviews, 1 request"), row.label)
+    }
+
     private func dayKey(daysBefore days: Int) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current

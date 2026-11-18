@@ -180,9 +180,10 @@ final class OverviewModel {
     }
 
     /// A foreground refresh run ended: the cards are read, then the due
-    /// categories are written.
+    /// categories are written. Not during the first run (RD21, batch 4):
+    /// it shows no overview, and the refresh that ends it writes them.
     func runEnded() {
-        guard !isStopped else { return }
+        guard !isStopped, !navigation.isShowingFirstRun else { return }
         Task {
             await read()
             enqueue { await $0.runDue() }

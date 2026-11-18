@@ -2,13 +2,15 @@
 
 On 2026-11-11 the owner redirected NewsPaw from a Mac app that sends Telegram digests to a reading app for iPhone and iPad. This directory is the new baseline.
 
-**Status: baseline approved by the owner on 2026-11-11. RD01 created the iOS project in `ios/`; no reader feature has been built yet.** The result of the Kimi K3.1 Pro design review is in spec.md, section 12.
+**Status: baseline approved by the owner on 2026-11-11. The issues of M1 and M2 are merged except RD22, which prepares the TestFlight build and the verification on the owner's devices.** The result of the Kimi K3.1 Pro design review is in spec.md, section 12.
 
 | Document | Contents |
 | --- | --- |
 | [spec.md](spec.md) | Product specification: scope, requirements N01–N13, data model, configuration file, technical approach, milestones, what changes from the old system, assumptions, settled decisions |
 | [ux.md](ux.md) | Structure on iPhone and iPad, every screen, states and wording, visual design, accessibility |
 | [backlog.md](backlog.md) | Epics E11–E18 and issues RD01–RD26 with their GitHub numbers, dependencies and requirement coverage |
+| [testflight.md](testflight.md) | The owner's guide to TestFlight: signing, the app record, uploads on authorisation, installing and upgrading, the build log |
+| [device-checks.md](device-checks.md) | The M1 acceptance sheet per device and every check only a real device can make, with its status |
 | [open-source.md](open-source.md) | Survey of open-source readers, the decision not to fork, libraries chosen, what to borrow |
 | [Mock-ups](https://claude.ai/artifact/GkfmtsiAT1Vz1VWDsTPqU5) | Design canvas with the main screens (private to the owner) |
 

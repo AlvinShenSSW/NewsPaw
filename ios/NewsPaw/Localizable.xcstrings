@@ -5433,6 +5433,17 @@
         }
       }
     },
+    "Titles and summaries are translated into this language." : {
+      "comment" : "Footer under the reading language.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标题和摘要会翻译成这种语言。"
+          }
+        }
+      }
+    },
     "Titles, Original or Translated" : {
       "comment" : "Search: the search field's prompt; titles are searched in the original and in the translation.",
       "localizations" : {

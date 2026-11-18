@@ -155,39 +155,43 @@ final class BackgroundRefreshTests: AdultTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [written], timeout: Self.reportBound), .completed, summary.exists ? summary.label : "no summary")
     }
 
-    /// Batch 4, gate run 2: one overview due check per entry. With no
-    /// refresh recorded, the entry's refresh runs and its end makes the
-    /// check; the category's job fails at once (the fixture answers 429 to
-    /// "fixture:limit"), and no second check sends it again in that entry.
-    /// An entry with no refresh due makes one check of its own.
+    /// Batch 4, gate run 2: one overview due check per entry, counted at
+    /// the writer (`overviewDueChecks`). Launch 1 adds the category and the
+    /// counting source (the launch's refresh, on the empty library, has
+    /// recorded its time). Launch 2 is a day later by the debug clock and
+    /// at a daily automatic limit of 0: its entry's refresh is due and runs,
+    /// collects a new article, and its end makes the one check; the job
+    /// fails at once (the limit), and no second check tries it again in
+    /// that entry. An entry with no refresh due then makes one check.
     func testAnEntryMakesOneOverviewDueCheck() {
-        let application = XCUIApplication()
-        application.launchEnvironment[UITestLaunchKey.translationModels] = "primary"
-        launchDelivering(application)
-        createCategory("Limited")
-        addSource("https://translationwords.example.invalid/limit.xml", to: "Limited")
-        let checks = reported("overviewDueChecks")
-        let requests = reported("overviewRequests")
-        XCTAssertGreaterThanOrEqual(checks, 0, report)
+        let first = XCUIApplication()
+        first.launchEnvironment[UITestLaunchKey.translationModels] = "primary"
+        launchDelivering(first)
+        createCategory("Counted")
+        addSource(Fixture.counting, to: "Counted")
 
-        // The entry's refresh runs (none is recorded yet); its end checks.
-        leaveAndReturn()
+        app.terminate()
+        let second = XCUIApplication()
+        second.launchEnvironment[UITestLaunchKey.translationModels] = "primary"
+        second.launchEnvironment[UITestLaunchKey.clockOffsetDays] = "1"
+        second.launchEnvironment[UITestLaunchKey.dailyAutomaticLimit] = "0"
+        launchDelivering(second)
         showToday()
-        let issue = element(AccessibilityID.overview("issue", "Limited"))
-        XCTAssertTrue(issue.waitForExistence(timeout: Self.reportBound), "no failure shown")
+        let issue = element(AccessibilityID.overview("issue", "Counted"))
+        XCTAssertTrue(issue.waitForExistence(timeout: Self.reportBound), "no failure shown: \(report)")
         // Time for a second check, were one sent.
         Thread.sleep(forTimeInterval: 3)
-        XCTAssertEqual(reported("overviewDueChecks"), checks + 1, report)
-        XCTAssertEqual(reported("overviewRequests"), requests + 1, "a second request in one entry: \(report)")
+        XCTAssertEqual(reported("overviewDueChecks"), 1, "the launch's entry: \(report)")
+        XCTAssertEqual(reported("overviewRequests"), 0, report)
 
         // An entry with no refresh due: its own one check.
         leaveAndReturn()
         let one = XCTNSPredicateExpectation(predicate: NSPredicate { [unowned self] _, _ in
-            self.reported("overviewDueChecks") >= checks + 2
+            self.reported("overviewDueChecks") >= 2
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [one], timeout: Self.reportBound), .completed, report)
         Thread.sleep(forTimeInterval: 3)
-        XCTAssertEqual(reported("overviewDueChecks"), checks + 2, report)
+        XCTAssertEqual(reported("overviewDueChecks"), 2, report)
     }
 
     /// Category Settings › Overviews of `category`: Automatic, Manual or

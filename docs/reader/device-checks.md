@@ -162,6 +162,8 @@ One status per service the owner uses (presets: OpenAI, DeepSeek, xAI, MiMo, Ope
 | K4 | The largest text size: Today's status line, lists | RD06 #155; RD09 #156 | P M | Largest Dynamic Type | P: not done · M: not done |
 | K5 | Translation marks' tap targets by finger | RD14 #167 | P | Tap the marks in a list | not done |
 | K6 | Contrast of system-drawn parts (tab bar, sidebar selection, backgrounds), light and dark, by eye | RD03 #152 | P I | Both appearances | P: not done · I: not done |
+| K7 | VoiceOver reaches rows below the fold when every row carries the no-model mark | #186 | M | No model set up; a list longer than the screen in landscape; swipe past the last visible row and find the next row and its mark | not done |
+| K8 | The largest text size on an iPad, in a category's list: the overview card in its no-model state (about 720 pt tall in the simulator) reads acceptably and the rows below it can be reached; the no-model mark's glyph does not touch the title | #186 | M I | Largest accessibility size; no model set up; a category with articles | M: not done · I: not done |
 
 ## 13. Layout on the real screens
 
@@ -169,6 +171,7 @@ One status per service the owner uses (presets: OpenAI, DeepSeek, xAI, MiMo, Ope
 | --- | --- | --- | --- | --- | --- |
 | L1 | Split View and Stage Manager widths | RD03 #152 | M I | Resize NewsPaw's window through its widths | M: not done · I: not done |
 | L2 | Overview cards at the iPad mini's real width | RD23 #184 | M | Today with overviews, both orientations | not done |
+| L3 | Panes keep their whole height after the software keyboard and a rotation: empty states centred, no blank strip at the bottom | RD03 #152; #186 | M I | Type in portrait, rotate, then open All Unread, a category with overviews on and one with them off, and Today | M: not done · I: not done |
 
 ## 14. Animated transitions by hand (animations are off under the UI tests)
 

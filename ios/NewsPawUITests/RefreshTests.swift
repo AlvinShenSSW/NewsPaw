@@ -37,7 +37,10 @@ final class RefreshTests: NewsPawUITestCase {
         waitFor(button(AccessibilityID.saveAsWebPageButton)).tap()
         chooseCategoryAndSave("World")
         showToday()
-        waitFor(element(AccessibilityID.todayEmpty))
+        // With a source Today has the category's card or row (RD23), here
+        // with no article: a web page holds none.
+        waitFor(element(AccessibilityID.todayCategoryRow("World")))
+        XCTAssertFalse(element(AccessibilityID.todayEmpty).exists)
         XCTAssertFalse(element(AccessibilityID.todayStatus).exists, "no status line with a web page only")
         addSource(Fixture.slow, to: "World")
         openRefreshSettings()

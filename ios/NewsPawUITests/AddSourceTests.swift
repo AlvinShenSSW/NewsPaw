@@ -20,7 +20,9 @@ final class AddSourceTests: NewsPawUITestCase {
     func testAddAFeedByAddress() {
         launchAtFullWidth()
         createCategory("News")
-        assertDestinations(articles: nil)
+        // No source yet: Today shows RD21's "No sources yet", not the
+        // category's card.
+        assertDestinations(articles: nil, librarySources: false)
 
         openAddSource()
         detect(Fixture.feed)
@@ -421,8 +423,12 @@ final class AddSourceTests: NewsPawUITestCase {
     /// Today, All Unread and the category "News" say what they said after
     /// RD03 (their empty states), or, with `articles`, show them: Today's
     /// row for "News" with its count, and the articles' rows in the lists
-    /// (RD09 replaced the interim sentence).
-    private func assertDestinations(articles: [String]?, file: StaticString = #filePath, line: UInt = #line) {
+    /// (RD09 replaced the interim sentence). Without `librarySources` the
+    /// library has no source at all, and Today shows "No sources yet" with
+    /// "Add a Source" and no category (RD21 decision 10) instead.
+    private func assertDestinations(
+        articles: [String]?, librarySources: Bool = true, file: StaticString = #filePath, line: UInt = #line
+    ) {
         func check(_ empty: String) {
             if let articles {
                 for title in articles {
@@ -436,9 +442,18 @@ final class AddSourceTests: NewsPawUITestCase {
                     file: file, line: line)
             }
         }
-        // Today has the category's overview card or row (RD23), with its
-        // unread count, whether or not it has articles.
+        // Once the library has a source, Today has the category's overview
+        // card or row (RD23), with its unread count, whether or not it has
+        // articles. With no source at all it has RD21's empty state and no
+        // category.
         func checkToday() {
+            guard librarySources else {
+                XCTAssertEqual(waitFor(element(AccessibilityID.todayEmpty), file: file, line: line).label, "No sources yet",
+                               file: file, line: line)
+                XCTAssertTrue(button(AccessibilityID.todayAddSourceButton).exists, file: file, line: line)
+                XCTAssertFalse(element(AccessibilityID.todayCategoryRow("News")).exists, file: file, line: line)
+                return
+            }
             let row = waitFor(element(AccessibilityID.todayCategoryRow("News")), file: file, line: line)
             XCTAssertEqual(row.value as? String, "\(articles?.count ?? 0) unread", file: file, line: line)
             XCTAssertFalse(element(AccessibilityID.todayEmpty).exists, file: file, line: line)

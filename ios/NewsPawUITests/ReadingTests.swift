@@ -526,7 +526,14 @@ final class ReadingTests: ReadingTestCase {
         waitForTitle("Short note")
         backToList()
 
-        // The last row: nothing after it.
+        // The last row: nothing after it. On the iPad mini in landscape it
+        // lies below the fold, where a row with the no-model mark beside it
+        // (RD21) is not exposed until it is scrolled to, so the list is
+        // scrolled first.
+        let last = articleRow("Empty body")
+        for _ in 0..<5 where !(last.exists && last.isHittable) {
+            (usesTabs ? app : element(AccessibilityID.listPane)).swipeUp()
+        }
         openArticle("Empty body")
         XCTAssertFalse(waitFor(button(AccessibilityID.readingNextButton)).isEnabled, "nothing after the last row")
         swipeArticle(towardsLeading: true)

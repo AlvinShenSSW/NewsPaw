@@ -485,12 +485,38 @@ final class ArticleListTests: ArticleTestCase {
         // height is the distance from one row to the next: beside a row
         // with a translation mark (RD21, no model set up) the row's own
         // element is its button, shorter than the row (measured on the
-        // iPhone: 50 pt in an 80 pt row), and a third of that is a drag the
-        // large title turns into a full collapse.
-        waitFor(articleRow(first ?? ""))
+        // iPhone: 50 pt in an 80 pt row), and a third of that is little
+        // more than a drag loses at its start.
+        let firstRow = waitFor(articleRow(first ?? ""))
         let shown = articleRowsShown()
         let rowHeight = shown[1].frame.minY - shown[0].frame.minY
-        drag(by: -rowHeight / 3)
+        // Where the list stands is measured, not taken from the drag's
+        // distance (#191): the first row's rise from its place at the top.
+        // A synthesized drag loses about 15 pt to the start of the pan,
+        // and one that ends in a fling moves the list on (once 136 pt for
+        // a 33.5 pt drag on the iPad mini, past the first row). The drag is
+        // made again from the top until the list stands within the bounds:
+        // scrolled, and by less than half a row, which is less than the
+        // first row's own height (its button at least, 50 pt).
+        let top = firstRow.frame.minY
+        func scrolled() -> CGFloat {
+            top - firstRow.frame.minY
+        }
+        let within = 4...(rowHeight * 0.45)
+        var stood: [CGFloat] = []
+        for _ in 0..<3 {
+            drag(by: -rowHeight / 3)
+            stood.append(scrolled())
+            if within.contains(scrolled()) {
+                break
+            }
+            // Back to the top, by no more than the list rose, so that the
+            // pull does not start a refresh.
+            if scrolled() > 0 {
+                drag(by: scrolled() + 20)
+            }
+        }
+        XCTAssertTrue(within.contains(scrolled()), "the list stood at \(stood) pt from its top, not within \(within)")
         updateNowFromTheList()
         let second = waitForNewTopRow(after: first)
 
@@ -503,7 +529,7 @@ final class ArticleListTests: ArticleTestCase {
         waitFor(articleRow(second ?? ""))
         sleep(1)
         XCTAssertEqual(topRowTitle(), second, "no new row while the list is scrolled past its first row")
-        record("list-top", "first row \(rowHeight) pt; at its top when scrolled \(rowHeight / 3) pt, not when scrolled \(rowHeight * 2.5) pt")
+        record("list-top", "first row \(rowHeight) pt; at its top when scrolled \(stood) pt (drags of \(rowHeight / 3) pt), not when dragged \(rowHeight * 2.5) pt more")
     }
 
     /// RD23 review round 1 (G3): a category list whose overview card is

@@ -168,9 +168,13 @@ public actor OverviewWriter {
 
     /// At the end of a foreground refresh run (decision 8): queues an
     /// automatic job for each due category, in the owner's order, that is
-    /// not already queued or in flight. Under a set-up hold it first reads
-    /// the slots and ends the hold if they differ from those held;
-    /// otherwise it queues nothing and reports the due categories blocked.
+    /// not already queued or in flight. A job still in flight in a worker
+    /// the background cancelled does not count (#189): it ends without
+    /// writing, so its category is queued behind it, and the next worker
+    /// takes it once the cancelled one has ended; its own read and send
+    /// judge it then. Under a set-up hold it first reads the slots and ends
+    /// the hold if they differ from those held; otherwise it queues nothing
+    /// and reports the due categories blocked.
     public func runDue() async {
         dueChecks += 1
         // The one place a due check starts: never in the background (R1).
@@ -191,7 +195,7 @@ public actor OverviewWriter {
             return
         }
         guard !isStopped, isInFront, locale == self.locale else { return }
-        let queued = queuedOrInFlight
+        let queued = queuedOrWriting
         let fresh = due.filter { !queued.contains($0) }
         if let hold {
             for id in fresh {
@@ -269,6 +273,8 @@ public actor OverviewWriter {
     /// job in flight, the queues, the blocks and the hold are never
     /// another worker's, and no second request is sent meanwhile. On its
     /// way out the cancelled job changes nothing but its own `inFlight`.
+    /// A due check made in front meanwhile queues the cancelled job's
+    /// category behind it (#189).
     public func enteredBackground() {
         worker?.cancel()
         for job in manualQueue {
@@ -297,6 +303,22 @@ public actor OverviewWriter {
     private var queuedOrInFlight: Set<UUID> {
         var ids = Set(automaticQueue).union(manualQueue.map(\.category))
         if let inFlight {
+            ids.insert(inFlight)
+        }
+        return ids
+    }
+
+    /// What a due check leaves out: the categories queued, and the one in
+    /// flight unless its worker was cancelled by the background — that job
+    /// ends without writing anything but a store it had already begun, so
+    /// its category is owed a job of its own (#189). That job waits in the
+    /// queue for the next worker, which starts only when the cancelled one
+    /// has ended, and is judged afresh at its read: mode, a row of the day
+    /// (a store that went through, a manual write), first seen that day,
+    /// the language, the limit, and the app's state at the send.
+    private var queuedOrWriting: Set<UUID> {
+        var ids = Set(automaticQueue).union(manualQueue.map(\.category))
+        if let inFlight, worker?.isCancelled != true {
             ids.insert(inFlight)
         }
         return ids
@@ -334,7 +356,8 @@ public actor OverviewWriter {
         }
         worker = nil
         // Something queued while the last job ended, or while this worker,
-        // cancelled by the background, unwound. A task made here is not
+        // cancelled by the background, unwound — its own category among
+        // them when a due check owed it (#189). A task made here is not
         // cancelled with this one.
         startWorker()
     }

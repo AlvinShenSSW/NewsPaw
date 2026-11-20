@@ -181,7 +181,14 @@ public final class PageTranslationSession {
     /// The session wrote into a page: a page shown again from the
     /// back-forward cache while off is restored (decision 8).
     @ObservationIgnored private var translatedAny = false
+    /// Whether the backup slot is usable, as last read from the
+    /// translator's own models: when translation is turned on, and again
+    /// at Retry, at Retry with the Backup Model and whenever the session is
+    /// seen again (a slot added in Settings or by an import, issue #188).
     @ObservationIgnored private var hasBackup = false
+    /// Counts the reads of the slots: only the latest one's answer is
+    /// kept.
+    @ObservationIgnored private var slotReads = 0
     /// The number of the owner's action under way, or of the last one.
     @ObservationIgnored private var action = 0
     /// Counts the times the session became seen again: a call into the page
@@ -209,9 +216,9 @@ public final class PageTranslationSession {
     ///   - readingLocale: the reading language, read when a document
     ///     starts.
     ///   - isSeen: whether the session's page is on screen: its stack is
-    ///     the selected one, the app is active, and no temporary article
-    ///     covers it. Nothing calls into the page otherwise, except to end
-    ///     translation.
+    ///     the selected one, the app is active, and neither a temporary
+    ///     article nor the browser's failure state covers it. Nothing calls
+    ///     into the page otherwise, except to end translation.
     public init(
         scripting: any PageScripting, translator: PageTranslator?, readingLocale: @escaping @MainActor () -> ReadingLocale,
         isSeen: @escaping @MainActor () -> Bool, timing: Timing = Timing()
@@ -248,6 +255,8 @@ public final class PageTranslationSession {
         guard let number = beginAction() else { return }
         Task {
             defer { endAction(number) }
+            slotReads += 1
+            let read = slotReads
             let readiness = await translator.readiness()
             if case .ready = readiness {
                 await translator.beginPeriod()
@@ -257,7 +266,9 @@ public final class PageTranslationSession {
                 line = .noModel(opensSettings: true)
                 return
             }
-            hasBackup = backup
+            if read == slotReads {
+                hasBackup = backup
+            }
             isOn = true
             if let document {
                 // A new period on the same page: a new generation, so that
@@ -315,6 +326,9 @@ public final class PageTranslationSession {
         Task {
             defer { endAction(number) }
             await translator.beginPeriod()
+            // A backup set up since translation was turned on is offered
+            // from now on.
+            await readBackup(translator)
             guard isCurrent(generation) else { return }
             await resend(failures, route: .primary, generation: generation)
             startPoll()
@@ -333,15 +347,30 @@ public final class PageTranslationSession {
         let generation = document.generation
         Task {
             defer { endAction(number) }
-            let readiness = await translator.readiness()
+            let usable = await readBackup(translator)
             guard isCurrent(generation) else { return }
-            guard case .ready(hasBackup: true) = readiness else {
-                hasBackup = false
+            guard usable else {
                 refreshLine()
                 return
             }
             await resend(refused, route: .backupOnly, generation: generation)
         }
+    }
+
+    /// Reads the slots of the translator's own models again (no request is
+    /// made) and keeps whether the backup is usable, unless a later read
+    /// began meanwhile.
+    ///
+    /// - Returns: whether the backup is usable now.
+    @discardableResult
+    private func readBackup(_ translator: PageTranslator) async -> Bool {
+        slotReads += 1
+        let read = slotReads
+        let usable = await translator.readiness() == .ready(hasBackup: true)
+        if read == slotReads {
+            hasBackup = usable
+        }
+        return usable
     }
 
     /// Asks the page which of `failures`' runs still hold their originals,
@@ -428,7 +457,11 @@ public final class PageTranslationSession {
         queued = PageApplyRequest()
         let scheme = url?.scheme?.lowercased()
         let host = scheme == "http" || scheme == "https" ? url?.host(percentEncoded: false)?.lowercased() : nil
-        document = Document(generation: generation, host: host, locale: readingLocale(), startedHere: startsNextDocument)
+        // Translation turned on over a document that was never collected
+        // (the failure state covered it, issue #188): the owner's tap
+        // applies to the page shown now.
+        let tapUnanswered = isOn && document.map { $0.startedHere && $0.firstCollection == nil } ?? false
+        document = Document(generation: generation, host: host, locale: readingLocale(), startedHere: startsNextDocument || tapUnanswered)
         startsNextDocument = false
         if !isOn {
             // The old document's messages are forgotten.
@@ -456,10 +489,19 @@ public final class PageTranslationSession {
 
     /// The session became seen again (its tab selected, the app active, a
     /// temporary article closed): the poll goes on at once.
+    ///
+    /// The backup slot is read again too: it may have been set up in
+    /// Settings, or by an import, while the page was not seen.
     public func becameSeen() {
         seenAgain += 1
         guard isOn, !closed else { return }
         Task { await tick() }
+        if let translator {
+            Task {
+                await readBackup(translator)
+                refreshLine()
+            }
+        }
     }
 
     /// The browser session ends (closed, or its workspace dropped): requests
@@ -739,8 +781,9 @@ public final class PageTranslationSession {
     }
 
     /// The groups' runs that still hold their originals, asked of the page;
-    /// `nil` when the page did not answer.
+    /// `nil` when the page did not answer, or is not seen and is not asked.
     private func holding(_ groups: [PageGroup], generation: Int) async -> [PageGroup]? {
+        guard isSeen() else { return nil }
         let ids = groups.flatMap { $0.runs.map(\.id) }
         let token = document?.token
         guard case .success(let applied) = await scripting.apply(PageApplyRequest(check: ids, state: token)), !applied.foreign,
@@ -784,6 +827,12 @@ public final class PageTranslationSession {
                 translatedAny = true
             }
         case .failure:
+            // The script may not have run, and the collection that found
+            // these runs cleared its flag: the next collect walks again,
+            // and their translations come from the memory or the cache
+            // (issue #188). One failed write owes one walk; a write that
+            // fails again while the page is seen ends the poll until Retry.
+            document.oweWalk()
             if counts(since: since) {
                 document.unresponsive = true
             }
@@ -815,8 +864,9 @@ public final class PageTranslationSession {
         } else if document.unresponsive {
             line = .didNotRespond
         } else if let failure = document.latestFailure {
-            // Not while stopped: nothing is sent until Retry.
-            line = .failed(failure, offersBackup: failure == .content(.refused) && hasBackup && document.hasRefused && !document.stopped)
+            // While refused text remains, whatever failed after it; not
+            // while stopped: nothing is sent until Retry.
+            line = .failed(failure, offersBackup: hasBackup && document.hasRefused && !document.stopped)
         } else if document.held {
             // Held while a field has focus: what the page shows meanwhile is
             // not known, so neither "Translated" nor "Nothing to translate".
@@ -824,7 +874,8 @@ public final class PageTranslationSession {
         } else if document.nothing && units.isEmpty && document.pending.isEmpty && document.queue.isEmpty {
             line = .nothingToTranslate(brief: false)
         } else if !units.isEmpty || !document.decided || !document.pending.isEmpty || !document.queue.isEmpty || !queued.isEmpty
-            || !document.awaitingWrite.isEmpty {
+            || !document.awaitingWrite.isEmpty || document.walkOwed {
+            // A walk is owed: the page may show runs not yet collected.
             line = .translating
         } else {
             line = .translated(document.locale)

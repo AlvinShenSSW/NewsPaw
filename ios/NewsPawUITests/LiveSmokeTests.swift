@@ -1,3 +1,4 @@
+import os
 import XCTest
 
 /// The live smoke run (#192): the M1 path of spec section 7 walked in the
@@ -8,8 +9,16 @@ import XCTest
 /// steps, the model service (`TEST_RUNNER_NEWSPAW_LIVE_MODEL_URL`,
 /// `TEST_RUNNER_NEWSPAW_LIVE_MODEL_NAME`, `TEST_RUNNER_NEWSPAW_LIVE_MODEL_KEY_FILE`).
 /// `TEST_RUNNER_NEWSPAW_LIVE_STEPS` limits the steps: a comma-separated list
-/// of step numbers (1–7), `feeds` (steps 2 and 3, no model) or `all` (the
-/// default). Enabled, it makes real requests and costs model tokens.
+/// of step numbers (1–7), `feeds` (steps 2 and 3) or `all` (the default); a
+/// list without step 1 needs only the directory. Enabled, it makes real
+/// requests and costs model tokens.
+///
+/// One output directory per run of one device and one service: its
+/// `steps.txt`, screenshots and state file are written without regard to
+/// another run in the same directory. The run uses the default attachment
+/// lifetime: never "keep attachments always" in a test plan or Xcode, nor
+/// `-collect-test-diagnostics always`, which would keep what XCTest
+/// recorded of the typed key (below).
 ///
 /// The app keeps its UI-test library directory (a fresh, empty library and
 /// keychain service of this test's own) and its animations off, but uses
@@ -25,8 +34,9 @@ import XCTest
 ///   into a secure field, so the key is typed after 40 deletes, which an
 ///   empty field ignores and the line shows as nothing;
 /// - XCTest keeps each typing's "Synthesized Event" (the text whole) and a
-///   screen recording with a failed test only, so the model's test never
-///   fails as an XCTest test: its issues are counted, not recorded, and
+///   screen recording with a failed test only (the default lifetime), so
+///   the model's test never fails as an XCTest test: its issues are
+///   counted, not recorded, on whatever thread they come, and
 ///   `test1ModelResult` fails in its place when step 1 failed.
 ///
 /// Each step is a test of its own, run in name order on one library (a
@@ -38,7 +48,7 @@ import XCTest
 /// only the steps that need it: a failed Test of the model stops the
 /// translation steps, not the feed steps. Assertions are about shape, not
 /// content: rows exist, a translated text differs from its original, the
-/// reading screen has body blocks, the page line reads "Translated…", the
+/// reading screen has text blocks, the page line reads "Translated…", the
 /// overview card has text, Usage lists requests, no error state. A network
 /// wait is bounded at two minutes.
 final class LiveSmokeTests: BodyTranslationTestCase {
@@ -124,12 +134,22 @@ final class LiveSmokeTests: BodyTranslationTestCase {
     private var current: Step?
     private var queued: [Step] = []
     private var launched = false
-    /// Issues recorded while a step runs, and what the step was doing.
-    private var stepIsRunning = false
-    /// Whether this test's issues are only counted (`test1Model`).
-    private var keepsIssuesOut = false
-    private var issuesInStep = 0
+    /// When the running step started, for the line `tearDown` writes.
+    private var stepStart = Date()
+    /// What the step was doing.
     private var doing = ""
+
+    /// What `record(_:)` needs, behind a lock: it may be called off the
+    /// main thread, where the main actor's state must not be touched.
+    struct IssueGate {
+        /// Whether a step runs, and the failures recorded while it ran.
+        var stepIsRunning = false
+        var failures = 0
+        /// Whether this test's issues are only counted (`test1Model`).
+        var keepsIssuesOut = false
+    }
+
+    private nonisolated let gate = OSAllocatedUnfairLock(initialState: IssueGate())
 
     override func setUp() async throws {
         try await super.setUp()
@@ -157,7 +177,7 @@ final class LiveSmokeTests: BodyTranslationTestCase {
 
     override func tearDown() async throws {
         if let current {
-            writeResult(current, .fail, "\(doing): the screen did not respond as expected (see the test log)", seconds: 0)
+            writeResult(current, .fail, unresponsiveReason, seconds: Date().timeIntervalSince(stepStart))
             saveScreenshot(current.rawValue)
             for step in queued {
                 writeResult(step, .notRun, "\(current.rawValue) failed", seconds: 0)
@@ -191,7 +211,7 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         begin([.model], fresh: true)
         // The key is typed in this test: it must not fail as an XCTest
         // test, or XCTest keeps what it typed (see the class comment).
-        keepsIssuesOut = true
+        gate.withLock { $0.keepsIssuesOut = true }
         run(.model, failsTheTest: false) { try stepModel() }
     }
 
@@ -280,10 +300,13 @@ final class LiveSmokeTests: BodyTranslationTestCase {
             return
         }
         let start = Date()
+        stepStart = start
         current = step
-        issuesInStep = 0
         doing = "launching"
-        stepIsRunning = true
+        gate.withLock { gate in
+            gate.failures = 0
+            gate.stepIsRunning = true
+        }
         if !launched {
             launchLive()
             launched = true
@@ -300,7 +323,7 @@ final class LiveSmokeTests: BodyTranslationTestCase {
             result = .fail
             reason = "\(doing): an unexpected error"
         }
-        stepIsRunning = false
+        gate.withLock { $0.stepIsRunning = false }
         current = nil
         saveScreenshot(step.rawValue)
         writeResult(step, result, reason, seconds: Date().timeIntervalSince(start))
@@ -316,20 +339,28 @@ final class LiveSmokeTests: BodyTranslationTestCase {
     }
 
     /// Counts the failures recorded while a step runs; they stay issues of
-    /// the test. A system issue (the runner's priority-inversion warning
-    /// at launch) is not a failure of the step.
+    /// the test, except in `test1Model`. A system issue (the runner's
+    /// priority-inversion warning at launch) is not a failure of the step.
+    /// Safe on any thread: it touches only the locked gate.
     nonisolated override func record(_ issue: XCTIssue) {
         let fails = [.assertionFailure, .thrownError, .uncaughtException].contains(issue.type)
-        // A UI test records its issues on the main thread.
-        let keptOut = MainActor.assumeIsolated {
-            if stepIsRunning, fails {
-                issuesInStep += 1
+        let keptOut = gate.withLock { gate in
+            if gate.stepIsRunning, fails {
+                gate.failures += 1
             }
-            return keepsIssuesOut
+            return gate.keepsIssuesOut
         }
         if !keptOut {
             super.record(issue)
         }
+    }
+
+    /// Why a step stopped on a check of the screen. In `test1Model` the
+    /// issues are kept out of the test log, so the reason does not point
+    /// to it.
+    private var unresponsiveReason: String {
+        let keptOut = gate.withLock { $0.keepsIssuesOut }
+        return "\(doing): the screen did not respond as expected" + (keptOut ? "" : " (see the test log)")
     }
 
     /// Names what the step does next, after checking that nothing failed
@@ -340,8 +371,8 @@ final class LiveSmokeTests: BodyTranslationTestCase {
     }
 
     private func checkIssues() throws {
-        if issuesInStep > 0 {
-            throw StepFailure(reason: "\(doing): the screen did not respond as expected (see the test log)")
+        if gate.withLock({ $0.failures }) > 0 {
+            throw StepFailure(reason: unresponsiveReason)
         }
     }
 
@@ -508,19 +539,33 @@ final class LiveSmokeTests: BodyTranslationTestCase {
 
     // MARK: - Step 3: refresh, rows and titles
 
-    /// A refresh run from the news category's menu; Today's line reads
-    /// "Updated" and names no failed source; every feed's list has rows.
+    /// A refresh of the whole library by a pull on Today: only a library
+    /// run records the time Today's line reads, so its "Updated just now"
+    /// after the pull, where it did not read so before, is this step's
+    /// run. Then the line names no failed source, and every feed's list
+    /// has rows.
     private func stepRefresh() throws -> String {
-        try phase("refreshing \(Self.newsCategory)")
-        openCategoryList(Self.newsCategory)
-        waitFor(button(AccessibilityID.listMenu)).tap()
-        waitFor(app.buttons.matching(NSPredicate(format: "label IN %@", ["Refresh", "刷新"])).firstMatch).tap()
-        state.refreshRan = true
-        saveState()
+        returnToShell()
+        try phase("showing Today")
         showToday()
         let status = element(AccessibilityID.todayStatus)
-        let updated = waitUntil(Self.networkWait) { status.exists && status.label.hasPrefix("Updated ") }
-        try require(updated, "Today's status line did not read Updated within \(Int(Self.networkWait)) s")
+        let justNow = "Updated just now"
+        // An earlier library run (the launch's entry refresh) may have
+        // left "just now": it turns into "1 minute ago" at the line's next
+        // minute.
+        let clear = waitUntil(150) { status.exists && status.label != justNow && status.label != "Updating…" }
+        try require(clear, "Today's status line did not settle before the refresh")
+        try phase("pulling Today to refresh")
+        var pulls = 0
+        var refreshed = false
+        while !refreshed, pulls < 2 {
+            pullToday()
+            pulls += 1
+            refreshed = waitUntil(Self.networkWait) { status.exists && status.label == justNow }
+        }
+        state.refreshRan = true
+        saveState()
+        try require(refreshed, "Today's status line did not read \"\(justNow)\" within \(Int(Self.networkWait)) s of a pull")
         let failures = button(AccessibilityID.failedSourcesButton)
         try require(!failures.exists, "Today says \"\(failures.label)\"")
         var counts: [String] = []
@@ -531,7 +576,16 @@ final class LiveSmokeTests: BodyTranslationTestCase {
             try require(rows, "\(source.name)'s list shows no rows")
             counts.append("\(source.name) \(articleRowsShown().count)")
         }
-        return "refreshed; rows on screen: " + counts.joined(separator: ", ")
+        return "refreshed the library (\(pulls) pull\(pulls == 1 ? "" : "s")); rows on screen: " + counts.joined(separator: ", ")
+    }
+
+    /// Pulls Today down far enough to refresh, as `RefreshTests` does; the
+    /// harness waits while the refresh indicator runs.
+    private func pullToday() {
+        let anchor = [element(AccessibilityID.todayStatus), element(AccessibilityID.todayDate)].first(where: \.exists) ?? app.scrollViews.firstMatch
+        let start = anchor.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let distance = min(600, window.maxY - anchor.frame.midY - 20)
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: distance)), withVelocity: .slow, thenHoldForDuration: 1)
     }
 
     /// In each list whose titles are foreign, a row shows a title that
@@ -569,6 +623,8 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         try phase("opening \(Self.excerptSource)'s list")
         openSourceList(Self.excerptSource, in: Self.newsCategory)
         chooseFilter("All")
+        // The app was launched again for this test: rows come with the list.
+        _ = waitUntil(60) { !self.articleRowsShown().isEmpty }
         let candidates = articleRowsShown().prefix(3).map(\.identifier)
         try require(!candidates.isEmpty, "\(Self.excerptSource)'s list shows no rows")
         var tried: [String] = []
@@ -586,7 +642,7 @@ final class LiveSmokeTests: BodyTranslationTestCase {
             let failed = element(AccessibilityID.readingBodyFailed)
             let settled = waitUntil(Self.networkWait) { fullText.exists || excerpt.exists || failed.exists }
             if settled, fullText.exists {
-                try require(block(at: 0).waitForExistence(timeout: timeout), "the full text has no body block")
+                try require(waitUntil(timeout) { !self.textBlocks().isEmpty }, "the full text has no text block")
                 return "article \(index + 1): full text from its page, body blocks shown"
                     + (tried.isEmpty ? "" : " (before: " + tried.joined(separator: "; ") + ")")
             }
@@ -610,7 +666,7 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         }
         // Done, or stopped with the banner of a failure.
         let done = waitUntil(Self.networkWait) {
-            self.banner.exists || (self.modeMenu.exists && !self.progressLine.exists && self.block(at: 0).exists)
+            self.banner.exists || (self.modeMenu.exists && !self.progressLine.exists && !self.textBlocks().isEmpty)
         }
         if banner.exists {
             let sentence = banner.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " · ")
@@ -630,9 +686,20 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         return "body translated; Translation differs from Original"
     }
 
-    /// The labels of the body's first three blocks.
+    /// The body's text blocks on screen, top to bottom: paragraphs,
+    /// headings and code carry `reading.block.<index>`; an image (a lead
+    /// picture often comes first) carries `reading.image…` instead.
+    private func textBlocks() -> [XCUIElement] {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", AccessibilityID.readingBlockPrefix))
+            .allElementsBoundByIndex
+            .filter { $0.exists && !$0.frame.isEmpty }
+            .sorted { $0.frame.minY < $1.frame.minY }
+    }
+
+    /// The labels of the body's first three text blocks.
     private func firstBlocks() -> String {
-        (0..<3).map { block(at: $0) }.filter(\.exists).map(\.label).joined(separator: "\n")
+        textBlocks().prefix(3).map(\.label).joined(separator: "\n")
     }
 
     // MARK: - Step 5: the web page

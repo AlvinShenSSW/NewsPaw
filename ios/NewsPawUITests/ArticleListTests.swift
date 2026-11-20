@@ -518,10 +518,9 @@ final class ArticleListTests: ArticleTestCase {
             if within.contains(now) {
                 break
             }
-            // A miss by more than a row is a fling, not the drag's measure.
-            if abs(target - now) < rowHeight {
-                distance += target - now
-            }
+            // Corrected by a quarter of a row at most: a fling's miss says
+            // little about the next drag.
+            distance += min(max(target - now, -target), target)
             // Back to the top, by no more than the list rose, so that the
             // pull does not start a refresh.
             let rise = rowTop - firstRow.frame.minY

@@ -39,19 +39,24 @@ struct BrowserDataStoresTests {
     /// Removes the test's identified stores and waits for it, 60 s at most
     /// (a store is refused while a web view on it is still being
     /// released), so that none is left under the runner's `~/Library/WebKit`.
+    /// A store is removed again for as long as WebKit lists it: on the iOS
+    /// 26.5 simulator a removal that had returned without an error was
+    /// still listed at once after it (#191).
     private static func removed(_ identifiers: [UUID]) async -> Bool {
         let deadline = ContinuousClock.now + .seconds(60)
-        var left = Set(identifiers)
-        while !left.isEmpty, ContinuousClock.now < deadline {
-            for identifier in left where (try? await WKWebsiteDataStore.remove(forIdentifier: identifier)) != nil {
-                left.remove(identifier)
+        var removing = identifiers
+        while ContinuousClock.now < deadline {
+            for identifier in removing {
+                try? await WKWebsiteDataStore.remove(forIdentifier: identifier)
             }
-            if !left.isEmpty {
-                try? await Task.sleep(for: .milliseconds(200))
+            let known = await WKWebsiteDataStore.allDataStoreIdentifiers
+            removing = identifiers.filter { known.contains($0) }
+            if removing.isEmpty {
+                return true
             }
+            try? await Task.sleep(for: .milliseconds(200))
         }
-        let known = await WKWebsiteDataStore.allDataStoreIdentifiers
-        return identifiers.allSatisfy { !known.contains($0) }
+        return false
     }
 
     /// The cookies of `store` named `name`.

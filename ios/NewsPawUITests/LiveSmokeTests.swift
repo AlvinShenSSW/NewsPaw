@@ -608,8 +608,9 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         if translateButton.exists {
             translateButton.tap()
         }
+        // Done, or stopped with the banner of a failure.
         let done = waitUntil(Self.networkWait) {
-            self.modeMenu.exists && !self.progressLine.exists && self.block(at: 0).exists
+            self.banner.exists || (self.modeMenu.exists && !self.progressLine.exists && self.block(at: 0).exists)
         }
         if banner.exists {
             let sentence = banner.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " · ")

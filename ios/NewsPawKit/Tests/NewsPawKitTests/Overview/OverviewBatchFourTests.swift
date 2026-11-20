@@ -8,7 +8,7 @@ import Testing
 /// Replace commits stores nothing of a category the file removed. No
 /// refusal or drain of the writer is needed for it: the store's own checks
 /// (the category exists, every article sent exists) run inside its write.
-@Suite("Overview with the configuration file (batch 4)")
+@Suite("Overview with the configuration file (batch 4)", .serialized)
 struct OverviewBatchFourTests {
 
     private func overviewCount(_ library: Library, category: UUID) async throws -> Int {

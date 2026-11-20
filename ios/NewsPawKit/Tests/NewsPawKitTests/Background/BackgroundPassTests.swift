@@ -6,7 +6,7 @@ import Testing
 /// RD24 criteria 3, 6 and 7, approach 5: one background pass over the
 /// normal library, its refresher and its translator.
 @MainActor
-@Suite("Background pass", .timeLimit(.minutes(5)))
+@Suite("Background pass", .serialized, .timeLimit(.minutes(5)))
 struct BackgroundPassTests {
     @Test("not due: no request of any kind, and the pass still waits for a translator pass that was running")
     func notDueWaitsForTheTranslator() async throws {
@@ -265,6 +265,36 @@ struct BackgroundPassTests {
             #expect(await fixture.pass(control).run() == .cancelled)
         }
         #expect(fixture.transport.received.isEmpty)
+    }
+
+    /// The pass cancels its timer as soon as the collection is decided,
+    /// often before the timer's task has started its sleep (#191): that
+    /// sleep must end at once, or the timer keeps the refresher and the
+    /// library's open files for the rest of the test run.
+    @Test("#191: the hand sleep of a task cancelled before it sleeps ends at once, by throwing")
+    func handSleepOfACancelledTask() async {
+        let sleep = HandSleep()
+        let ended = Flag()
+        let task = Task { () -> Bool in
+            defer { ended.set() }
+            withUnsafeCurrentTask { $0?.cancel() }
+            do {
+                try await sleep.sleep(.seconds(60))
+                return false
+            } catch {
+                return error is CancellationError
+            }
+        }
+        let deadline = ContinuousClock.now + .seconds(60)
+        while !ended.isSet, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(ended.isSet, "the sleep of a cancelled task waited")
+        if ended.isSet {
+            #expect(await task.value, "it ended by throwing CancellationError")
+        } else {
+            sleep.wake()
+        }
     }
 
     @Test("the result carries no payload")

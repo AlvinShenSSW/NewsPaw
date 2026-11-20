@@ -5,7 +5,7 @@ import Testing
 
 /// RD25: search of article titles, original and translated, within one
 /// library (spec N05; criteria 1 to 6 and 11).
-@Suite("Search")
+@Suite("Search", .serialized)
 struct SearchTests {
     // MARK: - Criterion 1: matching
 

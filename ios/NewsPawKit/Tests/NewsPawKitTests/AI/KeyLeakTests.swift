@@ -7,7 +7,7 @@ import Testing
 /// in no printing of the stand-in's request, of a reply or of a slot, in no
 /// row of any table and in no byte of the library's files; and nothing in
 /// `AI/` or `Privacy/` logs.
-@Suite("The key does not leak")
+@Suite("The key does not leak", .serialized)
 struct KeyLeakTests {
     static let sentinel = "sk-SENTINEL-7c1e9a-0123456789abcdef"
 

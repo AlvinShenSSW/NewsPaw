@@ -17,7 +17,7 @@ final class WriteLog {
 }
 
 @MainActor
-@Suite("Model writes and an import's write")
+@Suite("Model writes and an import's write", .serialized)
 struct ModelWritesTests {
     typealias J = ConfigurationJSON
 

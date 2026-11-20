@@ -4,7 +4,7 @@ import GRDB
 import Testing
 
 /// RD06 criterion 5: clean-up, with an injected clock.
-@Suite("Retention")
+@Suite("Retention", .serialized)
 struct RetentionTests {
     private static let day: TimeInterval = 86_400
 

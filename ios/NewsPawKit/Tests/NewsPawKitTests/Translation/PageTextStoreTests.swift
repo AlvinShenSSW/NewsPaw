@@ -6,7 +6,7 @@ import Testing
 /// RD16 decision 7: migration `v8`, the rows of `page_text` and their
 /// clean-up. Criteria 10 (the store and the clean-up) and 17 (the
 /// migration).
-@Suite("Page text store")
+@Suite("Page text store", .serialized)
 struct PageTextStoreTests {
     // MARK: - Criterion 17: migration v8
 

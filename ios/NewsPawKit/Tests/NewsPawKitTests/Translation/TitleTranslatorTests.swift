@@ -6,7 +6,7 @@ import Testing
 /// RD14 decisions 4, 6, 7, 8, 9 (what is stored), 10 and 12: the
 /// translator on a stubbed service, an injected clock, calendar and sleep.
 /// Criteria 1, 2, 3, 5, 6, 7, 8, 9, 10, 13 and 15.
-@Suite("Title translator")
+@Suite("Title translator", .serialized)
 struct TitleTranslatorTests {
     static let primary = TranslatorFixture.primaryHost
     static let backup = TranslatorFixture.backupHost
@@ -896,6 +896,34 @@ struct TitleTranslatorTests {
         await fixture.translator.settled()
         #expect(fixture.service.requests.count == 1)
         #expect(try await fixture.translation(id)?.state == .done)
+    }
+
+    // MARK: - The fixture's end (#191)
+
+    /// A test that ends with its translator paused for the service lets
+    /// its library go: the pause's timer, waiting on the fixture's sleeper,
+    /// ends with the fixture (`ManualSleeper.cancel()`). Before, it kept the
+    /// translator and the library's open files for the rest of the test
+    /// run, where they counted against the test process's descriptor limit.
+    @Test("#191: a fixture removed while its translator is paused for the service lets its library go")
+    func removedFixtureLetsItsLibraryGo() async throws {
+        weak var library: Library?
+        do {
+            let fixture = try await TranslatorFixture.make(service: TranslationService { _, _, _ in .status(503) })
+            library = fixture.library
+            _ = try await fixture.englishArticles(1, in: try await fixture.source())
+            await fixture.start()
+            // The pause's timer is a task of its own, which `start()` does
+            // not wait for: wait, bounded, until its sleep is waiting.
+            await fixture.eventually { fixture.sleeper.sleepers == 1 }
+            #expect(fixture.sleeper.durations == [.seconds(600)], "the pause's timer is waiting")
+            fixture.remove()
+        }
+        let deadline = ContinuousClock.now + .seconds(60)
+        while library != nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(library == nil, "the paused translator kept its library")
     }
 
     private static func rfc822(_ date: Date) -> String {

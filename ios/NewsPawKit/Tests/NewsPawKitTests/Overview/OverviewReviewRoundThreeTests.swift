@@ -6,7 +6,7 @@ import Testing
 /// in front, read from `AppFront` where work starts and before every
 /// request — not learnt from events, which can be late (behind a due check
 /// held at its read) or sent before the writer existed.
-@Suite("Overview review round 3")
+@Suite("Overview review round 3", .serialized)
 struct OverviewReviewRoundThreeTests {
     typealias Fixture = OverviewFixture
     typealias Box = OverviewReviewRoundOneTests.Box

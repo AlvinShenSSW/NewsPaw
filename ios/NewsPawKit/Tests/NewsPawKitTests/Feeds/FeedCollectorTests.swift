@@ -6,7 +6,7 @@ import Testing
 
 /// The collector with a fake transport and an injected clock (criteria 3, 5,
 /// 9, 10, 12, 14, 15).
-@Suite("Feed collector")
+@Suite("Feed collector", .serialized)
 struct FeedCollectorTests {
     private func feedResponse(_ body: Data, headers: [String: String] = [:]) -> FakeTransport {
         FakeTransport.answering(body: body, headers: headers)

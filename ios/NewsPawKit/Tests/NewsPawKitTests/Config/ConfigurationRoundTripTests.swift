@@ -6,7 +6,7 @@ import Testing
 /// RD20 criteria 1, 2 and 14: a file exported from two full libraries
 /// restores them into an empty store by Merge and by Replace; no secret,
 /// device setting or state is in it; nothing makes a request.
-@Suite("Configuration round trip")
+@Suite("Configuration round trip", .serialized)
 struct ConfigurationRoundTripTests {
     static let keys: [Partition: [ModelRole: String]] = [
         .normal: [.primary: "sk-sentinel-normal-primary-AAAA", .backup: "sk-sentinel-normal-backup-BBBB"],

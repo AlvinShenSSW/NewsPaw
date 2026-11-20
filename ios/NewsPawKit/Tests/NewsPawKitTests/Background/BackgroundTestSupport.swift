@@ -77,7 +77,12 @@ final class HeldFeedTransport: Transport {
 }
 
 /// A sleep the tests end by hand that ends at once, by throwing, when its
-/// task is cancelled: what the pass's cut waits with.
+/// task is cancelled: what the pass's cut waits with. A task cancelled
+/// before it sleeps throws at once too, as `Task.sleep` does: the
+/// cancellation handler runs before the sleep is registered, and a sleep
+/// registered after it would wait for ever, keeping the pass's timer, its
+/// refresher and the library's open files for the rest of the test run
+/// (#191).
 final class HandSleep: Sendable {
     private struct State {
         var asked: [Duration] = []
@@ -95,14 +100,17 @@ final class HandSleep: Sendable {
         let id = UUID()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-                let now = state.withLock { state in
+                // Under the lock the cancellation handler takes: a
+                // cancellation after this check finds the sleep registered.
+                let now: Result<Void, any Error>? = state.withLock { state in
                     state.asked.append(duration)
-                    guard !state.woken else { return true }
+                    guard !state.woken else { return .success(()) }
+                    guard !Task.isCancelled else { return .failure(CancellationError()) }
                     state.waiting[id] = continuation
-                    return false
+                    return nil
                 }
-                if now {
-                    continuation.resume()
+                if let now {
+                    continuation.resume(with: now)
                 }
             }
         } onCancel: {

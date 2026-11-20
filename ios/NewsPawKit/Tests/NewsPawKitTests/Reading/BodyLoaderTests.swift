@@ -7,7 +7,7 @@ import Testing
 /// RD12 decisions 3, 5, 6 and 7 with a stubbed transport and a stubbed
 /// extractor: what is fetched, shown, stored and remembered (criteria 3, 7,
 /// 9 and 10).
-@Suite("Body loader")
+@Suite("Body loader", .serialized)
 @MainActor
 struct BodyLoaderTests {
     nonisolated static let link = URL(string: "https://example.invalid/articles/one")!

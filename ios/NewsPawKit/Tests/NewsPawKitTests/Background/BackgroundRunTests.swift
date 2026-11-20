@@ -4,7 +4,7 @@ import Testing
 
 /// RD24 approach 4 and criteria 6 and 7: how one background run ends.
 @MainActor
-@Suite("Background run", .timeLimit(.minutes(5)))
+@Suite("Background run", .serialized, .timeLimit(.minutes(5)))
 struct BackgroundRunTests {
     /// A library whose one source's collection is held in flight by a
     /// refresh of the refresher, and the work of a run that waits for the

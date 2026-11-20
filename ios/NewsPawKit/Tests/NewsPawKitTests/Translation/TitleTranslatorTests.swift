@@ -913,6 +913,9 @@ struct TitleTranslatorTests {
             library = fixture.library
             _ = try await fixture.englishArticles(1, in: try await fixture.source())
             await fixture.start()
+            // The pause's timer is a task of its own, which `start()` does
+            // not wait for: wait, bounded, until its sleep is waiting.
+            await fixture.eventually { fixture.sleeper.sleepers == 1 }
             #expect(fixture.sleeper.durations == [.seconds(600)], "the pause's timer is waiting")
             fixture.remove()
         }

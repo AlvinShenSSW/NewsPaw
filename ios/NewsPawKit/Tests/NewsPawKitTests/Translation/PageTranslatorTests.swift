@@ -6,7 +6,7 @@ import Testing
 /// RD16 decisions 5, 7, 11, 12 and 13 with stubbed HTTP: retry and backup,
 /// usage rows, the ceiling, the cache and the memory, and the partition
 /// rule. Criteria 6, 7, 8, 10, 11 and 12 (the translator's half).
-@Suite("Page translator")
+@Suite("Page translator", .serialized)
 struct PageTranslatorTests {
     static let host = "pages.example.invalid"
     typealias Run = PageBatcherTests

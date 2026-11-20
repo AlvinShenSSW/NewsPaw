@@ -10,7 +10,7 @@ import Testing
 /// queued automatic jobs (R2), a one-text highlight is its own line (R3),
 /// cleaning a title is linear (R4), and a failed due read blocks for
 /// storage (R7).
-@Suite("Overview review round 1")
+@Suite("Overview review round 1", .serialized)
 struct OverviewReviewRoundOneTests {
     typealias Fixture = OverviewFixture
 

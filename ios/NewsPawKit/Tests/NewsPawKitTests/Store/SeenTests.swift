@@ -5,7 +5,7 @@ import Testing
 
 /// RD06 criterion 6: what `seen` holds and how a collection decides each
 /// listed item (decision 8).
-@Suite("Seen identifiers")
+@Suite("Seen identifiers", .serialized)
 struct SeenTests {
     private static let day = 86_400
 

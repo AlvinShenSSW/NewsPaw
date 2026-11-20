@@ -8,7 +8,7 @@ import Testing
 /// explicitly — at every lock and before its file is deleted, by one path —
 /// so that a reference something still holds cannot keep the file open,
 /// and the next open makes a new pool.
-@Suite("LibraryStore: closing and deleting the adult library")
+@Suite("LibraryStore: closing and deleting the adult library", .serialized)
 struct AdultLibraryCloseTests {
     private func makeStore() throws -> (store: LibraryStore, directory: URL, cacheRoot: URL, root: URL) {
         let root = try makeTemporaryDirectory()

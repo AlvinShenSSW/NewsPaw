@@ -6,7 +6,7 @@ import Testing
 /// RD14 decisions 4, 6, 7, 8, 9 (what is stored), 10 and 12: the
 /// translator on a stubbed service, an injected clock, calendar and sleep.
 /// Criteria 1, 2, 3, 5, 6, 7, 8, 9, 10, 13 and 15.
-@Suite("Title translator")
+@Suite("Title translator", .serialized)
 struct TitleTranslatorTests {
     static let primary = TranslatorFixture.primaryHost
     static let backup = TranslatorFixture.backupHost

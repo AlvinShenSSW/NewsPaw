@@ -3,7 +3,7 @@ import GRDB
 @testable import NewsPawKit
 import Testing
 
-@Suite("Categories")
+@Suite("Categories", .serialized)
 struct CategoryTests {
     /// A library in its own temporary directory, removed by `close()`.
     struct TestLibrary {
@@ -294,7 +294,7 @@ struct CategoryTests {
     }
 }
 
-@Suite("Category summaries, name rule and UI-test seeding")
+@Suite("Category summaries, name rule and UI-test seeding", .serialized)
 struct CategorySummaryTests {
     @Test("summaries list the categories in order with their source counts")
     func summaries() async throws {

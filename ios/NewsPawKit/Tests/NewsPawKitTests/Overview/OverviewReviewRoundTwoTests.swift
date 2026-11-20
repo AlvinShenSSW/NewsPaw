@@ -6,7 +6,7 @@ import Testing
 /// writer's state to the work after it (one worker at a time, and a
 /// cancelled job changes nothing on its way out), and a change of the
 /// reading language before a job's first request drops the job.
-@Suite("Overview review round 2")
+@Suite("Overview review round 2", .serialized)
 struct OverviewReviewRoundTwoTests {
     typealias Fixture = OverviewFixture
     typealias Box = OverviewReviewRoundOneTests.Box

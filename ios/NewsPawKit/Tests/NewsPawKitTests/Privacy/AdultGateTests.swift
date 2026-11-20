@@ -6,7 +6,7 @@ import Testing
 /// RD18: the gate in front of the adult library (decision 2), over a
 /// temporary directory, with the stub authenticator and the in-memory key
 /// store. LocalAuthentication and the keychain are never called.
-@Suite("Adult gate")
+@Suite("Adult gate", .serialized)
 struct AdultGateTests {
     static let refusals: [AuthenticationAnswer] = [.cancelled, .interrupted, .failed, .unavailable]
 

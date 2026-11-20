@@ -42,7 +42,7 @@ func rawRows(_ library: Library, _ sql: String, _ arguments: StatementArguments 
 }
 
 /// RD05 criteria 5, 6, 8, 10–15: sources on `Library`.
-@Suite("Sources")
+@Suite("Sources", .serialized)
 struct SourceTests {
     // MARK: - Adding
 

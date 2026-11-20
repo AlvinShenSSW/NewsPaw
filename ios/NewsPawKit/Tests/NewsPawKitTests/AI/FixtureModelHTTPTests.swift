@@ -3,7 +3,7 @@ import Foundation
 import Testing
 
 /// The UI tests' model fixture gives each Test line it is meant to give.
-@Suite("Model fixture")
+@Suite("Model fixture", .serialized)
 struct FixtureModelHTTPTests {
     @Test("each fixture host gives its Test line", arguments: [
         (FixtureModelHTTP.Address.passed, TestOutcome.passed),

@@ -4,7 +4,7 @@ import Testing
 
 /// RD13 decisions 8–12: send, Test and Load List on a stubbed HTTP, with
 /// the usage rows each leaves. Criteria 6, 7, 8, 9, 11, 12 and 13.
-@Suite("Library models")
+@Suite("Library models", .serialized)
 struct LibraryModelsTests {
     static let address = "https://api.example.invalid/v1"
 

@@ -7,7 +7,7 @@ import Testing
 // MARK: - Criteria 1–4 and 12
 
 @MainActor
-@Suite("Refresher")
+@Suite("Refresher", .serialized)
 struct RefresherTests {
     // MARK: Criterion 1: targets and cap
 

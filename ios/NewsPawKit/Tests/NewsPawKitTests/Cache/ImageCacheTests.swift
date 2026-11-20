@@ -3,7 +3,7 @@ import Foundation
 import Testing
 
 /// RD06 criterion 13: the image cache in temporary directories.
-@Suite("Image cache")
+@Suite("Image cache", .serialized)
 struct ImageCacheTests {
     private func bytes(_ count: Int, _ value: UInt8 = 1) -> Data {
         Data(repeating: value, count: count)

@@ -4,7 +4,7 @@ import Testing
 
 /// RD24 approach 6: `TitleTranslator.untilSettled()`, the polling form of
 /// `settled()` a background run waits with.
-@Suite("Until settled", .timeLimit(.minutes(5)))
+@Suite("Until settled", .serialized, .timeLimit(.minutes(5)))
 struct UntilSettledTests {
     /// A translator whose first request is held in flight.
     private func busy() async throws -> TranslatorFixture {

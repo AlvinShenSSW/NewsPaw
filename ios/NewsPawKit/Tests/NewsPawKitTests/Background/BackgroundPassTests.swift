@@ -6,7 +6,7 @@ import Testing
 /// RD24 criteria 3, 6 and 7, approach 5: one background pass over the
 /// normal library, its refresher and its translator.
 @MainActor
-@Suite("Background pass", .timeLimit(.minutes(5)))
+@Suite("Background pass", .serialized, .timeLimit(.minutes(5)))
 struct BackgroundPassTests {
     @Test("not due: no request of any kind, and the pass still waits for a translator pass that was running")
     func notDueWaitsForTheTranslator() async throws {

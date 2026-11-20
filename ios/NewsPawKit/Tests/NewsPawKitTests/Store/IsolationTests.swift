@@ -3,7 +3,7 @@ import GRDB
 @testable import NewsPawKit
 import Testing
 
-@Suite("Partition isolation")
+@Suite("Partition isolation", .serialized)
 struct IsolationTests {
     // MARK: - Criterion 6: addresses
 

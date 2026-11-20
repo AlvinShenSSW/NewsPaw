@@ -7,7 +7,7 @@ import Testing
 /// list queries' join, the deletion of failed rows on a slot change and
 /// the daily count. Criteria 6 (the deletion), 12 (rows carry their
 /// translation) and 16 (the migration).
-@Suite("Translation store")
+@Suite("Translation store", .serialized)
 struct TranslationStoreTests {
     // MARK: - Criterion 16: migration v6
 

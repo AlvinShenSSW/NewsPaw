@@ -2,7 +2,7 @@ import Foundation
 @testable import NewsPawKit
 import Testing
 
-@Suite("LibraryStore")
+@Suite("LibraryStore", .serialized)
 struct LibraryStoreTests {
     private func fileExists(_ directory: URL, _ name: String) -> Bool {
         FileManager.default.fileExists(atPath: directory.appending(path: name).path)

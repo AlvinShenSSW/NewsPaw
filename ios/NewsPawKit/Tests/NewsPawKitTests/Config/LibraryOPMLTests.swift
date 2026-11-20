@@ -5,7 +5,7 @@ import Testing
 
 /// RD08 decision 4 and 6: the plan, the import transaction and the export
 /// of one library (criteria 1, 4, 5, 6, 7, 8, 10).
-@Suite("OPML import and export")
+@Suite("OPML import and export", .serialized)
 struct LibraryOPMLTests {
     struct Fixture {
         let directory: URL

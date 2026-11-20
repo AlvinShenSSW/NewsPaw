@@ -4,7 +4,7 @@ import Testing
 
 /// RD20 decision 1 and 6: the file's exact form, and the export with and
 /// without the adult partition (criteria 2 and 11).
-@Suite("Configuration writer and export")
+@Suite("Configuration writer and export", .serialized)
 struct ConfigurationWriterTests {
     @Test("the exact JSON of a small library: sorted keys, pretty printed, slashes unescaped, whole seconds in UTC")
     func exactJSON() async throws {

@@ -6,7 +6,7 @@ import Testing
 /// RD15 decision 2: migration `v7`, the rows of `body_translation`, and the
 /// deletion of failed body rows with RD14's at every slot change. Criteria
 /// 5 (the deletion) and 18 (the migration).
-@Suite("Body translation store")
+@Suite("Body translation store", .serialized)
 struct BodyTranslationStoreTests {
     // MARK: - Criterion 18: migration v7
 

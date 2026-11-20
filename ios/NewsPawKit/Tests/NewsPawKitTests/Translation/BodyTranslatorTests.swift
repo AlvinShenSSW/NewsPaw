@@ -106,7 +106,7 @@ final class BodyFixture: @unchecked Sendable {
 
 /// RD15 decisions 5–8 and 10: the body translator on a stubbed service.
 /// Criteria 3, 4, 5, 6, 13 (the translator), 14 (no row), 15 and 17.
-@Suite("Body translator")
+@Suite("Body translator", .serialized)
 struct BodyTranslatorTests {
     static let primary = TranslatorFixture.primaryHost
     static let backup = TranslatorFixture.backupHost

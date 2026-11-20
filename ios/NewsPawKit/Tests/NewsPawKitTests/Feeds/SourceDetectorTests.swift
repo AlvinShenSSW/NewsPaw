@@ -113,7 +113,7 @@ func page(_ links: String, title: String = "A Page", extra: String = "") -> Stri
 }
 
 /// RD05 criteria 2–7: detection, with a fake transport.
-@Suite("Source detection")
+@Suite("Source detection", .serialized)
 struct SourceDetectorTests {
     let site = "https://site.example/"
 
@@ -562,7 +562,7 @@ enum GitHubFixture {
 }
 
 /// RD07 criteria 2–9: detecting a repository address.
-@Suite("Source detection: GitHub repositories")
+@Suite("Source detection: GitHub repositories", .serialized)
 struct GitHubDetectionTests {
     private func detect(_ text: String, _ transport: RoutedTransport, in library: Library) async throws -> Detection {
         try await SourceDetector(transport: transport).detect(text, in: library)
@@ -965,7 +965,7 @@ enum HubAddress {
 }
 
 /// RD26 criteria 3–7 and 9: detecting an account address, and Save.
-@Suite("Source detection: Hugging Face accounts")
+@Suite("Source detection: Hugging Face accounts", .serialized)
 struct HuggingFaceDetectionTests {
     private func detect(_ text: String, _ transport: RoutedTransport, in library: Library) async throws -> Detection {
         try await SourceDetector(transport: transport).detect(text, in: library)

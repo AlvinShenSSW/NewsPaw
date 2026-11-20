@@ -8,7 +8,7 @@ import Testing
 /// checked once more inside `LibraryModels.send`, after the slot and key
 /// reads and with nothing awaited before the transport. The tests change
 /// the state during the key read, through the fixture's hooked key store.
-@Suite("Overview review round 4")
+@Suite("Overview review round 4", .serialized)
 struct OverviewReviewRoundFourTests {
     typealias Fixture = OverviewFixture
 

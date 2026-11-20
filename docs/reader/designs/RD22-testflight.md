@@ -2,7 +2,7 @@
 
 Issue: [#143](https://github.com/AlvinShenSSW/NewsPaw/issues/143) · Epic E16 #119 · Milestone M1 · Priority P0 · Requirements N13 (distribution, the real-device list); spec section 7 (M1 acceptance). Also touched: N08 (no loopback http in a TestFlight build), N09 (what the device checks cover), spec section 6.1 (nothing personal hard-coded), section 10 (TestFlight assumptions).
 
-Version 2 (2026-11-19), after one debate round. Written against `main` at `44da16e` (every issue except RD22 merged; migrations `v1`–`v10`). Read: `AGENTS.md`; spec N01, N08–N13, sections 6–8 and 10; ux.md; backlog.md; issue #143; the bodies of pull requests #150–#184; the driver's facts for batches 2–4 (section "Owed on a real device"); the frozen designs RD10, RD20, RD21, RD24; the project file, `NewsPaw-Info.plist`, `InfoPlist.xcstrings`, the asset catalog, the scheme, `ios/Tools/check_strings.py`, `.github/workflows/checks.yml`, `.gitignore`, every `#if DEBUG` block of the app and the package; GRDB 7.12.0's and SwiftSoup 2.14.3's checkouts; `xcodebuild -help` of the Mac's Xcode 27.1 (27A9275). Author: Claude (planner, for the driver of this AFK run).
+Version 3 (2026-11-20): version 2 (2026-11-19, after one debate round) plus the App Store Connect API-key route decided by the owner on 2026-11-20 (decision 13; revision record). Version 2 was written against `main` at `44da16e`; the key route against `main` at `6dd830a`, after part A (#185) and #187 merged. At `44da16e` every issue except RD22 was merged (migrations `v1`–`v10`); version 2 read: `AGENTS.md`; spec N01, N08–N13, sections 6–8 and 10; ux.md; backlog.md; issue #143; the bodies of pull requests #150–#184; the driver's facts for batches 2–4 (section "Owed on a real device"); the frozen designs RD10, RD20, RD21, RD24; the project file, `NewsPaw-Info.plist`, `InfoPlist.xcstrings`, the asset catalog, the scheme, `ios/Tools/check_strings.py`, `.github/workflows/checks.yml`, `.gitignore`, every `#if DEBUG` block of the app and the package; GRDB 7.12.0's and SwiftSoup 2.14.3's checkouts; `xcodebuild -help` of the Mac's Xcode 27.1 (27A9275). Author: Claude (planner, for the driver of this AFK run).
 
 **The repository is public** (`gh repo view`: `PUBLIC`). Anything committed — a team identifier in the project file, entitlements pasted into a pull request, a source address in a results table — is published. The hygiene decisions below follow from that.
 
@@ -39,6 +39,7 @@ Statements about Xcode, App Store Connect, TestFlight or upload validation that 
 5. **The team identifier** names the owner's account and the repository is public: it lives only in a git-ignored local file, and the hygiene check fails if it appears in any tracked file.
 6. **Results in a public document** could leak private data: `device-checks.md` and the build log carry pass / fail, device model, system version, build, date and a neutral note only (decision 9).
 7. **README's status line** is stale; corrected in passing.
+8. **Version 2 put "an API key" out of scope; the owner reversed that on 2026-11-20.** The owner is travelling with the iPhone, cannot sign in to Xcode on the Mac at home, and wants a TestFlight build on the iPhone during the trip. An App Store Connect API key lets the driver on the Mac archive and upload without an Xcode account, and everything the owner must do can be done in a phone's browser. The owner accepted the risk (decision 13.8). The Xcode-account route stays as it was; the key is a second route, chosen by what exists on the Mac.
 
 ## Acceptance criteria
 
@@ -64,17 +65,29 @@ Of the issue, after the pull request (the owner's; not claimed by the pull reque
 15. A TestFlight build installs on the three devices and a later one upgrades over it without losing data.
 16. Every M1 step has a result per device; each failure is an open issue named in its cell.
 
+Of the second pull request under this issue (the API-key route, decision 13):
+
+17. **The route** is chosen by `~/.appstoreconnect/newspaw.env` existing: with it, `xcodebuild archive` and `-exportArchive` (in `archive.sh` and `upload.sh`) carry `-allowProvisioningUpdates -authenticationKeyPath <p8> -authenticationKeyID <id> -authenticationKeyIssuerID <issuer>`; without it, neither carries the three flags (the Xcode account). Each script prints which route it takes, never an identifier.
+18. **The env file is strict**: besides blank lines and `#` comments, exactly `ASC_KEY_ID=<10 capital letters or digits>` and `ASC_ISSUER_ID=<UUID>` once each and `ASC_KEY_PATH=<absolute path>` at most once; anything else, or the file not being a regular file, refuses before any `xcodebuild` call.
+19. **The key file** (`ASC_KEY_PATH`, default `~/.appstoreconnect/private_keys/AuthKey_<ID>.p8`) must exist, be a regular file (not a symbolic link) and not be readable by group or others; otherwise refusal before any `xcodebuild` call. No script reads or prints its contents.
+20. **Masking**: everything the scripts print — their own lines, `check_release.py`'s and every `xcodebuild` / `codesign` output — masks the team, the ten-character App ID prefix, the key ID and the issuer ID; `upload.sh --dry-run` shows the three authentication values as `<key-path>`, `<key-id>`, `<issuer-id>`.
+21. **Hygiene**: when the env file exists, `check_release.py` fails if it is malformed, and if `git grep -F` finds its key ID or (ignoring case) its issuer ID in a tracked file; it never opens the key file. `AuthKey_*` and `newspaw.env` are tracked-file patterns and git-ignored.
+22. **The owner's guide** gains section 12, "From a phone, without the Mac" (decision 13.7), every click path marked (to verify), with the risk written plainly and the revocation.
+23. **Planted failures and refusals** for 17–21 in scratch clones with stand-in tools and invented identifiers; the three checks of AGENTS.md and `check_release.py --derived-data` at the final commit.
+
 ## Frozen issue contract
 
 **In scope (pull request).** `ITSAppUsesNonExemptEncryption`; the app's privacy manifest; `ios/Config/Signing.xcconfig`, `ExportOptions.plist` and the project's base-configuration references; `ios/Tools/check_release.py`, `archive.sh`, `upload.sh`; `.gitignore`; the two documents; AGENTS.md "Checks"; README.
 
+**In scope (second pull request, version 3).** Decision 13: `ios/Tools/release-auth.sh` (sourced by both scripts), the route and refusals in `archive.sh` and `upload.sh`, the hygiene of the env file in `check_release.py`, two `.gitignore` patterns, section 12 of the guide, the key identifiers in the documents' privacy rule.
+
 **In scope (later, under this issue).** The owner's steps; the first archive; uploads on the owner's authorisation; recording results and the build log in documentation-only pull requests; one issue per failed M1 step.
 
-**Out of scope.** App Store submission; external or public testing; an API key; any CI job that archives, signs or uploads; fastlane or any new tool or dependency; crash-reporting or analytics SDKs; "Open in" for `.newspaw`; fixing what the walk finds (each its own issue); changing the minimum system or the marketing version. The bundle identifier changes only if A6 fails.
+**Out of scope.** App Store submission; external or public testing; any CI job that archives, signs or uploads, and any CI use of the API key; fastlane, `altool` / `notarytool`, a key stored in the keychain, or any other new tool or dependency; an unsigned-archive export path (A15); crash-reporting or analytics SDKs; "Open in" for `.newspaw`; fixing what the walk finds (each its own issue); changing the minimum system or the marketing version. The bundle identifier changes only if A6 fails.
 
 **Others own.** Each merged issue: the fixes its device checks find. The App Store edition (spec section 8): store privacy answers, the encryption declaration, the scene manifest.
 
-**Invariants.** A build is uploaded (by `upload.sh` or the Organizer) only on the owner's authorisation naming that build. No signing material and no team identifier in a tracked file. A Release binary contains no debug seam. CI's three checks are unchanged.
+**Invariants.** A build is uploaded (by `upload.sh` or the Organizer) only on the owner's authorisation naming that build. No signing material, no team identifier and no API key or key identifier in a tracked file; the key file is never read or printed by the scripts, only its path passed to `xcodebuild`. A Release binary contains no debug seam. CI's three checks are unchanged.
 
 ## Assumptions
 
@@ -94,6 +107,9 @@ In the order the implementer measures them; A1–A5 before anything is written, 
 | A10. App Store Connect accepts the build: Xcode 27.1 (27A9275) is a release toolchain; icon; no scene manifest; the privacy manifest (whether ITMS-91053 blocks or warns); build numbers near 1,000; internal-only flag; with the encryption key, no compliance question; no review for internal testing; 90-day expiry (to verify at the first upload) | The upload's result, the e-mails, App Store Connect's TestFlight page | Packaging causes fixed under this issue; others become issues |
 | A11. No purpose-string warning (ITMS-90683): RD10 declares no camera, microphone, location or photo use and cancels file prompts (to verify at the first upload) | The upload's e-mail | Report; a key only by the owner's decision (RD10) |
 | A12. A development install from Xcode over a TestFlight install keeps the app's container and keychain items (to verify) | The first Debug build run on a device under decision 9's rule | Record it; the rule keeps the owner's library safe either way |
+| A13. An API key of the chosen role (Admin for the first build) can register the App ID, create the development and distribution certificates and profiles under `-allowProvisioningUpdates`, and upload (to verify at the first archive); whether App Manager is enough is not known | The first `archive.sh` and `upload.sh` runs on the key route | Report the error (masked); the owner adjusts the key's role from the phone |
+| A14. An automatically signed archive may need at least one device registered in the account (to verify at the first archive) | The first `archive.sh` run on the key route | The phone route stops there until the owner is home (registering a device needs its identifier, which a phone alone does not show conveniently); then section 3 at the Mac. No unsigned-archive export path is built for it |
+| A15. The Mac's iCloud Drive folder exists, so the `.p8` the owner saves there from the phone reaches the Mac (the driver checked: present) | The driver, when moving the file | The owner sends the file another way the driver names; never its text |
 
 ## Approach
 
@@ -165,6 +181,17 @@ Sections: 1, the M1 sheet; 2, install and upgrade; then the appendix's families 
 
 **12. Order after the pull request.** O1 → driver writes the local file and runs `archive.sh` (O2 if asked; A6 settled here) → O3 → O4 → O5 → O6 walk and report → driver records results (the next commit on `main`) and opens issues → O7 build N+1 and the upgrade check → device checks at the owner's pace → #143 closes when criteria 15 and 16 are recorded.
 
+**13. The App Store Connect API-key route (version 3, the owner's decision of 2026-11-20).**
+1. *Two routes, chosen by what exists on the Mac.* If `~/.appstoreconnect/newspaw.env` exists, `archive.sh` and `upload.sh` authenticate with the API key: `-allowProvisioningUpdates -authenticationKeyPath <p8> -authenticationKeyID <id> -authenticationKeyIssuerID <issuer>` on `xcodebuild archive` and `-exportArchive`. If it does not exist, the Xcode account as before. The scripts say which route they take, never the identifiers. The shared logic (team, route, mask) is one sourced file, `ios/Tools/release-auth.sh`.
+2. *Where the key lives — nothing in the repository.* The key file at `~/.appstoreconnect/private_keys/AuthKey_<KEYID>.p8` (Apple's conventional place; directory mode 700, file mode 600). The env file `~/.appstoreconnect/newspaw.env` (mode 600) with exactly `ASC_KEY_ID=<10 capital letters or digits>`, `ASC_ISSUER_ID=<UUID>` and optionally `ASC_KEY_PATH=<absolute path>` (default: the conventional path for that key ID). Strict form as for the signing file: blank lines and `#` comments allowed, anything else refuses. The scripts refuse when the key file is missing, is not a regular file, or is readable by group or others; they never read or print the key's contents (only pass its path). The env file is parsed, never sourced.
+3. *The team identifier is still needed* in `Signing.local.xcconfig` (the driver writes it from the owner's message); the key does not replace it.
+4. *Masking.* Everything the scripts print (their own lines, `check_release.py`'s, every `xcodebuild` and `codesign` output) masks the key ID and the issuer ID as well as the team and the ten-character prefix. `upload.sh --dry-run` prints the upload command with the three authentication values masked.
+5. *Hygiene.* When the env file exists, `check_release.py`'s hygiene also fails if `git grep -F` finds the key ID or the issuer ID in any tracked file, and when the file exists but is malformed. It never opens the `.p8`. `*.p8` was already ignored and a hygiene pattern; `AuthKey_*` and `newspaw.env` are added to both.
+6. *The upload rule is unchanged*: `--confirm <version>-<build>` copied from the owner's message naming the build; refusals as before. AGENTS.md's sentence already covers both routes, and no statement in it becomes untrue, so AGENTS.md does not change.
+7. *The owner's guide* gains section 12, "From a phone, without the Mac" (the Xcode route stays as it is), every click path marked (to verify), in this order: (a) the Team ID from Membership details; (b) register `io.newspaw.reader` at Identifiers › "+" (App IDs › App; explicit; no capability) — if refused as taken, choose another before anything else and tell the driver; (c) the app record as in section 4; (d) the tester group and yourself as in section 5; (e) Users and Access › Integrations › App Store Connect API › Team Keys: request access if asked, generate "NewsPaw upload" with **Admin** for the first build (whether App Manager is enough for automatic signing with cloud-managed certificates is to verify; Admin is the safe first choice because the first archive must register the identifier and create certificates and profiles through the key; the key can be replaced by a narrower one once a build has gone through), note the Key ID and Issuer ID, download the `.p8` once into iCloud Drive › `NewsPaw-key`; (f) send the driver the Team ID, Key ID, Issuer ID and "the key is in iCloud Drive", never the key's text; (g) the driver moves the file to `private_keys`, writes the two local files, and the owner deletes `NewsPaw-key` from iCloud Drive and from Recently Deleted; (h) authorise the upload by naming the build; (i) install from TestFlight on the iPhone; and how and when to revoke the key (after the trip once Xcode is signed in, or at once if the Mac or the iCloud account is in doubt).
+8. *The risk, plainly.* The key gives its role's powers over the developer account to anyone who can read the Mac user's files, which includes the driver, an AI agent; the owner accepted this for the trip. Mitigations: outside the repository; file modes; never printed; identifiers masked in all output and searched for by the hygiene check; the driver uses the key only through the two scripts; revocable at any time.
+9. *Tests without a real key.* The env file's location is `$HOME/.appstoreconnect/newspaw.env` in both the scripts and `check_release.py`. Tests run the scripts with `HOME` pointing at a scratch folder, which moves the env file, the key and the Archives folder together. There is no test-only override variable or flag in the scripts, so no code path exists that a real run could take by accident.
+
 ## Files to change
 
 | File | Change |
@@ -181,9 +208,11 @@ Sections: 1, the M1 sheet; 2, install and upgrade; then the appendix's families 
 
 No Swift source, string catalog, manifest or lock file changes.
 
+Second pull request (version 3): `ios/Tools/release-auth.sh` (new, sourced), `ios/Tools/archive.sh`, `ios/Tools/upload.sh`, `ios/Tools/check_release.py` (hygiene of the env file), `.gitignore` (`AuthKey_*`, `newspaw.env`), `docs/reader/testflight.md` (section 12, the build-log rule), `docs/reader/device-checks.md` (rule 3), this design.
+
 ## Execution surface
 
-`check_release.py`: local unsigned archives in the given folder; no network beyond resolving pinned packages. `archive.sh`: Apple's developer services under the owner's Xcode account; writes in `~/Library/Developer/Xcode/Archives` and temporary folders; run only after O1. `upload.sh`: App Store Connect; run only on the owner's authorisation. CI: unchanged.
+`check_release.py`: local unsigned archives in the given folder; no network beyond resolving pinned packages. `archive.sh`: Apple's developer services under the owner's Xcode account, or under the API key when `~/.appstoreconnect/newspaw.env` exists; writes in `~/Library/Developer/Xcode/Archives` and temporary folders; run only after O1. `upload.sh`: App Store Connect; run only on the owner's authorisation. CI: unchanged.
 
 ## Failure handling
 
@@ -203,6 +232,9 @@ No Swift source, string catalog, manifest or lock file changes.
 | An M1 step fails | Issue opened; cell `fail → #n`; the walk continues where it can |
 | A crash during the walk | TestFlight's crash feedback; the driver reads it in the Organizer and opens an issue |
 | The owner declines a check | `declined` with the reason; the row stays |
+| Env file malformed, not a regular file; key file missing, not a regular file, readable by group or others | `archive.sh` and `upload.sh` exit 1 before any `xcodebuild` call, naming the problem but no identifier or path |
+| The key's role is not enough (A13) or a registered device is needed (A14) | `xcodebuild`'s error, masked; the owner adjusts the role from the phone, or the phone route stops until the owner is home |
+| The key, the Mac or the iCloud account in doubt | The owner revokes the key (guide 12 j); the driver deletes the env file and the key file |
 
 ## Risk assessment
 
@@ -212,6 +244,7 @@ No Swift source, string catalog, manifest or lock file changes.
 - **The owner's real library** harmed by a Debug build from a later commit: rule 6.
 - **Mac Xcode 27.1 versus CI's 26.6**: archives use the Mac's; CI keeps 26.6 compiling the code.
 - **Upload by accident**: the committed export options only export; `upload.sh` needs the exact `<version>-<build>` and refuses in CI.
+- **The API key (version 3)**: it gives its role's powers over the developer account to anyone who can read the Mac user's files, the driver included. Accepted by the owner for the trip; mitigated as decision 13.8 says; revocable from the phone.
 
 ## Test plan
 
@@ -219,6 +252,7 @@ No Swift source, string catalog, manifest or lock file changes.
 - **Runs reported in the pull request:** `check_release.py --derived-data` → 0; `--control` → 0 (every needle found); `-showBuildSettings` both states.
 - **Planted failures:** criterion 5's list; `archive.sh`'s refusals of criterion 7 in scratch clones; `upload.sh --dry-run` showing each refusal of criterion 8 and, on a valid archive with a matching `--confirm`, printing the upload command without running it.
 - **Not run in the pull request:** `archive.sh`'s signed path and any upload (no account on the Mac).
+- **Key route (version 3):** in scratch clones with stand-in `xcodebuild` / `codesign`, `HOME` in a scratch folder and invented identifiers: the route with and without the env file; each refusal of criteria 18–19; the three flags reaching both `xcodebuild` calls; masking of the key ID and issuer ID in ordinary output and in an error line; `upload.sh --dry-run`; hygiene failing on the key ID and the issuer ID planted in a tracked document and on a malformed env file. No real key exists on the Mac; nothing is signed or uploaded.
 
 ## Handoff notes
 
@@ -239,6 +273,7 @@ Steps only you can do, in order:
 - **O6. Install on the three devices and walk the M1 sheet**; report per device.
 - **O7. Authorise build N+1, update over N,** run the upgrade check.
 - **O8. Device checks** at your pace; any you do not want are "declined".
+- **Away from the Mac (version 3):** the guide's section 12 replaces O1 and O2 — the Team ID, registering the identifier, the app record, the tester group, an App Store Connect API key (Admin for the first build) saved to iCloud Drive and handed to the driver, then the upload on your message and the install from TestFlight. Revoke the key after the trip.
 
 Choices you would notice, with the default taken:
 
@@ -255,6 +290,8 @@ Choices you would notice, with the default taken:
 11. **Two uploads** are needed for the upgrade check.
 12. **Debug builds on your devices** only from the installed build's commit, only after that device's walk and upgrade check, and TestFlight's build reinstalled afterwards.
 13. **Heavier checks** (a device without a passcode, a backup restore, a network log, Instruments, Xcode's background-task commands) can be "declined".
+14. **The API key's risk (version 3):** whoever can read the Mac user's files can use the key with its role — the driver, an AI agent, included. Accepted for the trip; revoke it afterwards (or at once if in doubt).
+15. **The key's role:** Admin for the first build; replace it by an App Manager key once a build has gone through, if App Manager proves enough.
 
 ## Revision record
 
@@ -274,6 +311,21 @@ Choices you would notice, with the default taken:
 | F9 30 files; `BoundedFileRead.swift:18`; release toolchain | Admitted: corrected; recorded with the reasoning (decision 2); toolchain in A10 and `xcodebuild -version` in `build-info.txt` |
 | F10 interrupted archive; crash route | Admitted: temporary path moved on success; crash feedback in "What to send back" |
 | Appendix slip (#169's Pinyin check with the software keyboard) | Fixed: K2 |
+
+- Version 3, 2026-11-20: the owner's decision to add an App Store Connect API key as a second way to authenticate, so that a build can reach the iPhone while the owner travels without access to Xcode on the Mac. The driver's frozen delta, recorded as given; the rest of version 2 is not reopened.
+
+| Delta | Recorded in |
+| --- | --- |
+| 1. Two routes, chosen by `~/.appstoreconnect/newspaw.env` existing; the three `-authenticationKey…` flags on `xcodebuild archive` and `-exportArchive`; the route named, never the identifiers | Decision 13.1; criterion 17 |
+| 2. The key and the env file outside the repository, strict env form, key file refusals, the key never read or printed | Decision 13.2; criteria 18, 19 |
+| 3. The team still needed in `Signing.local.xcconfig` | Decision 13.3 |
+| 4. Masking of key ID and issuer ID with the team and the prefix; the dry run's authentication values masked | Decision 13.4; criterion 20 |
+| 5. Hygiene on the env file's identifiers and form; the key never opened | Decision 13.5; criterion 21 |
+| 6. The upload rule unchanged; AGENTS.md unchanged | Decision 13.6 |
+| 7. The guide's phone route, steps (a)–(i) and revocation | Decision 13.7; criterion 22; guide section 12 |
+| 8. The risk written plainly, with its mitigations | Decision 13.8; Risk assessment; For the owner 14; guide section 12 |
+| 9. Assumptions on the key's role, a registered device, iCloud Drive | A13, A14, A15 |
+| 10. Out of scope: fastlane, `altool` / `notarytool`, a keychain-stored key, CI use of the key, any second tool | Frozen issue contract |
 
 ## Appendix: the device checks owed
 

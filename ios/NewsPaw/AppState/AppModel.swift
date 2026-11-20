@@ -304,9 +304,10 @@ final class AppModel {
         // after it, never the standard one.
         let defaults = options.libraryDirectory.flatMap { UserDefaults(suiteName: $0.lastPathComponent) } ?? .standard
         // The clock offset, like the fixture transport, applies only under a
-        // UI-test library directory.
-        let clock = DebugClock(offset: options.libraryDirectory != nil ? options.clockOffset : 0)
-        if options.libraryDirectory != nil {
+        // UI-test library directory, and not in the live smoke run (#192),
+        // which keeps the real clock.
+        let clock = DebugClock(offset: options.usesFixtures ? options.clockOffset : 0)
+        if options.usesFixtures {
             debugClock = clock
         }
         now = { clock.now() }
@@ -335,13 +336,15 @@ final class AppModel {
         ExportFolder.opml.emptyAll()
         ExportFolder.configuration.emptyAll()
         // The one transport the app makes requests through. Under a UI-test
-        // library directory it is the fixture transport, never the real one.
+        // library directory it is the fixture transport, never the real one,
+        // except in the live smoke run (#192), which asks for the real
+        // transport, model HTTP and web pages on its UI-test library.
         // The one clock of the library and of Today's status line.
         #if DEBUG
         let options = DebugLaunchOptions(environment: ProcessInfo.processInfo.environment)
         let directory = options.libraryDirectory ?? LibraryStore.defaultDirectory()
-        let transport: any Transport = options.libraryDirectory != nil ? FixtureTransport() : URLSessionTransport()
-        let candidateLimit = options.libraryDirectory != nil ? FixtureTransport.candidateLimit : .seconds(20)
+        let transport: any Transport = options.usesFixtures ? FixtureTransport() : URLSessionTransport()
+        let candidateLimit = options.usesFixtures ? FixtureTransport.candidateLimit : .seconds(20)
         // Under a UI-test library directory: the cache inside it, and a
         // preferences suite named after it, never the standard one.
         let cacheRoot = options.libraryDirectory.map { $0.appending(path: "Images", directoryHint: .isDirectory) }
@@ -351,8 +354,8 @@ final class AppModel {
         // fixture, which reaches no real service.
         let keyStore = options.libraryDirectory.map { KeychainKeyStore(partition: .normal, uiTestSuffix: $0.lastPathComponent) }
             ?? KeychainKeyStore(partition: .normal)
-        let modelHTTP: any ModelHTTP = options.libraryDirectory != nil ? FixtureModelHTTP() : URLSessionModelHTTP()
-        let usesModelFixture = options.libraryDirectory != nil
+        let modelHTTP: any ModelHTTP = options.usesFixtures ? FixtureModelHTTP() : URLSessionModelHTTP()
+        let usesModelFixture = options.usesFixtures
         makeAdultModelHTTP = { () -> any ModelHTTP in usesModelFixture ? FixtureModelHTTP() : URLSessionModelHTTP() }
         // The adult partition: under a UI-test library directory the
         // stand-in authenticator, never LocalAuthentication, and keys under
@@ -419,10 +422,11 @@ final class AppModel {
             // website data store for the normal library, and the adult
             // partition's own persistent one, without Picture in Picture,
             // for the adult library (RD18 decision 13). Under a UI-test
-            // library directory the fixture pages for both, a store that
-            // lasts the process for the normal library, and for the adult
-            // library a persistent store of the directory's own, never the
-            // real one; the stores of earlier tests are removed.
+            // library directory the fixture pages for both (the real pages
+            // in the live smoke run, #192), a store that lasts the process
+            // for the normal library, and for the adult library a persistent
+            // store of the directory's own, never the real one; the stores
+            // of earlier tests are removed.
             #if DEBUG
             let browser: BrowserSetup
             let adultBrowserData: any AdultBrowserData
@@ -430,16 +434,20 @@ final class AppModel {
                 let identifier = BrowserDataStores.uiTestAdultIdentifier(directoryName: name)
                 uiTestAdultStore = identifier
                 await BrowserDataStores.removeUITestStores(keeping: identifier)
-                browser = BrowserSetup(
-                    dataStore: BrowserDataStores.uiTestStore(for: .normal, directoryName: name), addressMap: BrowserFixtures.map,
-                    schemeHandlers: [BrowserFixtures.scheme: BrowserFixtures()]
-                )
-                makeAdultBrowser = {
-                    BrowserSetup(
-                        dataStore: BrowserDataStores.uiTestStore(for: .adult, directoryName: name), addressMap: BrowserFixtures.map,
-                        schemeHandlers: [BrowserFixtures.scheme: BrowserFixtures()], allowsPictureInPicture: false
+                let fixturePages = options.usesFixtures
+                func uiTestSetup(_ partition: Partition) -> BrowserSetup {
+                    var result = BrowserSetup(
+                        dataStore: BrowserDataStores.uiTestStore(for: partition, directoryName: name),
+                        allowsPictureInPicture: partition == .normal
                     )
+                    if fixturePages {
+                        result.addressMap = BrowserFixtures.map
+                        result.schemeHandlers = [BrowserFixtures.scheme: BrowserFixtures()]
+                    }
+                    return result
                 }
+                browser = uiTestSetup(.normal)
+                makeAdultBrowser = { uiTestSetup(.adult) }
                 adultBrowserData = WebKitAdultBrowserData(identifier: identifier)
             } else {
                 browser = BrowserSetup(dataStore: BrowserDataStores.store(for: .normal))

@@ -99,6 +99,18 @@ struct DebugLaunchOptions {
     /// category at launch (RD23 decision 16). Applied only together with
     /// `libraryDirectory`.
     let seedOverviews: Bool
+    /// Whether the live smoke run asked for the real services (#192): the
+    /// real feed transport, the real model HTTP, the real clock and the
+    /// real web pages, while the library, the keys, the preferences and the
+    /// browser's website data stay the UI-test directory's own. Only
+    /// together with `libraryDirectory`.
+    let liveServices: Bool
+
+    /// Whether the fixtures stand in for the network and the clock: under a
+    /// UI-test library directory, unless the live services were asked for.
+    var usesFixtures: Bool {
+        libraryDirectory != nil && !liveServices
+    }
 
     init(environment: [String: String]) {
         if let name = environment[UITestLaunchKey.libraryDirectory], Self.isSinglePathComponent(name) {
@@ -107,6 +119,7 @@ struct DebugLaunchOptions {
         } else {
             libraryDirectory = nil
         }
+        liveServices = libraryDirectory != nil && environment[UITestLaunchKey.liveServices] == "1"
         if let text = environment[UITestLaunchKey.syntheticSources], let count = Int(text), count > 0 {
             syntheticSources = count
         } else {

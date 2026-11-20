@@ -646,6 +646,12 @@ enum UITestLaunchKey {
     /// "1" seeds three earlier `done` overviews for the first category
     /// (RD23 decision 16); honoured only with `libraryDirectory`.
     static let seedOverviews = "NEWSPAW_UITEST_SEED_OVERVIEWS"
+    /// "1": the live smoke run (#192). The app keeps the UI-test library
+    /// directory, its keys, preferences and browser stores, but uses the
+    /// real feed transport, the real model HTTP, the real clock and the
+    /// real web pages instead of the fixtures. Honoured only with
+    /// `libraryDirectory`.
+    static let liveServices = "NEWSPAW_UITEST_LIVE_SERVICES"
 }
 
 /// Identifiers of what exists only in a debug build under the UI tests.

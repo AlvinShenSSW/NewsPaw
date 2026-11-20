@@ -8,23 +8,21 @@
 # the archive: the script cannot tell who typed it, so the authority is that
 # message, quoted with its date in the build log of docs/reader/testflight.md.
 # Never run by a check or by CI. --dry-run makes every check and prints the
-# upload command instead of running it. xcodebuild's output is printed with the
-# team masked (it may be quoted in public), so the local signing file must be
-# in the form archive.sh requires.
+# upload command instead of running it, with the authentication values masked.
+# It authenticates as archive.sh does (release-auth.sh): the API key named by
+# ~/.appstoreconnect/newspaw.env when that file exists, otherwise the Apple
+# account signed in to Xcode. Everything printed goes through the mask (team,
+# App ID prefix, key ID, issuer ID), so the local signing file must be in the
+# form archive.sh requires.
 
+# Tracing off before anything else: it would print the identifiers (see release-auth.sh).
+{ set +x; } 2>/dev/null
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-LOCAL="$ROOT/ios/Config/Signing.local.xcconfig"
 fail() { echo "upload.sh: $*" >&2; exit 1; }
-
-# The team of the local file: its only line that is neither blank nor a // comment.
-local_team() {
-  local lines
-  lines=$(grep -vE '^[[:space:]]*(//.*)?$' "$LOCAL" || true)
-  [ "$(printf '%s' "$lines" | grep -c '^')" = 1 ] || return 0
-  printf '%s\n' "$lines" | sed -nE 's/^[[:space:]]*DEVELOPMENT_TEAM[[:space:]]*=[[:space:]]*([A-Z0-9]{10})[[:space:]]*$/\1/p'
-}
+# shellcheck source=release-auth.sh
+. "$ROOT/ios/Tools/release-auth.sh"
 
 [ -z "${CI:-}" ] && [ -z "${GITHUB_ACTIONS:-}" ] || fail "refusing to upload from CI"
 
@@ -48,9 +46,8 @@ done
 ARCHIVE=$(cd "$ARCHIVE" && pwd -P)
 [ -n "$CONFIRM" ] || fail "no --confirm: give the <version>-<build> named in the owner's authorisation"
 [ -f "$ARCHIVE/Info.plist" ] || fail "not an archive: $ARCHIVE"
-[ -f "$LOCAL" ] || fail "no ios/Config/Signing.local.xcconfig: the team is needed to mask xcodebuild's output"
-TEAM=$(local_team)
-[ -n "$TEAM" ] || fail "ios/Config/Signing.local.xcconfig must hold exactly one line besides blank and // comment lines: DEVELOPMENT_TEAM = <ten capital letters or digits>"
+read_team
+read_auth
 
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' "$ARCHIVE/Info.plist")
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleVersion' "$ARCHIVE/Info.plist")
@@ -66,21 +63,37 @@ cd "$ROOT"
 git fetch --quiet origin main || fail "could not fetch origin/main"
 git merge-base --is-ancestor "$COMMIT" origin/main 2>/dev/null || fail "the archived commit ${COMMIT:-?} is not on origin/main"
 
-python3 "$ROOT/ios/Tools/check_release.py" --inspect "$ARCHIVE" --build "$BUILD" || fail "the archive failed the Release check"
+python3 "$ROOT/ios/Tools/check_release.py" --inspect "$ARCHIVE" --build "$BUILD" 2>&1 | mask || fail "the archive failed the Release check"
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/newspaw-upload.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 cp "$ROOT/ios/Config/ExportOptions.plist" "$WORK/ExportOptions.plist"
 plutil -replace destination -string upload "$WORK/ExportOptions.plist"
 COMMAND=(xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist "$WORK/ExportOptions.plist"
-  -exportPath "$WORK/upload" -allowProvisioningUpdates)
+  -exportPath "$WORK/upload" -allowProvisioningUpdates ${AUTH_ARGS[@]+"${AUTH_ARGS[@]}"})
 
 if [ "$DRY_RUN" = true ]; then
-  echo "Dry run: every check passed for NewsPaw $VERSION ($BUILD) from $COMMIT. Would run:"
-  printf '  %q' "${COMMAND[@]}"; echo
-  echo "  with the export options' destination set to: $(plutil -extract destination raw -o - "$WORK/ExportOptions.plist")"
+  # The command as it would run, with the authentication values replaced.
+  SHOWN=()
+  previous=""
+  for word in "${COMMAND[@]}"; do
+    case "$previous" in
+      -authenticationKeyPath) SHOWN+=("<key-path>") ;;
+      -authenticationKeyID) SHOWN+=("<key-id>") ;;
+      -authenticationKeyIssuerID) SHOWN+=("<issuer-id>") ;;
+      *) SHOWN+=("$word") ;;
+    esac
+    previous="$word"
+  done
+  {
+    echo "Authentication: $ROUTE"
+    echo "Dry run: every check passed for NewsPaw $VERSION ($BUILD) from $COMMIT. Would run:"
+    printf '  %q' "${SHOWN[@]}"; echo
+    echo "  with the export options' destination set to: $(plutil -extract destination raw -o - "$WORK/ExportOptions.plist")"
+  } | mask
   exit 0
 fi
-"${COMMAND[@]}" 2>&1 | sed -e "s/$TEAM/<team>/g"
+echo "Authentication: $ROUTE"
+"${COMMAND[@]}" 2>&1 | mask
 echo "Uploaded NewsPaw $VERSION ($BUILD) from $COMMIT on $(date -u +%Y-%m-%dT%H:%M:%SZ)."
 echo "Record it in the build log of docs/reader/testflight.md with the owner's authorising message."

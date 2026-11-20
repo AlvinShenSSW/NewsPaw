@@ -2,7 +2,9 @@
 
 How NewsPaw Reader gets from this repository onto the owner's iPhone and iPads through TestFlight internal testing (spec N13; issue RD22 #143). Written on 2026-11-19 before the first upload: no step marked **(to verify)** has been tried with the owner's account yet, and the driver corrects this guide after the first run.
 
-The repository is public. Nothing in this guide or its build log may carry the Team ID, an Apple ID, a device name or serial number, a tester's e-mail, or unmasked entitlements.
+The repository is public. Nothing in this guide or its build log may carry the Team ID, an App Store Connect API key ID or issuer ID, an Apple ID, a device name or serial number, a tester's e-mail, or unmasked entitlements.
+
+There are two routes. The **Xcode route** (sections 2–8) needs you at the Mac once, to sign in to Xcode. The **phone route** (section 12) needs only a phone's browser: you create an App Store Connect API key, and the driver on the Mac archives and uploads with it. Sections 6–11 apply to both, except section 6's Organizer fallback, which belongs to the Xcode route.
 
 ## 1. Who does what
 
@@ -17,7 +19,7 @@ The repository is public. Nothing in this guide or its build log may carry the T
 | O7. Authorise build N+1; update over N (section 8); the upgrade check | Owner | The issue's first criterion |
 | O8. The other device checks, at your pace | Owner | — |
 
-The driver never uploads without your message naming the build.
+The driver never uploads without your message naming the build. Away from the Mac, use section 12 instead of O1 and O2.
 
 ## 2. Sign in to Xcode (O1) (to verify)
 
@@ -57,7 +59,7 @@ The first signed archive may need one registered device. If the driver asks:
 ## 6. Authorise the upload (O5)
 
 - **Default:** send the driver a message such as "upload 0.1.0-1012", naming the version and build the driver reported from `archive.sh`. The driver then runs `ios/Tools/upload.sh "<archive>" --confirm 0.1.0-1012`, with the value copied from your message, and records your message in the build log.
-- **Fallback, by you:** Xcode › Window › Organizer › Archives › "NewsPaw 0.1.0 (1012)" › Distribute App › TestFlight Internal Only › Distribute. (to verify)
+- **Fallback, by you (Xcode route only):** Xcode › Window › Organizer › Archives › "NewsPaw 0.1.0 (1012)" › Distribute App › TestFlight Internal Only › Distribute. (to verify)
 - After the upload App Store Connect processes the build; it e-mails when the build is ready, usually within minutes to an hour. (to verify)
 - Each build is "TestFlight internal only": it cannot go to external testers or the App Store.
 
@@ -97,7 +99,42 @@ Never send, and never let the driver record: a source address, a site name, a ke
 
 ## 11. Build log
 
-One row per build archived. Entitlements are never pasted here unmasked, and a quoted error message (from `xcodebuild`, Xcode or App Store Connect) has the team masked as `<team>`; the scripts print `xcodebuild`'s output masked already. "Authorised by" quotes the owner's message and its date.
+One row per build archived. Entitlements are never pasted here unmasked, and a quoted error message (from `xcodebuild`, Xcode or App Store Connect) has the team masked as `<team>` and the API key's identifiers as `<key-id>` and `<issuer-id>`; the scripts print their output masked already. A row may say which route was used ("Xcode account" or "API key"), never the key's identifiers. "Authorised by" quotes the owner's message and its date.
 
 | Version | Build | Commit | Archived | Uploaded | Authorised by | Processing result | Expires | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+## 12. From a phone, without the Mac
+
+For when you are away from the Mac with only the iPhone. Everything here is done in the phone's browser and the TestFlight app; the driver archives and uploads on the Mac. Every click path is (to verify).
+
+**What you hand over, and the risk.** An App Store Connect API key lets whoever holds it act on your developer account with the key's role: register identifiers, create certificates and profiles, upload builds — with the Admin role, more. The driver keeps it on the Mac outside the repository (`~/.appstoreconnect/`, readable only by the Mac user), uses it only through `ios/Tools/archive.sh` and `ios/Tools/upload.sh`, and never prints it. But anyone who can read the Mac user's files can use it, and that includes the driver, an AI agent. You accepted this for the trip. You can revoke the key at any moment (step j), and it stops working at once.
+
+a. **Team ID.** developer.apple.com › Account › Membership details (the paid membership). Ten capital letters and digits. (to verify)
+
+b. **Register the identifier.** developer.apple.com › Certificates, Identifiers & Profiles › Identifiers › "+" › App IDs › App › Continue › Explicit Bundle ID `io.newspaw.reader`, any description, no capability › Continue › Register. If it is refused because the identifier is taken, choose another before anything else and tell the driver. (to verify)
+
+c. **Create the app record** as in section 4, step 2. (to verify)
+
+d. **The tester group and yourself** as in section 5. (to verify)
+
+e. **Create the API key.** App Store Connect › Users and Access › Integrations › App Store Connect API › Team Keys. If the page asks you to request access first, do so (the Account Holder can). "+" (Generate API Key) › Name: `NewsPaw upload` › Access: **Admin** › Generate. (to verify)
+   - Why Admin: the first archive must register the identifier if needed and create the development and distribution certificates and profiles through the key; whether the narrower App Manager role is enough for that is not known yet (to verify). Admin is the safe first choice. Once a build has gone through, the key can be replaced by an App Manager key (and the Admin key revoked).
+   - Note the **Key ID** shown in the key's row and the **Issuer ID** shown above the list.
+   - **Download** the key (a file `AuthKey_<Key ID>.p8`). Apple lets you download it **once**. Do not open it, paste it, or send its text anywhere. (to verify)
+   - Safari on the iPhone saves it into a **Downloads** folder: on iCloud Drive or on the iPhone, depending on Settings › Apps › Safari › Downloads. (to verify)
+   - In the Files app, create iCloud Drive › `NewsPaw-key`, then **move** the `.p8` there from Downloads (long-press the file › Move). Make sure no copy stays in Downloads. (to verify)
+
+f. **Send the driver** the Team ID, the Key ID, the Issuer ID, and the words "the key is in iCloud Drive". Never the key's text.
+
+g. **The driver** moves the file from iCloud Drive (`NewsPaw-key`) on the Mac to `~/.appstoreconnect/private_keys/`, writes `~/.appstoreconnect/newspaw.env` with the two identifiers and `ios/Config/Signing.local.xcconfig` with the Team ID, and tells you when it is done. On the Mac the file may at first be a placeholder that iCloud has not downloaded yet: the driver makes sure it is fully present (for example `brctl download` on it, or waiting until its size is its real size), moves it with `mv` into the private_keys folder, sets the modes (folder 700, file 600), checks that nothing is left in the iCloud folder, and never prints the file. **Then you delete**, in the Files app, the `NewsPaw-key` folder from iCloud Drive and any copy of the key left in Downloads (iCloud Drive or On My iPhone), and then empty them from Recently Deleted. (to verify)
+
+h. **Authorise the upload** by naming the build, as in section 6. The driver's scripts say "Authentication: an App Store Connect API key" when they use it.
+
+i. **Install** from the TestFlight app on the iPhone, as in section 7. (to verify)
+
+j. **Revoke the key**: App Store Connect › Users and Access › Integrations › App Store Connect API › Team Keys › the `NewsPaw upload` row › Revoke. (to verify) When:
+   - after the trip, once Xcode on the Mac is signed in (section 2) — the driver then deletes `~/.appstoreconnect/newspaw.env` and the key file, and the scripts use the Xcode account again;
+   - at once, if the Mac or your iCloud account is in doubt.
+
+**If the first archive stops for want of a registered device.** An automatically signed archive may need at least one device registered in the account. If it does, the phone route stops there until you are home: registering a device needs its identifier, which a phone alone does not show conveniently. Then section 3 at the Mac. (to verify)

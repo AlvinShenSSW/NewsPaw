@@ -336,3 +336,5 @@ Round 2, 2026-11-17: twelve findings resolved, F6 partly, one new P2. The driver
 | N1 (P2) a one-text numbered summary split into false highlights | Decision 5: a one-text reply splits only at `[n]` lines; the other forms only for separate texts; criterion 5's numbered-list case (closes F6) |
 | RD24 handoff | Gap 10 and Handoff: the driver's rule — whichever of RD23 and RD24 merges second wires the entry due check; RD23 wires it only if RD24 is on its base |
 | A manual Write that ends `gone` | Decision 11 (f) and the failure table: no message; the card shows the write state with the new count, or its current state |
+
+After the merge, #189 (2026-11-20): decision 8's "not already queued or in flight" now reads "not already queued, and not in flight in a worker that was not cancelled" — a job whose worker was cancelled by the app going to the background no longer keeps its category out of the next due check; the category is queued behind it and judged again as an ordinary automatic job. Found by the external gate on integration batch 4; recorded as a known limit in #184, then fixed.

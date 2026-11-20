@@ -6,7 +6,7 @@ import XCTest
 /// unless the test runner's environment names an output directory
 /// (`TEST_RUNNER_NEWSPAW_LIVE_DIR`) and, when the model step is among the
 /// steps, the model service (`TEST_RUNNER_NEWSPAW_LIVE_MODEL_URL`,
-/// `TEST_RUNNER_NEWSPAW_LIVE_MODEL_NAME`, `TEST_RUNNER_NEWSPAW_LIVE_MODEL_KEY`).
+/// `TEST_RUNNER_NEWSPAW_LIVE_MODEL_NAME`, `TEST_RUNNER_NEWSPAW_LIVE_MODEL_KEY_FILE`).
 /// `TEST_RUNNER_NEWSPAW_LIVE_STEPS` limits the steps: a comma-separated list
 /// of step numbers (1–7), `feeds` (steps 2 and 3, no model) or `all` (the
 /// default). Enabled, it makes real requests and costs model tokens.
@@ -17,7 +17,17 @@ import XCTest
 /// real web pages (`UITestLaunchKey.liveServices`). The test itself makes
 /// no request. The key reaches the app only through the model form, typed
 /// into its secure field; it is never printed, attached, written or put
-/// into a failure message.
+/// into a failure message. Measured with a fake key (#192):
+/// - xcodebuild writes the test runner's environment into the result
+///   bundle's log, so the key is not in the environment: the environment
+///   names a file that holds it (`…_KEY_FILE`), read when it is typed;
+/// - XCTest's "Type '…'" line shows the first 18 characters typed, also
+///   into a secure field, so the key is typed after 40 deletes, which an
+///   empty field ignores and the line shows as nothing;
+/// - XCTest keeps each typing's "Synthesized Event" (the text whole) and a
+///   screen recording with a failed test only, so the model's test never
+///   fails as an XCTest test: its issues are counted, not recorded, and
+///   `test1ModelResult` fails in its place when step 1 failed.
 ///
 /// Each step is a test of its own, run in name order on one library (a
 /// state file in the output directory carries the library's name and the
@@ -116,6 +126,8 @@ final class LiveSmokeTests: BodyTranslationTestCase {
     private var launched = false
     /// Issues recorded while a step runs, and what the step was doing.
     private var stepIsRunning = false
+    /// Whether this test's issues are only counted (`test1Model`).
+    private var keepsIssuesOut = false
     private var issuesInStep = 0
     private var doing = ""
 
@@ -129,7 +141,7 @@ final class LiveSmokeTests: BodyTranslationTestCase {
             throw XCTSkip("TEST_RUNNER_NEWSPAW_LIVE_STEPS lists no known step")
         }
         if steps.contains(1) {
-            for name in ["NEWSPAW_LIVE_MODEL_URL", "NEWSPAW_LIVE_MODEL_NAME", "NEWSPAW_LIVE_MODEL_KEY"]
+            for name in ["NEWSPAW_LIVE_MODEL_URL", "NEWSPAW_LIVE_MODEL_NAME", "NEWSPAW_LIVE_MODEL_KEY_FILE"]
             where (environment[name] ?? "").isEmpty {
                 throw XCTSkip("set TEST_RUNNER_\(name) for the model step, or limit the steps with TEST_RUNNER_NEWSPAW_LIVE_STEPS=feeds")
             }
@@ -177,7 +189,18 @@ final class LiveSmokeTests: BodyTranslationTestCase {
 
     func test1Model() {
         begin([.model], fresh: true)
-        run(.model) { try stepModel() }
+        // The key is typed in this test: it must not fail as an XCTest
+        // test, or XCTest keeps what it typed (see the class comment).
+        keepsIssuesOut = true
+        run(.model, failsTheTest: false) { try stepModel() }
+    }
+
+    /// Fails when step 1 failed, in place of `test1Model`.
+    func test1ModelResult() {
+        begin([])
+        if outcome(.model) == .fail {
+            XCTFail("live step \(Step.model.rawValue) failed (see steps.txt)")
+        }
     }
 
     func test2Sources() {
@@ -246,7 +269,7 @@ final class LiveSmokeTests: BodyTranslationTestCase {
     /// Runs `step` when it is selected and nothing it needs is missing,
     /// and writes its line and its screenshot. The app is launched on the
     /// run's library for the first step of the test that runs.
-    private func run(_ step: Step, needs missing: String? = nil, _ body: () throws -> String) {
+    private func run(_ step: Step, needs missing: String? = nil, failsTheTest: Bool = true, _ body: () throws -> String) {
         queued.removeAll { $0 == step }
         guard selected.contains(step.number) else {
             writeResult(step, .notRun, "not selected", seconds: 0)
@@ -281,7 +304,7 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         current = nil
         saveScreenshot(step.rawValue)
         writeResult(step, result, reason, seconds: Date().timeIntervalSince(start))
-        if result == .fail {
+        if result == .fail, failsTheTest {
             XCTFail("live step \(step.rawValue) failed (see steps.txt)")
         }
     }
@@ -298,12 +321,15 @@ final class LiveSmokeTests: BodyTranslationTestCase {
     nonisolated override func record(_ issue: XCTIssue) {
         let fails = [.assertionFailure, .thrownError, .uncaughtException].contains(issue.type)
         // A UI test records its issues on the main thread.
-        MainActor.assumeIsolated {
+        let keptOut = MainActor.assumeIsolated {
             if stepIsRunning, fails {
                 issuesInStep += 1
             }
+            return keepsIssuesOut
         }
-        super.record(issue)
+        if !keptOut {
+            super.record(issue)
+        }
     }
 
     /// Names what the step does next, after checking that nothing failed
@@ -369,9 +395,7 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         typeIntoForm(AccessibilityID.modelAddressField, environment["NEWSPAW_LIVE_MODEL_URL"] ?? "")
         typeIntoForm(AccessibilityID.modelNameField, environment["NEWSPAW_LIVE_MODEL_NAME"] ?? "")
         try phase("typing the key")
-        // Typed into the secure field; read from the environment here and
-        // nowhere kept.
-        typeIntoForm(AccessibilityID.keyField, environment["NEWSPAW_LIVE_MODEL_KEY"] ?? "", secure: true)
+        try typeKey(fromFile: environment["NEWSPAW_LIVE_MODEL_KEY_FILE"] ?? "")
         try phase("running Test")
         let test = revealInForm(button(AccessibilityID.testButton))
         try require(waitUntil(timeout) { test.isEnabled }, "Test stayed disabled")
@@ -387,6 +411,25 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         let row = waitFor(element(AccessibilityID.primaryModelRow))
         try require(row.label.contains("Passed"), "the saved model's row does not read Passed")
         return "Test passed; the model is saved; reading language Simplified Chinese"
+    }
+
+    /// Types the key held in the file at `path` into the form's secure
+    /// field, after 40 deletes, so that XCTest's "Type '…'" line, which
+    /// shows the first 18 characters, shows none of it. The key is read
+    /// here and kept nowhere.
+    private func typeKey(fromFile path: String) throws {
+        let text = (try? String(contentsOfFile: path, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        try require(!text.isEmpty, "the key file could not be read or is empty")
+        try require(!text.contains(where: \.isNewline), "the key file holds more than one line")
+        let field = app.secureTextFields[AccessibilityID.keyField]
+        revealInForm(field)
+        let focused = NSPredicate(format: "hasKeyboardFocus == true")
+        var taps = 0
+        repeat {
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap()
+            taps += 1
+        } while XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: focused, object: field)], timeout: 3) != .completed && taps < 3
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 40) + text + "\n")
     }
 
     // MARK: - Step 2: the sources

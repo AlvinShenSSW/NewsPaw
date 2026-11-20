@@ -292,12 +292,14 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         appendLine("\(step.rawValue)\t\(outcome.rawValue)\t\(String(format: "%.0f", seconds))s\t\(reason)")
     }
 
-    /// Counts the issues recorded while a step runs; they stay issues of
-    /// the test.
+    /// Counts the failures recorded while a step runs; they stay issues of
+    /// the test. A system issue (the runner's priority-inversion warning
+    /// at launch) is not a failure of the step.
     nonisolated override func record(_ issue: XCTIssue) {
+        let fails = [.assertionFailure, .thrownError, .uncaughtException].contains(issue.type)
         // A UI test records its issues on the main thread.
         MainActor.assumeIsolated {
-            if stepIsRunning {
+            if stepIsRunning, fails {
                 issuesInStep += 1
             }
         }

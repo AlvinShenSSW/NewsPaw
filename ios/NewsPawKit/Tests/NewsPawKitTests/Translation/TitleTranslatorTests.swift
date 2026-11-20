@@ -911,7 +911,7 @@ struct TitleTranslatorTests {
         do {
             let fixture = try await TranslatorFixture.make(service: TranslationService { _, _, _ in .status(503) })
             library = fixture.library
-            try await fixture.englishArticles(1, in: try await fixture.source())
+            _ = try await fixture.englishArticles(1, in: try await fixture.source())
             await fixture.start()
             #expect(fixture.sleeper.durations == [.seconds(600)], "the pause's timer is waiting")
             fixture.remove()

@@ -218,9 +218,12 @@ final class LiveSmokeTests: BodyTranslationTestCase {
 
     /// Counts the issues recorded while a step runs; they stay issues of
     /// the test.
-    override func record(_ issue: XCTIssue) {
-        if stepIsRunning {
-            issuesInStep += 1
+    nonisolated override func record(_ issue: XCTIssue) {
+        // A UI test records its issues on the main thread.
+        MainActor.assumeIsolated {
+            if stepIsRunning {
+                issuesInStep += 1
+            }
         }
         super.record(issue)
     }

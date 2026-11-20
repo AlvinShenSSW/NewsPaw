@@ -15,6 +15,8 @@
 # App ID prefix, key ID, issuer ID), so the local signing file must be in the
 # form archive.sh requires.
 
+# Tracing off before anything else: it would print the identifiers (see release-auth.sh).
+{ set +x; } 2>/dev/null
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)

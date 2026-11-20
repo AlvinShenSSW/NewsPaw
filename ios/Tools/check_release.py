@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import os
 import plistlib
 import re
 import subprocess
@@ -47,13 +48,24 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 PROJECT = ROOT / "ios" / "NewsPaw.xcodeproj"
 LOCAL_SIGNING = ROOT / "ios" / "Config" / "Signing.local.xcconfig"
-# The API-key route's identifiers (release-auth.sh); outside the repository.
-ASC_ENV = Path.home() / ".appstoreconnect" / "newspaw.env"
+# The API-key route's identifiers (release-auth.sh); outside the repository. The rules match release-auth.sh's:
+# every byte a tab, a line feed or printable ASCII; lines split on line feeds only; blank and comment lines are
+# optional spaces or tabs, then nothing or `#…`; every other line exactly one of these.
 ASC_LINE = re.compile(
-    r"^(?:ASC_KEY_ID=(?P<key>[A-Z0-9]{10})"
+    r"(?:ASC_KEY_ID=(?P<key>[A-Z0-9]{10})"
     r"|ASC_ISSUER_ID=(?P<issuer>[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})"
-    r"|ASC_KEY_PATH=(?P<path>/[^\x00-\x1f\x7f]*))$"
+    r"|ASC_KEY_PATH=(?P<path>/.*))"
 )
+ASC_BLANK_OR_COMMENT = re.compile(r"[ \t]*(?:#.*)?")
+ASC_ALLOWED_BYTES = frozenset(b"\t\n" + bytes(range(0x20, 0x7F)))
+
+
+def asc_env() -> Path:
+    """~/.appstoreconnect/newspaw.env, from HOME as the scripts read it; an empty or relative HOME is refused."""
+    home = os.environ.get("HOME", "")
+    if not home.startswith("/"):
+        raise BadInput("HOME is empty or not an absolute path")
+    return Path(home) / ".appstoreconnect" / "newspaw.env"
 SOURCE_DIRS = [ROOT / "ios" / "NewsPaw", ROOT / "ios" / "NewsPawKit" / "Sources"]
 
 # Each Swift file with a `#if DEBUG` block, and needles taken from inside its
@@ -296,7 +308,8 @@ def git(*arguments: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(ROOT), *arguments], capture_output=True, text=True)
 
 
-def check_hygiene() -> list[str]:
+def check_hygiene() -> tuple[list[str], str]:
+    """The problems, and what was searched for the API key: a word for the success line."""
     listing = git("ls-files", "-z")
     if listing.returncode != 0:
         raise BadInput(f"git ls-files failed: {listing.stderr.strip()}")
@@ -322,12 +335,16 @@ def check_hygiene() -> list[str]:
             # The team itself is never printed.
             for path in tracked_files_containing(team):
                 problems.append(f"the local team identifier appears in a tracked file: {path}")
-    if ASC_ENV.exists() or ASC_ENV.is_symlink():
-        identifiers = asc_identifiers()
+    env = asc_env()
+    key_note = "no API key env file"
+    if env.exists() or env.is_symlink():
+        key_note = "API key identifiers searched"
+        identifiers = asc_identifiers(env)
         if identifiers is None:
             problems.append(
-                "~/.appstoreconnect/newspaw.env must hold, besides blank lines and # comments, exactly "
-                "ASC_KEY_ID=<10 capital letters or digits>, ASC_ISSUER_ID=<UUID> and optionally ASC_KEY_PATH=<absolute path>"
+                "~/.appstoreconnect/newspaw.env must hold only tab, line feed and printable ASCII bytes and, besides blank "
+                "lines and # comments, exactly ASC_KEY_ID=<10 capital letters or digits>, ASC_ISSUER_ID=<UUID> and "
+                "optionally ASC_KEY_PATH=<absolute path>"
             )
         else:
             key_id, issuer_id = identifiers
@@ -336,7 +353,7 @@ def check_hygiene() -> list[str]:
                 problems.append(f"the API key ID appears in a tracked file: {path}")
             for path in tracked_files_containing(issuer_id, ignore_case=True):
                 problems.append(f"the API issuer ID appears in a tracked file: {path}")
-    return problems
+    return problems, key_note
 
 
 def tracked_files_containing(value: str, ignore_case: bool = False) -> list[str]:
@@ -349,16 +366,19 @@ def tracked_files_containing(value: str, ignore_case: bool = False) -> list[str]
     return [path for path in result.stdout.split("\0") if path]
 
 
-def asc_identifiers() -> tuple[str, str] | None:
-    """The key ID and issuer ID of the env file, when it is a regular file in its strict form (the rules of
-    release-auth.sh); otherwise None. The key file it may name is never opened."""
-    if ASC_ENV.is_symlink() or not ASC_ENV.is_file():
+def asc_identifiers(env: Path) -> tuple[str, str] | None:
+    """The key ID and the issuer ID (lower case) of the env file, when it is a regular file in its strict form (the
+    rules of release-auth.sh); otherwise None. The key file it may name is never opened."""
+    if env.is_symlink() or not env.is_file():
+        return None
+    data = env.read_bytes()
+    if any(byte not in ASC_ALLOWED_BYTES for byte in data):
         return None
     found: dict[str, list[str]] = {"key": [], "issuer": [], "path": []}
-    for line in ASC_ENV.read_text(encoding="utf-8").splitlines():
-        if not line.strip() or line.strip().startswith("#"):
+    for line in data.decode("ascii").split("\n"):
+        if ASC_BLANK_OR_COMMENT.fullmatch(line):
             continue
-        match = ASC_LINE.match(line)
+        match = ASC_LINE.fullmatch(line)
         if match is None:
             return None
         for name, value in match.groupdict().items():
@@ -366,7 +386,7 @@ def asc_identifiers() -> tuple[str, str] | None:
                 found[name].append(value)
     if len(found["key"]) != 1 or len(found["issuer"]) != 1 or len(found["path"]) > 1:
         return None
-    return found["key"][0], found["issuer"][0]
+    return found["key"][0], found["issuer"][0].lower()
 
 
 def local_team() -> str | None:
@@ -413,10 +433,11 @@ def main() -> int:
             return report(problems, f"control: all {needle_count} needles of {len(NEEDLES)} files found in {archive}; "
                                     f"{len(EXEMPT)} files exempt")
         archive = arguments.inspect or build_archive(arguments.derived_data.resolve(), "release", force_debug=False)
-        problems += check_hygiene()
+        hygiene, key_note = check_hygiene()
+        problems += hygiene
         problems += check_release_archive(archive, arguments.build)
         return report(problems, f"release: none of {needle_count} needles in {archive}; encryption key, privacy "
-                                f"manifest, no debug dylib; repository hygiene clean")
+                                f"manifest, no debug dylib; repository hygiene clean ({key_note})")
     except BadInput as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

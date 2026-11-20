@@ -21,6 +21,8 @@
 # ID): it may be quoted in public.
 # Uploading is ios/Tools/upload.sh, only on the owner's authorisation naming the build.
 
+# Tracing off before anything else: it would print the identifiers (see release-auth.sh).
+{ set +x; } 2>/dev/null
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)

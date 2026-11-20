@@ -322,12 +322,14 @@ final class BrowserModel {
     /// the background, the app switcher or behind Control Centre: the
     /// application's state, since only the adult browser's media are
     /// suspended when the scene deactivates), the adult cover's media
-    /// suspension is not on, its stack's tab is selected, and no temporary
-    /// article covers it. Page translation calls into a page and sends a
-    /// request only then, except to end.
+    /// suspension is not on, its stack's tab is selected, and neither a
+    /// temporary article nor the failure state covers it (a failed
+    /// navigation leaves the page shown before alive behind the failure,
+    /// issue #188). Page translation calls into a page and sends a request
+    /// only then, except to end.
     func isSeen(_ session: BrowserSession) -> Bool {
         !isStopped && !mediaIsSuspended && UIApplication.shared.applicationState == .active && isOnScreen(session)
-            && session.temporaryArticle == nil
+            && session.temporaryArticle == nil && session.failure == nil
     }
 
     /// Whether `session` is the session of the selected tab's stack.
@@ -386,7 +388,17 @@ final class BrowserSession: NSObject {
     /// The address being loaded, from the moment a navigation is asked for
     /// until its page commits or it fails.
     private(set) var loadingURL: URL?
-    private(set) var failure: BrowserFailure?
+    /// The failure state, in place of the page. While it is shown the page
+    /// behind it is not seen (`BrowserModel.isSeen`); when it goes, that
+    /// page is shown again until another commits, and its translation is
+    /// told so (issue #188).
+    private(set) var failure: BrowserFailure? {
+        didSet {
+            if oldValue != nil, failure == nil {
+                translation.becameSeen()
+            }
+        }
+    }
     private(set) var isLoading = false
     private(set) var progress = 0.0
     private(set) var canGoBack = false

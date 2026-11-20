@@ -457,11 +457,7 @@ public final class PageTranslationSession {
         queued = PageApplyRequest()
         let scheme = url?.scheme?.lowercased()
         let host = scheme == "http" || scheme == "https" ? url?.host(percentEncoded: false)?.lowercased() : nil
-        // Translation turned on over a document that was never collected
-        // (the failure state covered it, issue #188): the owner's tap
-        // applies to the page shown now.
-        let tapUnanswered = isOn && document.map { $0.startedHere && $0.firstCollection == nil } ?? false
-        document = Document(generation: generation, host: host, locale: readingLocale(), startedHere: startsNextDocument || tapUnanswered)
+        document = Document(generation: generation, host: host, locale: readingLocale(), startedHere: startsNextDocument)
         startsNextDocument = false
         if !isOn {
             // The old document's messages are forgotten.
@@ -559,7 +555,9 @@ public final class PageTranslationSession {
         guard isOn, !closed, document != nil, isSeen() else { return }
         followReadingLocale()
         await flush()
-        guard isOn, !closed, var document, !document.unresponsive, !document.collecting, let translator else { return }
+        // Seen again after the write: the page may have stopped being seen
+        // while it was in the page (the failure state, issue #188).
+        guard isOn, !closed, var document, !document.unresponsive, !document.collecting, let translator, isSeen() else { return }
         let generation = document.generation
         document.collecting = true
         self.document = document

@@ -288,21 +288,84 @@ struct PageTranslationRecoveryTests {
         await harness.eventually { harness.session.line == .translated(.simplifiedChinese) }
     }
 
-    @Test("#188 (3): Translate tapped while the page is not seen applies to the page shown next: one with nothing to translate turns translation off")
-    func translateWhileNotSeenThenANewPage() async throws {
+    @Test("#188 (3): Translate tapped over the failure state, then Try Again: the page shown again while the new one loads answers the tap; the new page is reached while on")
+    func translateWhileNotSeenThenTryAgain() async throws {
         let fixture = try await TranslatorFixture.make()
         defer { fixture.remove() }
         let harness = Harness(fixture: fixture)
         harness.session.documentCommitted(Self.address)
+        harness.page.collection = { .success(.runs(PageTranslationSessionTests.runs(PageTranslationSessionTests.japanese), loaded: true)) }
         harness.seen = false
         await harness.turnOn()
         await harness.eventually { !harness.session.isActing }
-        // Try Again succeeds: a page in the reading language commits.
-        harness.page.collection = { .success(.runs(PageTranslationSessionTests.runs(["国务院发布新的数据安全管理条例"], from: 100), loaded: true)) }
+        #expect(harness.page.calls.isEmpty)
+        // Try Again, in the app's order: `load()` clears the failure (the
+        // session is seen again) before the new page commits, and the page
+        // shown before is on screen meanwhile.
         harness.seen = true
+        harness.session.becameSeen()
+        await harness.eventually { harness.page.confirmed == [1, 2, 3] }
+        // The new page commits; in the reading language it is a page
+        // reached while on: translation stays on.
+        harness.page.collection = { .success(.runs(PageTranslationSessionTests.runs(["国务院发布新的数据安全管理条例"], from: 100), loaded: true)) }
+        harness.page.newDocument()
         harness.session.documentCommitted(URL(string: "https://pages.example.invalid/zh-hans"))
-        await harness.eventually { harness.session.line == .nothingToTranslate(brief: true) }
-        #expect(!harness.session.isOn)
-        #expect(fixture.service.requests.isEmpty)
+        await harness.eventually { harness.session.line == .nothingToTranslate(brief: false) }
+        #expect(harness.session.isOn)
+        #expect(fixture.service.requests.count == 1)
+    }
+
+    // MARK: - Fix round 1
+
+    @Test("#188 r1 (R1): a step whose write spans the page ceasing to be seen does not go on to collect from it")
+    func noCollectAfterAWriteWhileNotSeen() async throws {
+        let fixture = try await TranslatorFixture.make()
+        defer { fixture.remove() }
+        fixture.service.hold(request: 1)
+        let harness = Harness(fixture: fixture)
+        harness.session.documentCommitted(Self.address)
+        var unseenCollects = 0
+        let walk = Self.walkOncePerPeriod(harness, PageTranslationSessionTests.runs(PageTranslationSessionTests.japanese))
+        harness.page.collection = { [unowned harness] in
+            if !harness.seen { unseenCollects += 1 }
+            return walk()
+        }
+        await harness.turnOn()
+        await harness.eventually { fixture.service.requests.count == 1 }
+        // The answer comes while the page is not seen: its writes wait.
+        harness.seen = false
+        fixture.service.release(request: 1)
+        await harness.eventually { harness.session.unitsInFlight == 0 }
+        #expect(harness.page.confirmed.isEmpty)
+        // Seen again: a step takes the waiting writes, and the write is
+        // held in the page.
+        harness.page.holdsWrites = true
+        harness.seen = true
+        harness.session.becameSeen()
+        await harness.eventually { harness.page.heldWriteCount == 1 }
+        // The failure state comes while the write is in the page.
+        harness.seen = false
+        harness.page.releaseWrites()
+        // The step's write ends with the line; a collect would follow it
+        // in the same step, before anything else runs.
+        await harness.eventually { harness.page.confirmed == [1, 2, 3] && harness.session.line == .translated(.simplifiedChinese) }
+        #expect(unseenCollects == 0, "\(unseenCollects) collect(s) made while the page was not seen")
+    }
+
+    @Test("#188 r1 (R2): outside the failure state nothing changes: a page that did not respond, then a link to a page in the reading language keeps translation on")
+    func unansweredPageThenAReadingLanguagePage() async throws {
+        let fixture = try await TranslatorFixture.make()
+        defer { fixture.remove() }
+        let harness = Harness(fixture: fixture)
+        harness.session.documentCommitted(Self.address)
+        harness.page.collection = { .failure(.timedOut) }
+        await harness.turnOn()
+        await harness.eventually { harness.session.line == .didNotRespond }
+        // A link to a page in the reading language.
+        harness.page.collection = { .success(.runs(PageTranslationSessionTests.runs(["国务院发布新的数据安全管理条例"], from: 100), loaded: true)) }
+        harness.session.documentCommitted(URL(string: "https://pages.example.invalid/zh-hans"))
+        await harness.eventually { harness.session.line == .nothingToTranslate(brief: false) || harness.session.line == .nothingToTranslate(brief: true) }
+        #expect(harness.session.line == .nothingToTranslate(brief: false), "as on main: a page reached while on says so and translation stays on")
+        #expect(harness.session.isOn)
     }
 }

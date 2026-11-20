@@ -6,7 +6,8 @@ import XCTest
 @MainActor
 class NewsPawUITestCase: XCTestCase {
     private(set) var app = XCUIApplication()
-    private(set) var libraryName = ""
+    /// Settable: the live smoke class keeps one library across its tests.
+    var libraryName = ""
     let timeout: TimeInterval = 10
     /// Set by a test that looks at a transition: the app keeps its
     /// animations on in the launches that follow.

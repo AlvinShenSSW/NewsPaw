@@ -19,11 +19,14 @@ import XCTest
 /// into its secure field; it is never printed, attached, written or put
 /// into a failure message.
 ///
-/// Each step writes one line to `<NEWSPAW_LIVE_DIR>/steps.txt` — step,
-/// `pass`, `fail` or `not run`, seconds, a neutral reason — and a
-/// screenshot named after the device and the step. A failed step does not
-/// stop the independent steps after it: the app is launched again on the
-/// same library and the run goes on. Assertions are about shape, not
+/// Each step is a test of its own, run in name order on one library (a
+/// state file in the output directory carries the library's name and the
+/// outcomes from test to test, since the runner starts again after a
+/// failed test). Each step writes one line to `<NEWSPAW_LIVE_DIR>/steps.txt`
+/// — step, `pass`, `fail` or `not run`, seconds, a neutral reason — and a
+/// screenshot named after the device and the step. A failed step stops
+/// only the steps that need it: a failed Test of the model stops the
+/// translation steps, not the feed steps. Assertions are about shape, not
 /// content: rows exist, a translated text differs from its original, the
 /// reading screen has body blocks, the page line reads "Translated…", the
 /// overview card has text, Usage lists requests, no error state. A network
@@ -90,13 +93,27 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         let reason: String
     }
 
+    /// What the run's tests share. The runner starts again after a failed
+    /// test, so it lives in a file of the output directory, one per device;
+    /// the first test of the class starts it afresh.
+    struct RunState: Codable {
+        /// The UI-test library directory every test of the run launches on.
+        var library: String
+        var outcomes: [String: String] = [:]
+        /// The sources added in step 2, by name.
+        var added: [String] = []
+        /// Whether step 3's refresh run was started.
+        var refreshRan = false
+    }
+
     private var directory: URL!
     private var selected: Set<Int> = []
-    private var outcomes: [Step: Outcome] = [:]
-    /// The sources added in step 2, by name.
-    private var added: Set<String> = []
-    /// Whether step 3's refresh run was started.
-    private var refreshRan = false
+    private var state = RunState(library: "")
+    /// The step running now, and this test's steps not written yet: a
+    /// test stopped by a failed interaction writes them in `tearDown`.
+    private var current: Step?
+    private var queued: [Step] = []
+    private var launched = false
     /// Issues recorded while a step runs, and what the step was doing.
     private var stepIsRunning = false
     private var issuesInStep = 0
@@ -120,8 +137,23 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         selected = steps
         directory = URL(fileURLWithPath: path, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        // A failed check is a failed step, not the end of the run.
+        // A failed check is a failed step; the step ends at its next
+        // checkpoint. (A failed tap still ends the test: `tearDown` writes
+        // its step.)
         continueAfterFailure = true
+    }
+
+    override func tearDown() async throws {
+        if let current {
+            writeResult(current, .fail, "\(doing): the screen did not respond as expected (see the test log)", seconds: 0)
+            saveScreenshot(current.rawValue)
+            for step in queued {
+                writeResult(step, .notRun, "\(current.rawValue) failed", seconds: 0)
+            }
+            self.current = nil
+            queued = []
+        }
+        try await super.tearDown()
     }
 
     /// The step numbers `text` selects: all of them when it is absent;
@@ -141,30 +173,52 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         return steps.isEmpty ? nil : steps
     }
 
-    // MARK: - The run
+    // MARK: - The run: one test per step of spec section 7, in name order
 
-    func testLiveSmoke() {
-        let device = deviceName
-        appendLine("# \(ISO8601DateFormatter().string(from: Date())) \(device) steps=\(selected.sorted().map(String.init).joined(separator: ","))")
-        launchLive()
-
+    func test1Model() {
+        begin([.model], fresh: true)
         run(.model) { try stepModel() }
-        run(.sources) { try stepSources() }
-        run(.refresh, needs: refreshNeeds) { try stepRefresh() }
-        run(.titles, needs: modelNeeds ?? (outcomes[.refresh] == .pass ? nil : "the refresh step did not pass")) { try stepTitles() }
-        run(.fullText, needs: added.contains(Self.excerptSource) ? nil : "\(Self.excerptSource) was not added") { try stepFullText() }
-        run(.body, needs: modelNeeds ?? (outcomes[.fullText] == .pass ? nil : "the full-text step did not pass")) { try stepBody() }
-        run(.page, needs: modelNeeds ?? (added.contains(Self.pageSource) ? nil : "\(Self.pageSource) was not added")) { try stepPage() }
-        run(.overview, needs: modelNeeds ?? (refreshRan ? nil : "no refresh run")) { try stepOverview() }
-        run(.usage, needs: modelNeeds) { try stepUsage() }
+    }
 
-        let failed = Step.allCases.filter { outcomes[$0] == .fail }.map(\.rawValue)
-        XCTAssertTrue(failed.isEmpty, "live steps failed: \(failed.joined(separator: ", ")) (see steps.txt)")
+    func test2Sources() {
+        begin([.sources])
+        run(.sources) { try stepSources() }
+    }
+
+    func test3Refresh() {
+        begin([.refresh, .titles])
+        run(.refresh, needs: refreshNeeds) { try stepRefresh() }
+        run(.titles, needs: modelNeeds ?? (outcome(.refresh) == .pass ? nil : "the refresh step did not pass")) { try stepTitles() }
+    }
+
+    func test4FullText() {
+        begin([.fullText, .body])
+        run(.fullText, needs: state.added.contains(Self.excerptSource) ? nil : "\(Self.excerptSource) was not added") { try stepFullText() }
+        run(.body, needs: modelNeeds ?? (outcome(.fullText) == .pass ? nil : "the full-text step did not pass")) { try stepBody() }
+    }
+
+    func test5Page() {
+        begin([.page])
+        run(.page, needs: modelNeeds ?? (state.added.contains(Self.pageSource) ? nil : "\(Self.pageSource) was not added")) { try stepPage() }
+    }
+
+    func test6Overview() {
+        begin([.overview])
+        run(.overview, needs: modelNeeds ?? (state.refreshRan ? nil : "no refresh run")) { try stepOverview() }
+    }
+
+    func test7Usage() {
+        begin([.usage])
+        run(.usage, needs: modelNeeds) { try stepUsage() }
+    }
+
+    private func outcome(_ step: Step) -> Outcome? {
+        state.outcomes[step.rawValue].flatMap(Outcome.init(rawValue:))
     }
 
     /// Why the model's steps cannot run, or `nil`.
     private var modelNeeds: String? {
-        switch outcomes[.model] {
+        switch outcome(.model) {
         case .pass: nil
         case .fail: "the model step failed"
         default: "the model step did not run"
@@ -172,14 +226,28 @@ final class LiveSmokeTests: BodyTranslationTestCase {
     }
 
     private var refreshNeeds: String? {
-        added.contains(where: { name in Self.sources.contains { $0.name == name && $0.kind != .page } }) ? nil : "no feed was added"
+        Self.sources.contains { $0.kind != .page && state.added.contains($0.name) } ? nil : "no feed was added"
+    }
+
+    /// Starts a test of the run: a new run for the first test (a new
+    /// library and a header line), else the run so far, read back.
+    private func begin(_ steps: [Step], fresh: Bool = false) {
+        if !fresh, let data = try? Data(contentsOf: stateURL), let saved = try? JSONDecoder().decode(RunState.self, from: data) {
+            state = saved
+        } else {
+            state = RunState(library: libraryName)
+            appendLine("# \(ISO8601DateFormatter().string(from: Date())) \(deviceName) steps=\(selected.sorted().map(String.init).joined(separator: ","))")
+            saveState()
+        }
+        libraryName = state.library
+        queued = steps
     }
 
     /// Runs `step` when it is selected and nothing it needs is missing,
-    /// and records its line and its screenshot. A failed step is followed
-    /// by a new launch on the same library, so that the next one starts
-    /// from the shell.
+    /// and writes its line and its screenshot. The app is launched on the
+    /// run's library for the first step of the test that runs.
     private func run(_ step: Step, needs missing: String? = nil, _ body: () throws -> String) {
+        queued.removeAll { $0 == step }
         guard selected.contains(step.number) else {
             writeResult(step, .notRun, "not selected", seconds: 0)
             return
@@ -189,31 +257,38 @@ final class LiveSmokeTests: BodyTranslationTestCase {
             return
         }
         let start = Date()
+        current = step
         issuesInStep = 0
-        doing = "starting"
+        doing = "launching"
         stepIsRunning = true
-        var outcome = Outcome.pass
+        if !launched {
+            launchLive()
+            launched = true
+        }
+        var result = Outcome.pass
         var reason: String
         do {
             reason = try body()
             try checkIssues()
         } catch let failure as StepFailure {
-            outcome = .fail
+            result = .fail
             reason = failure.reason
         } catch {
-            outcome = .fail
+            result = .fail
             reason = "\(doing): an unexpected error"
         }
         stepIsRunning = false
+        current = nil
         saveScreenshot(step.rawValue)
-        writeResult(step, outcome, reason, seconds: Date().timeIntervalSince(start))
-        if outcome == .fail {
-            launchLive()
+        writeResult(step, result, reason, seconds: Date().timeIntervalSince(start))
+        if result == .fail {
+            XCTFail("live step \(step.rawValue) failed (see steps.txt)")
         }
     }
 
     private func writeResult(_ step: Step, _ outcome: Outcome, _ reason: String, seconds: TimeInterval) {
-        outcomes[step] = outcome
+        state.outcomes[step.rawValue] = outcome.rawValue
+        saveState()
         appendLine("\(step.rawValue)\t\(outcome.rawValue)\t\(String(format: "%.0f", seconds))s\t\(reason)")
     }
 
@@ -250,8 +325,7 @@ final class LiveSmokeTests: BodyTranslationTestCase {
     }
 
     /// On the tab structure, back out of a pushed reading screen or
-    /// browser until the tab bar shows again, so that the next step starts
-    /// from the shell. Nothing on the panes.
+    /// browser until the tab bar shows again. Nothing on the panes.
     private func returnToShell() {
         guard usesTabs else { return }
         var backs = 0
@@ -261,7 +335,7 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         }
     }
 
-    /// Launches the app on this test's library with the real services.
+    /// Launches the app on the run's library with the real services.
     private func launchLive() {
         app.terminate()
         let application = XCUIApplication()
@@ -332,11 +406,11 @@ final class LiveSmokeTests: BodyTranslationTestCase {
                     button(AccessibilityID.cancelButton).tap()
                 }
             } else {
-                added.insert(source.name)
+                state.added.append(source.name)
             }
         }
         try require(problems.isEmpty, "not added: " + problems.joined(separator: "; "))
-        return "\(added.count) sources added"
+        return "\(state.added.count) sources added"
     }
 
     /// Adds `source`; returns what went wrong, or `nil`.
@@ -369,6 +443,9 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         let name = app.textFields[AccessibilityID.nameField]
         guard name.waitForExistence(timeout: timeout) else { return "the confirm step has no name field" }
         rename(name, to: source.name)
+        // Below the fold under a GitHub repository's rows on the iPad: rows
+        // off screen are not in the hierarchy.
+        scrollTo(button(AccessibilityID.categoryChoiceRow))
         chooseCategoryAndSave(source.category)
         expand(source.category)
         guard scrollTo(sourceRow(source.name)).exists else { return "its row is not in its category" }
@@ -379,8 +456,8 @@ final class LiveSmokeTests: BodyTranslationTestCase {
     private func rename(_ field: XCUIElement, to name: String) {
         scrollTo(field)
         field.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap()
-        let current = field.value as? String ?? ""
-        let existing = current == (field.placeholderValue ?? "") ? 0 : current.count
+        let text = field.value as? String ?? ""
+        let existing = text == (field.placeholderValue ?? "") ? 0 : text.count
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing) + name + "\n")
     }
 
@@ -393,7 +470,8 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         openCategoryList(Self.newsCategory)
         waitFor(button(AccessibilityID.listMenu)).tap()
         waitFor(app.buttons.matching(NSPredicate(format: "label IN %@", ["Refresh", "刷新"])).firstMatch).tap()
-        refreshRan = true
+        state.refreshRan = true
+        saveState()
         showToday()
         let status = element(AccessibilityID.todayStatus)
         let updated = waitUntil(Self.networkWait) { status.exists && status.label.hasPrefix("Updated ") }
@@ -401,7 +479,7 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         let failures = button(AccessibilityID.failedSourcesButton)
         try require(!failures.exists, "Today says \"\(failures.label)\"")
         var counts: [String] = []
-        for source in Self.sources where source.kind != .page && added.contains(source.name) {
+        for source in Self.sources where source.kind != .page && state.added.contains(source.name) {
             try phase("opening \(source.name)'s list")
             openSourceList(source.name, in: source.category)
             let rows = waitUntil(60) { !self.articleRowsShown().isEmpty }
@@ -415,7 +493,7 @@ final class LiveSmokeTests: BodyTranslationTestCase {
     /// differs from its original (the row is named by its original).
     private func stepTitles() throws -> String {
         var found: [String] = []
-        for source in Self.sources where source.kind != .page && source.translated && added.contains(source.name) {
+        for source in Self.sources where source.kind != .page && source.translated && state.added.contains(source.name) {
             try phase("reading \(source.name)'s titles")
             openSourceList(source.name, in: source.category)
             var shown = (translated: 0, rows: 0)
@@ -607,6 +685,14 @@ final class LiveSmokeTests: BodyTranslationTestCase {
 
     private var deviceName: String {
         (ProcessInfo.processInfo.environment["SIMULATOR_DEVICE_NAME"] ?? "device").replacingOccurrences(of: " ", with: "-")
+    }
+
+    private var stateURL: URL {
+        directory.appendingPathComponent(".live-state-\(deviceName).json")
+    }
+
+    private func saveState() {
+        try? JSONEncoder().encode(state).write(to: stateURL)
     }
 
     private func saveScreenshot(_ step: String) {

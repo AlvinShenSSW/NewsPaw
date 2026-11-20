@@ -19,7 +19,10 @@ The archive checks also cover what an upload needs and the project does not
 otherwise check: `ITSAppUsesNonExemptEncryption` false, the privacy manifest
 with its declarations, and no debug dylib. The repository check fails on
 signing material in a tracked file, a team in the project file, and — when
-the local signing file exists — its team identifier in any tracked file.
+the local signing file exists — its team identifier in any tracked file; when
+~/.appstoreconnect/newspaw.env exists (the API-key route), on its key ID or
+issuer ID in any tracked file, or on the file not being in its strict form.
+The key file itself is never opened.
 
 Usage:
   check_release.py --derived-data DIR       build an unsigned Release archive in DIR and check it
@@ -44,6 +47,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 PROJECT = ROOT / "ios" / "NewsPaw.xcodeproj"
 LOCAL_SIGNING = ROOT / "ios" / "Config" / "Signing.local.xcconfig"
+# The API-key route's identifiers (release-auth.sh); outside the repository.
+ASC_ENV = Path.home() / ".appstoreconnect" / "newspaw.env"
+ASC_LINE = re.compile(
+    r"^(?:ASC_KEY_ID=(?P<key>[A-Z0-9]{10})"
+    r"|ASC_ISSUER_ID=(?P<issuer>[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})"
+    r"|ASC_KEY_PATH=(?P<path>/[^\x00-\x1f\x7f]*))$"
+)
 SOURCE_DIRS = [ROOT / "ios" / "NewsPaw", ROOT / "ios" / "NewsPawKit" / "Sources"]
 
 # Each Swift file with a `#if DEBUG` block, and needles taken from inside its
@@ -137,7 +147,7 @@ PRIVACY_DECLARATIONS = {
     "NSPrivacyAccessedAPICategoryFileTimestamp": "C617.1",
 }
 
-SIGNING_FILE_PATTERNS = ["*.p12", "*.p8", "*.cer", "*.mobileprovision", "*.provisionprofile"]
+SIGNING_FILE_PATTERNS = ["*.p12", "*.p8", "*.cer", "*.mobileprovision", "*.provisionprofile", "AuthKey_*", "newspaw.env"]
 PROJECT_SIGNING = re.compile(r"\b(DEVELOPMENT_TEAM|DevelopmentTeam|PROVISIONING_PROFILE\w*|CODE_SIGN_IDENTITY)\b")
 TEAM_LINE = re.compile(r"^\s*DEVELOPMENT_TEAM\s*=\s*([A-Z0-9]{10})\s*$")
 
@@ -310,13 +320,53 @@ def check_hygiene() -> list[str]:
             )
         else:
             # The team itself is never printed.
-            result = git("grep", "-F", "-l", "-e", team)
-            if result.returncode == 0:
-                for path in result.stdout.split():
-                    problems.append(f"the local team identifier appears in a tracked file: {path}")
-            elif result.returncode != 1:
-                raise BadInput(f"git grep failed: {result.stderr.strip()}")
+            for path in tracked_files_containing(team):
+                problems.append(f"the local team identifier appears in a tracked file: {path}")
+    if ASC_ENV.exists() or ASC_ENV.is_symlink():
+        identifiers = asc_identifiers()
+        if identifiers is None:
+            problems.append(
+                "~/.appstoreconnect/newspaw.env must hold, besides blank lines and # comments, exactly "
+                "ASC_KEY_ID=<10 capital letters or digits>, ASC_ISSUER_ID=<UUID> and optionally ASC_KEY_PATH=<absolute path>"
+            )
+        else:
+            key_id, issuer_id = identifiers
+            # Neither identifier is printed.
+            for path in tracked_files_containing(key_id):
+                problems.append(f"the API key ID appears in a tracked file: {path}")
+            for path in tracked_files_containing(issuer_id, ignore_case=True):
+                problems.append(f"the API issuer ID appears in a tracked file: {path}")
     return problems
+
+
+def tracked_files_containing(value: str, ignore_case: bool = False) -> list[str]:
+    arguments = ["grep", "-F", "-l", "-z"] + (["-i"] if ignore_case else []) + ["-e", value]
+    result = git(*arguments)
+    if result.returncode == 1:
+        return []
+    if result.returncode != 0:
+        raise BadInput(f"git grep failed: {result.stderr.strip()}")
+    return [path for path in result.stdout.split("\0") if path]
+
+
+def asc_identifiers() -> tuple[str, str] | None:
+    """The key ID and issuer ID of the env file, when it is a regular file in its strict form (the rules of
+    release-auth.sh); otherwise None. The key file it may name is never opened."""
+    if ASC_ENV.is_symlink() or not ASC_ENV.is_file():
+        return None
+    found: dict[str, list[str]] = {"key": [], "issuer": [], "path": []}
+    for line in ASC_ENV.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.strip().startswith("#"):
+            continue
+        match = ASC_LINE.match(line)
+        if match is None:
+            return None
+        for name, value in match.groupdict().items():
+            if value is not None:
+                found[name].append(value)
+    if len(found["key"]) != 1 or len(found["issuer"]) != 1 or len(found["path"]) > 1:
+        return None
+    return found["key"][0], found["issuer"][0]
 
 
 def local_team() -> str | None:

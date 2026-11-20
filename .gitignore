@@ -27,6 +27,8 @@ ios/Config/Signing.local.xcconfig
 *.cer
 *.mobileprovision
 *.provisionprofile
+AuthKey_*
+newspaw.env
 *.xcarchive
 *.ipa
 

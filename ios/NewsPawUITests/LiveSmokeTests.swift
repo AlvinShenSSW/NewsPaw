@@ -39,7 +39,7 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         let address: String
         let category: String
         let kind: Kind
-        /// Whether its titles are translated into Simplified Chinese.
+        /// Whether step 3 expects its titles to show a translation.
         let translated: Bool
     }
 
@@ -49,7 +49,8 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         Source(name: "BBC World", address: "https://feeds.bbci.co.uk/news/world/rss.xml", category: newsCategory, kind: .feed, translated: true),
         Source(name: "BBC Chinese", address: "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml", category: newsCategory, kind: .feed, translated: false),
         Source(name: "ITmedia", address: "https://rss.itmedia.co.jp/rss/2.0/itmedia_all.xml", category: newsCategory, kind: .feed, translated: true),
-        Source(name: "Swift Releases", address: "https://github.com/swiftlang/swift", category: newsCategory, kind: .github, translated: true),
+        // Its titles are mostly snapshot names, which a translation keeps.
+        Source(name: "Swift Releases", address: "https://github.com/swiftlang/swift", category: newsCategory, kind: .github, translated: false),
         Source(name: "Example Page", address: "https://example.com/", category: pageCategory, kind: .page, translated: true),
     ]
     /// The excerpt-only feed of step 4: its items carry a one-line

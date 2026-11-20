@@ -347,7 +347,13 @@ final class PageTranslationTests: PageTranslationTestCase {
         waitForWebText(Self.translated("最初の項目です。"))
         tapLink("Missing page")
         waitFor(failure)
+        // At most the requests already sent as the failure state came; a
+        // page still polled would go on to the period's ceiling (50) and
+        // stop there, so the count is compared with the one at the
+        // failure, not only with itself.
+        let shown = translationRequests
         let covered = settledRequests()
+        XCTAssertLessThanOrEqual(covered - shown, 2, "requests were sent behind the failure state: \(report)")
         Thread.sleep(forTimeInterval: 3)
         XCTAssertEqual(translationRequests, covered, "a request was sent behind the failure state")
         backButton.tap()

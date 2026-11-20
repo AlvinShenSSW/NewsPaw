@@ -103,7 +103,7 @@ In the order the implementer measures them; A1–A5 before anything is written, 
 | A6. `io.newspaw.reader` can be registered under the owner's team (App IDs are unique across teams) | The first `archive.sh` run, or the owner at Identifiers › "+" | The owner picks another identifier **before any install**: `PRODUCT_BUNDLE_IDENTIFIER` changes for both targets (UI tests `<id>.uitests`); the keychain service, the background-task identifier and the UTType are plain strings that need not change |
 | A7. The first automatic-signing archive registers the App ID and may need one registered device (to verify at the first upload) | The first `archive.sh` run | Owner step O2 |
 | A8. Export with automatic signing obtains an Apple Distribution certificate for the Account Holder without a manual step (to verify at the first upload) | The first export | Xcode › Settings › Accounts › Manage Certificates › "+" › Apple Distribution, by the owner |
-| A9. `xcodebuild -exportArchive` with `destination` `upload` uploads under the account signed in to Xcode, with no API key (to verify at the first upload) | The first authorised upload | The owner uploads from the Organizer |
+| A9. On the Xcode route, `xcodebuild -exportArchive` with `destination` `upload` uploads under the account signed in to Xcode, with no API key (the key route is A13) (to verify at the first upload) | The first authorised upload | The owner uploads from the Organizer |
 | A10. App Store Connect accepts the build: Xcode 27.1 (27A9275) is a release toolchain; icon; no scene manifest; the privacy manifest (whether ITMS-91053 blocks or warns); build numbers near 1,000; internal-only flag; with the encryption key, no compliance question; no review for internal testing; 90-day expiry (to verify at the first upload) | The upload's result, the e-mails, App Store Connect's TestFlight page | Packaging causes fixed under this issue; others become issues |
 | A11. No purpose-string warning (ITMS-90683): RD10 declares no camera, microphone, location or photo use and cancels file prompts (to verify at the first upload) | The upload's e-mail | Report; a key only by the owner's decision (RD10) |
 | A12. A development install from Xcode over a TestFlight install keeps the app's container and keychain items (to verify) | The first Debug build run on a device under decision 9's rule | Record it; the rule keeps the owner's library safe either way |
@@ -326,6 +326,8 @@ Choices you would notice, with the default taken:
 | 8. The risk written plainly, with its mitigations | Decision 13.8; Risk assessment; For the owner 14; guide section 12 |
 | 9. Assumptions on the key's role, a registered device, iCloud Drive | A13, A14, A15 |
 | 10. Out of scope: fastlane, `altool` / `notarytool`, a keychain-stored key, CI use of the key, any second tool | Frozen issue contract |
+
+Version 3, fix round 1 (2026-11-20), after the external gate and the internal review of the key route, all admitted: the issuer is used in lower case and masked in any case; the shell and Python parsers apply one byte-exact rule (tab, line feed and printable ASCII only; split on line feeds; text tools under `LC_ALL=C`); the mask runs under `LC_ALL=C`; tracing is turned off before anything else; the key file refuses any group or other bit and any ACL entry; the hygiene check says whether the key identifiers were searched, and an empty or relative `HOME` is refused; the guide's download and clean-up steps and its Organizer note corrected; A9 limited to the Xcode route.
 
 ## Appendix: the device checks owed
 

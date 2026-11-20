@@ -898,6 +898,31 @@ struct TitleTranslatorTests {
         #expect(try await fixture.translation(id)?.state == .done)
     }
 
+    // MARK: - The fixture's end (#191)
+
+    /// A test that ends with its translator paused for the service lets
+    /// its library go: the pause's timer, waiting on the fixture's sleeper,
+    /// ends with the fixture (`ManualSleeper.cancel()`). Before, it kept the
+    /// translator and the library's open files for the rest of the test
+    /// run, where they counted against the test process's descriptor limit.
+    @Test("#191: a fixture removed while its translator is paused for the service lets its library go")
+    func removedFixtureLetsItsLibraryGo() async throws {
+        weak var library: Library?
+        do {
+            let fixture = try await TranslatorFixture.make(service: TranslationService { _, _, _ in .status(503) })
+            library = fixture.library
+            try await fixture.englishArticles(1, in: try await fixture.source())
+            await fixture.start()
+            #expect(fixture.sleeper.durations == [.seconds(600)], "the pause's timer is waiting")
+            fixture.remove()
+        }
+        let deadline = ContinuousClock.now + .seconds(60)
+        while library != nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(library == nil, "the paused translator kept its library")
+    }
+
     private static func rfc822(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

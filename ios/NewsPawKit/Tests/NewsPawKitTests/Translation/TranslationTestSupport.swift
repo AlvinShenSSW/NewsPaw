@@ -221,11 +221,20 @@ final class HoldGate<Point: Hashable & Sendable>: Sendable {
 final class ManualSleeper: Sendable {
     private let waiting = Mutex<[(Duration, CheckedContinuation<Void, any Error>)]>([])
     private let asked = Mutex<[Duration]>([])
+    /// Set by `cancel()`: every sleep from then on throws at once.
+    private let cancelled = Mutex(false)
 
     func sleep(_ duration: Duration) async throws {
         asked.withLock { $0.append(duration) }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-            waiting.withLock { $0.append((duration, continuation)) }
+            let now = cancelled.withLock { cancelled in
+                guard !cancelled else { return true }
+                waiting.withLock { $0.append((duration, continuation)) }
+                return false
+            }
+            if now {
+                continuation.resume(throwing: CancellationError())
+            }
         }
     }
 
@@ -236,6 +245,24 @@ final class ManualSleeper: Sendable {
 
     var sleepers: Int {
         waiting.withLock { $0.count }
+    }
+
+    /// Ends every sleep, now and later, by throwing `CancellationError`, as
+    /// a cancelled sleep ends: what a test's fixture does when the test
+    /// ends, so that a pause's timer, waiting here, does not keep its
+    /// translator, and with it the library's open files, for the rest of
+    /// the test run (#191).
+    func cancel() {
+        let all = cancelled.withLock { cancelled in
+            cancelled = true
+            return waiting.withLock { waiting in
+                defer { waiting = [] }
+                return waiting
+            }
+        }
+        for (_, continuation) in all {
+            continuation.resume(throwing: CancellationError())
+        }
     }
 
     /// Ends every sleep waiting now.
@@ -313,7 +340,10 @@ final class TranslatorFixture: @unchecked Sendable {
         return fixture
     }
 
+    /// Ends the test's use of the fixture: a pause's timer still waiting
+    /// ends (`ManualSleeper.cancel()`), and the directory is removed.
     func remove() {
+        sleeper.cancel()
         try? FileManager.default.removeItem(at: directory)
     }
 

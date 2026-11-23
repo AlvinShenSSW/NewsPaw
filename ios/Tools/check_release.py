@@ -74,6 +74,7 @@ SOURCE_DIRS = [ROOT / "ios" / "NewsPaw", ROOT / "ios" / "NewsPawKit" / "Sources"
 NEEDLES: dict[str, list[str]] = {
     "ios/NewsPaw/UITestIdentifiers.swift": [
         "NEWSPAW_UITEST_LIBRARY_DIRECTORY",  # literal
+        "NEWSPAW_UITEST_LIVE_SERVICES",  # literal (the live smoke run, #192)
         "debug.deliverBackgroundRefresh",  # literal
     ],
     "ios/NewsPaw/AppState/DebugLaunchOptions.swift": ["DebugLaunchOptions"],  # type

@@ -330,6 +330,69 @@ final class PageTranslationTests: PageTranslationTestCase {
         XCTAssertGreaterThan(settledRequests(), paused)
     }
 
+    // MARK: - Issue #188: the failure state over a page
+
+    /// A failed navigation leaves the page shown before alive behind the
+    /// failure state. While it covers the page — which goes on adding text
+    /// — nothing of that page is sent, with translation on and when
+    /// Translate is tapped on the failure state; Back shows the page again
+    /// and translation goes on.
+    func testNothingIsSentBehindTheFailureState() {
+        launchPages()
+        openListSource()
+        openFixture("endless", title: "終わらないページ")
+        let failure = element(AccessibilityID.browserFailure)
+        // Translation on: the page's new blocks are sent while it is shown.
+        tapTranslate()
+        waitForWebText(Self.translated("最初の項目です。"))
+        tapLink("Missing page")
+        waitFor(failure)
+        // At most the requests already under way as the failure state
+        // came; a page still polled would go on to the period's ceiling
+        // (50) and stop there, so the count is compared with the one at
+        // the failure, not only with itself. The bound is 4, not the two
+        // units in flight: the report's label is refreshed every 250 ms,
+        // so `shown` can predate the failure by up to one refresh, in
+        // which a step may dispatch another unit or two. A page still
+        // polled sent 45 (plant P8).
+        let shown = translationRequests
+        let covered = settledRequests()
+        XCTAssertLessThanOrEqual(covered - shown, 4, "requests were sent behind the failure state: \(report)")
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertEqual(translationRequests, covered, "a request was sent behind the failure state")
+        backButton.tap()
+        waitForAbsence(failure)
+        XCTAssertTrue(waitUntil { self.translationRequests > covered }, "translation did not go on after Back: \(report)")
+
+        // Translation off; Translate tapped on the failure state.
+        tapTranslate()
+        waitForTranslate(on: false)
+        tapLink("Missing page")
+        waitFor(failure)
+        let off = settledRequests()
+        tapTranslate()
+        waitForTranslate(on: true)
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertEqual(translationRequests, off, "Translate on the failure state translated the page behind it")
+        backButton.tap()
+        waitForAbsence(failure)
+        let added = app.webViews.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@ OR value BEGINSWITH %@", Self.translated("追加された項目"), Self.translated("追加された項目")))
+            .firstMatch
+        XCTAssertTrue(added.waitForExistence(timeout: timeout), "no new block was translated after Back")
+        XCTAssertTrue(waitUntil { self.translationRequests > off }, "translation did not start after Back: \(report)")
+    }
+
+    /// Waits, 60 s at most, until `condition` holds.
+    private func waitUntil(_ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(60)
+        while Date() < deadline {
+            if condition() { return true }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        return condition()
+    }
+
     // MARK: - Criterion 13: a tab panel and an inner scrolling area
 
     func testATabPanelAndAnInnerScrollingArea() {

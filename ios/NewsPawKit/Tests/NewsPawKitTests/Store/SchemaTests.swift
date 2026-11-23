@@ -3,7 +3,7 @@ import GRDB
 @testable import NewsPawKit
 import Testing
 
-@Suite("Schema")
+@Suite("Schema", .serialized)
 struct SchemaTests {
     /// One column as `PRAGMA table_info` reports it.
     struct ColumnInfo: Equatable, CustomStringConvertible {

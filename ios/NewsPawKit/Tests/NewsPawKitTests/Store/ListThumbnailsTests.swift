@@ -5,7 +5,7 @@ import Testing
 
 /// RD19 decision 6 and criterion 8: "Show Thumbnails in Lists" is a
 /// partition setting, kept in each library's own `setting` table.
-@Suite("List thumbnails setting")
+@Suite("List thumbnails setting", .serialized)
 struct ListThumbnailsTests {
     @Test("criterion 8: on by default; turned off in one library only; the value survives a reopening")
     func perLibrary() async throws {

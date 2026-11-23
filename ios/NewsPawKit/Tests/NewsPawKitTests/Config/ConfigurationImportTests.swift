@@ -6,7 +6,7 @@ import Testing
 
 /// RD20 decisions 4 and 5: the preview, Merge, Replace, and the write
 /// across the two libraries (criteria 4 to 9, 12 and 13).
-@Suite("Configuration import")
+@Suite("Configuration import", .serialized)
 struct ConfigurationImportTests {
     typealias J = ConfigurationJSON
 

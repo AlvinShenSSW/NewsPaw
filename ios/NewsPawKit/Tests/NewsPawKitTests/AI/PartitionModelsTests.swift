@@ -7,7 +7,7 @@ import Testing
 /// that partition's own slots, with that partition's key, and is counted in
 /// that partition's own usage table; there is no borrowing, and the same
 /// service and key entered in both partitions are two separate items.
-@Suite("Models of each partition")
+@Suite("Models of each partition", .serialized)
 struct PartitionModelsTests {
     static let normalAddress = "https://normal.example.invalid/v1"
     static let adultAddress = "https://adult.example.invalid/v1"

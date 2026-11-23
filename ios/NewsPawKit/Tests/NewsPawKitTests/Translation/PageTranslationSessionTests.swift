@@ -100,10 +100,28 @@ final class StubPage: PageScripting {
         held.forEach { $0.resume() }
     }
 
+    /// Applies that write wait while this is set, until `releaseWrites()`.
+    var holdsWrites = false
+    private var heldWrites: [CheckedContinuation<Void, Never>] = []
+
+    var heldWriteCount: Int {
+        heldWrites.count
+    }
+
+    func releaseWrites() {
+        holdsWrites = false
+        let held = heldWrites
+        heldWrites = []
+        held.forEach { $0.resume() }
+    }
+
     func apply(_ request: PageApplyRequest) async -> Result<PageApplied, PageCallFailure> {
         calls.append(.apply(request))
         if holdsChecks, !request.check.isEmpty {
             await withCheckedContinuation { heldChecks.append($0) }
+        }
+        if holdsWrites, !request.writes.isEmpty {
+            await withCheckedContinuation { heldWrites.append($0) }
         }
         defer { afterApply?() }
         let result = applyAnswer?(request) ?? .success(PageApplied(written: request.writes.map(\.id), skipped: [], holding: request.check))

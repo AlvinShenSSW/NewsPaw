@@ -7,7 +7,7 @@ import Testing
 /// migration, the writer's reads and its guarded store, the screens'
 /// reads, the mode, the clean-up, the cascade, the move and the slot
 /// change (criteria 2, 4, 15's read, 16, 17 and 21).
-@Suite("Overview store")
+@Suite("Overview store", .serialized)
 struct OverviewStoreTests {
     static let utc = OverviewFixture.utc
 

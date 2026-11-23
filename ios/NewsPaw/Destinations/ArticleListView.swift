@@ -94,6 +94,19 @@ private struct ArticleListContent: View {
 
     private var list: some View {
         rows
+        // Where the list stands, for "is the first row on screen" (RD11
+        // decision 15): the content offset from the top inset, which is the
+        // bars and the filter control. Read on the list itself: Search's
+        // empty state, laid over it next, can hold a scroll view of its own,
+        // which a reading outside the overlay would also find (measured on
+        // the iPad mini, #190: for one layout pass as Search is built, that
+        // scroll view exists beside the list's, and SwiftUI warned "Multiple
+        // scroll views were found").
+        .onScrollGeometryChange(for: Double.self) { geometry in
+            geometry.contentOffset.y + geometry.contentInsets.top
+        } action: { _, offset in
+            model.scrolled(toOffsetFromTop: offset)
+        }
         // Over the list, which still scrolls and refreshes under it
         // (measured: a pull on the empty state refreshes).
         .overlay {
@@ -127,14 +140,6 @@ private struct ArticleListContent: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        // Where the list stands, for "is the first row on screen" (RD11
-        // decision 15): the content offset from the top inset, which is the
-        // bars and the filter control.
-        .onScrollGeometryChange(for: Double.self) { geometry in
-            geometry.contentOffset.y + geometry.contentInsets.top
-        } action: { _, offset in
-            model.scrolled(toOffsetFromTop: offset)
-        }
         .safeAreaInset(edge: .top, spacing: 0) {
             if kind.hasFilter {
                 filterControl

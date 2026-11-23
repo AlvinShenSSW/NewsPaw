@@ -7,7 +7,7 @@ import Testing
 /// RD19 decision 10 and criteria 10, 11 and 12 (spec N02): moving a
 /// category to the other partition, in both directions, over the two
 /// libraries of one store.
-@Suite("Category move")
+@Suite("Category move", .serialized)
 struct CategoryMoveTests {
     /// Both libraries of one store, with a category to move in the old one:
     /// "Moving" with three sources — "Alpha" and "Gamma", whose addresses the

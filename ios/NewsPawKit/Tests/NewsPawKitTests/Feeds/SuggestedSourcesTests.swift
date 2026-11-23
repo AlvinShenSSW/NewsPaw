@@ -47,7 +47,7 @@ struct SuggestedSourcesTests {
     }
 }
 
-@Suite("Fixture transport")
+@Suite("Fixture transport", .serialized)
 struct FixtureTransportTests {
     private func fetch(_ transport: FixtureTransport, _ address: String) async throws -> FetchResult {
         try await FeedFetcher(transport: transport).fetch(address)

@@ -6,7 +6,7 @@ import Testing
 /// RD17: the periods of Settings › Usage, the totals per model and purpose,
 /// today's automatic count, the partition of each, and the queries'
 /// failures. Criteria 1, 2, 3, 7 (package) and 9 (package).
-@Suite("Usage totals")
+@Suite("Usage totals", .serialized)
 struct UsageTotalsTests {
     // MARK: - Criterion 1: periods on the local day
 

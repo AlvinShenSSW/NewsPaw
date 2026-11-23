@@ -263,9 +263,12 @@ enum PageTranslationFixtures {
             """)
     }
 
-    /// Criterion 12: a block added every 500 ms, for the ceiling.
+    /// Criterion 12: a block added every 500 ms, for the ceiling; and a
+    /// link to an address that fails, whose failure state covers the page
+    /// while it goes on changing (issue #188).
     private static var endless: String {
         page("終わらないページ", """
+            <p translate="no"><a href="/missing">Missing page</a></p>
             <div id="feed"><p>最初の項目です。</p></div>
             <script>
             let n = 1;

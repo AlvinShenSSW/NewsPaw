@@ -5,7 +5,7 @@ import Testing
 
 /// RD11 decision 4: the feed HTML of an article is read cut to a limit, in
 /// the query.
-@Suite("Article HTML read")
+@Suite("Article HTML read", .serialized)
 struct ArticleHTMLReadTests {
     private func setHTML(_ html: String?, of id: UUID, in library: Library) async throws {
         try await library.pool.write { db in

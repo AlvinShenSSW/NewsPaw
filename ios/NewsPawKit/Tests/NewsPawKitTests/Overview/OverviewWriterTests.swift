@@ -7,7 +7,7 @@ import Testing
 /// criteria 1–14 (the due rule, the request, the input, acceptance in
 /// place, the failure kinds, the limit, one request in flight, the locale,
 /// a failed Rewrite, the day, the partitions, and the held windows).
-@Suite("Overview writer")
+@Suite("Overview writer", .serialized)
 struct OverviewWriterTests {
     typealias Fixture = OverviewFixture
 

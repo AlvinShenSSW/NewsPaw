@@ -6,7 +6,7 @@ import Testing
 /// RD19 decision 5 and criterion 7: Delete removes the adult browser's
 /// website data store with the rest of the partition's data, in its place
 /// in the order, and a failure to remove it leaves the partition on.
-@Suite("Adult gate and the adult browser's data")
+@Suite("Adult gate and the adult browser's data", .serialized)
 struct AdultBrowserDataGateTests {
     /// An unlocked partition with a category, a key and a cached image,
     /// locked again.

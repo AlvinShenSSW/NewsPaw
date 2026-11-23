@@ -5,7 +5,7 @@ import Testing
 
 /// RD13 decisions 1, 3, 9 and 14 and the failure table: storing slots and
 /// their keys. Criteria 1 (package side), 11, 12 and 13.
-@Suite("Model slots and keys")
+@Suite("Model slots and keys", .serialized)
 struct ModelSlotTests {
     // MARK: - Migration v5
 

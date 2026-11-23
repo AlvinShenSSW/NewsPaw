@@ -4,7 +4,7 @@ import GRDB
 import Testing
 
 /// RD09 criteria 1 and 3, and criterion 7's rows that no list has loaded.
-@Suite("Article lists")
+@Suite("Article lists", .serialized)
 struct ArticleListTests {
     // MARK: - Criterion 1: queries
 

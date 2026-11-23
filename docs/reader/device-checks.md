@@ -92,6 +92,7 @@ Each cell: `pass` or `fail → #<issue>`, with build, system version and date. I
 | E12 | Open Original Page and Open in Browser reach Safari; Share from a row | RD09 #156 | P | Row menu actions | not done |
 | E13 | Reading screen: the serif face for Chinese; swipes against the back gesture; image zoom with fingers; selecting and copying text; "Aa" in iPhone landscape; the hidden tab bar on iPhone; the reader's place after the browser on iPad | RD11 #161; RD09 #156 | P I | Each on a long article | P: not done · I: not done |
 | E14 | With list thumbnails off, no thumbnail request reaches the network | RD19 #182 | any | Needs a network log (a proxy on the Mac) | not done |
+| E15 | Search results keep their place during a refresh; at the top, new matches arrive | #190 #195 | M I | Open Search (sidebar button and ⌘F), search for something with several matches, scroll past the first row, refresh a category from the sidebar's context menu: the results stay where they were; scroll back to the top and refresh: new matches arrive | M: not done · I: not done |
 
 ## 7. Extraction and the browser on real pages (N05, N12)
 
@@ -114,6 +115,8 @@ Each cell: `pass` or `fail → #<issue>`, with build, system version and date. I
 | G5 | A real tap on a radio tab (limit 16) | RD16 #183 | any | A translated page with radio-button tabs | not done |
 | G6 | A real page that stops responding while translated | RD16 #183 | any | A heavy page; translate; wait | not done |
 | G7 | The status line at the largest text size | RD16 #183 | M | Largest Dynamic Type; translate a page | not done |
+| G8 | An unreachable link while translating: no requests while the error screen shows; Back resumes translation | #188 #196 | P M | Translation on at a real site; open an unreachable link; wait on the error screen; Back; compare Usage's count before and after the wait | P: not done · M: not done |
+| G9 | A backup added while a page is refused: "Retry with the Backup Model" appears on return without toggling Translate | #188 #196 | P M | A page the primary model refuses; Settings › add a backup model; return to the page; in both partitions | P: not done · M: not done |
 
 ## 9. Real model services (N06–N08, N11)
 
@@ -130,6 +133,7 @@ One status per service the owner uses (presets: OpenAI, DeepSeek, xAI, MiMo, Ope
 | H7 | Usage with real rows; number grouping in the device's region | RD17 #168 | any | Settings › Usage after a day's use | not done |
 | H8 | Leaving during a refresh: no overview request afterwards; leaving while an overview request is refused: no second request | RD23 #184 | any | Usage, or the service's own log | not done |
 | H9 | An adult Replace that repairs a model clears the overview card's error | RD23 #184 | any | Import with Replace in the adult partition | not done |
+| H10 | Leaving at once after opening while an automatic overview is due, then returning within a second or two: the overview appears without a pull, with one request for that entry | #189 #194 | any | An Automatic category due and a slow service; open, leave at once, return; Usage | not done |
 
 ## 10. Background refresh (N04)
 
@@ -148,7 +152,7 @@ One status per service the owner uses (presets: OpenAI, DeepSeek, xAI, MiMo, Ope
 
 | ID | Check | Source | Devices | Steps | Status |
 | --- | --- | --- | --- | --- | --- |
-| J1 | A real sign-in in the adult browser survives a lock, is absent from the normal browser, and is removed by Clear and by Delete (and whether a store remains after Delete) | RD19 #182 | P | Sign in; lock; unlock; open the same site in the normal partition; Clear; sign in again; Delete | not done |
+| J1 | A real sign-in in the adult browser survives a lock, is absent from the normal browser, and is removed by Clear and by Delete (and whether a store remains after Delete); turned on again, the adult browser starts empty | RD19 #182; #191 #197 | P | Sign in; lock; unlock; open the same site in the normal partition; Clear; sign in again; turn the adult partition off with Delete; turn it on again and open the site | not done |
 | J2 | A page that keeps writing on a timer, left, then Clear: nothing written back | RD19 #182 (F1) | P | Leave such a page open; Clear | not done |
 | J3 | Criterion 6's cookie check by hand | RD19 #182 (F5) | P | As in RD19's design | not done |
 

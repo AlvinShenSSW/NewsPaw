@@ -550,11 +550,14 @@ final class LiveSmokeTests: BodyTranslationTestCase {
         showToday()
         let status = element(AccessibilityID.todayStatus)
         let justNow = "Updated just now"
-        // An earlier library run (the launch's entry refresh) may have
-        // left "just now": it turns into "1 minute ago" at the line's next
-        // minute.
-        let clear = waitUntil(150) { status.exists && status.label != justNow && status.label != "Updating…" }
-        try require(clear, "Today's status line did not settle before the refresh")
+        // An earlier library run (the launch's entry refresh) may still be
+        // running, and once it ends it leaves "just now" until the first
+        // minute boundary at least 60 s later (the line's timeline ticks
+        // every minute): up to about 120 s. Wait for each in turn.
+        let ended = waitUntil(Self.networkWait) { status.exists && status.label != "Updating…" }
+        try require(ended, "Today's earlier refresh did not end within \(Int(Self.networkWait)) s")
+        let clear = waitUntil(125) { status.exists && status.label != justNow && status.label != "Updating…" }
+        try require(clear, "Today's status line still read \"\(justNow)\" 125 s after the earlier refresh")
         try phase("pulling Today to refresh")
         var pulls = 0
         var refreshed = false
